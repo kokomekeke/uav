@@ -1,29 +1,29 @@
 # README #
 
-This README would normally document whatever steps are necessary to get your application up and running.
+Simple test client for CoreService written in Python.
 
-### What is this repository for? ###
+## Requirements
 
-* Quick summary
-* Version
-* [Learn Markdown](https://bitbucket.org/tutorials/markdowndemo)
+ * Python3
+ * Tkinter
+ * Numpy
+ * Matplotlib
 
-### How do I get set up? ###
+## How to use
 
-* Summary of set up
-* Configuration
-* Dependencies
-* Database configuration
-* How to run tests
-* Deployment instructions
+Start `cstestclient.py` using Python 3.
 
-### Contribution guidelines ###
+```bash
+python cstestclient.py
+```
 
-* Writing tests
-* Code review
-* Other guidelines
+![alt text](screenshot.png)
 
-### Who do I talk to? ###
+ 1. Fill the *Command host* and *Stream host* textboxes in `<hostname>:<tcp port>` format.
+ 2. Click the *Connect* button and make sure the status bar (bottom) says `Connected`.
+ 3. Send the desired commands to the CoreService via the command input box. Press the Return (Enter) key to send.
+    * Use the autocomplete feature: press the *Tab* key to fill in the first suggestion, use the *Up*/*Down* key to browse the suggestions.
+    * Command history are stored as suggestions in the `commands.txt` file.
+ 4. Magnitude waterfall plot, azimuth and elevation plots can be observed in the middle panel. Use the toolbar to interact with the plots.
 
-* Repo owner or admin
-* Other community or team contact
+
