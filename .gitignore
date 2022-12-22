@@ -48,3 +48,9 @@ Thumbs.db
 *.mov
 *.wmv
 
+# IntelliJ folder
+.idea
+
+# App conf files
+commands.txt
+hosts.txt
