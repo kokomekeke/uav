@@ -66,29 +66,40 @@ class BaseConnectionThread(threading.Thread):
         This buffer size will be read at once from the TCP socket.
         """
 
+        self.status_label_ref = None
+        """
+        Reference of the status label on the main window
+        """
+
     def run(self):
         self.disconnect = False
         host_port_split = self.host_port.split(":")
         host, port = (host_port_split[0], host_port_split[1])
         try:
             self.connect_action()
+            self.status_label_ref.config(text="Connecting...")
             self.client_socket = socket.socket()  # instantiate
             self.client_socket.settimeout(1.0)
             self.client_socket.connect((host, int(port)))  # connect to the server
             self.connected = True
+            self.status_label_ref.config(text="Connected")
             while True:
                 try:
                     if self.disconnect:
+                        self.status_label_ref.config(text="Disconnected")
                         break
                     data = self.client_socket.recv(self.buf_size)  # receive response
                     if not data:  # If the pipe is broken, data will be empty string
+                        self.status_label_ref.config(text="Disconnected")
                         break
                     self.receive_processing(data)
                 except TimeoutError:
                     pass
         except TimeoutError:
+            self.status_label_ref.config(text="Timed out")
             pass
         except ConnectionError:
+            self.status_label_ref.config(text="Connection broken")
             pass
         self.connected = False
         self.client_socket.close()  # close the connection
@@ -103,7 +114,9 @@ class CommandsConnectionThread(BaseConnectionThread):
     def __init__(self):
         super().__init__()
         self.console_textarea_ref = None
-        self.status_label = None
+        """
+        Reference of the commands connection console textarea on the main window
+        """
 
     def receive_processing(self, data: bytes):
         self.console_textarea_ref.configure(state='normal')  # Textarea has to be unlocked to enable modification
@@ -197,11 +210,6 @@ class StreamConnectionThread(BaseConnectionThread):
         Indicates whether the animation and plot objects have been created
         """
 
-        self.status_label_ref = None
-        """
-        Reference of the status label on the main window
-        """
-
     def create_anim(self, bin_count, centerfreq, iqrate, vmin, vmax):
         def update_imag(frame_number):
             """
@@ -230,25 +238,38 @@ class StreamConnectionThread(BaseConnectionThread):
         self.magnitude_plot = self.fig_ref.add_subplot(grid_spec[:, 0])
         self.azimuth_plot = self.fig_ref.add_subplot(grid_spec[0, 1])
         self.elevation_plot = self.fig_ref.add_subplot(grid_spec[1, 1])
-        self.magnitude_image = self.magnitude_plot.imshow(self.waterfall, cmap=matplotlib.cm.get_cmap('winter'),
+        self.magnitude_image = self.magnitude_plot.imshow(self.waterfall, cmap=matplotlib.cm.get_cmap('gnuplot'),
                                                           animated=True, vmax=vmax, vmin=vmin)
-        self.azimuth_image = self.azimuth_plot.plot(self.azimuth_spectrum, animated=True)[0]
-        self.elevation_image = self.elevation_plot.plot(self.elevation_spectrum, animated=True)[0]
+        self.azimuth_image = self.azimuth_plot.plot(self.azimuth_spectrum, lw=1, color='red', animated=True)[0]
+        self.elevation_image = self.elevation_plot.plot(self.elevation_spectrum, lw=1, color='blue', animated=True)[0]
         self.magnitude_plot.set_xticks(x_bins)
         self.magnitude_plot.set_xticklabels([f"{freq / 1000000:.3f}M" for freq in x_labels])
 
         self.magnitude_plot.set_yticks(np.arange(0, self.waterfall_size, 50))
         self.magnitude_plot.set_yticklabels(np.arange(-self.waterfall_size, 0, 50))
         self.magnitude_plot.set_label("Magnitude")
+        self.magnitude_plot.set_ylabel("Packets")
         self.magnitude_plot.set_aspect(4)
+
+        pi_chr = chr(0x03C0)
         self.azimuth_plot.set_xticks(x_bins)
         self.azimuth_plot.set_xticklabels([f"{freq / 1000000:.3f}M" for freq in x_labels])
         self.azimuth_plot.set_ylim(-np.pi, np.pi)
+        self.azimuth_plot.set_yticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi])
+        self.azimuth_plot.set_yticklabels(
+            [f"-{pi_chr}", f"-{pi_chr}/2", "0", f"+{pi_chr}/2", f"+{pi_chr}"]
+        )
+        self.azimuth_plot.set_ylabel("Azimuth")
         self.azimuth_plot.set_label("Azimuth")
 
         self.elevation_plot.set_xticks(x_bins)
         self.elevation_plot.set_xticklabels([f"{freq / 1000000:.3f}M" for freq in x_labels])
         self.elevation_plot.set_ylim(-np.pi, np.pi)
+        self.elevation_plot.set_yticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi])
+        self.elevation_plot.set_yticklabels(
+            [f"-{pi_chr}", f"-{pi_chr}/2", "0", f"+{pi_chr}/2", f"+{pi_chr}"]
+        )
+        self.elevation_plot.set_ylabel("Elevation")
         self.elevation_plot.set_label("Elevation")
         self.animation = FuncAnimation(self.fig_ref, update_imag, interval=25, blit=True)
         # self.fig_ref.canvas.draw()
@@ -532,7 +553,6 @@ class ClientWindow(tkinter.Frame):
         self.host_stream_entry.configure(state='disabled')
         self.disconnect_button.configure(state='normal')
         self.command_entry.configure(state='normal')
-        self.status_label.config(text="Connected")
         self.command_entry.focus()
 
     def disconnect_action(self):
@@ -544,7 +564,6 @@ class ClientWindow(tkinter.Frame):
         self.host_command_entry.configure(state='normal')
         self.host_stream_entry.configure(state='normal')
         self.connect_button.configure(state='normal')
-        self.status_label.config(text="Disconnected")
         self.command_string.set("")
         self.disconnect_commands()  # to disconnect the other thread
 
@@ -558,7 +577,7 @@ class ClientWindow(tkinter.Frame):
         self.command_thread.connect_action = self.connect_action
         self.command_thread.disconnect_action = self.disconnect_action
         self.command_thread.host_port = self.host_command.get()
-        self.command_thread.status_label = self.status_label
+        self.command_thread.status_label_ref = self.status_label
         self.command_thread.start()
         self.stream_thread = StreamConnectionThread(self.fig)
         self.stream_thread.connect_action = self.connect_action
@@ -582,6 +601,6 @@ class ClientWindow(tkinter.Frame):
 if __name__ == '__main__':
     root = tkinter.Tk()
     ex = ClientWindow()
-    root.geometry("1024x768+300+300")
+    root.geometry("1024x768")
     root.wm_title("CS Test Client")
     root.mainloop()
