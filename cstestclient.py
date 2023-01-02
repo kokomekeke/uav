@@ -13,7 +13,7 @@ from time import sleep
 
 import matplotlib.cm
 import numpy as np
-from matplotlib import pyplot
+from matplotlib import pyplot, ticker, transforms
 from matplotlib.animation import FuncAnimation
 from matplotlib.backend_bases import key_press_handler
 from matplotlib.backends.backend_tkagg import (
@@ -210,7 +210,57 @@ class StreamConnectionThread(BaseConnectionThread):
         Indicates whether the animation and plot objects have been created
         """
 
+        self._center_frequency = 0
+        """
+        Center frequency of the last burst
+        """
+
+        self._iq_rate = 0
+        """
+        Iq rate of the last burst
+        """
+
     def create_anim(self, bin_count, centerfreq, iqrate, vmin, vmax):
+
+        class HalfLocator(ticker.Locator):
+            """
+            Tick locator for matplotlib plot
+            Set a tick on each integer multiple of a base within the view interval.
+            """
+
+            def __init__(self, max=1.0):
+                self._max = max
+
+            def set_params(self, max):
+                """Set parameters within this locator."""
+                if max is not None:
+                    self._max = max
+
+            def __call__(self):
+                """Return the locations of the ticks."""
+                vmin, vmax = self.axis.get_view_interval()
+                return self.tick_values(vmin, vmax)
+
+            def tick_values(self, vmin, vmax):
+                if vmax < vmin:
+                    vmin, vmax = vmax, vmin
+
+                step = self._max / 4
+                locs = []
+                while len(locs) < 4:
+                    locs = [loc for loc in np.arange(0, self._max, step) if vmin <= loc <= vmax]
+                    step /= 2
+                if self._max <= vmax:
+                    locs.append(self._max)
+                return self.raise_if_exceeds(locs)
+
+            def view_limits(self, dmin, dmax):
+                """
+                Set the view limits
+                """
+                return matplotlib.transforms.nonsingular(
+                    dmin, dmax, expander=1e-12, tiny=1e-13)
+
         def update_imag(frame_number):
             """
             Called on each frame of the graph animation
@@ -230,6 +280,31 @@ class StreamConnectionThread(BaseConnectionThread):
         # Ticks for the frequency axis.
         x_labels = np.arange(centerfreq - iqrate / 2, centerfreq + iqrate / 2 + 1, tick_step)
         x_bins = ((x_labels - centerfreq) * (bin_count / iqrate * 2) + bin_count) / 2
+
+        def bin_freq_formatter(x, pos=None):
+            return f"{((x - bin_count / 2) * (iqrate / bin_count) + centerfreq) / 1e6:.3f}M"
+            pass
+
+        def sample_id_formatter(x, pos=None):
+            return f"{x - self.waterfall_size:.0f}"
+            pass
+
+        def azimuth_format_coord(x, y):
+            if 0 < x < len(self.azimuth_spectrum):
+                val = self.azimuth_spectrum[int(x)]
+            else:
+                val = 0
+            return f"Frequency: {bin_freq_formatter(x)}, Angle: {val:.3f} rad ({val/np.pi*180:.2f} deg)"
+
+        def elevation_format_coord(x, y):
+            if 0 < x < len(self.elevation_spectrum):
+                val = self.elevation_spectrum[int(x)]
+            else:
+                val = 0
+            return f"Frequency: {bin_freq_formatter(x)}, Angle: {val:.3f} rad ({val/np.pi*180:.2f} deg)"
+
+        locator = HalfLocator(max=bin_count)
+
         # x_values = (np.arange(0, bin_count-1) - bin_count/2 ) * iqrate + centerfreq
 
         self.waterfall = np.zeros([self.waterfall_size, bin_count])
@@ -242,18 +317,20 @@ class StreamConnectionThread(BaseConnectionThread):
                                                           animated=True, vmax=vmax, vmin=vmin)
         self.azimuth_image = self.azimuth_plot.plot(self.azimuth_spectrum, lw=1, color='red', animated=True)[0]
         self.elevation_image = self.elevation_plot.plot(self.elevation_spectrum, lw=1, color='blue', animated=True)[0]
-        self.magnitude_plot.set_xticks(x_bins)
-        self.magnitude_plot.set_xticklabels([f"{freq / 1000000:.3f}M" for freq in x_labels])
 
-        self.magnitude_plot.set_yticks(np.arange(0, self.waterfall_size, 50))
-        self.magnitude_plot.set_yticklabels(np.arange(-self.waterfall_size, 0, 50))
+        self.magnitude_plot.xaxis.set_major_formatter(ticker.FuncFormatter(bin_freq_formatter))
+        self.magnitude_plot.xaxis.set_major_locator(locator)
+        self.magnitude_plot.yaxis.set_major_formatter(ticker.FuncFormatter(sample_id_formatter))
+
         self.magnitude_plot.set_label("Magnitude")
         self.magnitude_plot.set_ylabel("Packets")
         self.magnitude_plot.set_aspect(4)
 
         pi_chr = chr(0x03C0)
-        self.azimuth_plot.set_xticks(x_bins)
-        self.azimuth_plot.set_xticklabels([f"{freq / 1000000:.3f}M" for freq in x_labels])
+        self.azimuth_plot.xaxis.set_major_formatter(ticker.FuncFormatter(bin_freq_formatter))
+        self.azimuth_plot.xaxis.set_major_locator(locator)
+        self.azimuth_plot.yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:.2f}"))
+        self.azimuth_plot.format_coord = azimuth_format_coord
         self.azimuth_plot.set_ylim(-np.pi, np.pi)
         self.azimuth_plot.set_yticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi])
         self.azimuth_plot.set_yticklabels(
@@ -262,8 +339,10 @@ class StreamConnectionThread(BaseConnectionThread):
         self.azimuth_plot.set_ylabel("Azimuth")
         self.azimuth_plot.set_label("Azimuth")
 
-        self.elevation_plot.set_xticks(x_bins)
-        self.elevation_plot.set_xticklabels([f"{freq / 1000000:.3f}M" for freq in x_labels])
+        self.elevation_plot.xaxis.set_major_formatter(ticker.FuncFormatter(bin_freq_formatter))
+        self.elevation_plot.xaxis.set_major_locator(locator)
+        self.elevation_plot.yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:.2f}"))
+        self.elevation_plot.format_coord = elevation_format_coord
         self.elevation_plot.set_ylim(-np.pi, np.pi)
         self.elevation_plot.set_yticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi])
         self.elevation_plot.set_yticklabels(
@@ -272,8 +351,6 @@ class StreamConnectionThread(BaseConnectionThread):
         self.elevation_plot.set_ylabel("Elevation")
         self.elevation_plot.set_label("Elevation")
         self.animation = FuncAnimation(self.fig_ref, update_imag, interval=25, blit=True)
-        # self.fig_ref.canvas.draw()
-        # self.fig_ref.tight_layout()
         grid_spec.tight_layout(figure=self.fig_ref)
         grid_spec.update()
         self.fig_ref.canvas.draw()
@@ -303,13 +380,19 @@ class StreamConnectionThread(BaseConnectionThread):
                     self.elevation_spectrum = np.asarray(
                         struct.unpack(f"{bin_count}f", self.buffer[28 + bin_count * 4 * 2: 28 + bin_count * 4 * 3]))
 
-                    if not self.animation_started or bin_count != self.waterfall.shape[1]:
+                    if (
+                            not self.animation_started
+                            or bin_count != self.waterfall.shape[1]
+                            or center_frequency != self._center_frequency
+                            or iq_rate != self._iq_rate
+                    ):
                         # Animation can be created, because at this point we know bin count and other properties
                         # (Hopefully they remain the same for the connection)
-                        # Also restart when bin count has changed
+                        # Also restart when bin count or any other parameter has changed
                         self.create_anim(bin_count, center_frequency, iq_rate, np.min(magnitude_spectrum),
                                          np.max(magnitude_spectrum))
-
+                        self._iq_rate = iq_rate
+                        self._center_frequency = center_frequency
                         self.animation_started = True
 
                     # FIFO on the waterfall data structure
