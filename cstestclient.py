@@ -303,9 +303,10 @@ class StreamConnectionThread(BaseConnectionThread):
                     self.elevation_spectrum = np.asarray(
                         struct.unpack(f"{bin_count}f", self.buffer[28 + bin_count * 4 * 2: 28 + bin_count * 4 * 3]))
 
-                    if not self.animation_started:
+                    if not self.animation_started or bin_count != self.waterfall.shape[1]:
                         # Animation can be created, because at this point we know bin count and other properties
                         # (Hopefully they remain the same for the connection)
+                        # Also restart when bin count has changed
                         self.create_anim(bin_count, center_frequency, iq_rate, np.min(magnitude_spectrum),
                                          np.max(magnitude_spectrum))
 
