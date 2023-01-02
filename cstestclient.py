@@ -280,14 +280,7 @@ class StreamConnectionThread(BaseConnectionThread):
             return [self.magnitude_image, self.azimuth_image, self.elevation_image]
 
         self.fig_ref.clf()
-
         grid_spec = GridSpec(nrows=2, ncols=2, figure=self.fig_ref)
-
-        tick_step = iqrate / 5
-
-        # Ticks for the frequency axis.
-        x_labels = np.arange(centerfreq - iqrate / 2, centerfreq + iqrate / 2 + 1, tick_step)
-        x_bins = ((x_labels - centerfreq) * (bin_count / iqrate * 2) + bin_count) / 2
 
         def bin_freq_formatter(x, pos=None):
             return f"{((x - bin_count / 2) * (iqrate / bin_count) + centerfreq) / 1e6:.3f}M"
@@ -302,18 +295,16 @@ class StreamConnectionThread(BaseConnectionThread):
                 val = self.azimuth_spectrum[int(x)]
             else:
                 val = 0
-            return f"Frequency: {bin_freq_formatter(x)}, Angle: {val:.3f} rad ({val/np.pi*180:.2f} deg)"
+            return f"Frequency: {bin_freq_formatter(x)}, Angle: {val:.3f} rad ({val / np.pi * 180:.2f} deg)"
 
         def elevation_format_coord(x, y):
             if 0 < x < len(self.elevation_spectrum):
                 val = self.elevation_spectrum[int(x)]
             else:
                 val = 0
-            return f"Frequency: {bin_freq_formatter(x)}, Angle: {val:.3f} rad ({val/np.pi*180:.2f} deg)"
+            return f"Frequency: {bin_freq_formatter(x)}, Angle: {val:.3f} rad ({val / np.pi * 180:.2f} deg)"
 
         locator = HalfLocator(max=bin_count)
-
-        # x_values = (np.arange(0, bin_count-1) - bin_count/2 ) * iqrate + centerfreq
 
         self.waterfall = np.zeros([self.waterfall_size, bin_count])
         self.azimuth_spectrum = np.zeros([bin_count])
@@ -610,8 +601,6 @@ class ClientWindow(tkinter.Frame):
 
         command_suggestions_lb.pack(side=tkinter.TOP, fill=tkinter.X, padx=5, expand=True)
         suggestions_filter()
-        # button = tkinter.Button(master=self, text="Quit", command=_quit)
-        # button.pack(side=tkinter.BOTTOM)
 
     def create_canvas(self):
         """
@@ -639,7 +628,6 @@ class ClientWindow(tkinter.Frame):
         if self.stream_thread is not None:
             self.stream_thread.fig_ref = self.fig
             self.command_entry.focus()
-
 
     def connect_action(self):
         """
