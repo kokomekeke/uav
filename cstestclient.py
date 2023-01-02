@@ -338,6 +338,7 @@ class StreamConnectionThread(BaseConnectionThread):
         self.azimuth_plot.xaxis.set_major_formatter(ticker.FuncFormatter(bin_freq_formatter))
         self.azimuth_plot.xaxis.set_major_locator(locator)
         self.azimuth_plot.yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:.2f}"))
+        self.azimuth_plot.grid(axis='y')
         self.azimuth_plot.format_coord = azimuth_format_coord
         self.azimuth_plot.set_ylim(-np.pi, np.pi)
         self.azimuth_plot.set_yticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi])
@@ -350,6 +351,7 @@ class StreamConnectionThread(BaseConnectionThread):
         self.elevation_plot.xaxis.set_major_formatter(ticker.FuncFormatter(bin_freq_formatter))
         self.elevation_plot.xaxis.set_major_locator(locator)
         self.elevation_plot.yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:.2f}"))
+        self.elevation_plot.grid(axis='y')
         self.elevation_plot.format_coord = elevation_format_coord
         self.elevation_plot.set_ylim(-np.pi, np.pi)
         self.elevation_plot.set_yticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi])
