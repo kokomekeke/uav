@@ -279,9 +279,6 @@ class StreamConnectionThread(BaseConnectionThread):
             self.elevation_image.set_ydata(self.elevation_spectrum)
             return [self.magnitude_image, self.azimuth_image, self.elevation_image]
 
-        self.fig_ref.clf()
-        grid_spec = GridSpec(nrows=2, ncols=2, figure=self.fig_ref)
-
         def bin_freq_formatter(x, pos=None):
             return f"{((x - bin_count / 2) * (iqrate / bin_count) + centerfreq) / 1e6:.3f}M"
             pass
@@ -290,25 +287,30 @@ class StreamConnectionThread(BaseConnectionThread):
             return f"{x - self.waterfall_size:.0f}"
             pass
 
+        def magnitude_format_coord(x, y):
+            return f"Frequency: {bin_freq_formatter(x)} (bin {int(x)}), Sample: {sample_id_formatter(y)}"
+
         def azimuth_format_coord(x, y):
             if 0 < x < len(self.azimuth_spectrum):
                 val = self.azimuth_spectrum[int(x)]
             else:
                 val = 0
-            return f"Frequency: {bin_freq_formatter(x)}, Angle: {val:.3f} rad ({val / np.pi * 180:.2f} deg)"
+            return f"Frequency: {bin_freq_formatter(x)} (bin {int(x)}), Angle: {val:.3f} rad ({val / np.pi * 180:.2f} deg)"
 
         def elevation_format_coord(x, y):
             if 0 < x < len(self.elevation_spectrum):
                 val = self.elevation_spectrum[int(x)]
             else:
                 val = 0
-            return f"Frequency: {bin_freq_formatter(x)}, Angle: {val:.3f} rad ({val / np.pi * 180:.2f} deg)"
-
-        locator = HalfLocator(max=bin_count)
+            return f"Frequency: {bin_freq_formatter(x)} (bin {int(x)}), Angle: {val:.3f} rad ({val / np.pi * 180:.2f} deg)"
 
         self.waterfall = np.zeros([self.waterfall_size, bin_count])
         self.azimuth_spectrum = np.zeros([bin_count])
         self.elevation_spectrum = np.zeros([bin_count])
+
+        self.fig_ref.clf()
+        # grid_spec = GridSpec(nrows=2, ncols=2, figure=self.fig_ref)
+        grid_spec = self.fig_ref.add_gridspec(nrows=2, ncols=2, width_ratios=(3, 2), height_ratios=(1, 1))
         self.magnitude_plot = self.fig_ref.add_subplot(grid_spec[:, 0])
         self.azimuth_plot = self.fig_ref.add_subplot(grid_spec[0, 1])
         self.elevation_plot = self.fig_ref.add_subplot(grid_spec[1, 1])
@@ -318,18 +320,21 @@ class StreamConnectionThread(BaseConnectionThread):
         self.elevation_image = self.elevation_plot.plot(self.elevation_spectrum, lw=1, color='blue', animated=True)[0]
 
         self.magnitude_plot.xaxis.set_major_formatter(ticker.FuncFormatter(bin_freq_formatter))
-        self.magnitude_plot.xaxis.set_major_locator(locator)
+        self.magnitude_plot.xaxis.set_major_locator(HalfLocator(max=bin_count))
+        self.magnitude_plot.tick_params(axis='x', labelrotation=45)
         self.magnitude_plot.yaxis.set_major_formatter(ticker.FuncFormatter(sample_id_formatter))
+        self.magnitude_plot.format_coord = magnitude_format_coord
 
         self.magnitude_plot.set_label("Magnitude")
         self.magnitude_plot.set_ylabel("Packets")
-        self.magnitude_plot.set_aspect(4)
+        self.magnitude_plot.set_aspect("auto")
 
         pi_chr = chr(0x03C0)
         self.azimuth_plot.xaxis.set_major_formatter(ticker.FuncFormatter(bin_freq_formatter))
-        self.azimuth_plot.xaxis.set_major_locator(locator)
+        self.azimuth_plot.xaxis.set_major_locator(HalfLocator(max=bin_count))
+        self.azimuth_plot.tick_params(axis='x', labelrotation=45)
         self.azimuth_plot.yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:.2f}"))
-        self.azimuth_plot.grid(axis='y')
+        self.azimuth_plot.grid(axis='both')
         self.azimuth_plot.format_coord = azimuth_format_coord
         self.azimuth_plot.set_ylim(-np.pi, np.pi)
         self.azimuth_plot.set_yticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi])
@@ -338,11 +343,13 @@ class StreamConnectionThread(BaseConnectionThread):
         )
         self.azimuth_plot.set_ylabel("Azimuth")
         self.azimuth_plot.set_label("Azimuth")
+        self.azimuth_plot.set_aspect("auto")
 
         self.elevation_plot.xaxis.set_major_formatter(ticker.FuncFormatter(bin_freq_formatter))
-        self.elevation_plot.xaxis.set_major_locator(locator)
+        self.elevation_plot.xaxis.set_major_locator(HalfLocator(max=bin_count))
+        self.elevation_plot.tick_params(axis='x', labelrotation=45)
         self.elevation_plot.yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:.2f}"))
-        self.elevation_plot.grid(axis='y')
+        self.elevation_plot.grid(axis='both')
         self.elevation_plot.format_coord = elevation_format_coord
         self.elevation_plot.set_ylim(-np.pi, np.pi)
         self.elevation_plot.set_yticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi])
@@ -351,6 +358,8 @@ class StreamConnectionThread(BaseConnectionThread):
         )
         self.elevation_plot.set_ylabel("Elevation")
         self.elevation_plot.set_label("Elevation")
+        self.elevation_plot.set_aspect("auto")
+
         self.animation = FuncAnimation(self.fig_ref, update_imag, interval=25, blit=True)
         grid_spec.tight_layout(figure=self.fig_ref)
         grid_spec.update()
@@ -493,8 +502,10 @@ class ClientWindow(tkinter.Frame):
             with open('commands.txt', 'w') as f1:
                 f1.writelines(h + '\n' for h in command_history_sorted)
 
-        self.console_textarea = tkinter.Text(self, height=5, width=52)
-        self.console_textarea.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
+        command_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
+        command_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
+        self.console_textarea = tkinter.Text(command_frame, height=5, width=52)
+        self.console_textarea.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
         self.console_textarea.configure(state='disabled')
 
         # Configure a tag for the console area to indicate sent commands with blue
@@ -582,8 +593,6 @@ class ClientWindow(tkinter.Frame):
             self.command_entry.icursor(tkinter.END)
             return 'break'
 
-        command_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
-        command_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
 
         self.command_entry = tkinter.Entry(command_frame, textvariable=self.command_string)
         self.command_entry.pack(side=tkinter.TOP, fill=tkinter.X, padx=5, expand=True)
@@ -593,13 +602,13 @@ class ClientWindow(tkinter.Frame):
         self.command_entry.bind('<Down>', to_suggestions_list)
         self.command_entry.configure(state='disabled')
 
-        command_suggestions_lb = tkinter.Listbox(command_frame)
+        command_suggestions_lb = tkinter.Listbox(command_frame, height=4)
 
         command_suggestions_lb.bind("<<ListboxSelect>>", select_suggestion_cmd)
         command_suggestions_lb.bind("<Tab>", to_command_box)
         command_suggestions_lb.bind("<Return>", to_command_box)
 
-        command_suggestions_lb.pack(side=tkinter.TOP, fill=tkinter.X, padx=5, expand=True)
+        command_suggestions_lb.pack(side=tkinter.TOP, fill=tkinter.X, padx=5, expand=False)
         suggestions_filter()
 
     def create_canvas(self):
@@ -607,15 +616,15 @@ class ClientWindow(tkinter.Frame):
         Creates matplotlib canvas for graph plots. Called when connecting to the client.
         """
         if self.canvas is not None:  # Remove old widget if there is one
+            self.fig.gca().cla()
             self.canvas.get_tk_widget().destroy()
             self.canvas = None
         if self.canvas_toolbar is not None:
             self.canvas_toolbar.destroy()
             self.canvas_toolbar = None
-        self.fig = pyplot.Figure(constrained_layout=True)
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_frame)  # A tk.DrawingArea.
-        # self.canvas.draw()
-        self.canvas.get_tk_widget().pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1)
+        self.fig = pyplot.Figure(tight_layout=True)
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_frame)
+        self.canvas.get_tk_widget().pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=True)
 
         self.canvas_toolbar = NavigationToolbar2Tk(self.canvas, self.plot_frame)
         self.canvas_toolbar.update()
@@ -624,7 +633,7 @@ class ClientWindow(tkinter.Frame):
             key_press_handler(event, self.canvas, self.canvas_toolbar)
 
         self.canvas.mpl_connect("key_press_event", on_canvas_key_press)
-        self.canvas_toolbar.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1)
+        self.canvas_toolbar.pack(side=tkinter.TOP, fill=tkinter.X, expand=False)
         if self.stream_thread is not None:
             self.stream_thread.fig_ref = self.fig
             self.command_entry.focus()
