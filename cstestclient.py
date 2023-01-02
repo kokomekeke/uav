@@ -128,8 +128,14 @@ class CommandsConnectionThread(BaseConnectionThread):
 
 class StreamConnectionThread(BaseConnectionThread):
 
-    def __init__(self, fig_ref):
+    def __init__(self):
         super().__init__()
+
+        self.recreate_canvas_action = None
+        """
+        Action that recreates plot canvas
+        """
+
         self.buffer = bytearray()
         """
         Binary packet data buffer
@@ -150,7 +156,7 @@ class StreamConnectionThread(BaseConnectionThread):
         Amount of spectrum lines to be displayed on the waterfall diagram.
         """
 
-        self.fig_ref = fig_ref
+        self.fig_ref = None
         """
         Reference to the matplotlib figure.
         """
@@ -221,6 +227,8 @@ class StreamConnectionThread(BaseConnectionThread):
         """
 
     def create_anim(self, bin_count, centerfreq, iqrate, vmin, vmax):
+
+        self.recreate_canvas_action()
 
         class HalfLocator(ticker.Locator):
             """
@@ -387,7 +395,6 @@ class StreamConnectionThread(BaseConnectionThread):
                             or iq_rate != self._iq_rate
                     ):
                         # Animation can be created, because at this point we know bin count and other properties
-                        # (Hopefully they remain the same for the connection)
                         # Also restart when bin count or any other parameter has changed
                         self.create_anim(bin_count, center_frequency, iq_rate, np.min(magnitude_spectrum),
                                          np.max(magnitude_spectrum))
@@ -627,6 +634,10 @@ class ClientWindow(tkinter.Frame):
 
         self.canvas.mpl_connect("key_press_event", on_canvas_key_press)
         self.canvas_toolbar.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1)
+        if self.stream_thread is not None:
+            self.stream_thread.fig_ref = self.fig
+            self.command_entry.focus()
+
 
     def connect_action(self):
         """
@@ -655,7 +666,6 @@ class ClientWindow(tkinter.Frame):
         """
         Action of the "Connect" button
         """
-        self.create_canvas()
         self.command_thread = CommandsConnectionThread()
         self.command_thread.console_textarea_ref = self.console_textarea
         self.command_thread.connect_action = self.connect_action
@@ -663,7 +673,8 @@ class ClientWindow(tkinter.Frame):
         self.command_thread.host_port = self.host_command.get()
         self.command_thread.status_label_ref = self.status_label
         self.command_thread.start()
-        self.stream_thread = StreamConnectionThread(self.fig)
+        self.stream_thread = StreamConnectionThread()
+        self.stream_thread.recreate_canvas_action = self.create_canvas
         self.stream_thread.connect_action = self.connect_action
         self.stream_thread.disconnect_action = self.disconnect_action
         self.stream_thread.host_port = self.host_stream.get()
