@@ -8,7 +8,6 @@ import socket
 import struct
 import threading
 import tkinter
-import tkinter.ttk
 from time import sleep
 
 import matplotlib.cm
@@ -424,9 +423,6 @@ class ClientWindow(tkinter.Frame):
         self.fig = None
         self.canvas = None
         self.canvas_toolbar = None
-
-        self.style = tkinter.ttk.Style()
-        self.style.theme_use("default")
 
         self.pack(fill=tkinter.BOTH, expand=1)
 
