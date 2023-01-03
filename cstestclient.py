@@ -96,10 +96,13 @@ class BaseConnectionThread(threading.Thread):
                 except TimeoutError:
                     pass
         except TimeoutError:
-            self.status_label_ref.config(text="Timed out")
+            self.status_label_ref.config(text="Connection timed out")
             pass
         except ConnectionError:
             self.status_label_ref.config(text="Connection broken")
+            pass
+        except OSError as e:
+            self.status_label_ref.config(text=f"Connection error: {e}")
             pass
         self.connected = False
         self.client_socket.close()  # close the connection
@@ -226,7 +229,7 @@ class StreamConnectionThread(BaseConnectionThread):
         Iq rate of the last burst
         """
 
-    def create_anim(self, bin_count, centerfreq, iqrate, vmin, vmax):
+    def create_anim(self, bin_count, center_freq, iq_rate, vmin, vmax):
 
         self.recreate_canvas_action()
 
@@ -280,7 +283,7 @@ class StreamConnectionThread(BaseConnectionThread):
             return [self.magnitude_image, self.azimuth_image, self.elevation_image]
 
         def bin_freq_formatter(x, pos=None):
-            return f"{((x - bin_count / 2) * (iqrate / bin_count) + centerfreq) / 1e6:.3f}M"
+            return f"{((x - bin_count / 2) * (iq_rate / bin_count) + center_freq) / 1e6:.3f}M"
             pass
 
         def sample_id_formatter(x, pos=None):
@@ -288,7 +291,7 @@ class StreamConnectionThread(BaseConnectionThread):
             pass
 
         def magnitude_format_coord(x, y):
-            return f"Frequency: {bin_freq_formatter(x)} (bin {int(x)}), Sample: {sample_id_formatter(y)}"
+            return f"Frequency: {bin_freq_formatter(x)} (bin {int(x)}), Packet: {sample_id_formatter(y)}"
 
         def azimuth_format_coord(x, y):
             if 0 < x < len(self.azimuth_spectrum):
@@ -373,6 +376,9 @@ class StreamConnectionThread(BaseConnectionThread):
             if type_id == 2:  # end of file, flush buffer
                 self.buffer = bytearray()
                 self.animation_started = False
+                self.status_label_ref.config(
+                    text=f"End of file"
+                )
             elif len(self.buffer) >= 28 and type_id == 1:
                 center_frequency = struct.unpack('f', self.buffer[8:12])[0]
                 iq_rate = struct.unpack('f', self.buffer[12:16])[0]
@@ -380,21 +386,16 @@ class StreamConnectionThread(BaseConnectionThread):
                 bin_count = int.from_bytes(self.buffer[24:28], "little")
                 packet_size = 3 * 4 * bin_count + 28
                 if len(self.buffer) >= packet_size:  # we got the entire packet in buffer
-
                     self.status_label_ref.config(
                         text=f"Packet {self.packet_count} - Stream {stream_id}, index {sample_index}"
                     )
                     magnitude_spectrum = np.asarray(struct.unpack(f"{bin_count}f", self.buffer[28:28 + bin_count * 4]))
-                    self.azimuth_spectrum = np.asarray(
-                        struct.unpack(f"{bin_count}f", self.buffer[28 + bin_count * 4: 28 + bin_count * 4 * 2]))
-                    self.elevation_spectrum = np.asarray(
-                        struct.unpack(f"{bin_count}f", self.buffer[28 + bin_count * 4 * 2: 28 + bin_count * 4 * 3]))
 
                     if (
-                            not self.animation_started
-                            or bin_count != self.waterfall.shape[1]
-                            or center_frequency != self._center_frequency
-                            or iq_rate != self._iq_rate
+                        not self.animation_started
+                        or bin_count != self.waterfall.shape[1]
+                        or center_frequency != self._center_frequency
+                        or iq_rate != self._iq_rate
                     ):
                         # Animation can be created, because at this point we know bin count and other properties
                         # Also restart when bin count or any other parameter has changed
@@ -404,6 +405,10 @@ class StreamConnectionThread(BaseConnectionThread):
                         self._center_frequency = center_frequency
                         self.animation_started = True
 
+                    self.azimuth_spectrum = np.asarray(
+                        struct.unpack(f"{bin_count}f", self.buffer[28 + bin_count * 4: 28 + bin_count * 4 * 2]))
+                    self.elevation_spectrum = np.asarray(
+                        struct.unpack(f"{bin_count}f", self.buffer[28 + bin_count * 4 * 2: 28 + bin_count * 4 * 3]))
                     # FIFO on the waterfall data structure
                     self.waterfall = np.append(self.waterfall[-self.waterfall_size + 1:, :], [magnitude_spectrum],
                                                axis=0)
