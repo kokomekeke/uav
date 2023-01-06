@@ -584,7 +584,8 @@ class ClientWindow(tkinter.Frame):
             Select a command from the list and use it in the command input box.
             """
             if command_suggestions_lb.size() > 0:
-                self.command_string.set(command_suggestions_lb.get(command_suggestions_lb.curselection()))
+                if command_suggestions_lb.curselection() not in [(), "", None]:  # strange values when nothing selected
+                    self.command_string.set(command_suggestions_lb.get())
 
         def to_command_box(*args):
             """
