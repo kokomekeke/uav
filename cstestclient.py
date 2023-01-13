@@ -2,13 +2,15 @@
 #
 # Created by aron.szabo@sagaxcommunications.com on 21/12/2022.
 #
-
+import multiprocessing
 import os
+import queue
 import socket
 import struct
 import threading
 import tkinter
 from time import sleep
+from typing import Optional
 
 import matplotlib.cm
 import numpy as np
@@ -18,6 +20,20 @@ from matplotlib.backend_bases import key_press_handler
 from matplotlib.backends.backend_tkagg import (
     FigureCanvasTkAgg, NavigationToolbar2Tk)
 from matplotlib.gridspec import GridSpec
+
+
+class CoreServicePacket:
+    def __init__(self):
+        self.stream_id: int = 0
+        self.end_of_file: bool = False
+        self.center_frequency: float = 0
+        self.iq_rate: float = 0.0
+        self.sample_index: int = 0
+        self.packet_index: int = 0
+        self.bin_count: int = 0
+        self.magnitude_spectrum: np.ndarray = np.zeros([1])
+        self.azimuth_spectrum: np.ndarray = np.zeros([1])
+        self.elevation_spectrum: np.ndarray = np.zeros([1])
 
 
 class BaseConnectionThread(threading.Thread):
@@ -65,49 +81,55 @@ class BaseConnectionThread(threading.Thread):
         This buffer size will be read at once from the TCP socket.
         """
 
-        self.status_label_ref = None
-        """
-        Reference of the status label on the main window
-        """
+    def display_status(self, message):
+        pass
 
     def run(self):
         self.disconnect = False
+        self.run_socket()
+
+    def is_disconnect(self):
+        return self.disconnect
+
+    def run_socket(self):
         host_port_split = self.host_port.split(":")
         host, port = (host_port_split[0], host_port_split[1])
         try:
-            self.connect_action()
-            self.status_label_ref.config(text="Connecting...")
+            if self.connect_action is not None:
+                self.connect_action()
+            self.display_status("Connecting...")
             self.client_socket = socket.socket()  # instantiate
             self.client_socket.settimeout(1.0)
             self.client_socket.connect((host, int(port)))  # connect to the server
             self.connected = True
-            self.status_label_ref.config(text="Connected")
+            self.display_status("Connected")
             while True:
                 try:
-                    if self.disconnect:
-                        self.status_label_ref.config(text="Disconnected")
+                    if self.is_disconnect():
+                        self.display_status("Disconnected")
                         break
                     data = self.client_socket.recv(self.buf_size)  # receive response
                     if not data:  # If the pipe is broken, data will be empty string
-                        self.status_label_ref.config(text="Disconnected")
+                        self.display_status("Disconnected")
                         break
-                    self.receive_processing(data)
+                    self.receive_on_socket(data)
                 except TimeoutError:
                     pass
         except TimeoutError:
-            self.status_label_ref.config(text="Connection timed out")
+            self.display_status("Connection timed out")
             pass
         except ConnectionError:
-            self.status_label_ref.config(text="Connection broken")
+            self.display_status("Connection broken")
             pass
         except OSError as e:
-            self.status_label_ref.config(text=f"Connection error: {e}")
+            self.display_status(f"Connection error: {e}")
             pass
         self.connected = False
         self.client_socket.close()  # close the connection
-        self.disconnect_action()
+        if self.disconnect_action is not None:
+            self.disconnect_action()
 
-    def receive_processing(self, data: bytes):
+    def receive_on_socket(self, data: bytes):
         pass
 
 
@@ -120,18 +142,33 @@ class CommandsConnectionThread(BaseConnectionThread):
         Reference of the commands connection console textarea on the main window
         """
 
-    def receive_processing(self, data: bytes):
+        self.status_label_ref = None
+        """
+        Reference of the status label on the main window
+        """
+
+    def receive_on_socket(self, data: bytes):
         self.console_textarea_ref.configure(state='normal')  # Textarea has to be unlocked to enable modification
         self.console_textarea_ref.insert(tkinter.END, '\n')
         self.console_textarea_ref.insert(tkinter.END, data.decode())
         self.console_textarea_ref.see(tkinter.END)  # Scroll to the bottom
         self.console_textarea_ref.configure(state='disabled')  # Block user editing
 
+    def display_status(self, message):
+        self.status_label_ref.config(text=message)
+
 
 class StreamConnectionThread(BaseConnectionThread):
 
     def __init__(self):
         super().__init__()
+
+        self.mp_status: Optional[multiprocessing.Queue[str]] = None
+        self.mp_disconnect: Optional[multiprocessing.Value] = None
+        self.mp_queue: Optional[multiprocessing.Queue[CoreServicePacket]] = None
+        """
+        Queue for multiprocessing
+        """
 
         self.recreate_canvas_action = None
         """
@@ -148,7 +185,7 @@ class StreamConnectionThread(BaseConnectionThread):
         Overall packet count
         """
 
-        self.buf_size = 65536
+        self.buf_size = 65536  # 65536
         """
         This buffer size will be read at once from the TCP socket.
         """
@@ -227,6 +264,130 @@ class StreamConnectionThread(BaseConnectionThread):
         """
         Iq rate of the last burst
         """
+
+        self.status_label_ref = None
+        """
+        Reference of the status label on the main window
+        """
+
+    def run(self):
+        manager = multiprocessing.Manager()
+        status_queue = multiprocessing.Queue()
+        disconnect_value = manager.Value('i', 0)
+
+        def status_watcher():
+            while True:
+                try:
+                    disconnect_value.value = self.disconnect
+                    message = status_queue.get(timeout=0.2)
+                    if message == "END":
+                        break
+                    self.status_label_ref.config(text=message)
+                except queue.Empty:
+                    pass
+                except BrokenPipeError:
+                    return
+
+        watcher_thread = threading.Thread(target=status_watcher, daemon=True)
+        watcher_thread.start()
+
+        packets_queue = multiprocessing.Queue()
+        process = multiprocessing.Process(target=self.run_process, args=(packets_queue, disconnect_value, status_queue))
+        process.start()
+        while True:
+            if self.disconnect:
+                break
+            try:
+                packet: CoreServicePacket = packets_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            if packet.end_of_file:
+                self.status_label_ref.config(
+                    text=f"End of file"
+                )
+                break
+            if (
+                    not self.animation_started
+                    or packet.bin_count != self.waterfall.shape[1]
+                    or packet.center_frequency != self._center_frequency
+                    or packet.iq_rate != self._iq_rate
+            ):
+                # Animation can be created, because at this point we know bin count and other properties
+                # Also restart when bin count or any other parameter has changed
+                self.create_anim(packet.bin_count, packet.center_frequency, packet.iq_rate,
+                                 np.min(packet.magnitude_spectrum),
+                                 np.max(packet.magnitude_spectrum))
+                self._iq_rate = packet.iq_rate
+                self._center_frequency = packet.center_frequency
+                self.animation_started = True
+
+            self.azimuth_spectrum = packet.azimuth_spectrum
+            self.elevation_spectrum = packet.elevation_spectrum
+            # FIFO on the waterfall data structure
+            self.waterfall = np.append(self.waterfall[-self.waterfall_size + 1:, :], [packet.magnitude_spectrum],
+                                       axis=0)
+
+            # self.status_label_ref.config(
+            #     text=f"Packet {packet.packet_index} - Stream {packet.stream_id}, index {packet.sample_index}"
+            #          f" | Queue count: {packets_queue.qsize()}"
+            # )
+
+        self.animation_started = False
+        process.join()
+
+    def run_process(self, queue, disconnect_value, status_value):
+        self.mp_queue = queue
+        self.mp_disconnect = disconnect_value
+        self.mp_status = status_value
+        self.run_socket()
+        self.mp_status.put("END")
+
+    def is_disconnect(self):
+        return self.mp_disconnect.value
+
+    def display_status(self, message):
+        self.mp_status.put(message)
+
+    def receive_on_socket(self, data: bytes):
+        self.buffer += bytearray(data)
+        if len(self.buffer) >= 8:  # packet header is 28 bytes
+            cs_packet = CoreServicePacket()
+            cs_packet.stream_id = int.from_bytes(self.buffer[0:4], "little")
+            type_id = int.from_bytes(self.buffer[4:8], "little")
+            if type_id == 2:  # end of file, flush buffer
+                cs_packet.end_of_file = True
+                self.mp_queue.put(cs_packet)
+                self.buffer = bytearray()
+            elif len(self.buffer) >= 28 and type_id == 1:
+                cs_packet.center_frequency = struct.unpack('f', self.buffer[8:12])[0]
+                cs_packet.iq_rate = struct.unpack('f', self.buffer[12:16])[0]
+                cs_packet.sample_index = int.from_bytes(self.buffer[16:24], "little")
+                cs_packet.bin_count = int.from_bytes(self.buffer[24:28], "little")
+                packet_size = 3 * 4 * cs_packet.bin_count + 28
+                if len(self.buffer) >= packet_size:  # we got the entire packet in buffer
+                    cs_packet.magnitude_spectrum = np.asarray(
+                        struct.unpack(f"{cs_packet.bin_count}f", self.buffer[28:28 + cs_packet.bin_count * 4])
+                    )
+                    cs_packet.azimuth_spectrum = np.asarray(
+                        struct.unpack(
+                            f"{cs_packet.bin_count}f",
+                            self.buffer[28 + cs_packet.bin_count * 4: 28 + cs_packet.bin_count * 4 * 2]
+                        )
+                    )
+                    cs_packet.elevation_spectrum = np.asarray(
+                        struct.unpack(
+                            f"{cs_packet.bin_count}f",
+                            self.buffer[28 + cs_packet.bin_count * 4 * 2: 28 + cs_packet.bin_count * 4 * 3]
+                        )
+                    )
+                    self.packet_count += 1
+                    cs_packet.packet_index = self.packet_count
+                    self.mp_queue.put(cs_packet)
+                    self.display_status(
+                        f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
+                        f"index {cs_packet.sample_index} | Queue count: {self.mp_queue.qsize()}"
+                    )
+                    self.buffer = self.buffer[packet_size:]  # drop packet from buffer
 
     def create_anim(self, bin_count, center_freq, iq_rate, vmin, vmax):
 
@@ -367,54 +528,6 @@ class StreamConnectionThread(BaseConnectionThread):
         grid_spec.update()
         self.fig_ref.canvas.draw()
 
-    def receive_processing(self, data: bytes):
-        self.buffer += bytearray(data)
-        if len(self.buffer) >= 8:  # packet header is 28 bytes
-            stream_id = int.from_bytes(self.buffer[0:4], "little")
-            type_id = int.from_bytes(self.buffer[4:8], "little")
-            if type_id == 2:  # end of file, flush buffer
-                self.buffer = bytearray()
-                self.animation_started = False
-                self.status_label_ref.config(
-                    text=f"End of file"
-                )
-            elif len(self.buffer) >= 28 and type_id == 1:
-                center_frequency = struct.unpack('f', self.buffer[8:12])[0]
-                iq_rate = struct.unpack('f', self.buffer[12:16])[0]
-                sample_index = int.from_bytes(self.buffer[16:24], "little")
-                bin_count = int.from_bytes(self.buffer[24:28], "little")
-                packet_size = 3 * 4 * bin_count + 28
-                if len(self.buffer) >= packet_size:  # we got the entire packet in buffer
-                    self.status_label_ref.config(
-                        text=f"Packet {self.packet_count} - Stream {stream_id}, index {sample_index}"
-                    )
-                    magnitude_spectrum = np.asarray(struct.unpack(f"{bin_count}f", self.buffer[28:28 + bin_count * 4]))
-
-                    if (
-                        not self.animation_started
-                        or bin_count != self.waterfall.shape[1]
-                        or center_frequency != self._center_frequency
-                        or iq_rate != self._iq_rate
-                    ):
-                        # Animation can be created, because at this point we know bin count and other properties
-                        # Also restart when bin count or any other parameter has changed
-                        self.create_anim(bin_count, center_frequency, iq_rate, np.min(magnitude_spectrum),
-                                         np.max(magnitude_spectrum))
-                        self._iq_rate = iq_rate
-                        self._center_frequency = center_frequency
-                        self.animation_started = True
-
-                    self.azimuth_spectrum = np.asarray(
-                        struct.unpack(f"{bin_count}f", self.buffer[28 + bin_count * 4: 28 + bin_count * 4 * 2]))
-                    self.elevation_spectrum = np.asarray(
-                        struct.unpack(f"{bin_count}f", self.buffer[28 + bin_count * 4 * 2: 28 + bin_count * 4 * 3]))
-                    # FIFO on the waterfall data structure
-                    self.waterfall = np.append(self.waterfall[-self.waterfall_size + 1:, :], [magnitude_spectrum],
-                                               axis=0)
-
-                    self.packet_count += 1
-                    self.buffer = self.buffer[packet_size:]  # drop packet from buffer
-
 
 class ClientWindow(tkinter.Frame):
 
@@ -450,8 +563,19 @@ class ClientWindow(tkinter.Frame):
         status_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
         status_frame.pack(fill=tkinter.BOTH, side=tkinter.BOTTOM, expand=False)
 
-        self.status_label = tkinter.Label(status_frame, text="Not connected")
-        self.status_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
+        status_command_label_label = tkinter.Label(status_frame, text="Command:",
+                                                   font=tkinter.font.Font(weight=tkinter.font.BOLD, size=10))
+        status_command_label_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
+
+        self.status_command_label = tkinter.Label(status_frame, text="Not connected", font=tkinter.font.Font(size=10))
+        self.status_command_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
+
+        status_stream_label_label = tkinter.Label(status_frame, text="Stream:",
+                                                  font=tkinter.font.Font(weight=tkinter.font.BOLD, size=10))
+        status_stream_label_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
+
+        self.status_stream_label = tkinter.Label(status_frame, text="Not connected", font=tkinter.font.Font(size=10))
+        self.status_stream_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
 
         connect_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
         connect_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
@@ -595,7 +719,6 @@ class ClientWindow(tkinter.Frame):
             self.command_entry.icursor(tkinter.END)
             return 'break'
 
-
         self.command_entry = tkinter.Entry(command_frame, textvariable=self.command_string)
         self.command_entry.pack(side=tkinter.TOP, fill=tkinter.X, padx=5, expand=True)
         self.command_entry.bind('<Return>', send_cmd)
@@ -672,15 +795,15 @@ class ClientWindow(tkinter.Frame):
         self.command_thread.connect_action = self.connect_action
         self.command_thread.disconnect_action = self.disconnect_action
         self.command_thread.host_port = self.host_command.get()
-        self.command_thread.status_label_ref = self.status_label
+        self.command_thread.status_label_ref = self.status_command_label
         self.command_thread.start()
         self.stream_thread = StreamConnectionThread()
         self.stream_thread.recreate_canvas_action = self.create_canvas
-        self.stream_thread.connect_action = self.connect_action
-        self.stream_thread.disconnect_action = self.disconnect_action
+        # self.stream_thread.connect_action = self.connect_action
+        # self.stream_thread.disconnect_action = self.disconnect_action
         self.stream_thread.host_port = self.host_stream.get()
         self.stream_thread.canvas_ref = self.canvas
-        self.stream_thread.status_label_ref = self.status_label
+        self.stream_thread.status_label_ref = self.status_stream_label
         self.stream_thread.start()
         with open('hosts.txt', 'w') as f1:
             f1.write(self.host_command.get() + '\n')
@@ -700,3 +823,5 @@ if __name__ == '__main__':
     root.geometry("1024x768")
     root.wm_title("CS Test Client")
     root.mainloop()
+    ex.command_thread.disconnect = True
+    ex.stream_thread.disconnect = True
