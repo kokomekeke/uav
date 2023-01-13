@@ -3,6 +3,7 @@
 # Created by aron.szabo@sagaxcommunications.com on 21/12/2022.
 #
 from __future__ import annotations
+
 import multiprocessing
 import os
 import queue
@@ -12,15 +13,18 @@ import threading
 import tkinter
 import typing
 from time import sleep
-from typing import Optional, Callable, Any
+from typing import Any, Callable, Optional
 
 import matplotlib.cm
 import numpy as np
 import numpy.typing as npt
 from matplotlib import pyplot
 from matplotlib.animation import FuncAnimation  # type: ignore
-from matplotlib.backend_bases import key_press_handler, KeyEvent  # type: ignore
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk  # type: ignore
+from matplotlib.backend_bases import KeyEvent, key_press_handler  # type: ignore
+from matplotlib.backends.backend_tkagg import (  # type: ignore
+    FigureCanvasTkAgg,
+    NavigationToolbar2Tk,
+)
 
 
 class CoreServicePacket:
@@ -148,7 +152,6 @@ class BaseConnectionThread(threading.Thread):
 
 
 class CommandsConnectionThread(BaseConnectionThread):
-
     def __init__(self) -> None:
         super().__init__()
         self.console_textarea_ref: Optional[tkinter.Text] = None
@@ -163,11 +166,13 @@ class CommandsConnectionThread(BaseConnectionThread):
 
     def receive_on_socket(self, data: bytes) -> None:
         assert self.console_textarea_ref
-        self.console_textarea_ref.configure(state='normal')  # Textarea has to be unlocked to enable modification
-        self.console_textarea_ref.insert(tkinter.END, '\n')
+        self.console_textarea_ref.configure(
+            state="normal"
+        )  # Textarea has to be unlocked to enable modification
+        self.console_textarea_ref.insert(tkinter.END, "\n")
         self.console_textarea_ref.insert(tkinter.END, data.decode())
         self.console_textarea_ref.see(tkinter.END)  # Scroll to the bottom
-        self.console_textarea_ref.configure(state='disabled')  # Block user editing
+        self.console_textarea_ref.configure(state="disabled")  # Block user editing
 
     def display_status(self, message: str) -> None:
         assert self.status_label_ref
@@ -175,7 +180,6 @@ class CommandsConnectionThread(BaseConnectionThread):
 
 
 class StreamConnectionThread(BaseConnectionThread):
-
     def __init__(self) -> None:
         super().__init__()
 
@@ -305,7 +309,7 @@ class StreamConnectionThread(BaseConnectionThread):
         The string elements of the status queue are the messages to be displayed on the GUI status bar
         """
 
-        disconnect_value = manager.Value('i', 0)
+        disconnect_value = manager.Value("i", 0)
         """
         Setting the '1' value of the disconnect_value multiprocessing variable will end the multiprocessing task on the
         next iteration.
@@ -333,14 +337,16 @@ class StreamConnectionThread(BaseConnectionThread):
         watcher_thread = threading.Thread(target=status_watcher, daemon=True)
         watcher_thread.start()
 
-        packets_queue: multiprocessing.Queue[CoreServicePacket] = multiprocessing.Queue()
+        packets_queue: multiprocessing.Queue[
+            CoreServicePacket
+        ] = multiprocessing.Queue()
         """
         This queue will transfer the processed packets from the streaming process to the main (GUI) process
         """
 
         streaming_process = multiprocessing.Process(
             target=self.run_process,
-            args=(packets_queue, disconnect_value, status_queue)
+            args=(packets_queue, disconnect_value, status_queue),
         )
         """
         The purpose of moving the streaming TCP/IP connection and preprocessing of the packets to a separate 
@@ -359,15 +365,13 @@ class StreamConnectionThread(BaseConnectionThread):
             except queue.Empty:
                 continue
             if packet.end_of_file:
-                self.status_label_ref.config(
-                    text=f"End of file"
-                )
+                self.status_label_ref.config(text=f"End of file")
                 break
             if (
-                    not self.animation_started
-                    or packet.bin_count != self.waterfall.shape[1]
-                    or packet.center_frequency != self._center_frequency
-                    or packet.iq_rate != self._iq_rate
+                not self.animation_started
+                or packet.bin_count != self.waterfall.shape[1]
+                or packet.center_frequency != self._center_frequency
+                or packet.iq_rate != self._iq_rate
             ):
                 # Animation can be created, because at this point we know bin count and other properties
                 # Also restart when bin count or any other parameter has changed
@@ -376,7 +380,7 @@ class StreamConnectionThread(BaseConnectionThread):
                     center_freq=packet.center_frequency,
                     iq_rate=packet.iq_rate,
                     vmin=float(np.min(packet.magnitude_spectrum)),
-                    vmax=float(np.max(packet.magnitude_spectrum))
+                    vmax=float(np.max(packet.magnitude_spectrum)),
                 )  # type: ignore
                 self._iq_rate = packet.iq_rate
                 self._center_frequency = packet.center_frequency
@@ -385,8 +389,11 @@ class StreamConnectionThread(BaseConnectionThread):
             self.azimuth_spectrum = packet.azimuth_spectrum
             self.elevation_spectrum = packet.elevation_spectrum
             # FIFO on the waterfall data structure
-            self.waterfall = np.append(self.waterfall[-self.waterfall_size + 1:, :], [packet.magnitude_spectrum],
-                                       axis=0)
+            self.waterfall = np.append(
+                self.waterfall[-self.waterfall_size + 1 :, :],
+                [packet.magnitude_spectrum],
+                axis=0,
+            )
 
             # self.status_label_ref.config(
             #     text=f"Packet {packet.packet_index} - Stream {packet.stream_id}, index {packet.sample_index}"
@@ -396,9 +403,12 @@ class StreamConnectionThread(BaseConnectionThread):
         self.animation_started = False
         streaming_process.join()
 
-    def run_process(self, packets_queue: multiprocessing.Queue[CoreServicePacket],
-                    disconnect_value: multiprocessing.managers.ValueProxy[int],
-                    status_value: multiprocessing.Queue[str]) -> None:
+    def run_process(
+        self,
+        packets_queue: multiprocessing.Queue[CoreServicePacket],
+        disconnect_value: multiprocessing.managers.ValueProxy[int],
+        status_value: multiprocessing.Queue[str],
+    ) -> None:
         """
         THIS RUNS ON THE STREAMING PROCESS
         Entry point of the stream collecting process.
@@ -441,25 +451,38 @@ class StreamConnectionThread(BaseConnectionThread):
                 self.mp_queue.put(cs_packet)
                 self.buffer = bytearray()
             elif len(self.buffer) >= 28 and type_id == 1:
-                cs_packet.center_frequency = struct.unpack('f', self.buffer[8:12])[0]
-                cs_packet.iq_rate = struct.unpack('f', self.buffer[12:16])[0]
+                cs_packet.center_frequency = struct.unpack("f", self.buffer[8:12])[0]
+                cs_packet.iq_rate = struct.unpack("f", self.buffer[12:16])[0]
                 cs_packet.sample_index = int.from_bytes(self.buffer[16:24], "little")
                 cs_packet.bin_count = int.from_bytes(self.buffer[24:28], "little")
                 packet_size = 3 * 4 * cs_packet.bin_count + 28
-                if len(self.buffer) >= packet_size:  # we got the entire packet in buffer
+                if (
+                    len(self.buffer) >= packet_size
+                ):  # we got the entire packet in buffer
                     cs_packet.magnitude_spectrum = np.asarray(
-                        struct.unpack(f"{cs_packet.bin_count}f", self.buffer[28:28 + cs_packet.bin_count * 4])
+                        struct.unpack(
+                            f"{cs_packet.bin_count}f",
+                            self.buffer[28 : 28 + cs_packet.bin_count * 4],
+                        )
                     )
                     cs_packet.azimuth_spectrum = np.asarray(
                         struct.unpack(
                             f"{cs_packet.bin_count}f",
-                            self.buffer[28 + cs_packet.bin_count * 4: 28 + cs_packet.bin_count * 4 * 2]
+                            self.buffer[
+                                28
+                                + cs_packet.bin_count * 4 : 28
+                                + cs_packet.bin_count * 4 * 2
+                            ],
                         )
                     )
                     cs_packet.elevation_spectrum = np.asarray(
                         struct.unpack(
                             f"{cs_packet.bin_count}f",
-                            self.buffer[28 + cs_packet.bin_count * 4 * 2: 28 + cs_packet.bin_count * 4 * 3]
+                            self.buffer[
+                                28
+                                + cs_packet.bin_count * 4 * 2 : 28
+                                + cs_packet.bin_count * 4 * 3
+                            ],
                         )
                     )
                     self.packet_count += 1
@@ -478,7 +501,14 @@ class StreamConnectionThread(BaseConnectionThread):
                     self.buffer = self.buffer[packet_size:]  # drop packet from buffer
 
     @typing.no_type_check
-    def create_anim(self, bin_count: int, center_freq: float, iq_rate: float, vmin: float, vmax: float) -> None:
+    def create_anim(
+        self,
+        bin_count: int,
+        center_freq: float,
+        iq_rate: float,
+        vmin: float,
+        vmax: float,
+    ) -> None:
         """
         Creates matplotlib animation on the GUI
         """
@@ -511,7 +541,11 @@ class StreamConnectionThread(BaseConnectionThread):
                 step = self._max / 4
                 locs: list[float] = []
                 while len(locs) < 4:
-                    locs = [loc for loc in np.arange(0, self._max, step) if vmin <= loc <= vmax]
+                    locs = [
+                        loc
+                        for loc in np.arange(0, self._max, step)
+                        if vmin <= loc <= vmax
+                    ]
                     step /= 2
                 if self._max <= vmax:
                     locs.append(self._max)
@@ -521,7 +555,9 @@ class StreamConnectionThread(BaseConnectionThread):
                 """
                 Set the view limits
                 """
-                return matplotlib.transforms.nonsingular(dmin, dmax, expander=1e-12, tiny=1e-13)
+                return matplotlib.transforms.nonsingular(
+                    dmin, dmax, expander=1e-12, tiny=1e-13
+                )
 
         def update_imag(frame_number: int) -> list[matplotlib.artist.Artist]:
             """
@@ -547,7 +583,7 @@ class StreamConnectionThread(BaseConnectionThread):
             else:
                 val = 0
             return (
-                f"Frequency: {bin_freq_formatter(x)} (bin {int(x)}), " 
+                f"Frequency: {bin_freq_formatter(x)} (bin {int(x)}), "
                 f"Angle: {val:.3f} rad ({val / np.pi * 180:.2f} deg)"
             )
 
@@ -565,19 +601,34 @@ class StreamConnectionThread(BaseConnectionThread):
         assert self.fig_ref
         self.fig_ref.clf()
         # grid_spec = GridSpec(nrows=2, ncols=2, figure=self.fig_ref)
-        grid_spec = self.fig_ref.add_gridspec(nrows=2, ncols=2, width_ratios=(3, 2), height_ratios=(1, 1))
+        grid_spec = self.fig_ref.add_gridspec(
+            nrows=2, ncols=2, width_ratios=(3, 2), height_ratios=(1, 1)
+        )
         self.magnitude_plot = self.fig_ref.add_subplot(grid_spec[:, 0])
         self.azimuth_plot = self.fig_ref.add_subplot(grid_spec[0, 1])
         self.elevation_plot = self.fig_ref.add_subplot(grid_spec[1, 1])
-        self.magnitude_image = self.magnitude_plot.imshow(self.waterfall, cmap=matplotlib.cm.get_cmap('gnuplot'),
-                                                          animated=True, vmax=vmax, vmin=vmin)
+        self.magnitude_image = self.magnitude_plot.imshow(
+            self.waterfall,
+            cmap=matplotlib.cm.get_cmap("gnuplot"),
+            animated=True,
+            vmax=vmax,
+            vmin=vmin,
+        )
 
-        self.azimuth_image = self.azimuth_plot.plot(self.azimuth_spectrum, lw=1, color='red', animated=True)[0]
-        self.elevation_image = self.elevation_plot.plot(self.elevation_spectrum, lw=1, color='blue', animated=True)[0]
-        self.magnitude_plot.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(bin_freq_formatter))
+        self.azimuth_image = self.azimuth_plot.plot(
+            self.azimuth_spectrum, lw=1, color="red", animated=True
+        )[0]
+        self.elevation_image = self.elevation_plot.plot(
+            self.elevation_spectrum, lw=1, color="blue", animated=True
+        )[0]
+        self.magnitude_plot.xaxis.set_major_formatter(
+            matplotlib.ticker.FuncFormatter(bin_freq_formatter)
+        )
         self.magnitude_plot.xaxis.set_major_locator(HalfLocator(max=bin_count))
-        self.magnitude_plot.tick_params(axis='x', labelrotation=45)
-        self.magnitude_plot.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(sample_id_formatter))
+        self.magnitude_plot.tick_params(axis="x", labelrotation=45)
+        self.magnitude_plot.yaxis.set_major_formatter(
+            matplotlib.ticker.FuncFormatter(sample_id_formatter)
+        )
         self.magnitude_plot.format_coord = magnitude_format_coord
 
         self.magnitude_plot.set_label("Magnitude")
@@ -585,11 +636,15 @@ class StreamConnectionThread(BaseConnectionThread):
         self.magnitude_plot.set_aspect("auto")
 
         pi_chr = chr(0x03C0)
-        self.azimuth_plot.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(bin_freq_formatter))
+        self.azimuth_plot.xaxis.set_major_formatter(
+            matplotlib.ticker.FuncFormatter(bin_freq_formatter)
+        )
         self.azimuth_plot.xaxis.set_major_locator(HalfLocator(max=bin_count))
-        self.azimuth_plot.tick_params(axis='x', labelrotation=45)
-        self.azimuth_plot.yaxis.set_major_formatter(matplotlib.ticker.StrMethodFormatter("{x:.2f}"))
-        self.azimuth_plot.grid(axis='both')
+        self.azimuth_plot.tick_params(axis="x", labelrotation=45)
+        self.azimuth_plot.yaxis.set_major_formatter(
+            matplotlib.ticker.StrMethodFormatter("{x:.2f}")
+        )
+        self.azimuth_plot.grid(axis="both")
         self.azimuth_plot.format_coord = azimuth_format_coord
         self.azimuth_plot.set_ylim(-np.pi, np.pi)
         self.azimuth_plot.set_yticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi])
@@ -600,11 +655,15 @@ class StreamConnectionThread(BaseConnectionThread):
         self.azimuth_plot.set_label("Azimuth")
         self.azimuth_plot.set_aspect("auto")
 
-        self.elevation_plot.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(bin_freq_formatter))
+        self.elevation_plot.xaxis.set_major_formatter(
+            matplotlib.ticker.FuncFormatter(bin_freq_formatter)
+        )
         self.elevation_plot.xaxis.set_major_locator(HalfLocator(max=bin_count))
-        self.elevation_plot.tick_params(axis='x', labelrotation=45)
-        self.elevation_plot.yaxis.set_major_formatter(matplotlib.ticker.StrMethodFormatter("{x:.2f}"))
-        self.elevation_plot.grid(axis='both')
+        self.elevation_plot.tick_params(axis="x", labelrotation=45)
+        self.elevation_plot.yaxis.set_major_formatter(
+            matplotlib.ticker.StrMethodFormatter("{x:.2f}")
+        )
+        self.elevation_plot.grid(axis="both")
         self.elevation_plot.format_coord = elevation_format_coord
         self.elevation_plot.set_ylim(-np.pi, np.pi)
         self.elevation_plot.set_yticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi])
@@ -615,14 +674,15 @@ class StreamConnectionThread(BaseConnectionThread):
         self.elevation_plot.set_label("Elevation")
         self.elevation_plot.set_aspect("auto")
 
-        self.animation = FuncAnimation(self.fig_ref, update_imag, interval=25, blit=True)
+        self.animation = FuncAnimation(
+            self.fig_ref, update_imag, interval=25, blit=True
+        )
         grid_spec.tight_layout(figure=self.fig_ref)
         grid_spec.update()
         self.fig_ref.canvas.draw()
 
 
 class ClientWindow(tkinter.Frame):
-
     def __init__(self) -> None:
         super().__init__()
         self.fig: Optional[pyplot.Figure] = None
@@ -643,7 +703,7 @@ class ClientWindow(tkinter.Frame):
 
         # Load host settings into the address boxes
         if os.path.exists("hosts.txt"):
-            with open('hosts.txt') as f:
+            with open("hosts.txt") as f:
                 self.host_command.set(f.readline().strip())
                 self.host_stream.set(f.readline().strip())
 
@@ -655,40 +715,62 @@ class ClientWindow(tkinter.Frame):
         status_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
         status_frame.pack(fill=tkinter.BOTH, side=tkinter.BOTTOM, expand=False)
 
-        status_command_label_label = tkinter.Label(status_frame, text="Command:",
-                                                   font=tkinter.font.Font(weight=tkinter.font.BOLD, size=10))
+        status_command_label_label = tkinter.Label(
+            status_frame,
+            text="Command:",
+            font=tkinter.font.Font(weight=tkinter.font.BOLD, size=10),
+        )
         status_command_label_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
 
-        self.status_command_label = tkinter.Label(status_frame, text="Not connected", font=tkinter.font.Font(size=10))
+        self.status_command_label = tkinter.Label(
+            status_frame, text="Not connected", font=tkinter.font.Font(size=10)
+        )
         self.status_command_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
 
-        status_stream_label_label = tkinter.Label(status_frame, text="Stream:",
-                                                  font=tkinter.font.Font(weight=tkinter.font.BOLD, size=10))
+        status_stream_label_label = tkinter.Label(
+            status_frame,
+            text="Stream:",
+            font=tkinter.font.Font(weight=tkinter.font.BOLD, size=10),
+        )
         status_stream_label_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
 
-        self.status_stream_label = tkinter.Label(status_frame, text="Not connected", font=tkinter.font.Font(size=10))
+        self.status_stream_label = tkinter.Label(
+            status_frame, text="Not connected", font=tkinter.font.Font(size=10)
+        )
         self.status_stream_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
 
         connect_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
         connect_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
 
         host_command_label = tkinter.Label(connect_frame, text="Command host:")
-        host_command_label.pack(side=tkinter.LEFT, fill=tkinter.BOTH, padx=5, pady=10, expand=True)
+        host_command_label.pack(
+            side=tkinter.LEFT, fill=tkinter.BOTH, padx=5, pady=10, expand=True
+        )
 
-        self.host_command_entry = tkinter.Entry(connect_frame, textvariable=self.host_command)
+        self.host_command_entry = tkinter.Entry(
+            connect_frame, textvariable=self.host_command
+        )
         self.host_command_entry.pack(side=tkinter.LEFT, padx=5, expand=True)
 
         host_stream_label = tkinter.Label(connect_frame, text="Stream host:")
-        host_stream_label.pack(side=tkinter.LEFT, fill=tkinter.BOTH, padx=5, pady=10, expand=True)
+        host_stream_label.pack(
+            side=tkinter.LEFT, fill=tkinter.BOTH, padx=5, pady=10, expand=True
+        )
 
-        self.host_stream_entry = tkinter.Entry(connect_frame, textvariable=self.host_stream)
+        self.host_stream_entry = tkinter.Entry(
+            connect_frame, textvariable=self.host_stream
+        )
         self.host_stream_entry.pack(side=tkinter.LEFT, padx=5, expand=True)
 
-        self.disconnect_button = tkinter.Button(connect_frame, text="Disconnect", command=self.disconnect_commands)
+        self.disconnect_button = tkinter.Button(
+            connect_frame, text="Disconnect", command=self.disconnect_commands
+        )
         self.disconnect_button.pack(side=tkinter.RIGHT, padx=5, pady=5)
-        self.disconnect_button.configure(state='disabled')
+        self.disconnect_button.configure(state="disabled")
 
-        self.connect_button = tkinter.Button(connect_frame, text="Connect", command=self.connect_commands)
+        self.connect_button = tkinter.Button(
+            connect_frame, text="Connect", command=self.connect_commands
+        )
         self.connect_button.pack(side=tkinter.RIGHT)
 
         self.plot_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
@@ -698,7 +780,7 @@ class ClientWindow(tkinter.Frame):
 
         # Load command suggestions from file
         if os.path.exists("commands.txt"):
-            with open('commands.txt') as f:
+            with open("commands.txt") as f:
                 for line in f:
                     self.command_suggestions.add(line.strip())
 
@@ -716,14 +798,14 @@ class ClientWindow(tkinter.Frame):
                 self.command_suggestions.add(command.split("!")[0] + "!")
             command_history_sorted = list(self.command_suggestions)
             command_history_sorted.sort()
-            with open('commands.txt', 'w') as f1:
-                f1.writelines(h + '\n' for h in command_history_sorted)
+            with open("commands.txt", "w") as f1:
+                f1.writelines(h + "\n" for h in command_history_sorted)
 
         command_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
         command_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
         self.console_textarea = tkinter.Text(command_frame, height=5, width=52)
         self.console_textarea.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
-        self.console_textarea.configure(state='disabled')
+        self.console_textarea.configure(state="disabled")
 
         # Configure a tag for the console area to indicate sent commands with blue
         # (received response will be default black)
@@ -747,12 +829,16 @@ class ClientWindow(tkinter.Frame):
                 cmd_line += ";"
                 save_command_to_suggestions(cmd_line)
                 self.command_thread.client_socket.send(cmd_line.encode())
-                self.console_textarea.configure(state='normal')  # Textarea has to be unlocked to enable modification
-                self.console_textarea.insert(tkinter.END, '\n')
+                self.console_textarea.configure(
+                    state="normal"
+                )  # Textarea has to be unlocked to enable modification
+                self.console_textarea.insert(tkinter.END, "\n")
                 self.console_textarea.insert(tkinter.END, cmd_line)
-                self.console_textarea.tag_add("i", "end -1 lines", "end -1 chars")  # Tag, so that it will be blue
+                self.console_textarea.tag_add(
+                    "i", "end -1 lines", "end -1 chars"
+                )  # Tag, so that it will be blue
                 self.console_textarea.see(tkinter.END)  # Scroll to the bottom
-                self.console_textarea.configure(state='disabled')  # Block user editing
+                self.console_textarea.configure(state="disabled")  # Block user editing
                 sleep(0.1)
 
         def suggestions_filter(*args: Any) -> None:
@@ -762,20 +848,27 @@ class ClientWindow(tkinter.Frame):
             command_suggestions_lb.delete(0, tkinter.END)  # Clear suggestions box
             command_history_sorted = list(self.command_suggestions)
             command_history_sorted.sort()
-            typed_command_string = self.command_string.get()  # Typed in command (fragment)
+            typed_command_string = (
+                self.command_string.get()
+            )  # Typed in command (fragment)
             if ":" not in typed_command_string:
                 # If no ":" yet, display only command beginning fragments
-                command_history_sorted = list(filter(
-                    lambda command: ":" not in command or command.endswith(":"),
-                    command_history_sorted
-                ))
+                command_history_sorted = list(
+                    filter(
+                        lambda command: ":" not in command or command.endswith(":"),
+                        command_history_sorted,
+                    )
+                )
             if not ("?" in typed_command_string or "!" in typed_command_string):
                 # Do not display commands with arguments, if the whole command has not been typed yet.
-                command_history_sorted = list(filter(
-                    lambda command: ("!" not in command and "?" not in command)
-                                    or command.endswith("!") or command.endswith("?"),
-                    command_history_sorted
-                ))
+                command_history_sorted = list(
+                    filter(
+                        lambda command: ("!" not in command and "?" not in command)
+                        or command.endswith("!")
+                        or command.endswith("?"),
+                        command_history_sorted,
+                    )
+                )
             for history_item in command_history_sorted:
                 if history_item.upper().startswith(typed_command_string.upper()):
                     command_suggestions_lb.insert(tkinter.END, history_item)
@@ -787,7 +880,7 @@ class ClientWindow(tkinter.Frame):
             self.command_string.set(command_suggestions_lb.get(0))
             self.command_entry.focus()
             self.command_entry.icursor(tkinter.END)
-            return 'break'
+            return "break"
 
         def to_suggestions_list(*args: Any) -> str:
             """
@@ -795,7 +888,7 @@ class ClientWindow(tkinter.Frame):
             """
             command_suggestions_lb.focus()
             self.command_string.set(command_suggestions_lb.get(0))
-            return 'break'
+            return "break"
 
         def select_suggestion_cmd(*args: Any) -> None:
             """
@@ -813,15 +906,17 @@ class ClientWindow(tkinter.Frame):
             """
             self.command_entry.focus()
             self.command_entry.icursor(tkinter.END)
-            return 'break'
+            return "break"
 
-        self.command_entry = tkinter.Entry(command_frame, textvariable=self.command_string)
+        self.command_entry = tkinter.Entry(
+            command_frame, textvariable=self.command_string
+        )
         self.command_entry.pack(side=tkinter.TOP, fill=tkinter.X, padx=5, expand=True)
-        self.command_entry.bind('<Return>', send_cmd)
-        self.command_entry.bind('<KeyRelease>', suggestions_filter)
-        self.command_entry.bind('<Tab>', autocomplete)
-        self.command_entry.bind('<Down>', to_suggestions_list)
-        self.command_entry.configure(state='disabled')
+        self.command_entry.bind("<Return>", send_cmd)
+        self.command_entry.bind("<KeyRelease>", suggestions_filter)
+        self.command_entry.bind("<Tab>", autocomplete)
+        self.command_entry.bind("<Down>", to_suggestions_list)
+        self.command_entry.configure(state="disabled")
 
         command_suggestions_lb = tkinter.Listbox(command_frame, height=4)
 
@@ -829,7 +924,9 @@ class ClientWindow(tkinter.Frame):
         command_suggestions_lb.bind("<Tab>", to_command_box)
         command_suggestions_lb.bind("<Return>", to_command_box)
 
-        command_suggestions_lb.pack(side=tkinter.TOP, fill=tkinter.X, padx=5, expand=False)
+        command_suggestions_lb.pack(
+            side=tkinter.TOP, fill=tkinter.X, padx=5, expand=False
+        )
         suggestions_filter()
 
     def create_canvas(self) -> None:
@@ -846,7 +943,9 @@ class ClientWindow(tkinter.Frame):
             self.canvas_toolbar = None
         self.fig = pyplot.Figure(tight_layout=True)  # type: ignore
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_frame)
-        self.canvas.get_tk_widget().pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=True)
+        self.canvas.get_tk_widget().pack(
+            side=tkinter.TOP, fill=tkinter.BOTH, expand=True
+        )
 
         self.canvas_toolbar = NavigationToolbar2Tk(self.canvas, self.plot_frame)
         self.canvas_toolbar.update()
@@ -864,22 +963,22 @@ class ClientWindow(tkinter.Frame):
         """
         Events triggered by successful connection
         """
-        self.connect_button.configure(state='disabled')
-        self.host_command_entry.configure(state='disabled')
-        self.host_stream_entry.configure(state='disabled')
-        self.disconnect_button.configure(state='normal')
-        self.command_entry.configure(state='normal')
+        self.connect_button.configure(state="disabled")
+        self.host_command_entry.configure(state="disabled")
+        self.host_stream_entry.configure(state="disabled")
+        self.disconnect_button.configure(state="normal")
+        self.command_entry.configure(state="normal")
         self.command_entry.focus()
 
     def disconnect_action(self) -> None:
         """
         Events triggered by client disconnect
         """
-        self.disconnect_button.configure(state='disabled')
-        self.command_entry.configure(state='disabled')
-        self.host_command_entry.configure(state='normal')
-        self.host_stream_entry.configure(state='normal')
-        self.connect_button.configure(state='normal')
+        self.disconnect_button.configure(state="disabled")
+        self.command_entry.configure(state="disabled")
+        self.host_command_entry.configure(state="normal")
+        self.host_stream_entry.configure(state="normal")
+        self.connect_button.configure(state="normal")
         self.command_string.set("")
         self.disconnect_commands()  # to disconnect the other thread
 
@@ -899,9 +998,9 @@ class ClientWindow(tkinter.Frame):
         self.stream_thread.host_port = self.host_stream.get()
         self.stream_thread.status_label_ref = self.status_stream_label
         self.stream_thread.start()
-        with open('hosts.txt', 'w') as f1:
-            f1.write(self.host_command.get() + '\n')
-            f1.write(self.host_stream.get() + '\n')
+        with open("hosts.txt", "w") as f1:
+            f1.write(self.host_command.get() + "\n")
+            f1.write(self.host_stream.get() + "\n")
 
     def disconnect_commands(self) -> None:
         """
@@ -913,7 +1012,7 @@ class ClientWindow(tkinter.Frame):
             self.stream_thread.disconnect = True
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     root = tkinter.Tk()
     ex = ClientWindow()
     root.geometry("1024x768")
