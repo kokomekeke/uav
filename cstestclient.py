@@ -469,9 +469,9 @@ class StreamConnectionThread(BaseConnectionThread):
                         struct.unpack(
                             f"{cs_packet.bin_count}f",
                             self.buffer[
-                                28
-                                + cs_packet.bin_count * 4 : 28
-                                + cs_packet.bin_count * 4 * 2
+                                (28 + cs_packet.bin_count * 4) : (
+                                    28 + cs_packet.bin_count * 4 * 2
+                                )
                             ],
                         )
                     )
@@ -479,9 +479,9 @@ class StreamConnectionThread(BaseConnectionThread):
                         struct.unpack(
                             f"{cs_packet.bin_count}f",
                             self.buffer[
-                                28
-                                + cs_packet.bin_count * 4 * 2 : 28
-                                + cs_packet.bin_count * 4 * 3
+                                (28 + cs_packet.bin_count * 4 * 2) : (
+                                    28 + cs_packet.bin_count * 4 * 3
+                                )
                             ],
                         )
                     )
