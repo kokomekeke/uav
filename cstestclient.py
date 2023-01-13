@@ -465,10 +465,16 @@ class StreamConnectionThread(BaseConnectionThread):
                     self.packet_count += 1
                     cs_packet.packet_index = self.packet_count
                     self.mp_queue.put(cs_packet)
-                    self.display_status(
-                        f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
-                        f"index {cs_packet.sample_index} | Queue count: {self.mp_queue.qsize()}"
-                    )
+                    try:
+                        self.display_status(
+                            f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
+                            f"index {cs_packet.sample_index} | Queue count: {self.mp_queue.qsize()}"
+                        )
+                    except NotImplementedError:
+                        self.display_status(
+                            f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
+                            f"index {cs_packet.sample_index}"
+                        )
                     self.buffer = self.buffer[packet_size:]  # drop packet from buffer
 
     @typing.no_type_check
