@@ -2,6 +2,7 @@
 #
 # Created by aron.szabo@sagaxcommunications.com on 21/12/2022.
 #
+from __future__ import annotations
 import multiprocessing
 import os
 import queue
@@ -9,21 +10,21 @@ import socket
 import struct
 import threading
 import tkinter
+import typing
 from time import sleep
-from typing import Optional
+from typing import Optional, Callable, Any
 
 import matplotlib.cm
 import numpy as np
-from matplotlib import pyplot, ticker, transforms
-from matplotlib.animation import FuncAnimation
-from matplotlib.backend_bases import key_press_handler
-from matplotlib.backends.backend_tkagg import (
-    FigureCanvasTkAgg, NavigationToolbar2Tk)
-from matplotlib.gridspec import GridSpec
+import numpy.typing as npt
+from matplotlib import pyplot
+from matplotlib.animation import FuncAnimation  # type: ignore
+from matplotlib.backend_bases import key_press_handler, KeyEvent  # type: ignore
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk  # type: ignore
 
 
 class CoreServicePacket:
-    def __init__(self):
+    def __init__(self) -> None:
         self.stream_id: int = 0
         self.end_of_file: bool = False
         self.center_frequency: float = 0
@@ -31,9 +32,9 @@ class CoreServicePacket:
         self.sample_index: int = 0
         self.packet_index: int = 0
         self.bin_count: int = 0
-        self.magnitude_spectrum: np.ndarray = np.zeros([1])
-        self.azimuth_spectrum: np.ndarray = np.zeros([1])
-        self.elevation_spectrum: np.ndarray = np.zeros([1])
+        self.magnitude_spectrum: npt.NDArray[np.float64] = np.zeros([1])
+        self.azimuth_spectrum: npt.NDArray[np.float64] = np.zeros([1])
+        self.elevation_spectrum: npt.NDArray[np.float64] = np.zeros([1])
 
 
 class BaseConnectionThread(threading.Thread):
@@ -41,7 +42,7 @@ class BaseConnectionThread(threading.Thread):
     Base class for both the Command and Stream connections.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         # Thread is daemon, it will quit on closing the program.
         self.daemon = True
@@ -51,47 +52,56 @@ class BaseConnectionThread(threading.Thread):
         Host and port in <address>:<tcp port> format.
         """
 
-        self.client_socket = None
+        self.client_socket: Optional[socket.socket] = None
         """
         Python client socket object 
         """
 
-        self.disconnect = False
+        self.disconnect: bool = False
         """
         When the disconnect flag is set, the thread loop will quit on the next iteration.
         """
 
-        self.connected = False
+        self.connected: bool = False
         """
         Flag that indicates if the socket is connected.
         """
 
-        self.connect_action = None
+        self.connect_action: Optional[Callable[[], None]] = None
         """
         This function handle is called when the socket is connected.
         """
 
-        self.disconnect_action = None
+        self.disconnect_action: Optional[Callable[[], None]] = None
         """
         This function handle is called when the socket is disconnected.
         """
 
-        self.buf_size = 2048
+        self.buf_size: int = 2048
         """
         This buffer size will be read at once from the TCP socket.
         """
 
-    def display_status(self, message):
+    def display_status(self, message: str) -> None:
+        """
+        Display a status message (on the GUI status bar)
+        """
         pass
 
-    def run(self):
+    def run(self) -> None:
+        """
+        Entry point of the thread
+        """
         self.disconnect = False
         self.run_socket()
 
-    def is_disconnect(self):
+    def is_disconnect(self) -> bool:
+        """
+        Returns: if the socket should manually disconnect
+        """
         return self.disconnect
 
-    def run_socket(self):
+    def run_socket(self) -> None:
         host_port_split = self.host_port.split(":")
         host, port = (host_port_split[0], host_port_split[1])
         try:
@@ -125,52 +135,66 @@ class BaseConnectionThread(threading.Thread):
             self.display_status(f"Connection error: {e}")
             pass
         self.connected = False
-        self.client_socket.close()  # close the connection
+        if self.client_socket:
+            self.client_socket.close()  # close the connection
         if self.disconnect_action is not None:
             self.disconnect_action()
 
-    def receive_on_socket(self, data: bytes):
+    def receive_on_socket(self, data: bytes) -> None:
+        """
+        When data is received on the socket, this function will handle the data.
+        """
         pass
 
 
 class CommandsConnectionThread(BaseConnectionThread):
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.console_textarea_ref = None
+        self.console_textarea_ref: Optional[tkinter.Text] = None
         """
         Reference of the commands connection console textarea on the main window
         """
 
-        self.status_label_ref = None
+        self.status_label_ref: Optional[tkinter.Label] = None
         """
         Reference of the status label on the main window
         """
 
-    def receive_on_socket(self, data: bytes):
+    def receive_on_socket(self, data: bytes) -> None:
+        assert self.console_textarea_ref
         self.console_textarea_ref.configure(state='normal')  # Textarea has to be unlocked to enable modification
         self.console_textarea_ref.insert(tkinter.END, '\n')
         self.console_textarea_ref.insert(tkinter.END, data.decode())
         self.console_textarea_ref.see(tkinter.END)  # Scroll to the bottom
         self.console_textarea_ref.configure(state='disabled')  # Block user editing
 
-    def display_status(self, message):
+    def display_status(self, message: str) -> None:
+        assert self.status_label_ref
         self.status_label_ref.config(text=message)
 
 
 class StreamConnectionThread(BaseConnectionThread):
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
         self.mp_status: Optional[multiprocessing.Queue[str]] = None
-        self.mp_disconnect: Optional[multiprocessing.Value] = None
-        self.mp_queue: Optional[multiprocessing.Queue[CoreServicePacket]] = None
         """
-        Queue for multiprocessing
+        Status message queue for multiprocessing process
         """
 
-        self.recreate_canvas_action = None
+        self.mp_disconnect: Optional[multiprocessing.managers.ValueProxy[int]] = None
+        """
+        Disconnect signal for multiprocessing process
+        """
+
+        self.mp_queue: Optional[multiprocessing.Queue[CoreServicePacket]] = None
+        """
+        CS packet queue for multiprocessing process
+        """
+
+        self.recreate_canvas_action: Optional[Callable[[], None]] = None
         """
         Action that recreates plot canvas
         """
@@ -195,7 +219,7 @@ class StreamConnectionThread(BaseConnectionThread):
         Amount of spectrum lines to be displayed on the waterfall diagram.
         """
 
-        self.fig_ref = None
+        self.fig_ref: Optional[pyplot.Figure] = None
         """
         Reference to the matplotlib figure.
         """
@@ -215,67 +239,83 @@ class StreamConnectionThread(BaseConnectionThread):
         Elevation spectrum data (numpy vector)
         """
 
-        self.magnitude_plot = None
+        self.magnitude_plot: Optional[object] = None
         """
         Matplotlib plot (axes) object for the magnitude plot
         """
 
-        self.azimuth_plot = None
+        self.azimuth_plot: Optional[object] = None
         """
         Matplotlib plot (axes) object for the azimuth plot
         """
 
-        self.elevation_plot = None
+        self.elevation_plot: Optional[object] = None
         """
         Matplotlib plot (axes) object for the elevation plot
         """
 
-        self.magnitude_image = None
+        self.magnitude_image: Optional[matplotlib.artist.Artist] = None
         """
         Matplotlib image object for the magnitude plot
         """
 
-        self.azimuth_image = None
+        self.azimuth_image: Optional[matplotlib.artist.Artist] = None
         """
         Matplotlib image object for the azimuth plot
         """
 
-        self.elevation_image = None
+        self.elevation_image: Optional[matplotlib.artist.Artist] = None
         """
         Matplotlib image object for the elevation plot
         """
 
-        self.animation = None
+        self.animation: Optional[matplotlib.animation.FuncAnimation] = None
         """
         Matplotlib FuncAnimation object for animating the graphs
         """
 
-        self.animation_started = False
+        self.animation_started: bool = False
         """
         Indicates whether the animation and plot objects have been created
         """
 
-        self._center_frequency = 0
+        self._center_frequency: float = 0
         """
         Center frequency of the last burst
         """
 
-        self._iq_rate = 0
+        self._iq_rate: float = 0
         """
         Iq rate of the last burst
         """
 
-        self.status_label_ref = None
+        self.status_label_ref: Optional[tkinter.Label] = None
         """
         Reference of the status label on the main window
         """
 
-    def run(self):
+    def run(self) -> None:
+        """
+        Entry point of the data handling thread
+        """
         manager = multiprocessing.Manager()
-        status_queue = multiprocessing.Queue()
-        disconnect_value = manager.Value('i', 0)
 
-        def status_watcher():
+        status_queue: multiprocessing.Queue[str] = multiprocessing.Queue()
+        """
+        The string elements of the status queue are the messages to be displayed on the GUI status bar
+        """
+
+        disconnect_value = manager.Value('i', 0)
+        """
+        Setting the '1' value of the disconnect_value multiprocessing variable will end the multiprocessing task on the
+        next iteration.
+        """
+
+        def status_watcher() -> None:
+            """
+            Entry point of the watcher thread
+            """
+            assert self.status_label_ref
             while True:
                 try:
                     disconnect_value.value = self.disconnect
@@ -288,12 +328,29 @@ class StreamConnectionThread(BaseConnectionThread):
                 except BrokenPipeError:
                     return
 
+        # The purpose of the watcher thread is to take the status messages from the multiprocessing process and display
+        # them on the GUI, and to forward the disconnect signal to the process if the "Disconnect" button is clicked.
         watcher_thread = threading.Thread(target=status_watcher, daemon=True)
         watcher_thread.start()
 
-        packets_queue = multiprocessing.Queue()
-        process = multiprocessing.Process(target=self.run_process, args=(packets_queue, disconnect_value, status_queue))
-        process.start()
+        packets_queue: multiprocessing.Queue[CoreServicePacket] = multiprocessing.Queue()
+        """
+        This queue will transfer the processed packets from the streaming process to the main (GUI) process
+        """
+
+        streaming_process = multiprocessing.Process(
+            target=self.run_process,
+            args=(packets_queue, disconnect_value, status_queue)
+        )
+        """
+        The purpose of moving the streaming TCP/IP connection and preprocessing of the packets to a separate 
+        multiprocessing process is to ensure there are no delays on the reception, and to be independent from the GUI
+        """
+
+        streaming_process.start()
+
+        # The code below will handle the preprocessed packets from the streaming process
+        assert self.status_label_ref
         while True:
             if self.disconnect:
                 break
@@ -314,9 +371,13 @@ class StreamConnectionThread(BaseConnectionThread):
             ):
                 # Animation can be created, because at this point we know bin count and other properties
                 # Also restart when bin count or any other parameter has changed
-                self.create_anim(packet.bin_count, packet.center_frequency, packet.iq_rate,
-                                 np.min(packet.magnitude_spectrum),
-                                 np.max(packet.magnitude_spectrum))
+                self.create_anim(
+                    bin_count=packet.bin_count,
+                    center_freq=packet.center_frequency,
+                    iq_rate=packet.iq_rate,
+                    vmin=float(np.min(packet.magnitude_spectrum)),
+                    vmax=float(np.max(packet.magnitude_spectrum))
+                )  # type: ignore
                 self._iq_rate = packet.iq_rate
                 self._center_frequency = packet.center_frequency
                 self.animation_started = True
@@ -333,22 +394,43 @@ class StreamConnectionThread(BaseConnectionThread):
             # )
 
         self.animation_started = False
-        process.join()
+        streaming_process.join()
 
-    def run_process(self, queue, disconnect_value, status_value):
-        self.mp_queue = queue
+    def run_process(self, packets_queue: multiprocessing.Queue[CoreServicePacket],
+                    disconnect_value: multiprocessing.managers.ValueProxy[int],
+                    status_value: multiprocessing.Queue[str]) -> None:
+        """
+        THIS RUNS ON THE STREAMING PROCESS
+        Entry point of the stream collecting process.
+        """
+        self.mp_queue = packets_queue
         self.mp_disconnect = disconnect_value
         self.mp_status = status_value
         self.run_socket()
         self.mp_status.put("END")
 
-    def is_disconnect(self):
-        return self.mp_disconnect.value
+    def is_disconnect(self) -> bool:
+        """
+        THIS RUNS ON THE STREAMING PROCESS
+        Returns: if the socket should manually disconnect
+        """
+        assert self.mp_disconnect is not None
+        return bool(self.mp_disconnect.value)
 
-    def display_status(self, message):
+    def display_status(self, message: str) -> None:
+        """
+        THIS RUNS ON THE STREAMING PROCESS
+        Display a status message (on the GUI status bar)
+        """
+        assert self.mp_status
         self.mp_status.put(message)
 
-    def receive_on_socket(self, data: bytes):
+    def receive_on_socket(self, data: bytes) -> None:
+        """
+        THIS RUNS ON THE STREAMING PROCESS
+        When data is received on the socket, this function will handle the data.
+        """
+        assert self.mp_queue
         self.buffer += bytearray(data)
         if len(self.buffer) >= 8:  # packet header is 28 bytes
             cs_packet = CoreServicePacket()
@@ -389,35 +471,39 @@ class StreamConnectionThread(BaseConnectionThread):
                     )
                     self.buffer = self.buffer[packet_size:]  # drop packet from buffer
 
-    def create_anim(self, bin_count, center_freq, iq_rate, vmin, vmax):
-
+    @typing.no_type_check
+    def create_anim(self, bin_count: int, center_freq: float, iq_rate: float, vmin: float, vmax: float) -> None:
+        """
+        Creates matplotlib animation on the GUI
+        """
+        assert self.recreate_canvas_action
         self.recreate_canvas_action()
 
-        class HalfLocator(ticker.Locator):
+        class HalfLocator(matplotlib.ticker.Locator):  # type: ignore
             """
             Tick locator for matplotlib plot
             Set a tick on each integer multiple of a base within the view interval.
             """
 
-            def __init__(self, max=1.0):
+            def __init__(self, max: float = 1.0) -> None:
                 self._max = max
 
-            def set_params(self, max):
+            def set_params(self, max: float) -> None:
                 """Set parameters within this locator."""
                 if max is not None:
                     self._max = max
 
-            def __call__(self):
+            def __call__(self) -> list[float]:
                 """Return the locations of the ticks."""
                 vmin, vmax = self.axis.get_view_interval()
                 return self.tick_values(vmin, vmax)
 
-            def tick_values(self, vmin, vmax):
+            def tick_values(self, vmin: float, vmax: float) -> list[float]:
                 if vmax < vmin:
                     vmin, vmax = vmax, vmin
 
                 step = self._max / 4
-                locs = []
+                locs: list[float] = []
                 while len(locs) < 4:
                     locs = [loc for loc in np.arange(0, self._max, step) if vmin <= loc <= vmax]
                     step /= 2
@@ -425,42 +511,41 @@ class StreamConnectionThread(BaseConnectionThread):
                     locs.append(self._max)
                 return self.raise_if_exceeds(locs)
 
-            def view_limits(self, dmin, dmax):
+            def view_limits(self, dmin: float, dmax: float) -> tuple[float, float]:
                 """
                 Set the view limits
                 """
-                return matplotlib.transforms.nonsingular(
-                    dmin, dmax, expander=1e-12, tiny=1e-13)
+                return matplotlib.transforms.nonsingular(dmin, dmax, expander=1e-12, tiny=1e-13)
 
-        def update_imag(frame_number):
+        def update_imag(frame_number: int) -> list[matplotlib.artist.Artist]:
             """
             Called on each frame of the graph animation
             """
-            # self.waterfall = np.random.rand(100, bin_count)
             self.magnitude_image.set_data(self.waterfall)
             self.azimuth_image.set_ydata(self.azimuth_spectrum)
             self.elevation_image.set_ydata(self.elevation_spectrum)
             return [self.magnitude_image, self.azimuth_image, self.elevation_image]
 
-        def bin_freq_formatter(x, pos=None):
+        def bin_freq_formatter(x: float, pos: Any = None) -> str:
             return f"{((x - bin_count / 2) * (iq_rate / bin_count) + center_freq) / 1e6:.3f}M"
-            pass
 
-        def sample_id_formatter(x, pos=None):
+        def sample_id_formatter(x: float, pos: Any = None) -> str:
             return f"{x - self.waterfall_size:.0f}"
-            pass
 
-        def magnitude_format_coord(x, y):
+        def magnitude_format_coord(x: float, y: float) -> str:
             return f"Frequency: {bin_freq_formatter(x)} (bin {int(x)}), Packet: {sample_id_formatter(y)}"
 
-        def azimuth_format_coord(x, y):
+        def azimuth_format_coord(x: float, y: float) -> str:
             if 0 < x < len(self.azimuth_spectrum):
                 val = self.azimuth_spectrum[int(x)]
             else:
                 val = 0
-            return f"Frequency: {bin_freq_formatter(x)} (bin {int(x)}), Angle: {val:.3f} rad ({val / np.pi * 180:.2f} deg)"
+            return (
+                f"Frequency: {bin_freq_formatter(x)} (bin {int(x)}), " 
+                f"Angle: {val:.3f} rad ({val / np.pi * 180:.2f} deg)"
+            )
 
-        def elevation_format_coord(x, y):
+        def elevation_format_coord(x: float, y: float) -> str:
             if 0 < x < len(self.elevation_spectrum):
                 val = self.elevation_spectrum[int(x)]
             else:
@@ -471,6 +556,7 @@ class StreamConnectionThread(BaseConnectionThread):
         self.azimuth_spectrum = np.zeros([bin_count])
         self.elevation_spectrum = np.zeros([bin_count])
 
+        assert self.fig_ref
         self.fig_ref.clf()
         # grid_spec = GridSpec(nrows=2, ncols=2, figure=self.fig_ref)
         grid_spec = self.fig_ref.add_gridspec(nrows=2, ncols=2, width_ratios=(3, 2), height_ratios=(1, 1))
@@ -479,13 +565,13 @@ class StreamConnectionThread(BaseConnectionThread):
         self.elevation_plot = self.fig_ref.add_subplot(grid_spec[1, 1])
         self.magnitude_image = self.magnitude_plot.imshow(self.waterfall, cmap=matplotlib.cm.get_cmap('gnuplot'),
                                                           animated=True, vmax=vmax, vmin=vmin)
+
         self.azimuth_image = self.azimuth_plot.plot(self.azimuth_spectrum, lw=1, color='red', animated=True)[0]
         self.elevation_image = self.elevation_plot.plot(self.elevation_spectrum, lw=1, color='blue', animated=True)[0]
-
-        self.magnitude_plot.xaxis.set_major_formatter(ticker.FuncFormatter(bin_freq_formatter))
+        self.magnitude_plot.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(bin_freq_formatter))
         self.magnitude_plot.xaxis.set_major_locator(HalfLocator(max=bin_count))
         self.magnitude_plot.tick_params(axis='x', labelrotation=45)
-        self.magnitude_plot.yaxis.set_major_formatter(ticker.FuncFormatter(sample_id_formatter))
+        self.magnitude_plot.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(sample_id_formatter))
         self.magnitude_plot.format_coord = magnitude_format_coord
 
         self.magnitude_plot.set_label("Magnitude")
@@ -493,10 +579,10 @@ class StreamConnectionThread(BaseConnectionThread):
         self.magnitude_plot.set_aspect("auto")
 
         pi_chr = chr(0x03C0)
-        self.azimuth_plot.xaxis.set_major_formatter(ticker.FuncFormatter(bin_freq_formatter))
+        self.azimuth_plot.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(bin_freq_formatter))
         self.azimuth_plot.xaxis.set_major_locator(HalfLocator(max=bin_count))
         self.azimuth_plot.tick_params(axis='x', labelrotation=45)
-        self.azimuth_plot.yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:.2f}"))
+        self.azimuth_plot.yaxis.set_major_formatter(matplotlib.ticker.StrMethodFormatter("{x:.2f}"))
         self.azimuth_plot.grid(axis='both')
         self.azimuth_plot.format_coord = azimuth_format_coord
         self.azimuth_plot.set_ylim(-np.pi, np.pi)
@@ -508,10 +594,10 @@ class StreamConnectionThread(BaseConnectionThread):
         self.azimuth_plot.set_label("Azimuth")
         self.azimuth_plot.set_aspect("auto")
 
-        self.elevation_plot.xaxis.set_major_formatter(ticker.FuncFormatter(bin_freq_formatter))
+        self.elevation_plot.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(bin_freq_formatter))
         self.elevation_plot.xaxis.set_major_locator(HalfLocator(max=bin_count))
         self.elevation_plot.tick_params(axis='x', labelrotation=45)
-        self.elevation_plot.yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:.2f}"))
+        self.elevation_plot.yaxis.set_major_formatter(matplotlib.ticker.StrMethodFormatter("{x:.2f}"))
         self.elevation_plot.grid(axis='both')
         self.elevation_plot.format_coord = elevation_format_coord
         self.elevation_plot.set_ylim(-np.pi, np.pi)
@@ -531,11 +617,11 @@ class StreamConnectionThread(BaseConnectionThread):
 
 class ClientWindow(tkinter.Frame):
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.fig = None
-        self.canvas = None
-        self.canvas_toolbar = None
+        self.fig: Optional[pyplot.Figure] = None
+        self.canvas: Optional[FigureCanvasTkAgg] = None
+        self.canvas_toolbar: Optional[NavigationToolbar2Tk] = None
 
         self.pack(fill=tkinter.BOTH, expand=1)
 
@@ -610,7 +696,7 @@ class ClientWindow(tkinter.Frame):
                 for line in f:
                     self.command_suggestions.add(line.strip())
 
-        def save_command_to_suggestions(command):
+        def save_command_to_suggestions(command: str) -> None:
             """
             Save command to suggestions. Called when sending a command to the server.
             """
@@ -637,13 +723,15 @@ class ClientWindow(tkinter.Frame):
         # (received response will be default black)
         self.console_textarea.tag_configure("i", foreground="blue")
 
-        self.command_thread = None
-        self.stream_thread = None
+        self.command_thread: Optional[CommandsConnectionThread] = None
+        self.stream_thread: Optional[StreamConnectionThread] = None
 
-        def send_cmd(*args):
+        def send_cmd(*args: Any) -> None:
             """
             Send the command from the command entry box to the client. Called on pressing the Return key.
             """
+            assert self.command_thread
+            assert self.command_thread.client_socket
             cmd = self.command_string.get().replace("\n", "").replace("\r", "")
             self.command_string.set("")
             for cmd_line in cmd.split(";"):  # One command per line
@@ -661,7 +749,7 @@ class ClientWindow(tkinter.Frame):
                 self.console_textarea.configure(state='disabled')  # Block user editing
                 sleep(0.1)
 
-        def suggestions_filter(*args):
+        def suggestions_filter(*args: Any) -> None:
             """
             Filter the suggestions box. Called when a letter is typed to the command input box.
             """
@@ -671,22 +759,22 @@ class ClientWindow(tkinter.Frame):
             typed_command_string = self.command_string.get()  # Typed in command (fragment)
             if ":" not in typed_command_string:
                 # If no ":" yet, display only command beginning fragments
-                command_history_sorted = filter(
+                command_history_sorted = list(filter(
                     lambda command: ":" not in command or command.endswith(":"),
                     command_history_sorted
-                )
+                ))
             if not ("?" in typed_command_string or "!" in typed_command_string):
                 # Do not display commands with arguments, if the whole command has not been typed yet.
-                command_history_sorted = filter(
+                command_history_sorted = list(filter(
                     lambda command: ("!" not in command and "?" not in command)
                                     or command.endswith("!") or command.endswith("?"),
                     command_history_sorted
-                )
+                ))
             for history_item in command_history_sorted:
                 if history_item.upper().startswith(typed_command_string.upper()):
                     command_suggestions_lb.insert(tkinter.END, history_item)
 
-        def autocomplete(*args):
+        def autocomplete(*args: Any) -> str:
             """
             Grab the first from the suggestions. Called on the Tab key.
             """
@@ -695,7 +783,7 @@ class ClientWindow(tkinter.Frame):
             self.command_entry.icursor(tkinter.END)
             return 'break'
 
-        def to_suggestions_list(*args):
+        def to_suggestions_list(*args: Any) -> str:
             """
             Move from the command input box to the suggestions list. Called on the Down key.
             """
@@ -703,15 +791,17 @@ class ClientWindow(tkinter.Frame):
             self.command_string.set(command_suggestions_lb.get(0))
             return 'break'
 
-        def select_suggestion_cmd(*args):
+        def select_suggestion_cmd(*args: Any) -> None:
             """
             Select a command from the list and use it in the command input box.
             """
             if command_suggestions_lb.size() > 0:
-                if command_suggestions_lb.curselection() not in [(), "", None]:  # strange values when nothing selected
-                    self.command_string.set(command_suggestions_lb.get())
+                curselection = command_suggestions_lb.curselection()  # type: ignore
+                # strange values when nothing selected
+                if curselection not in [(), "", None]:
+                    self.command_string.set(command_suggestions_lb.get(curselection[0]))
 
-        def to_command_box(*args):
+        def to_command_box(*args: Any) -> str:
             """
             Return from the command suggestion list to the command input box. Called on the Enter or Tab key.
             """
@@ -736,25 +826,26 @@ class ClientWindow(tkinter.Frame):
         command_suggestions_lb.pack(side=tkinter.TOP, fill=tkinter.X, padx=5, expand=False)
         suggestions_filter()
 
-    def create_canvas(self):
+    def create_canvas(self) -> None:
         """
         Creates matplotlib canvas for graph plots. Called when connecting to the client.
         """
+        if self.fig is not None:
+            self.fig.gca().cla()  # type: ignore
         if self.canvas is not None:  # Remove old widget if there is one
-            self.fig.gca().cla()
             self.canvas.get_tk_widget().destroy()
             self.canvas = None
         if self.canvas_toolbar is not None:
             self.canvas_toolbar.destroy()
             self.canvas_toolbar = None
-        self.fig = pyplot.Figure(tight_layout=True)
+        self.fig = pyplot.Figure(tight_layout=True)  # type: ignore
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_frame)
         self.canvas.get_tk_widget().pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=True)
 
         self.canvas_toolbar = NavigationToolbar2Tk(self.canvas, self.plot_frame)
         self.canvas_toolbar.update()
 
-        def on_canvas_key_press(event):
+        def on_canvas_key_press(event: KeyEvent) -> None:
             key_press_handler(event, self.canvas, self.canvas_toolbar)
 
         self.canvas.mpl_connect("key_press_event", on_canvas_key_press)
@@ -763,7 +854,7 @@ class ClientWindow(tkinter.Frame):
             self.stream_thread.fig_ref = self.fig
             self.command_entry.focus()
 
-    def connect_action(self):
+    def connect_action(self) -> None:
         """
         Events triggered by successful connection
         """
@@ -774,7 +865,7 @@ class ClientWindow(tkinter.Frame):
         self.command_entry.configure(state='normal')
         self.command_entry.focus()
 
-    def disconnect_action(self):
+    def disconnect_action(self) -> None:
         """
         Events triggered by client disconnect
         """
@@ -786,7 +877,7 @@ class ClientWindow(tkinter.Frame):
         self.command_string.set("")
         self.disconnect_commands()  # to disconnect the other thread
 
-    def connect_commands(self):
+    def connect_commands(self) -> None:
         """
         Action of the "Connect" button
         """
@@ -799,22 +890,21 @@ class ClientWindow(tkinter.Frame):
         self.command_thread.start()
         self.stream_thread = StreamConnectionThread()
         self.stream_thread.recreate_canvas_action = self.create_canvas
-        # self.stream_thread.connect_action = self.connect_action
-        # self.stream_thread.disconnect_action = self.disconnect_action
         self.stream_thread.host_port = self.host_stream.get()
-        self.stream_thread.canvas_ref = self.canvas
         self.stream_thread.status_label_ref = self.status_stream_label
         self.stream_thread.start()
         with open('hosts.txt', 'w') as f1:
             f1.write(self.host_command.get() + '\n')
             f1.write(self.host_stream.get() + '\n')
 
-    def disconnect_commands(self):
+    def disconnect_commands(self) -> None:
         """
         Action of the "Disconnect" button
         """
-        self.command_thread.disconnect = True
-        self.stream_thread.disconnect = True
+        if self.command_thread is not None:
+            self.command_thread.disconnect = True
+        if self.stream_thread is not None:
+            self.stream_thread.disconnect = True
 
 
 if __name__ == '__main__':
@@ -823,5 +913,4 @@ if __name__ == '__main__':
     root.geometry("1024x768")
     root.wm_title("CS Test Client")
     root.mainloop()
-    ex.command_thread.disconnect = True
-    ex.stream_thread.disconnect = True
+    ex.disconnect_commands()
