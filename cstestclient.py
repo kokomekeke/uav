@@ -106,6 +106,9 @@ class BaseConnectionThread(threading.Thread):
         return self.disconnect
 
     def run_socket(self) -> None:
+        """
+        General implementation of socket handling for both the stream and the command sockets.
+        """
         host_port_split = self.host_port.split(":")
         host, port = (host_port_split[0], host_port_split[1])
         try:
@@ -165,6 +168,9 @@ class CommandsConnectionThread(BaseConnectionThread):
         """
 
     def receive_on_socket(self, data: bytes) -> None:
+        """
+        When text is received on the command socket, display it in the console textbox.
+        """
         assert self.console_textarea_ref
         self.console_textarea_ref.configure(
             state="normal"
@@ -323,7 +329,9 @@ class StreamConnectionThread(BaseConnectionThread):
             while True:
                 try:
                     disconnect_value.value = self.disconnect
-                    message = status_queue.get(timeout=0.2)
+                    message = status_queue.get(
+                        timeout=0.2
+                    )  # get status message from streaming process
                     if message == "END":
                         break
                     self.status_label_ref.config(text=message)
@@ -361,7 +369,9 @@ class StreamConnectionThread(BaseConnectionThread):
             if self.disconnect:
                 break
             try:
-                packet: CoreServicePacket = packets_queue.get(timeout=0.5)
+                packet: CoreServicePacket = packets_queue.get(
+                    timeout=0.5
+                )  # get a packet from the streaming process
             except queue.Empty:
                 continue
             if packet.end_of_file:
@@ -438,7 +448,7 @@ class StreamConnectionThread(BaseConnectionThread):
     def receive_on_socket(self, data: bytes) -> None:
         """
         THIS RUNS ON THE STREAMING PROCESS
-        When data is received on the socket, this function will handle the data.
+        When data is received on the socket, this function will construct a packet object from the binary data.
         """
         assert self.mp_queue
         self.buffer += bytearray(data)
@@ -493,14 +503,14 @@ class StreamConnectionThread(BaseConnectionThread):
                             f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
                             f"index {cs_packet.sample_index} | Queue count: {self.mp_queue.qsize()}"
                         )
-                    except NotImplementedError:
+                    except NotImplementedError:  # multiprocessing.Queue.qsize() not implemented on Mac OS X
                         self.display_status(
                             f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
                             f"index {cs_packet.sample_index}"
                         )
                     self.buffer = self.buffer[packet_size:]  # drop packet from buffer
 
-    @typing.no_type_check
+    @typing.no_type_check  # no typing for matplotlib
     def create_anim(
         self,
         bin_count: int,
