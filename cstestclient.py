@@ -10,6 +10,7 @@ import queue
 import socket
 import struct
 import threading
+import time
 import tkinter
 import typing
 from time import sleep
@@ -28,6 +29,10 @@ from matplotlib.backends.backend_tkagg import (  # type: ignore
 
 
 class CoreServicePacket:
+    """
+    Represents one packet received from the Core Service.
+    """
+
     def __init__(self) -> None:
         self.stream_id: int = 0
         self.end_of_file: bool = False
@@ -41,7 +46,7 @@ class CoreServicePacket:
         self.elevation_spectrum: npt.NDArray[np.float64] = np.zeros([1])
 
 
-class BaseConnectionThread(threading.Thread):
+class BaseConnection:
     """
     Base class for both the Command and Stream connections.
     """
@@ -91,13 +96,6 @@ class BaseConnectionThread(threading.Thread):
         Display a status message (on the GUI status bar)
         """
         pass
-
-    def run(self) -> None:
-        """
-        Entry point of the thread
-        """
-        self.disconnect = False
-        self.run_socket()
 
     def is_disconnect(self) -> bool:
         """
@@ -154,9 +152,9 @@ class BaseConnectionThread(threading.Thread):
         pass
 
 
-class CommandsConnectionThread(BaseConnectionThread):
+class CommandsConnectionThread(BaseConnection, threading.Thread):
     def __init__(self) -> None:
-        super().__init__()
+        super(CommandsConnectionThread, self).__init__()
         self.console_textarea_ref: Optional[tkinter.Text] = None
         """
         Reference of the commands connection console textarea on the main window
@@ -184,29 +182,63 @@ class CommandsConnectionThread(BaseConnectionThread):
         assert self.status_label_ref
         self.status_label_ref.config(text=message)
 
+    def run(self) -> None:
+        """
+        Entry point of the thread
+        """
+        self.disconnect = False
+        self.run_socket()
 
-class StreamConnectionThread(BaseConnectionThread):
-    def __init__(self) -> None:
-        super().__init__()
 
-        self.mp_status: Optional[multiprocessing.Queue[str]] = None
+class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
+    """
+    This thread (process) will handle the stream socket and place the incoming samples in a numpy structure.
+    The purpose of moving the stream TCP/IP connection and preprocessing of the packets to a separate
+    multiprocessing process is to ensure there are no delays on the reception, and to be independent of the GUI
+    """
+
+    def __init__(
+        self,
+        packets_queue: multiprocessing.Queue[CoreServicePacket],
+        disconnect_value: multiprocessing.managers.ValueProxy[int],
+        status_value: multiprocessing.Queue[str],
+    ):
+        super(StreamConnectionProcess, self).__init__()
+
+        self.counter_packet_ratio: float = 0
+        """
+        Used to count number of received packets in a uniform period of time. Ratio is the result of that calculation.
+        """
+
+        self.counter_ns: int = time.time_ns()
+        """
+        Helper variable to packet ratio. Counter_ns is a nanosecond timestamp 
+        that marks the start of the current counting block.
+        """
+
+        self.counter_packet_index: int = 0
+        """
+        Helper variable to packet ratio. This is the counter variable.
+        """
+
+        self.counter_block_size_parameter: int = 100000000
+        """
+        This parameter sets the counting window of the packet ratio calculation.
+        """
+
+        self.mp_status: multiprocessing.Queue[str] = status_value
         """
         Status message queue for multiprocessing process
         """
 
-        self.mp_disconnect: Optional[multiprocessing.managers.ValueProxy[int]] = None
+        self.mp_disconnect: multiprocessing.managers.ValueProxy[int] = disconnect_value
         """
         Disconnect signal for multiprocessing process
         """
 
-        self.mp_queue: Optional[multiprocessing.Queue[CoreServicePacket]] = None
+        self.mp_queue: multiprocessing.Queue[CoreServicePacket] = packets_queue
         """
         CS packet queue for multiprocessing process
-        """
-
-        self.recreate_canvas_action: Optional[Callable[[], None]] = None
-        """
-        Action that recreates plot canvas
         """
 
         self.buffer = bytearray()
@@ -219,9 +251,120 @@ class StreamConnectionThread(BaseConnectionThread):
         Overall packet count
         """
 
-        self.buf_size = 65536  # 65536
+        self.buf_size = 2048  # 65536
         """
         This buffer size will be read at once from the TCP socket.
+        """
+
+    def run(self) -> None:
+        """
+        Entry point of the stream collecting process.
+        """
+        self.run_socket()
+        self.mp_status.put("END")
+
+    def is_disconnect(self) -> bool:
+        """
+        Returns: if the socket should manually disconnect
+        """
+        assert self.mp_disconnect is not None
+        return bool(self.mp_disconnect.value)
+
+    def display_status(self, message: str) -> None:
+        """
+        Display a status message (on the GUI status bar)
+        """
+        assert self.mp_status
+        self.mp_status.put(message)
+
+    def receive_on_socket(self, data: bytes) -> None:
+        """
+        When data is received on the socket, this function will construct a packet object from the binary data.
+        """
+        assert self.mp_queue
+        self.buffer += bytearray(data)
+        if len(self.buffer) >= 8:  # packet header is 28 bytes
+            cs_packet = CoreServicePacket()
+            cs_packet.stream_id = int.from_bytes(self.buffer[0:4], "little")
+            type_id = int.from_bytes(self.buffer[4:8], "little")
+            if type_id == 2:  # end of file, flush buffer
+                cs_packet.end_of_file = True
+                self.mp_queue.put(cs_packet)
+                self.buffer = bytearray()
+            elif len(self.buffer) >= 28 and type_id == 1:
+                cs_packet.center_frequency = struct.unpack("f", self.buffer[8:12])[0]
+                cs_packet.iq_rate = struct.unpack("f", self.buffer[12:16])[0]
+                cs_packet.sample_index = int.from_bytes(self.buffer[16:24], "little")
+                cs_packet.bin_count = int.from_bytes(self.buffer[24:28], "little")
+                packet_size = 3 * 4 * cs_packet.bin_count + 28
+                if (
+                    len(self.buffer) >= packet_size
+                ):  # we got the entire packet in buffer
+                    cs_packet.magnitude_spectrum = np.asarray(
+                        struct.unpack(
+                            f"{cs_packet.bin_count}f",
+                            self.buffer[28 : 28 + cs_packet.bin_count * 4],
+                        )
+                    )
+                    cs_packet.azimuth_spectrum = np.asarray(
+                        struct.unpack(
+                            f"{cs_packet.bin_count}f",
+                            self.buffer[
+                                (28 + cs_packet.bin_count * 4) : (
+                                    28 + cs_packet.bin_count * 4 * 2
+                                )
+                            ],
+                        )
+                    )
+                    cs_packet.elevation_spectrum = np.asarray(
+                        struct.unpack(
+                            f"{cs_packet.bin_count}f",
+                            self.buffer[
+                                (28 + cs_packet.bin_count * 4 * 2) : (
+                                    28 + cs_packet.bin_count * 4 * 3
+                                )
+                            ],
+                        )
+                    )
+                    self.packet_count += 1
+                    cs_packet.packet_index = self.packet_count
+                    self.mp_queue.put(cs_packet)
+                    while (
+                        self.counter_ns + self.counter_block_size_parameter
+                        <= time.time_ns()
+                    ):
+                        self.counter_packet_ratio = self.counter_packet_index * (
+                            1e9 / self.counter_block_size_parameter
+                        )
+                        self.counter_packet_index = 0
+                        self.counter_ns += self.counter_block_size_parameter
+                    self.counter_packet_index += 1
+                    try:
+                        self.display_status(
+                            f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
+                            f"index {cs_packet.sample_index} , speed: {self.counter_packet_ratio} packets/sec | "
+                            f"Queue count: {self.mp_queue.qsize()}"
+                        )
+                    except NotImplementedError:  # multiprocessing.Queue.qsize() not implemented on Mac OS X
+                        self.display_status(
+                            f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
+                            f"index {cs_packet.sample_index}"
+                        )
+                    self.buffer = self.buffer[packet_size:]  # drop packet from buffer
+
+
+class StreamDisplayThread(threading.Thread):
+    """
+    This thread is responsible for handling the multiprocessing stream process and for displaying the stream contents
+    on the matplotlib plots
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.recreate_canvas_action: Optional[Callable[[], None]] = None
+        """
+        Action that recreates plot canvas
         """
 
         self.waterfall_size = 200
@@ -304,6 +447,16 @@ class StreamConnectionThread(BaseConnectionThread):
         Reference of the status label on the main window
         """
 
+        self.disconnect: bool = False
+        """
+        When the disconnect flag is set, the thread loop will quit on the next iteration.
+        """
+
+        self.host_port = ""
+        """
+        Host and port in <address>:<tcp port> format.
+        """
+
     def run(self) -> None:
         """
         Entry point of the data handling thread
@@ -331,7 +484,7 @@ class StreamConnectionThread(BaseConnectionThread):
                     disconnect_value.value = self.disconnect
                     message = status_queue.get(
                         timeout=0.2
-                    )  # get status message from streaming process
+                    )  # get status message from stream process
                     if message == "END":
                         break
                     self.status_label_ref.config(text=message)
@@ -349,21 +502,17 @@ class StreamConnectionThread(BaseConnectionThread):
             CoreServicePacket
         ] = multiprocessing.Queue()
         """
-        This queue will transfer the processed packets from the streaming process to the main (GUI) process
+        This queue will transfer the processed packets from the stream process to the main (GUI) process
         """
 
-        streaming_process = multiprocessing.Process(
-            target=self.run_process,
-            args=(packets_queue, disconnect_value, status_queue),
+        stream_process = StreamConnectionProcess(
+            packets_queue, disconnect_value, status_queue
         )
-        """
-        The purpose of moving the streaming TCP/IP connection and preprocessing of the packets to a separate 
-        multiprocessing process is to ensure there are no delays on the reception, and to be independent from the GUI
-        """
 
-        streaming_process.start()
+        stream_process.host_port = self.host_port
+        stream_process.start()
 
-        # The code below will handle the preprocessed packets from the streaming process
+        # The code below will handle the preprocessed packets from the stream process
         assert self.status_label_ref
         while True:
             if self.disconnect:
@@ -371,7 +520,7 @@ class StreamConnectionThread(BaseConnectionThread):
             try:
                 packet: CoreServicePacket = packets_queue.get(
                     timeout=0.5
-                )  # get a packet from the streaming process
+                )  # get a packet from the stream process
             except queue.Empty:
                 continue
             if packet.end_of_file:
@@ -411,104 +560,7 @@ class StreamConnectionThread(BaseConnectionThread):
             # )
 
         self.animation_started = False
-        streaming_process.join()
-
-    def run_process(
-        self,
-        packets_queue: multiprocessing.Queue[CoreServicePacket],
-        disconnect_value: multiprocessing.managers.ValueProxy[int],
-        status_value: multiprocessing.Queue[str],
-    ) -> None:
-        """
-        THIS RUNS ON THE STREAMING PROCESS
-        Entry point of the stream collecting process.
-        """
-        self.mp_queue = packets_queue
-        self.mp_disconnect = disconnect_value
-        self.mp_status = status_value
-        self.run_socket()
-        self.mp_status.put("END")
-
-    def is_disconnect(self) -> bool:
-        """
-        THIS RUNS ON THE STREAMING PROCESS
-        Returns: if the socket should manually disconnect
-        """
-        assert self.mp_disconnect is not None
-        return bool(self.mp_disconnect.value)
-
-    def display_status(self, message: str) -> None:
-        """
-        THIS RUNS ON THE STREAMING PROCESS
-        Display a status message (on the GUI status bar)
-        """
-        assert self.mp_status
-        self.mp_status.put(message)
-
-    def receive_on_socket(self, data: bytes) -> None:
-        """
-        THIS RUNS ON THE STREAMING PROCESS
-        When data is received on the socket, this function will construct a packet object from the binary data.
-        """
-        assert self.mp_queue
-        self.buffer += bytearray(data)
-        if len(self.buffer) >= 8:  # packet header is 28 bytes
-            cs_packet = CoreServicePacket()
-            cs_packet.stream_id = int.from_bytes(self.buffer[0:4], "little")
-            type_id = int.from_bytes(self.buffer[4:8], "little")
-            if type_id == 2:  # end of file, flush buffer
-                cs_packet.end_of_file = True
-                self.mp_queue.put(cs_packet)
-                self.buffer = bytearray()
-            elif len(self.buffer) >= 28 and type_id == 1:
-                cs_packet.center_frequency = struct.unpack("f", self.buffer[8:12])[0]
-                cs_packet.iq_rate = struct.unpack("f", self.buffer[12:16])[0]
-                cs_packet.sample_index = int.from_bytes(self.buffer[16:24], "little")
-                cs_packet.bin_count = int.from_bytes(self.buffer[24:28], "little")
-                packet_size = 3 * 4 * cs_packet.bin_count + 28
-                if (
-                    len(self.buffer) >= packet_size
-                ):  # we got the entire packet in buffer
-                    cs_packet.magnitude_spectrum = np.asarray(
-                        struct.unpack(
-                            f"{cs_packet.bin_count}f",
-                            self.buffer[28 : 28 + cs_packet.bin_count * 4],
-                        )
-                    )
-                    cs_packet.azimuth_spectrum = np.asarray(
-                        struct.unpack(
-                            f"{cs_packet.bin_count}f",
-                            self.buffer[
-                                (28 + cs_packet.bin_count * 4) : (
-                                    28 + cs_packet.bin_count * 4 * 2
-                                )
-                            ],
-                        )
-                    )
-                    cs_packet.elevation_spectrum = np.asarray(
-                        struct.unpack(
-                            f"{cs_packet.bin_count}f",
-                            self.buffer[
-                                (28 + cs_packet.bin_count * 4 * 2) : (
-                                    28 + cs_packet.bin_count * 4 * 3
-                                )
-                            ],
-                        )
-                    )
-                    self.packet_count += 1
-                    cs_packet.packet_index = self.packet_count
-                    self.mp_queue.put(cs_packet)
-                    try:
-                        self.display_status(
-                            f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
-                            f"index {cs_packet.sample_index} | Queue count: {self.mp_queue.qsize()}"
-                        )
-                    except NotImplementedError:  # multiprocessing.Queue.qsize() not implemented on Mac OS X
-                        self.display_status(
-                            f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
-                            f"index {cs_packet.sample_index}"
-                        )
-                    self.buffer = self.buffer[packet_size:]  # drop packet from buffer
+        stream_process.join()
 
     @typing.no_type_check  # no typing for matplotlib
     def create_anim(
@@ -822,7 +874,7 @@ class ClientWindow(tkinter.Frame):
         self.console_textarea.tag_configure("i", foreground="blue")
 
         self.command_thread: Optional[CommandsConnectionThread] = None
-        self.stream_thread: Optional[StreamConnectionThread] = None
+        self.stream_thread: Optional[StreamDisplayThread] = None
 
         def send_cmd(*args: Any) -> None:
             """
@@ -1003,7 +1055,7 @@ class ClientWindow(tkinter.Frame):
         self.command_thread.host_port = self.host_command.get()
         self.command_thread.status_label_ref = self.status_command_label
         self.command_thread.start()
-        self.stream_thread = StreamConnectionThread()
+        self.stream_thread = StreamDisplayThread()
         self.stream_thread.recreate_canvas_action = self.create_canvas
         self.stream_thread.host_port = self.host_stream.get()
         self.stream_thread.status_label_ref = self.status_stream_label
