@@ -1041,13 +1041,16 @@ class ClientWindow(tkinter.Frame):
         """
         Events triggered by client disconnect
         """
-        self.disconnect_button.configure(state="disabled")
-        self.command_entry.configure(state="disabled")
-        self.host_command_entry.configure(state="normal")
-        self.host_stream_entry.configure(state="normal")
-        self.connect_button.configure(state="normal")
-        self.command_string.set("")
-        self.disconnect_commands()  # to disconnect the other thread
+        try:
+            self.disconnect_button.configure(state="disabled")
+            self.command_entry.configure(state="disabled")
+            self.host_command_entry.configure(state="normal")
+            self.host_stream_entry.configure(state="normal")
+            self.connect_button.configure(state="normal")
+            self.command_string.set("")
+            self.disconnect_commands()  # to disconnect the other thread
+        except RuntimeError:
+            pass  # it might happen when closing the window
 
     def connect_commands(self) -> None:
         """
