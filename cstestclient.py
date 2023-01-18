@@ -180,7 +180,10 @@ class CommandsConnectionThread(BaseConnection, threading.Thread):
 
     def display_status(self, message: str) -> None:
         assert self.status_label_ref
-        self.status_label_ref.config(text=message)
+        try:
+            self.status_label_ref.config(text=message)
+        except RuntimeError:
+            pass  # it might happen when closing the window
 
     def run(self) -> None:
         """
