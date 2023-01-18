@@ -531,8 +531,6 @@ class StreamDisplayThread(threading.Thread):
                 )  # get a packet from the stream process
             except queue.Empty:
                 continue
-            if packet.end_of_file:
-                break
             if (
                 not self.animation_started
                 or packet.bin_count != self.waterfall.shape[1]
