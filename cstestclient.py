@@ -286,7 +286,7 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
         """
         assert self.mp_queue
         self.buffer += bytearray(data)
-        if len(self.buffer) >= 8:  # packet header is 28 bytes
+        while len(self.buffer) >= 8:  # packet header is 28 bytes
             cs_packet = CoreServicePacket()
             cs_packet.stream_id = int.from_bytes(self.buffer[0:4], "little")
             type_id = int.from_bytes(self.buffer[4:8], "little")
@@ -350,8 +350,8 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
                     try:
                         self.display_status(
                             f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
-                            f"index {cs_packet.sample_index} , speed: {self.counter_packet_ratio} packets/sec | "
-                            f"Queue count: {self.mp_queue.qsize()}"
+                            f"index {cs_packet.sample_index} , speed: {self.counter_packet_ratio} packets/sec, "
+                            f"queue count on insert: {self.mp_queue.qsize()}"
                         )
                     except NotImplementedError:  # multiprocessing.Queue.qsize() not implemented on Mac OS X
                         self.display_status(
@@ -359,6 +359,10 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
                             f"index {cs_packet.sample_index}"
                         )
                     self.buffer = self.buffer[packet_size:]  # drop packet from buffer
+                else:
+                    break
+            else:
+                break
 
 
 class StreamDisplayThread(threading.Thread):
