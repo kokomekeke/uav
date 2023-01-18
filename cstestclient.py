@@ -291,6 +291,9 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
                 cs_packet.end_of_file = True
                 self.mp_queue.put(cs_packet)
                 self.buffer = bytearray()
+                self.display_status(
+                    f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, End of file"
+                )
             elif len(self.buffer) >= 28 and type_id == 1:
                 cs_packet.center_frequency = struct.unpack("f", self.buffer[8:12])[0]
                 cs_packet.iq_rate = struct.unpack("f", self.buffer[12:16])[0]
@@ -524,7 +527,6 @@ class StreamDisplayThread(threading.Thread):
             except queue.Empty:
                 continue
             if packet.end_of_file:
-                self.status_label_ref.config(text=f"End of file")
                 break
             if (
                 not self.animation_started
