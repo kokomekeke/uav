@@ -460,21 +460,21 @@ class StreamDisplayThread(threading.Thread):
         Host and port in <address>:<tcp port> format.
         """
 
+        manager = multiprocessing.Manager()
+        self.disconnect_value = manager.Value("i", 0)
+        """
+        Setting the '1' value of the disconnect_value multiprocessing variable will end the multiprocessing task on the
+        next iteration.
+        """
+
     def run(self) -> None:
         """
         Entry point of the data handling thread
         """
-        manager = multiprocessing.Manager()
 
         status_queue: multiprocessing.Queue[str] = multiprocessing.Queue()
         """
         The string elements of the status queue are the messages to be displayed on the GUI status bar
-        """
-
-        disconnect_value = manager.Value("i", 0)
-        """
-        Setting the '1' value of the disconnect_value multiprocessing variable will end the multiprocessing task on the
-        next iteration.
         """
 
         def status_watcher() -> None:
@@ -484,7 +484,7 @@ class StreamDisplayThread(threading.Thread):
             assert self.status_label_ref
             while True:
                 try:
-                    disconnect_value.value = self.disconnect
+                    self.disconnect_value.value = self.disconnect
                     message = status_queue.get(
                         timeout=0.2
                     )  # get status message from stream process
@@ -509,7 +509,7 @@ class StreamDisplayThread(threading.Thread):
         """
 
         stream_process = StreamConnectionProcess(
-            packets_queue, disconnect_value, status_queue
+            packets_queue, self.disconnect_value, status_queue
         )
 
         stream_process.host_port = self.host_port
@@ -1074,6 +1074,8 @@ class ClientWindow(tkinter.Frame):
             self.command_thread.disconnect = True
         if self.stream_thread is not None:
             self.stream_thread.disconnect = True
+            if self.stream_thread.disconnect_value is not None:
+                self.stream_thread.disconnect_value.value = True
 
 
 if __name__ == "__main__":
