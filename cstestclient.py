@@ -293,7 +293,7 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
             if type_id == 2:  # end of file, flush buffer
                 cs_packet.end_of_file = True
                 self.mp_queue.put(cs_packet)
-                self.buffer = bytearray()
+                self.buffer = self.buffer[8:]
                 self.packet_count += 1
                 cs_packet.packet_index = self.packet_count
                 self.display_status(
