@@ -4,6 +4,7 @@
 #
 from __future__ import annotations
 
+import argparse
 import multiprocessing
 import os
 import queue
@@ -13,6 +14,7 @@ import threading
 import time
 import tkinter
 import typing
+from datetime import datetime
 from time import sleep
 from typing import Any, Callable, Optional
 
@@ -27,6 +29,8 @@ from matplotlib.backends.backend_tkagg import (  # type: ignore
     NavigationToolbar2Tk,
 )
 
+args = argparse.Namespace()
+
 
 class CoreServicePacket:
     """
@@ -35,15 +39,18 @@ class CoreServicePacket:
 
     def __init__(self) -> None:
         self.stream_id: int = 0
+        self.packet_type: int = 0
         self.end_of_file: bool = False
         self.center_frequency: float = 0
         self.iq_rate: float = 0.0
         self.sample_index: int = 0
         self.packet_index: int = 0
         self.bin_count: int = 0
+        self.bin_count_real: int = 0
         self.magnitude_spectrum: npt.NDArray[np.float64] = np.zeros([1])
         self.azimuth_spectrum: npt.NDArray[np.float64] = np.zeros([1])
         self.elevation_spectrum: npt.NDArray[np.float64] = np.zeros([1])
+        self.time_ns: int = 0
 
 
 class BaseConnection:
@@ -289,21 +296,23 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
         while len(self.buffer) >= 8:  # packet header is 28 bytes
             cs_packet = CoreServicePacket()
             cs_packet.stream_id = int.from_bytes(self.buffer[0:4], "little")
-            type_id = int.from_bytes(self.buffer[4:8], "little")
-            if type_id == 2:  # end of file, flush buffer
+            cs_packet.packet_type = int.from_bytes(self.buffer[4:8], "little")
+            cs_packet.time_ns = time.time_ns()
+            if cs_packet.packet_type == 2:  # end of file, flush buffer
                 cs_packet.end_of_file = True
-                self.mp_queue.put(cs_packet)
                 self.buffer = self.buffer[8:]
                 self.packet_count += 1
                 cs_packet.packet_index = self.packet_count
+                self.mp_queue.put(cs_packet)
                 self.display_status(
                     f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, End of file"
                 )
-            elif len(self.buffer) >= 28 and type_id == 1:
+            elif len(self.buffer) >= 28 and cs_packet.packet_type == 1:
                 cs_packet.center_frequency = struct.unpack("f", self.buffer[8:12])[0]
                 cs_packet.iq_rate = struct.unpack("f", self.buffer[12:16])[0]
                 cs_packet.sample_index = int.from_bytes(self.buffer[16:24], "little")
                 cs_packet.bin_count = int.from_bytes(self.buffer[24:28], "little")
+                cs_packet.bin_count_real = cs_packet.bin_count
                 packet_size = 3 * 4 * cs_packet.bin_count + 28
                 if (
                     len(self.buffer) >= packet_size
@@ -334,6 +343,24 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
                             ],
                         )
                     )
+                    global args
+                    if args.bin > 0:
+                        # Max bin count the matplotlib frontend can manage to display smoothly.
+                        # Can be adjusted to PC configuration.
+                        decimate = 1
+                        while cs_packet.bin_count / decimate > args.bin:
+                            decimate *= 2
+                        if decimate > 1:
+                            cs_packet.bin_count = int(cs_packet.bin_count / decimate)
+                            cs_packet.magnitude_spectrum = cs_packet.magnitude_spectrum[
+                                :-1:decimate
+                            ]
+                            cs_packet.azimuth_spectrum = cs_packet.azimuth_spectrum[
+                                :-1:decimate
+                            ]
+                            cs_packet.elevation_spectrum = cs_packet.elevation_spectrum[
+                                :-1:decimate
+                            ]
                     self.packet_count += 1
                     cs_packet.packet_index = self.packet_count
                     self.mp_queue.put(cs_packet)
@@ -361,6 +388,15 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
                     self.buffer = self.buffer[packet_size:]  # drop packet from buffer
                 else:
                     break
+            elif cs_packet.packet_type > 2:
+                self.buffer = self.buffer[8:]
+                self.packet_count += 1
+                cs_packet.packet_index = self.packet_count
+                self.mp_queue.put(cs_packet)
+                self.display_status(
+                    f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
+                    f"Unsupported packet type {cs_packet.packet_type}"
+                )
             else:
                 break
 
@@ -379,7 +415,8 @@ class StreamDisplayThread(threading.Thread):
         Action that recreates plot canvas
         """
 
-        self.waterfall_size = 200
+        global args
+        self.waterfall_size = args.wf
         """
         Amount of spectrum lines to be displayed on the waterfall diagram.
         """
@@ -459,6 +496,11 @@ class StreamDisplayThread(threading.Thread):
         Reference of the status label on the main window
         """
 
+        self.packets_lb_ref: Optional[tkinter.Listbox] = None
+        """
+        Reference of the packets listbox on the main window
+        """
+
         self.disconnect: bool = False
         """
         When the disconnect flag is set, the thread loop will quit on the next iteration.
@@ -535,6 +577,15 @@ class StreamDisplayThread(threading.Thread):
                 )  # get a packet from the stream process
             except queue.Empty:
                 continue
+            ts = datetime.fromtimestamp(packet.time_ns / 1e9, tz=None)
+            assert self.packets_lb_ref is not None
+            self.packets_lb_ref.insert(
+                tkinter.END,
+                f"{ts.strftime('%H:%M:%S')}.{int((packet.time_ns%1e9)/1e6):03d} - "
+                f"Index {packet.packet_index}, type {packet.packet_type}",
+            )
+            self.packets_lb_ref.delete(0, self.packets_lb_ref.size() - 100)
+            self.packets_lb_ref.see(tkinter.END)
             if packet.end_of_file:
                 continue  # no animation for EOF packet
             if (
@@ -547,6 +598,7 @@ class StreamDisplayThread(threading.Thread):
                 # Also restart when bin count or any other parameter has changed
                 self.create_anim(
                     bin_count=packet.bin_count,
+                    decimation_factor=packet.bin_count_real / packet.bin_count,
                     center_freq=packet.center_frequency,
                     iq_rate=packet.iq_rate,
                     vmin=float(np.min(packet.magnitude_spectrum)),
@@ -577,6 +629,7 @@ class StreamDisplayThread(threading.Thread):
     def create_anim(
         self,
         bin_count: int,
+        decimation_factor: float,
         center_freq: float,
         iq_rate: float,
         vmin: float,
@@ -648,7 +701,7 @@ class StreamDisplayThread(threading.Thread):
             return f"{x - self.waterfall_size:.0f}"
 
         def magnitude_format_coord(x: float, y: float) -> str:
-            return f"Frequency: {bin_freq_formatter(x)} (bin {int(x)}), Packet: {sample_id_formatter(y)}"
+            return f"Frequency: {bin_freq_formatter(x)} (bin {int(x*decimation_factor)}), Packet: {sample_id_formatter(y)}"
 
         def azimuth_format_coord(x: float, y: float) -> str:
             if 0 < x < len(self.azimuth_spectrum):
@@ -656,7 +709,7 @@ class StreamDisplayThread(threading.Thread):
             else:
                 val = 0
             return (
-                f"Frequency: {bin_freq_formatter(x)} (bin {int(x)}), "
+                f"Frequency: {bin_freq_formatter(x)} (bin {int(x*decimation_factor)}), "
                 f"Angle: {val:.3f} rad ({val / np.pi * 180:.2f} deg)"
             )
 
@@ -874,8 +927,12 @@ class ClientWindow(tkinter.Frame):
             with open("commands.txt", "w") as f1:
                 f1.writelines(h + "\n" for h in command_history_sorted)
 
-        command_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
-        command_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
+        bottom_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
+        bottom_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
+        command_frame = tkinter.Frame(
+            bottom_frame, relief=tkinter.RAISED, borderwidth=1
+        )
+        command_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.LEFT)
         self.console_textarea = tkinter.Text(command_frame, height=5, width=52)
         self.console_textarea.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
         self.console_textarea.configure(state="disabled")
@@ -1002,6 +1059,11 @@ class ClientWindow(tkinter.Frame):
         )
         suggestions_filter()
 
+        self.stream_packets_lb = tkinter.Listbox(bottom_frame, height=4)
+        self.stream_packets_lb.pack(
+            side=tkinter.RIGHT, fill=tkinter.BOTH, padx=6, expand=True
+        )
+
     def create_canvas(self) -> None:
         """
         Creates matplotlib canvas for graph plots. Called when connecting to the client.
@@ -1073,6 +1135,7 @@ class ClientWindow(tkinter.Frame):
         self.stream_thread.recreate_canvas_action = self.create_canvas
         self.stream_thread.host_port = self.host_stream.get()
         self.stream_thread.status_label_ref = self.status_stream_label
+        self.stream_thread.packets_lb_ref = self.stream_packets_lb
         self.stream_thread.start()
         with open("hosts.txt", "w") as f1:
             f1.write(self.host_command.get() + "\n")
@@ -1091,6 +1154,23 @@ class ClientWindow(tkinter.Frame):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="CS Test client parameters")
+    parser.add_argument(
+        "--bin",
+        metavar="N",
+        type=int,
+        default=0,
+        help="maximum displayed bin count (set if experiencing performance issues)",
+    )
+
+    parser.add_argument(
+        "--wf",
+        metavar="N",
+        type=int,
+        default=200,
+        help="maximum packets displayed on waterfall (set if experiencing performance issues)",
+    )
+    args = parser.parse_args()
     root = tkinter.Tk()
     ex = ClientWindow()
     root.geometry("1024x768")
