@@ -58,6 +58,7 @@ class CoreServicePacket:
         self.packet_type: int = 0
         self.end_of_file: bool = False
         self.center_frequency: float = 0
+        self.span: float = 0.0
         self.iq_rate: float = 0.0
         self.sample_index: int = 0
         self.packet_index: int = 0
@@ -66,6 +67,18 @@ class CoreServicePacket:
         self.azimuth_spectrum: npt.NDArray[np.float64] = np.zeros([1])
         self.elevation_spectrum: npt.NDArray[np.float64] = np.zeros([1])
         self.time_ns: int = 0
+        self.roi_level: float = 0.0
+        self.roi_azimuth: float = 0.0
+        self.roi_elevation: float = 0.0
+
+    def __str__(self) -> str:
+        return {
+            0: f"#{self.packet_index} Unknown",
+            1: f"#{self.packet_index} Spectrum ({self.iq_rate/1e6:.2f}M, {self.bin_count} bins)",
+            2: f"#{self.packet_index} EOF",
+            3: f"#{self.packet_index} ROI {self.roi_azimuth:.2f}deg {self.roi_elevation:.2f}deg ",
+            4: f"#{self.packet_index} ROI lack of signal",
+        }[self.packet_type]
 
 
 class BaseConnection:
@@ -302,6 +315,29 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
         assert self.mp_status
         self.mp_status.put(message)
 
+    def insert_packet(self, cs_packet: CoreServicePacket) -> None:
+        self.packet_count += 1
+        cs_packet.packet_index = self.packet_count
+        self.mp_queue.put(cs_packet)
+        while self.counter_ns + self.counter_block_size_parameter <= time.time_ns():
+            self.counter_packet_ratio = self.counter_packet_index * (
+                1e9 / self.counter_block_size_parameter
+            )
+            self.counter_packet_index = 0
+            self.counter_ns += self.counter_block_size_parameter
+        self.counter_packet_index += 1
+        try:
+            self.display_status(
+                f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
+                f"index {cs_packet.sample_index} , speed: {self.counter_packet_ratio} packets/sec, "
+                f"queue count on insert: {self.mp_queue.qsize()}"
+            )
+        except NotImplementedError:  # multiprocessing.Queue.qsize() not implemented on Mac OS X
+            self.display_status(
+                f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
+                f"index {cs_packet.sample_index}"
+            )
+
     def receive_on_socket(self, data: bytes) -> None:
         """
         When data is received on the socket, this function will construct a packet object from the binary data.
@@ -313,16 +349,8 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
             cs_packet.stream_id = int.from_bytes(self.buffer[0:4], "little")
             cs_packet.packet_type = int.from_bytes(self.buffer[4:8], "little")
             cs_packet.time_ns = time.time_ns()
-            if cs_packet.packet_type == 2:  # end of file, flush buffer
-                cs_packet.end_of_file = True
-                self.buffer = self.buffer[8:]
-                self.packet_count += 1
-                cs_packet.packet_index = self.packet_count
-                self.mp_queue.put(cs_packet)
-                self.display_status(
-                    f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, End of file"
-                )
-            elif len(self.buffer) >= 28 and cs_packet.packet_type == 1:
+
+            if len(self.buffer) >= 28 and cs_packet.packet_type == 1:
                 cs_packet.center_frequency = struct.unpack("f", self.buffer[8:12])[0]
                 cs_packet.iq_rate = struct.unpack("f", self.buffer[12:16])[0]
                 cs_packet.sample_index = int.from_bytes(self.buffer[16:24], "little")
@@ -374,44 +402,33 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
                             cs_packet.elevation_spectrum = cs_packet.elevation_spectrum[
                                 :-1:decimate
                             ]
-                    self.packet_count += 1
-                    cs_packet.packet_index = self.packet_count
-                    self.mp_queue.put(cs_packet)
-                    while (
-                        self.counter_ns + self.counter_block_size_parameter
-                        <= time.time_ns()
-                    ):
-                        self.counter_packet_ratio = self.counter_packet_index * (
-                            1e9 / self.counter_block_size_parameter
-                        )
-                        self.counter_packet_index = 0
-                        self.counter_ns += self.counter_block_size_parameter
-                    self.counter_packet_index += 1
-                    try:
-                        self.display_status(
-                            f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
-                            f"index {cs_packet.sample_index} , speed: {self.counter_packet_ratio} packets/sec, "
-                            f"queue count on insert: {self.mp_queue.qsize()}"
-                        )
-                    except NotImplementedError:  # multiprocessing.Queue.qsize() not implemented on Mac OS X
-                        self.display_status(
-                            f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
-                            f"index {cs_packet.sample_index}"
-                        )
+                    self.insert_packet(cs_packet)
                     self.buffer = self.buffer[packet_size:]  # drop packet from buffer
                 else:
-                    break
-            elif cs_packet.packet_type > 2:
+                    break  # wait until next tcp read
+            elif cs_packet.packet_type == 2:  # end of file
+                cs_packet.end_of_file = True
+                self.insert_packet(cs_packet)
                 self.buffer = self.buffer[8:]
-                self.packet_count += 1
-                cs_packet.packet_index = self.packet_count
-                self.mp_queue.put(cs_packet)
+            elif len(self.buffer) >= 28 and cs_packet.packet_type == 3:  # roi result
+                cs_packet.center_frequency = struct.unpack("f", self.buffer[8:12])[0]
+                cs_packet.span = struct.unpack("f", self.buffer[12:16])[0]
+                cs_packet.roi_level = struct.unpack("f", self.buffer[16:20])[0]
+                cs_packet.roi_azimuth = struct.unpack("f", self.buffer[20:24])[0]
+                cs_packet.roi_elevation = struct.unpack("f", self.buffer[24:28])[0]
+                self.insert_packet(cs_packet)
+                self.buffer = self.buffer[28:]  # drop packet from buffer
+            elif cs_packet.packet_type == 4:  # roi lack of signal
+                self.insert_packet(cs_packet)
+                self.buffer = self.buffer[8:]
+            elif cs_packet.packet_type > 4:
+                self.buffer = self.buffer[4:]
                 self.display_status(
-                    f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
+                    f"Stream {cs_packet.stream_id}, "
                     f"Unsupported packet type {cs_packet.packet_type}"
                 )
             else:
-                break
+                break  # no whole packet in the buffer, or unsupported data
 
 
 class StreamDisplayThread(threading.Thread):
@@ -597,7 +614,7 @@ class StreamDisplayThread(threading.Thread):
             self.packets_lb_ref.insert(
                 tkinter.END,
                 f"{ts.strftime('%H:%M:%S')}.{int((packet.time_ns%1e9)/1e6):03d} - "
-                f"Index {packet.packet_index}, type {packet.packet_type}",
+                f"{str(packet)}",
             )
             self.packets_lb_ref.delete(0, self.packets_lb_ref.size() - 100)
             self.packets_lb_ref.see(tkinter.END)
