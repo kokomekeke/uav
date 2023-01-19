@@ -559,6 +559,8 @@ class StreamDisplayThread(threading.Thread):
                     pass
                 except BrokenPipeError:
                     return
+                except RuntimeError:
+                    return  # it might happen on the UI when closing the window
 
         # The purpose of the watcher thread is to take the status messages from the multiprocessing process and display
         # them on the GUI, and to forward the disconnect signal to the process if the "Disconnect" button is clicked.
