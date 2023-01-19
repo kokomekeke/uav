@@ -29,7 +29,23 @@ from matplotlib.backends.backend_tkagg import (  # type: ignore
     NavigationToolbar2Tk,
 )
 
-args = argparse.Namespace()
+parser = argparse.ArgumentParser(description="CS Test client parameters")
+parser.add_argument(
+    "--bin",
+    metavar="N",
+    type=int,
+    default=0,
+    help="maximum displayed bin count (set if experiencing performance issues)",
+)
+
+parser.add_argument(
+    "--wf",
+    metavar="N",
+    type=int,
+    default=200,
+    help="maximum packets displayed on waterfall (set if experiencing performance issues)",
+)
+args = parser.parse_args()
 
 
 class CoreServicePacket:
@@ -1154,23 +1170,6 @@ class ClientWindow(tkinter.Frame):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="CS Test client parameters")
-    parser.add_argument(
-        "--bin",
-        metavar="N",
-        type=int,
-        default=0,
-        help="maximum displayed bin count (set if experiencing performance issues)",
-    )
-
-    parser.add_argument(
-        "--wf",
-        metavar="N",
-        type=int,
-        default=200,
-        help="maximum packets displayed on waterfall (set if experiencing performance issues)",
-    )
-    args = parser.parse_args()
     root = tkinter.Tk()
     ex = ClientWindow()
     root.geometry("1024x768")
