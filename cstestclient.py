@@ -62,7 +62,6 @@ class CoreServicePacket:
         self.sample_index: int = 0
         self.packet_index: int = 0
         self.bin_count: int = 0
-        self.bin_count_real: int = 0
         self.magnitude_spectrum: npt.NDArray[np.float64] = np.zeros([1])
         self.azimuth_spectrum: npt.NDArray[np.float64] = np.zeros([1])
         self.elevation_spectrum: npt.NDArray[np.float64] = np.zeros([1])
@@ -328,7 +327,6 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
                 cs_packet.iq_rate = struct.unpack("f", self.buffer[12:16])[0]
                 cs_packet.sample_index = int.from_bytes(self.buffer[16:24], "little")
                 cs_packet.bin_count = int.from_bytes(self.buffer[24:28], "little")
-                cs_packet.bin_count_real = cs_packet.bin_count
                 packet_size = 3 * 4 * cs_packet.bin_count + 28
                 if (
                     len(self.buffer) >= packet_size
@@ -367,7 +365,6 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
                         while cs_packet.bin_count / decimate > args.bin:
                             decimate *= 2
                         if decimate > 1:
-                            cs_packet.bin_count = int(cs_packet.bin_count / decimate)
                             cs_packet.magnitude_spectrum = cs_packet.magnitude_spectrum[
                                 :-1:decimate
                             ]
@@ -606,7 +603,7 @@ class StreamDisplayThread(threading.Thread):
                 continue  # no animation for EOF packet
             if (
                 not self.animation_started
-                or packet.bin_count != self.waterfall.shape[1]
+                or packet.magnitude_spectrum.size != self.waterfall.shape[1]
                 or packet.center_frequency != self._center_frequency
                 or packet.iq_rate != self._iq_rate
             ):
@@ -614,7 +611,7 @@ class StreamDisplayThread(threading.Thread):
                 # Also restart when bin count or any other parameter has changed
                 self.create_anim(
                     bin_count=packet.bin_count,
-                    decimation_factor=packet.bin_count_real / packet.bin_count,
+                    data_bin_count=packet.magnitude_spectrum.size,
                     center_freq=packet.center_frequency,
                     iq_rate=packet.iq_rate,
                     vmin=float(np.min(packet.magnitude_spectrum)),
@@ -645,7 +642,7 @@ class StreamDisplayThread(threading.Thread):
     def create_anim(
         self,
         bin_count: int,
-        decimation_factor: float,
+        data_bin_count: int,
         center_freq: float,
         iq_rate: float,
         vmin: float,
@@ -656,6 +653,8 @@ class StreamDisplayThread(threading.Thread):
         """
         assert self.recreate_canvas_action
         self.recreate_canvas_action()
+
+        data_bin_count_ratio = bin_count / data_bin_count
 
         class HalfLocator(matplotlib.ticker.Locator):  # type: ignore
             """
@@ -711,13 +710,13 @@ class StreamDisplayThread(threading.Thread):
             return [self.magnitude_image, self.azimuth_image, self.elevation_image]
 
         def bin_freq_formatter(x: float, pos: Any = None) -> str:
-            return f"{((x - bin_count / 2) * (iq_rate / bin_count) + center_freq) / 1e6:.3f}M"
+            return f"{((x - data_bin_count / 2) * (iq_rate / data_bin_count) + center_freq) / 1e6:.3f}M"
 
         def sample_id_formatter(x: float, pos: Any = None) -> str:
             return f"{x - self.waterfall_size:.0f}"
 
         def magnitude_format_coord(x: float, y: float) -> str:
-            return f"Frequency: {bin_freq_formatter(x)} (bin {int(x*decimation_factor)}), Packet: {sample_id_formatter(y)}"
+            return f"Frequency: {bin_freq_formatter(x)} (bin {int(x*data_bin_count_ratio)}), Packet: {sample_id_formatter(y)}"
 
         def azimuth_format_coord(x: float, y: float) -> str:
             if 0 < x < len(self.azimuth_spectrum):
@@ -725,7 +724,7 @@ class StreamDisplayThread(threading.Thread):
             else:
                 val = 0
             return (
-                f"Frequency: {bin_freq_formatter(x)} (bin {int(x*decimation_factor)}), "
+                f"Frequency: {bin_freq_formatter(x)} (bin {int(x*data_bin_count_ratio)}), "
                 f"Angle: {val:.3f} rad ({val / np.pi * 180:.2f} deg)"
             )
 
@@ -736,9 +735,9 @@ class StreamDisplayThread(threading.Thread):
                 val = 0
             return f"Frequency: {bin_freq_formatter(x)} (bin {int(x)}), Angle: {val:.3f} rad ({val / np.pi * 180:.2f} deg)"
 
-        self.waterfall = np.zeros([self.waterfall_size, bin_count])
-        self.azimuth_spectrum = np.zeros([bin_count])
-        self.elevation_spectrum = np.zeros([bin_count])
+        self.waterfall = np.zeros([self.waterfall_size, data_bin_count])
+        self.azimuth_spectrum = np.zeros([data_bin_count])
+        self.elevation_spectrum = np.zeros([data_bin_count])
 
         assert self.fig_ref
         self.fig_ref.clf()
@@ -766,7 +765,7 @@ class StreamDisplayThread(threading.Thread):
         self.magnitude_plot.xaxis.set_major_formatter(
             matplotlib.ticker.FuncFormatter(bin_freq_formatter)
         )
-        self.magnitude_plot.xaxis.set_major_locator(HalfLocator(max=bin_count))
+        self.magnitude_plot.xaxis.set_major_locator(HalfLocator(max=data_bin_count))
         self.magnitude_plot.tick_params(axis="x", labelrotation=45)
         self.magnitude_plot.yaxis.set_major_formatter(
             matplotlib.ticker.FuncFormatter(sample_id_formatter)
@@ -781,7 +780,7 @@ class StreamDisplayThread(threading.Thread):
         self.azimuth_plot.xaxis.set_major_formatter(
             matplotlib.ticker.FuncFormatter(bin_freq_formatter)
         )
-        self.azimuth_plot.xaxis.set_major_locator(HalfLocator(max=bin_count))
+        self.azimuth_plot.xaxis.set_major_locator(HalfLocator(max=data_bin_count))
         self.azimuth_plot.tick_params(axis="x", labelrotation=45)
         self.azimuth_plot.yaxis.set_major_formatter(
             matplotlib.ticker.StrMethodFormatter("{x:.2f}")
@@ -800,7 +799,7 @@ class StreamDisplayThread(threading.Thread):
         self.elevation_plot.xaxis.set_major_formatter(
             matplotlib.ticker.FuncFormatter(bin_freq_formatter)
         )
-        self.elevation_plot.xaxis.set_major_locator(HalfLocator(max=bin_count))
+        self.elevation_plot.xaxis.set_major_locator(HalfLocator(max=data_bin_count))
         self.elevation_plot.tick_params(axis="x", labelrotation=45)
         self.elevation_plot.yaxis.set_major_formatter(
             matplotlib.ticker.StrMethodFormatter("{x:.2f}")
