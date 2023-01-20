@@ -35,7 +35,7 @@ parser.add_argument(
     metavar="N",
     type=int,
     default=0,
-    help="maximum displayed bin count (set if experiencing performance issues)",
+    help="maximum displayed bin count (set if experiencing performance issues) 0=disable decimation",
 )
 
 parser.add_argument(
@@ -385,23 +385,6 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
                             ],
                         )
                     )
-                    global args
-                    if args.bin > 0:
-                        # Max bin count the matplotlib frontend can manage to display smoothly.
-                        # Can be adjusted to PC configuration.
-                        decimate = 1
-                        while cs_packet.bin_count / decimate > args.bin:
-                            decimate *= 2
-                        if decimate > 1:
-                            cs_packet.magnitude_spectrum = cs_packet.magnitude_spectrum[
-                                :-1:decimate
-                            ]
-                            cs_packet.azimuth_spectrum = cs_packet.azimuth_spectrum[
-                                :-1:decimate
-                            ]
-                            cs_packet.elevation_spectrum = cs_packet.elevation_spectrum[
-                                :-1:decimate
-                            ]
                     self.insert_packet(cs_packet)
                     self.buffer = self.buffer[packet_size:]  # drop packet from buffer
                 else:
@@ -620,32 +603,52 @@ class StreamDisplayThread(threading.Thread):
             self.packets_lb_ref.see(tkinter.END)
             if packet.end_of_file:
                 continue  # no animation for EOF packet
+
+            magnitude = packet.magnitude_spectrum
+            azimuth = packet.azimuth_spectrum
+            elevation = packet.elevation_spectrum
+
+            global args
             if (
-                not self.animation_started
-                or packet.magnitude_spectrum.size != self.waterfall.shape[1]
-                or packet.center_frequency != self._center_frequency
+                args.bin > 0
+            ):  # args.bin is the maximum bin count the display can handle. 0 if disabled
+                # Max bin count the matplotlib frontend can manage to display smoothly.
+                # Can be adjusted to PC configuration.
+                decimate = 1
+                while packet.bin_count / decimate > args.bin:
+                    decimate *= 2
+                if decimate > 1:
+                    magnitude = magnitude[:-1:decimate]
+                    azimuth = azimuth[:-1:decimate]
+                    elevation = elevation[:-1:decimate]
+            if (
+                not self.animation_started  # start matplotlib animation if it has not started yet
+                or magnitude.size
+                != self.waterfall.shape[1]  # or restart if the dimensions change
+                or packet.center_frequency
+                != self._center_frequency  # or restart if the axes change
                 or packet.iq_rate != self._iq_rate
             ):
                 # Animation can be created, because at this point we know bin count and other properties
                 # Also restart when bin count or any other parameter has changed
                 self.create_anim(
                     bin_count=packet.bin_count,
-                    data_bin_count=packet.magnitude_spectrum.size,
+                    data_bin_count=magnitude.size,
                     center_freq=packet.center_frequency,
                     iq_rate=packet.iq_rate,
-                    vmin=float(np.min(packet.magnitude_spectrum)),
-                    vmax=float(np.max(packet.magnitude_spectrum)),
+                    vmin=float(np.min(magnitude)),
+                    vmax=float(np.max(magnitude)),
                 )  # type: ignore
                 self._iq_rate = packet.iq_rate
                 self._center_frequency = packet.center_frequency
                 self.animation_started = True
 
-            self.azimuth_spectrum = packet.azimuth_spectrum
-            self.elevation_spectrum = packet.elevation_spectrum
+            self.azimuth_spectrum = azimuth
+            self.elevation_spectrum = elevation
             # FIFO on the waterfall data structure
             self.waterfall = np.append(
                 self.waterfall[-self.waterfall_size + 1 :, :],
-                [packet.magnitude_spectrum],
+                [magnitude],
                 axis=0,
             )
 
