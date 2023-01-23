@@ -1073,6 +1073,7 @@ class ClientWindow(tkinter.Frame):
             """
             self.command_entry.focus()
             self.command_entry.icursor(tkinter.END)
+            suggestions_filter()
             return "break"
 
         self.command_entry = tkinter.Entry(
@@ -1090,6 +1091,7 @@ class ClientWindow(tkinter.Frame):
         command_suggestions_lb.bind("<<ListboxSelect>>", select_suggestion_cmd)
         command_suggestions_lb.bind("<Tab>", to_command_box)
         command_suggestions_lb.bind("<Return>", to_command_box)
+        command_suggestions_lb.bind("<Double-Button>", to_command_box)
 
         command_suggestions_lb.pack(
             side=tkinter.TOP, fill=tkinter.X, padx=5, expand=False
