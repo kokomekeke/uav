@@ -707,6 +707,7 @@ class StreamDisplayThread(threading.Thread):
 
         self.animation_started = False
         stream_process.join()
+        stream_process.terminate()
 
     @typing.no_type_check  # no typing for matplotlib
     def create_anim(
@@ -1266,4 +1267,3 @@ if __name__ == "__main__":
     root.wm_title("CS Test Client")
     root.mainloop()
     ex.disconnect_commands()
-    multiprocessing.get_context("spawn").Manager().register("stop")
