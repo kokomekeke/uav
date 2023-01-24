@@ -74,9 +74,13 @@ class CoreServicePacket:
     def __str__(self) -> str:
         return {
             0: f"#{self.packet_index} Unknown",
-            1: f"#{self.packet_index} Spectrum ({self.iq_rate/1e6:.2f}M, {self.bin_count} bins)",
+            1: f"#{self.packet_index} Spectrum (C: {self.center_frequency/1e6:.3f}M, IQ: {self.iq_rate/1e6:.2f}M, {self.bin_count} bins)",
             2: f"#{self.packet_index} EOF",
-            3: f"#{self.packet_index} ROI {self.roi_azimuth:.2f}deg {self.roi_elevation:.2f}deg ",
+            3: (
+                f"#{self.packet_index} ROI peak {self.center_frequency/1e6:.3f}M, "
+                f"Az: {self.roi_azimuth:.2f} ({self.roi_azimuth / np.pi * 180:.2f}deg), "
+                f"El: {self.roi_elevation:.2f} ({self.roi_elevation / np.pi * 180:.2f}deg) "
+            ),
             4: f"#{self.packet_index} ROI lack of signal",
         }[self.packet_type]
 
@@ -446,12 +450,32 @@ class StreamDisplayThread(threading.Thread):
 
         self.azimuth_spectrum = np.ones([1])
         """
-        Azimuth spectrum data (numpy vector)
+        Azimuth spectrum data [rad] (numpy vector)
         """
 
         self.elevation_spectrum = np.ones([1])
         """
-        Elevation spectrum data (numpy vector)
+        Elevation spectrum data [rad] (numpy vector)
+        """
+
+        self.roi_enabled: bool = False
+        """
+        ROI is enabled
+        """
+
+        self.roi_bin: int = 0
+        """
+        FFT bin position of ROI result
+        """
+
+        self.roi_azimuth: float = 0
+        """
+        Azimuth [rad] of ROI result
+        """
+
+        self.roi_elevation: float = 0
+        """
+        Elevation [rad] of ROI result
         """
 
         self.magnitude_plot: Optional[object] = None
@@ -479,7 +503,17 @@ class StreamDisplayThread(threading.Thread):
         Matplotlib image object for the azimuth plot
         """
 
+        self.azimuth_roi_image: Optional[matplotlib.artist.Artist] = None
+        """
+        Matplotlib image object for the azimuth plot
+        """
+
         self.elevation_image: Optional[matplotlib.artist.Artist] = None
+        """
+        Matplotlib image object for the elevation plot
+        """
+
+        self.elevation_roi_image: Optional[matplotlib.artist.Artist] = None
         """
         Matplotlib image object for the elevation plot
         """
@@ -596,14 +630,28 @@ class StreamDisplayThread(threading.Thread):
             assert self.packets_lb_ref is not None
             self.packets_lb_ref.insert(
                 tkinter.END,
-                f"{ts.strftime('%H:%M:%S')}.{int((packet.time_ns%1e9)/1e6):03d} - "
+                f"[{packet.stream_id}] {ts.strftime('%H:%M:%S')}.{int((packet.time_ns%1e9)/1e6):03d} - "
                 f"{str(packet)}",
             )
-            self.packets_lb_ref.delete(0, self.packets_lb_ref.size() - 100)
+            self.packets_lb_ref.delete(0, self.packets_lb_ref.size() - 1000)
             self.packets_lb_ref.see(tkinter.END)
             if packet.end_of_file:
                 continue  # no animation for EOF packet
-
+            if packet.packet_type == 3:
+                self.roi_enabled = True
+                self.roi_bin = int(
+                    (packet.center_frequency - self._center_frequency)
+                    * (self.azimuth_spectrum.size / self._iq_rate)
+                    + self.azimuth_spectrum.size / 2
+                )
+                self.roi_azimuth = packet.roi_azimuth
+                self.roi_elevation = packet.roi_elevation
+            if packet.packet_type == 4:
+                self.roi_enabled = False
+            if packet.packet_type > 2:
+                continue
+            if packet.bin_count == 0:
+                continue
             magnitude = packet.magnitude_spectrum
             azimuth = packet.azimuth_spectrum
             elevation = packet.elevation_spectrum
@@ -729,7 +777,21 @@ class StreamDisplayThread(threading.Thread):
             self.magnitude_image.set_data(self.waterfall)
             self.azimuth_image.set_ydata(self.azimuth_spectrum)
             self.elevation_image.set_ydata(self.elevation_spectrum)
-            return [self.magnitude_image, self.azimuth_image, self.elevation_image]
+            self.azimuth_roi_image.set_xdata(self.roi_bin)
+            self.azimuth_roi_image.set_ydata(self.roi_azimuth)
+            self.elevation_roi_image.set_xdata(self.roi_bin)
+            self.elevation_roi_image.set_ydata(self.roi_elevation)
+
+            if self.roi_enabled:
+                return [
+                    self.magnitude_image,
+                    self.azimuth_image,
+                    self.elevation_image,
+                    self.azimuth_roi_image,
+                    self.elevation_roi_image,
+                ]
+            else:
+                return [self.magnitude_image, self.azimuth_image, self.elevation_image]
 
         def bin_freq_formatter(x: float, pos: Any = None) -> str:
             return f"{((x - data_bin_count / 2) * (iq_rate / data_bin_count) + center_freq) / 1e6:.3f}M"
@@ -779,11 +841,15 @@ class StreamDisplayThread(threading.Thread):
         )
 
         self.azimuth_image = self.azimuth_plot.plot(
-            self.azimuth_spectrum, lw=1, color="red", animated=True
+            self.azimuth_spectrum, lw=1, color="green", animated=True
         )[0]
+        self.azimuth_roi_image = self.azimuth_plot.plot(0, 0, "or", animated=True)[0]
         self.elevation_image = self.elevation_plot.plot(
             self.elevation_spectrum, lw=1, color="blue", animated=True
         )[0]
+        self.elevation_roi_image = self.elevation_plot.plot(0, 0, "or", animated=True)[
+            0
+        ]
         self.magnitude_plot.xaxis.set_major_formatter(
             matplotlib.ticker.FuncFormatter(bin_freq_formatter)
         )
