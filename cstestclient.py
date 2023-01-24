@@ -1266,3 +1266,4 @@ if __name__ == "__main__":
     root.wm_title("CS Test Client")
     root.mainloop()
     ex.disconnect_commands()
+    multiprocessing.get_context("spawn").Manager().register("stop")
