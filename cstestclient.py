@@ -558,7 +558,7 @@ class StreamDisplayThread(threading.Thread):
         Host and port in <address>:<tcp port> format.
         """
 
-        manager = multiprocessing.Manager()
+        manager = multiprocessing.get_context("spawn").Manager()
         self.disconnect_value = manager.Value("i", 0)
         """
         Setting the '1' value of the disconnect_value multiprocessing variable will end the multiprocessing task on the
@@ -1259,6 +1259,7 @@ class ClientWindow(tkinter.Frame):
 
 
 if __name__ == "__main__":
+    multiprocessing.set_start_method("spawn")
     root = tkinter.Tk()
     ex = ClientWindow()
     root.geometry("1024x768")
