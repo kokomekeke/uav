@@ -866,6 +866,7 @@ class StreamDisplayThread(threading.Thread):
             matplotlib.ticker.FuncFormatter(sample_id_formatter)
         )
         self.magnitude_plot.format_coord = magnitude_format_coord
+        self.fig_ref.colorbar(self.magnitude_image)
 
         self.magnitude_plot.set_label("Magnitude")
         self.magnitude_plot.set_ylabel("Packets")
