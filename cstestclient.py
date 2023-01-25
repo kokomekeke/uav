@@ -37,13 +37,19 @@ parser.add_argument(
     default=0,
     help="maximum displayed bin count (set if experiencing performance issues) 0=disable decimation",
 )
-
 parser.add_argument(
     "--wf",
     metavar="N",
     type=int,
     default=200,
     help="maximum packets displayed on waterfall (set if experiencing performance issues)",
+)
+parser.add_argument(
+    "--fps",
+    metavar="N",
+    type=int,
+    default=30,
+    help="matplotlib display framerate",
 )
 args = parser.parse_args()
 
@@ -904,8 +910,9 @@ class StreamDisplayThread(threading.Thread):
         self.elevation_plot.set_label("Elevation")
         self.elevation_plot.set_aspect("auto")
 
+        global args
         self.animation = FuncAnimation(
-            self.fig_ref, update_imag, interval=25, blit=True
+            self.fig_ref, update_imag, interval=int(1000 / args.fps), blit=True
         )
         grid_spec.tight_layout(figure=self.fig_ref)
         grid_spec.update()
