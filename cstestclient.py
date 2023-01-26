@@ -51,6 +51,8 @@ parser.add_argument(
     default=30,
     help="matplotlib display framerate",
 )
+parser.add_argument("--disp", default=True, action="store_true")
+parser.add_argument("--no-disp", dest="disp", action="store_false")
 args = parser.parse_args()
 
 
@@ -152,6 +154,8 @@ class BaseConnection:
         """
         General implementation of socket handling for both the stream and the command sockets.
         """
+        if not self.host_port:
+            return
         host_port_split = self.host_port.split(":")
         host, port = (host_port_split[0], host_port_split[1])
         try:
@@ -576,6 +580,7 @@ class StreamDisplayThread(threading.Thread):
         Entry point of the data handling thread
         """
 
+        global args
         status_queue: multiprocessing.Queue[str] = multiprocessing.Queue()
         """
         The string elements of the status queue are the messages to be displayed on the GUI status bar
@@ -658,11 +663,12 @@ class StreamDisplayThread(threading.Thread):
                 continue
             if packet.bin_count == 0:
                 continue
+            if not args.disp:
+                continue
             magnitude = packet.magnitude_spectrum
             azimuth = packet.azimuth_spectrum
             elevation = packet.elevation_spectrum
 
-            global args
             if (
                 args.bin > 0
             ):  # args.bin is the maximum bin count the display can handle. 0 if disabled
@@ -922,6 +928,7 @@ class StreamDisplayThread(threading.Thread):
 
 class ClientWindow(tkinter.Frame):
     def __init__(self) -> None:
+        global args
         super().__init__()
         self.fig: Optional[pyplot.Figure] = None
         self.canvas: Optional[FigureCanvasTkAgg] = None
@@ -1010,9 +1017,9 @@ class ClientWindow(tkinter.Frame):
             connect_frame, text="Connect", command=self.connect_commands
         )
         self.connect_button.pack(side=tkinter.RIGHT)
-
         self.plot_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
-        self.plot_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
+        if args.disp:
+            self.plot_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
 
         self.command_suggestions = set()
 
@@ -1040,12 +1047,15 @@ class ClientWindow(tkinter.Frame):
                 f1.writelines(h + "\n" for h in command_history_sorted)
 
         bottom_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
-        bottom_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
+        bottom_frame.pack(fill=tkinter.BOTH, expand=not args.disp, side=tkinter.TOP)
         command_frame = tkinter.Frame(
             bottom_frame, relief=tkinter.RAISED, borderwidth=1
         )
         command_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.LEFT)
-        self.console_textarea = tkinter.Text(command_frame, height=5, width=52)
+        if args.disp:
+            self.console_textarea = tkinter.Text(command_frame, height=5, width=52)
+        else:
+            self.console_textarea = tkinter.Text(command_frame, width=40)
         self.console_textarea.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
         self.console_textarea.configure(state="disabled")
 
