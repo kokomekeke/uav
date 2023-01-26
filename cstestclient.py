@@ -303,7 +303,7 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
         Overall packet count
         """
 
-        self.buf_size = 2048  # 65536
+        self.buf_size = 131072  # 65536
         """
         This buffer size will be read at once from the TCP socket.
         """
