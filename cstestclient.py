@@ -51,8 +51,19 @@ parser.add_argument(
     default=30,
     help="matplotlib display framerate",
 )
-parser.add_argument("--disp", default=True, action="store_true")
-parser.add_argument("--no-disp", dest="disp", action="store_false")
+parser.add_argument(
+    "--disp", default=True, action="store_true", help="turn on matplotlib display"
+)
+parser.add_argument(
+    "--no-disp", dest="disp", action="store_false", help="turn off matplotlib display"
+)
+parser.add_argument(
+    "--roi-wf",
+    dest="roi_wf",
+    default=False,
+    action="store_true",
+    help="display roi waterfall",
+)
 args = parser.parse_args()
 
 
@@ -468,6 +479,11 @@ class StreamDisplayThread(threading.Thread):
         Elevation spectrum data [rad] (numpy vector)
         """
 
+        self.roi_waterfall = np.ones([1, 1])
+        """
+        ROI waterfall data (Rows: time, Cols: [Az, El])
+        """
+
         self.roi_enabled: bool = False
         """
         ROI is enabled
@@ -503,6 +519,11 @@ class StreamDisplayThread(threading.Thread):
         Matplotlib plot (axes) object for the elevation plot
         """
 
+        self.roi_waterfall_plot: Optional[object] = None
+        """
+        Matplotlib plot (axes) object for the ROI plot
+        """
+
         self.magnitude_image: Optional[matplotlib.artist.Artist] = None
         """
         Matplotlib image object for the magnitude plot
@@ -526,6 +547,16 @@ class StreamDisplayThread(threading.Thread):
         self.elevation_roi_image: Optional[matplotlib.artist.Artist] = None
         """
         Matplotlib image object for the elevation plot
+        """
+
+        self.roi_waterfall_azimuth_image: Optional[matplotlib.artist.Artist] = None
+        """
+        Matplotlib image object for the ROI waterfall azimuth
+        """
+
+        self.roi_waterfall_elevation_image: Optional[matplotlib.artist.Artist] = None
+        """
+        Matplotlib image object for the ROI waterfall elevation
         """
 
         self.animation: Optional[matplotlib.animation.FuncAnimation] = None
@@ -708,9 +739,21 @@ class StreamDisplayThread(threading.Thread):
             # FIFO on the waterfall data structure
             self.waterfall = np.append(
                 self.waterfall[-self.waterfall_size + 1 :, :],
-                [magnitude],
+                np.array([magnitude]),
                 axis=0,
             )
+            if args.roi_wf:
+                self.roi_waterfall = np.append(
+                    self.roi_waterfall[-self.waterfall_size + 1 :, :],
+                    np.array(
+                        [
+                            [self.roi_azimuth, self.roi_elevation]
+                            if self.roi_enabled
+                            else [None, None]  # type: ignore
+                        ]
+                    ),
+                    axis=0,
+                )
 
             # self.status_label_ref.config(
             #     text=f"Packet {packet.packet_index} - Stream {packet.stream_id}, index {packet.sample_index}"
@@ -731,6 +774,9 @@ class StreamDisplayThread(threading.Thread):
         vmin: float,
         vmax: float,
     ) -> None:
+
+        global args
+        pi_chr = chr(0x03C0)
         """
         Creates matplotlib animation on the GUI
         """
@@ -788,23 +834,35 @@ class StreamDisplayThread(threading.Thread):
             Called on each frame of the graph animation
             """
             self.magnitude_image.set_data(self.waterfall)
-            self.azimuth_image.set_ydata(self.azimuth_spectrum)
-            self.elevation_image.set_ydata(self.elevation_spectrum)
-            self.azimuth_roi_image.set_xdata(self.roi_bin)
-            self.azimuth_roi_image.set_ydata(self.roi_azimuth)
-            self.elevation_roi_image.set_xdata(self.roi_bin)
-            self.elevation_roi_image.set_ydata(self.roi_elevation)
-
-            if self.roi_enabled:
+            if args.roi_wf:
+                self.roi_waterfall_azimuth_image.set_xdata(self.roi_waterfall[:, 0])
+                self.roi_waterfall_elevation_image.set_xdata(self.roi_waterfall[:, 1])
                 return [
                     self.magnitude_image,
-                    self.azimuth_image,
-                    self.elevation_image,
-                    self.azimuth_roi_image,
-                    self.elevation_roi_image,
+                    self.roi_waterfall_azimuth_image,
+                    self.roi_waterfall_elevation_image,
                 ]
             else:
-                return [self.magnitude_image, self.azimuth_image, self.elevation_image]
+                self.azimuth_image.set_ydata(self.azimuth_spectrum)
+                self.elevation_image.set_ydata(self.elevation_spectrum)
+                self.azimuth_roi_image.set_xdata(self.roi_bin)
+                self.azimuth_roi_image.set_ydata(self.roi_azimuth)
+                self.elevation_roi_image.set_xdata(self.roi_bin)
+                self.elevation_roi_image.set_ydata(self.roi_elevation)
+                if self.roi_enabled:
+                    return [
+                        self.magnitude_image,
+                        self.azimuth_image,
+                        self.elevation_image,
+                        self.azimuth_roi_image,
+                        self.elevation_roi_image,
+                    ]
+                else:
+                    return [
+                        self.magnitude_image,
+                        self.azimuth_image,
+                        self.elevation_image,
+                    ]
 
         def bin_freq_formatter(x: float, pos: Any = None) -> str:
             return f"{((x - data_bin_count / 2) * (iq_rate / data_bin_count) + center_freq) / 1e6:.3f}M"
@@ -832,9 +890,17 @@ class StreamDisplayThread(threading.Thread):
                 val = 0
             return f"Frequency: {bin_freq_formatter(x)} (bin {int(x)}), Angle: {val:.3f} rad ({val / np.pi * 180:.2f} deg)"
 
+        def roi_format_coord(x: float, y: float) -> str:
+            return (
+                f"Packet: {sample_id_formatter(y)}, "
+                f"Angle: {x:.3f} rad ({x / np.pi * 180:.2f} deg)"
+            )
+
         self.waterfall = np.zeros([self.waterfall_size, data_bin_count])
         self.azimuth_spectrum = np.zeros([data_bin_count])
         self.elevation_spectrum = np.zeros([data_bin_count])
+        self.roi_waterfall = np.empty([self.waterfall_size, 2])
+        self.roi_waterfall.fill(None)
 
         assert self.fig_ref
         self.fig_ref.clf()
@@ -843,8 +909,6 @@ class StreamDisplayThread(threading.Thread):
             nrows=2, ncols=2, width_ratios=(3, 2), height_ratios=(1, 1)
         )
         self.magnitude_plot = self.fig_ref.add_subplot(grid_spec[:, 0])
-        self.azimuth_plot = self.fig_ref.add_subplot(grid_spec[0, 1])
-        self.elevation_plot = self.fig_ref.add_subplot(grid_spec[1, 1])
         self.magnitude_image = self.magnitude_plot.imshow(
             self.waterfall,
             cmap=matplotlib.cm.get_cmap("gnuplot"),
@@ -853,16 +917,6 @@ class StreamDisplayThread(threading.Thread):
             vmin=vmin,
         )
 
-        self.azimuth_image = self.azimuth_plot.plot(
-            self.azimuth_spectrum, lw=1, color="green", animated=True
-        )[0]
-        self.azimuth_roi_image = self.azimuth_plot.plot(0, 0, "or", animated=True)[0]
-        self.elevation_image = self.elevation_plot.plot(
-            self.elevation_spectrum, lw=1, color="blue", animated=True
-        )[0]
-        self.elevation_roi_image = self.elevation_plot.plot(0, 0, "or", animated=True)[
-            0
-        ]
         self.magnitude_plot.xaxis.set_major_formatter(
             matplotlib.ticker.FuncFormatter(bin_freq_formatter)
         )
@@ -877,47 +931,105 @@ class StreamDisplayThread(threading.Thread):
         self.magnitude_plot.set_label("Magnitude")
         self.magnitude_plot.set_ylabel("Packets")
         self.magnitude_plot.set_aspect("auto")
+        if args.roi_wf:
+            self.roi_waterfall_plot = self.fig_ref.add_subplot(grid_spec[:, 1])
 
-        pi_chr = chr(0x03C0)
-        self.azimuth_plot.xaxis.set_major_formatter(
-            matplotlib.ticker.FuncFormatter(bin_freq_formatter)
-        )
-        self.azimuth_plot.xaxis.set_major_locator(HalfLocator(max=data_bin_count))
-        self.azimuth_plot.tick_params(axis="x", labelrotation=45)
-        self.azimuth_plot.yaxis.set_major_formatter(
-            matplotlib.ticker.StrMethodFormatter("{x:.2f}")
-        )
-        self.azimuth_plot.grid(axis="both")
-        self.azimuth_plot.format_coord = azimuth_format_coord
-        self.azimuth_plot.set_ylim(-np.pi, np.pi)
-        self.azimuth_plot.set_yticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi])
-        self.azimuth_plot.set_yticklabels(
-            [f"-{pi_chr}", f"-{pi_chr}/2", "0", f"+{pi_chr}/2", f"+{pi_chr}"]
-        )
-        self.azimuth_plot.set_ylabel("Azimuth")
-        self.azimuth_plot.set_label("Azimuth")
-        self.azimuth_plot.set_aspect("auto")
+            self.roi_waterfall_azimuth_image = self.roi_waterfall_plot.plot(
+                self.roi_waterfall[:, 0],
+                np.arange(0, 200),
+                lw=1,
+                color="green",
+                animated=True,
+                label="Az",
+            )[0]
+            self.roi_waterfall_elevation_image = self.roi_waterfall_plot.plot(
+                self.roi_waterfall[:, 1],
+                np.arange(0, 200),
+                lw=1,
+                color="blue",
+                animated=True,
+                label="El",
+            )[0]
+            self.roi_waterfall_plot.yaxis.set_major_formatter(
+                matplotlib.ticker.FuncFormatter(sample_id_formatter)
+            )
+            self.roi_waterfall_plot.set_ylabel("Packets")
+            self.roi_waterfall_plot.set_aspect("auto")
 
-        self.elevation_plot.xaxis.set_major_formatter(
-            matplotlib.ticker.FuncFormatter(bin_freq_formatter)
-        )
-        self.elevation_plot.xaxis.set_major_locator(HalfLocator(max=data_bin_count))
-        self.elevation_plot.tick_params(axis="x", labelrotation=45)
-        self.elevation_plot.yaxis.set_major_formatter(
-            matplotlib.ticker.StrMethodFormatter("{x:.2f}")
-        )
-        self.elevation_plot.grid(axis="both")
-        self.elevation_plot.format_coord = elevation_format_coord
-        self.elevation_plot.set_ylim(-np.pi, np.pi)
-        self.elevation_plot.set_yticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi])
-        self.elevation_plot.set_yticklabels(
-            [f"-{pi_chr}", f"-{pi_chr}/2", "0", f"+{pi_chr}/2", f"+{pi_chr}"]
-        )
-        self.elevation_plot.set_ylabel("Elevation")
-        self.elevation_plot.set_label("Elevation")
-        self.elevation_plot.set_aspect("auto")
+            self.roi_waterfall_plot.xaxis.set_major_formatter(
+                matplotlib.ticker.StrMethodFormatter("{x:.2f}")
+            )
+            self.roi_waterfall_plot.grid(axis="both")
+            self.roi_waterfall_plot.set_xlim(-np.pi, np.pi)
+            self.roi_waterfall_plot.set_xticks(
+                [-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi]
+            )
+            self.roi_waterfall_plot.set_xticklabels(
+                [f"-{pi_chr}", f"-{pi_chr}/2", "0", f"+{pi_chr}/2", f"+{pi_chr}"]
+            )
+            self.roi_waterfall_plot.format_coord = roi_format_coord
+            self.roi_waterfall_plot.set_label("ROI Waterfall")
+            self.roi_waterfall_plot.set_aspect("auto")
+            self.roi_waterfall_plot.invert_yaxis()
+            self.roi_waterfall_plot.set_ylim(self.waterfall_size, 0)
+            self.roi_waterfall_plot.yaxis.set_label_position("right")
+            self.roi_waterfall_plot.yaxis.tick_right()
+            self.roi_waterfall_plot.legend()
+        else:
+            self.azimuth_plot = self.fig_ref.add_subplot(grid_spec[0, 1])
+            self.elevation_plot = self.fig_ref.add_subplot(grid_spec[1, 1])
 
-        global args
+            self.azimuth_image = self.azimuth_plot.plot(
+                self.azimuth_spectrum, lw=1, color="green", animated=True
+            )[0]
+            self.azimuth_roi_image = self.azimuth_plot.plot(0, 0, "or", animated=True)[
+                0
+            ]
+            self.elevation_image = self.elevation_plot.plot(
+                self.elevation_spectrum, lw=1, color="blue", animated=True
+            )[0]
+            self.elevation_roi_image = self.elevation_plot.plot(
+                0, 0, "or", animated=True
+            )[0]
+
+            self.azimuth_plot.xaxis.set_major_formatter(
+                matplotlib.ticker.FuncFormatter(bin_freq_formatter)
+            )
+            self.azimuth_plot.xaxis.set_major_locator(HalfLocator(max=data_bin_count))
+            self.azimuth_plot.tick_params(axis="x", labelrotation=45)
+            self.azimuth_plot.yaxis.set_major_formatter(
+                matplotlib.ticker.StrMethodFormatter("{x:.2f}")
+            )
+            self.azimuth_plot.grid(axis="both")
+            self.azimuth_plot.format_coord = azimuth_format_coord
+            self.azimuth_plot.set_ylim(-np.pi, np.pi)
+            self.azimuth_plot.set_yticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi])
+            self.azimuth_plot.set_yticklabels(
+                [f"-{pi_chr}", f"-{pi_chr}/2", "0", f"+{pi_chr}/2", f"+{pi_chr}"]
+            )
+            self.azimuth_plot.set_ylabel("Azimuth")
+            self.azimuth_plot.set_label("Azimuth")
+            self.azimuth_plot.set_aspect("auto")
+
+            self.elevation_plot.xaxis.set_major_formatter(
+                matplotlib.ticker.FuncFormatter(bin_freq_formatter)
+            )
+            self.elevation_plot.xaxis.set_major_locator(HalfLocator(max=data_bin_count))
+            self.elevation_plot.tick_params(axis="x", labelrotation=45)
+            self.elevation_plot.yaxis.set_major_formatter(
+                matplotlib.ticker.StrMethodFormatter("{x:.2f}")
+            )
+            self.elevation_plot.grid(axis="both")
+            self.elevation_plot.format_coord = elevation_format_coord
+            self.elevation_plot.set_ylim(-np.pi, np.pi)
+            self.elevation_plot.set_yticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi])
+            self.elevation_plot.set_yticklabels(
+                [f"-{pi_chr}", f"-{pi_chr}/2", "0", f"+{pi_chr}/2", f"+{pi_chr}"]
+            )
+            self.elevation_plot.set_ylabel("Elevation")
+            self.elevation_plot.set_label("Elevation")
+            self.elevation_plot.set_aspect("auto")
+
         self.animation = FuncAnimation(
             self.fig_ref, update_imag, interval=int(1000 / args.fps), blit=True
         )
