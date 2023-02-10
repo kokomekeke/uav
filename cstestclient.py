@@ -635,7 +635,8 @@ class StreamDisplayThread(threading.Thread):
                         )  # get status message from stream process
                     if message == "END":
                         break
-                    self.status_label_ref.config(text=message)
+                    if message != "":
+                        self.status_label_ref.config(text=message)
                     list_items: list[str] = []
                     while not packet_string_queue.empty():
                         list_items.append(packet_string_queue.get())
