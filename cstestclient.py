@@ -617,7 +617,7 @@ class StreamDisplayThread(threading.Thread):
         The string elements of the status queue are the messages to be displayed on the GUI status bar
         """
 
-        packetstring_queue: queue.Queue[str] = queue.Queue()
+        packet_string_queue: queue.Queue[str] = queue.Queue()
 
         def status_watcher() -> None:
             """
@@ -628,15 +628,17 @@ class StreamDisplayThread(threading.Thread):
             while True:
                 try:
                     self.disconnect_value.value = self.disconnect
-                    message = status_queue.get(
-                        timeout=0.2
-                    )  # get status message from stream process
+                    message = ""
+                    while not status_queue.empty():
+                        message = status_queue.get(
+                            timeout=0.2
+                        )  # get status message from stream process
                     if message == "END":
                         break
                     self.status_label_ref.config(text=message)
                     list_items: list[str] = []
-                    while not packetstring_queue.empty():
-                        list_items.append(packetstring_queue.get())
+                    while not packet_string_queue.empty():
+                        list_items.append(packet_string_queue.get())
                     self.packets_lb_ref.insert(tkinter.END, *list_items)
                     self.packets_lb_ref.delete(0, self.packets_lb_ref.size() - 1000)
                     self.packets_lb_ref.see(tkinter.END)
@@ -678,7 +680,7 @@ class StreamDisplayThread(threading.Thread):
             except queue.Empty:
                 continue
             ts = datetime.fromtimestamp(packet.time_ns / 1e9, tz=None)
-            packetstring_queue.put(
+            packet_string_queue.put(
                 f"[{packet.stream_id}] {ts.strftime('%H:%M:%S')}.{int((packet.time_ns%1e9)/1e6):03d} - "
                 f"{str(packet)}",
             )
