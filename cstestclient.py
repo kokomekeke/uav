@@ -627,22 +627,27 @@ class StreamDisplayThread(threading.Thread):
             assert self.packets_lb_ref is not None
             while True:
                 try:
+                    terminate = False
                     self.disconnect_value.value = self.disconnect
-                    message = ""
+                    disp_message = ""
                     while not status_queue.empty():
                         message = status_queue.get(
                             timeout=0.2
                         )  # get status message from stream process
-                    if message == "END":
-                        break
-                    if message != "":
-                        self.status_label_ref.config(text=message)
+                        if message == "END":
+                            terminate = True
+                        else:
+                            disp_message = message
+                    if disp_message != "":
+                        self.status_label_ref.config(text=disp_message)
                     list_items: list[str] = []
                     while not packet_string_queue.empty():
                         list_items.append(packet_string_queue.get())
                     self.packets_lb_ref.insert(tkinter.END, *list_items)
                     self.packets_lb_ref.delete(0, self.packets_lb_ref.size() - 1000)
                     self.packets_lb_ref.see(tkinter.END)
+                    if terminate:
+                        return
                 except queue.Empty:
                     pass
                 except BrokenPipeError:
