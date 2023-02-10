@@ -617,11 +617,14 @@ class StreamDisplayThread(threading.Thread):
         The string elements of the status queue are the messages to be displayed on the GUI status bar
         """
 
+        packetstring_queue: queue.Queue[str] = queue.Queue()
+
         def status_watcher() -> None:
             """
             Entry point of the watcher thread
             """
-            assert self.status_label_ref
+            assert self.status_label_ref is not None
+            assert self.packets_lb_ref is not None
             while True:
                 try:
                     self.disconnect_value.value = self.disconnect
@@ -631,6 +634,12 @@ class StreamDisplayThread(threading.Thread):
                     if message == "END":
                         break
                     self.status_label_ref.config(text=message)
+                    while not packetstring_queue.empty():
+                        self.packets_lb_ref.insert(
+                            tkinter.END, packetstring_queue.get()
+                        )
+                        self.packets_lb_ref.delete(0, self.packets_lb_ref.size() - 1000)
+                        self.packets_lb_ref.see(tkinter.END)
                 except queue.Empty:
                     pass
                 except BrokenPipeError:
@@ -669,14 +678,10 @@ class StreamDisplayThread(threading.Thread):
             except queue.Empty:
                 continue
             ts = datetime.fromtimestamp(packet.time_ns / 1e9, tz=None)
-            assert self.packets_lb_ref is not None
-            self.packets_lb_ref.insert(
-                tkinter.END,
+            packetstring_queue.put(
                 f"[{packet.stream_id}] {ts.strftime('%H:%M:%S')}.{int((packet.time_ns%1e9)/1e6):03d} - "
                 f"{str(packet)}",
             )
-            self.packets_lb_ref.delete(0, self.packets_lb_ref.size() - 1000)
-            self.packets_lb_ref.see(tkinter.END)
             if packet.end_of_file:
                 continue  # no animation for EOF packet
             if packet.packet_type == 3:
@@ -936,7 +941,7 @@ class StreamDisplayThread(threading.Thread):
 
             self.roi_waterfall_azimuth_image = self.roi_waterfall_plot.plot(
                 self.roi_waterfall[:, 0],
-                np.arange(0, 200),
+                np.arange(0, self.waterfall_size),
                 lw=1,
                 color="green",
                 animated=True,
@@ -944,7 +949,7 @@ class StreamDisplayThread(threading.Thread):
             )[0]
             self.roi_waterfall_elevation_image = self.roi_waterfall_plot.plot(
                 self.roi_waterfall[:, 1],
-                np.arange(0, 200),
+                np.arange(0, self.waterfall_size),
                 lw=1,
                 color="blue",
                 animated=True,
