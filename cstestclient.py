@@ -634,12 +634,12 @@ class StreamDisplayThread(threading.Thread):
                     if message == "END":
                         break
                     self.status_label_ref.config(text=message)
+                    list_items: list[str] = []
                     while not packetstring_queue.empty():
-                        self.packets_lb_ref.insert(
-                            tkinter.END, packetstring_queue.get()
-                        )
-                        self.packets_lb_ref.delete(0, self.packets_lb_ref.size() - 1000)
-                        self.packets_lb_ref.see(tkinter.END)
+                        list_items.append(packetstring_queue.get())
+                    self.packets_lb_ref.insert(tkinter.END, *list_items)
+                    self.packets_lb_ref.delete(0, self.packets_lb_ref.size() - 1000)
+                    self.packets_lb_ref.see(tkinter.END)
                 except queue.Empty:
                     pass
                 except BrokenPipeError:
