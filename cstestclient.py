@@ -638,14 +638,18 @@ class StreamDisplayThread(threading.Thread):
                             terminate = True
                         else:
                             disp_message = message
-                    if disp_message != "":
-                        self.status_label_ref.config(text=disp_message)
+                    if (
+                        disp_message != ""
+                    ):  # only send the last message to UI (UI calls are slow)
+                        self.status_label_ref.config(text=disp_message)  # slow UI call
                     list_items: list[str] = []
                     while not packet_string_queue.empty():
                         list_items.append(packet_string_queue.get())
-                    self.packets_lb_ref.insert(tkinter.END, *list_items)
-                    self.packets_lb_ref.delete(0, self.packets_lb_ref.size() - 1000)
-                    self.packets_lb_ref.see(tkinter.END)
+                    self.packets_lb_ref.insert(tkinter.END, *list_items)  # slow UI call
+                    self.packets_lb_ref.delete(
+                        0, self.packets_lb_ref.size() - 1000
+                    )  # slow UI call
+                    self.packets_lb_ref.see(tkinter.END)  # slow UI call
                     if terminate:
                         return
                 except queue.Empty:
@@ -689,7 +693,7 @@ class StreamDisplayThread(threading.Thread):
             packet_string_queue.put(
                 f"[{packet.stream_id}] {ts.strftime('%H:%M:%S')}.{int((packet.time_ns%1e9)/1e6):03d} - "
                 f"{str(packet)}",
-            )
+            )  # handle UI in a separate thread, because UI calls are slow
             if packet.end_of_file:
                 continue  # no animation for EOF packet
             if packet.packet_type == 3:
