@@ -698,11 +698,14 @@ class StreamDisplayThread(threading.Thread):
                 continue  # no animation for EOF packet
             if packet.packet_type == 3:
                 self.roi_enabled = True
-                self.roi_bin = int(
-                    (packet.center_frequency - self._center_frequency)
-                    * (self.azimuth_spectrum.size / self._iq_rate)
-                    + self.azimuth_spectrum.size / 2
-                )
+                if self._iq_rate == 0:
+                    self.roi_bin = 0
+                else:
+                    self.roi_bin = int(
+                        (packet.center_frequency - self._center_frequency)
+                        * (self.azimuth_spectrum.size / self._iq_rate)
+                        + self.azimuth_spectrum.size / 2
+                    )
                 self.roi_azimuth = packet.roi_azimuth
                 self.roi_elevation = packet.roi_elevation
             if packet.packet_type == 4:
