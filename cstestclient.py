@@ -748,7 +748,7 @@ class StreamDisplayThread(threading.Thread):
                     center_freq=packet.center_frequency,
                     iq_rate=packet.iq_rate,
                     vmin=float(np.min(magnitude)),
-                    vmax=float(np.max(magnitude)),
+                    vmax=0,  # float(np.max(magnitude)),
                 )  # type: ignore
                 self._iq_rate = packet.iq_rate
                 self._center_frequency = packet.center_frequency
