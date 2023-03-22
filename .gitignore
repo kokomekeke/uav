@@ -54,3 +54,4 @@ Thumbs.db
 # App conf files
 commands.txt
 hosts.txt
+octave*.txt

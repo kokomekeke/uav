@@ -5,9 +5,11 @@
 from __future__ import annotations
 
 import argparse
+import math
 import multiprocessing
 import os
 import queue
+import re
 import socket
 import struct
 import threading
@@ -21,13 +23,13 @@ from typing import Any, Callable, Optional
 import matplotlib.cm
 import numpy as np
 import numpy.typing as npt
+import serial
 from matplotlib import pyplot
 from matplotlib.animation import FuncAnimation  # type: ignore
-from matplotlib.backend_bases import KeyEvent, key_press_handler  # type: ignore
+from matplotlib.backend_bases import (KeyEvent,  # type: ignore
+                                      key_press_handler)
 from matplotlib.backends.backend_tkagg import (  # type: ignore
-    FigureCanvasTkAgg,
-    NavigationToolbar2Tk,
-)
+    FigureCanvasTkAgg, NavigationToolbar2Tk)
 
 parser = argparse.ArgumentParser(description="CS Test client parameters")
 parser.add_argument(
@@ -64,7 +66,74 @@ parser.add_argument(
     action="store_true",
     help="display roi waterfall",
 )
+parser.add_argument(
+    "--sensor-dev",
+    dest="sensor_dev",
+    metavar="N",
+    type=str,
+    help="sensor device",
+)
 args = parser.parse_args()
+
+roi_data = np.zeros([2, 2])
+compass_data = np.zeros([2, 3])
+
+
+class CompassSensor(threading.Thread):
+    def __init__(self) -> None:
+        super().__init__()
+        global args
+        self.daemon = True
+        self.ser = serial.Serial()
+        self.ser.port = args.sensor_dev  # "/dev/rfcomm2"
+        # If it breaks try the below
+        # self.serConf() # Uncomment lines here till it works
+
+        self.ser.baudrate = 9600
+        self.ser.bytesize = serial.EIGHTBITS
+        self.ser.parity = serial.PARITY_NONE
+        self.ser.stopbits = serial.STOPBITS_ONE
+        self.ser.timeout = 50  # Non-Block reading
+        self.ser.xonxoff = False  # Disable Software Flow Control
+        self.ser.rtscts = False  # Disable (RTS/CTS) flow Control
+        self.ser.dsrdtr = False  # Disable (DSR/DTR) flow Control
+        # self.ser.writeTimeout = 2
+        self.ser.open()
+        # self.ser.flushInput()
+        # self.ser.flushOutput()
+
+        self.sensor: float = 0.0
+        self.compass = np.array([0.0, 0.0, 0.0])
+
+        self.addr = None
+
+    def run(self) -> None:
+        pattern = re.compile(
+            r"\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*"
+        )
+        while True:
+            line = self.ser.readline()
+            tokens = pattern.match(line.decode())
+            if tokens is None:
+                continue
+            try:
+                self.compass = np.array(
+                    [
+                        float(tokens.group(4)),
+                        float(tokens.group(5)),
+                        float(tokens.group(6)),
+                    ]
+                )
+                print(self.compass)
+                self.sensor = math.atan2(self.compass[0], self.compass[1])
+            except ValueError:
+                pass
+
+    def close(self) -> None:
+        self.ser.close()
+
+
+compass: Optional[CompassSensor] = None
 
 
 class CoreServicePacket:
@@ -93,10 +162,10 @@ class CoreServicePacket:
     def __str__(self) -> str:
         return {
             0: f"#{self.packet_index} Unknown",
-            1: f"#{self.packet_index} Spectrum (C: {self.center_frequency/1e6:.3f}M, IQ: {self.iq_rate/1e6:.2f}M, {self.bin_count} bins)",
+            1: f"#{self.packet_index} Spectrum (C: {self.center_frequency / 1e6:.3f}M, IQ: {self.iq_rate / 1e6:.2f}M, {self.bin_count} bins)",
             2: f"#{self.packet_index} EOF",
             3: (
-                f"#{self.packet_index} ROI peak {self.center_frequency/1e6:.3f}M, "
+                f"#{self.packet_index} ROI peak {self.center_frequency / 1e6:.3f}M, "
                 f"Az: {self.roi_azimuth:.2f} ({self.roi_azimuth / np.pi * 180:.2f}deg), "
                 f"El: {self.roi_elevation:.2f} ({self.roi_elevation / np.pi * 180:.2f}deg) "
             ),
@@ -559,6 +628,11 @@ class StreamDisplayThread(threading.Thread):
         Matplotlib image object for the ROI waterfall elevation
         """
 
+        self.roi_waterfall_compass_image: Optional[matplotlib.artist.Artist] = None
+        """
+        Matplotlib image object for the ROI compass
+        """
+
         self.animation: Optional[matplotlib.animation.FuncAnimation] = None
         """
         Matplotlib FuncAnimation object for animating the graphs
@@ -691,7 +765,7 @@ class StreamDisplayThread(threading.Thread):
                 continue
             ts = datetime.fromtimestamp(packet.time_ns / 1e9, tz=None)
             packet_string_queue.put(
-                f"[{packet.stream_id}] {ts.strftime('%H:%M:%S')}.{int((packet.time_ns%1e9)/1e6):03d} - "
+                f"[{packet.stream_id}] {ts.strftime('%H:%M:%S')}.{int((packet.time_ns % 1e9) / 1e6):03d} - "
                 f"{str(packet)}",
             )  # handle UI in a separate thread, because UI calls are slow
             if packet.end_of_file:
@@ -763,17 +837,34 @@ class StreamDisplayThread(threading.Thread):
                 axis=0,
             )
             if args.roi_wf:
+                sensor: Optional[float] = None
+                global compass
+                if compass is not None:
+                    sensor = compass.sensor
                 self.roi_waterfall = np.append(
                     self.roi_waterfall[-self.waterfall_size + 1 :, :],
                     np.array(
                         [
-                            [self.roi_azimuth, self.roi_elevation]
+                            [self.roi_azimuth, self.roi_elevation, sensor]
                             if self.roi_enabled
-                            else [None, None]  # type: ignore
+                            else [None, None, sensor]
                         ]
                     ),
                     axis=0,
                 )
+                if self.roi_enabled and compass is not None:
+                    global roi_data
+                    global compass_data
+                    roi_data = np.append(
+                        roi_data,
+                        np.array([[self.roi_azimuth, self.roi_elevation]]),
+                        axis=0,
+                    )
+                    compass_data = np.append(
+                        compass_data,
+                        np.array([compass.compass]),
+                        axis=0,
+                    )
 
             # self.status_label_ref.config(
             #     text=f"Packet {packet.packet_index} - Stream {packet.stream_id}, index {packet.sample_index}"
@@ -857,10 +948,12 @@ class StreamDisplayThread(threading.Thread):
             if args.roi_wf:
                 self.roi_waterfall_azimuth_image.set_xdata(self.roi_waterfall[:, 0])
                 self.roi_waterfall_elevation_image.set_xdata(self.roi_waterfall[:, 1])
+                self.roi_waterfall_compass_image.set_xdata(self.roi_waterfall[:, 2])
                 return [
                     self.magnitude_image,
                     self.roi_waterfall_azimuth_image,
                     self.roi_waterfall_elevation_image,
+                    self.roi_waterfall_compass_image,
                 ]
             else:
                 self.azimuth_image.set_ydata(self.azimuth_spectrum)
@@ -891,7 +984,7 @@ class StreamDisplayThread(threading.Thread):
             return f"{x - self.waterfall_size:.0f}"
 
         def magnitude_format_coord(x: float, y: float) -> str:
-            return f"Frequency: {bin_freq_formatter(x)} (bin {int(x*data_bin_count_ratio)}), Packet: {sample_id_formatter(y)}"
+            return f"Frequency: {bin_freq_formatter(x)} (bin {int(x * data_bin_count_ratio)}), Packet: {sample_id_formatter(y)}"
 
         def azimuth_format_coord(x: float, y: float) -> str:
             if 0 < x < len(self.azimuth_spectrum):
@@ -899,7 +992,7 @@ class StreamDisplayThread(threading.Thread):
             else:
                 val = 0
             return (
-                f"Frequency: {bin_freq_formatter(x)} (bin {int(x*data_bin_count_ratio)}), "
+                f"Frequency: {bin_freq_formatter(x)} (bin {int(x * data_bin_count_ratio)}), "
                 f"Angle: {val:.3f} rad ({val / np.pi * 180:.2f} deg)"
             )
 
@@ -919,7 +1012,7 @@ class StreamDisplayThread(threading.Thread):
         self.waterfall = np.zeros([self.waterfall_size, data_bin_count])
         self.azimuth_spectrum = np.zeros([data_bin_count])
         self.elevation_spectrum = np.zeros([data_bin_count])
-        self.roi_waterfall = np.empty([self.waterfall_size, 2])
+        self.roi_waterfall = np.empty([self.waterfall_size, 3])
         self.roi_waterfall.fill(None)
 
         assert self.fig_ref
@@ -969,6 +1062,14 @@ class StreamDisplayThread(threading.Thread):
                 color="blue",
                 animated=True,
                 label="El",
+            )[0]
+            self.roi_waterfall_compass_image = self.roi_waterfall_plot.plot(
+                self.roi_waterfall[:, 2],
+                np.arange(0, self.waterfall_size),
+                lw=1,
+                color="red",
+                animated=True,
+                label="Sensor",
             )[0]
             self.roi_waterfall_plot.yaxis.set_major_formatter(
                 matplotlib.ticker.FuncFormatter(sample_id_formatter)
@@ -1119,6 +1220,10 @@ class ClientWindow(tkinter.Frame):
         connect_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
         connect_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
 
+        self.save_octave_button = tkinter.Button(
+            connect_frame, text="Save Octave", command=self.save_octave_commands
+        )
+        self.save_octave_button.pack(side=tkinter.LEFT)
         host_command_label = tkinter.Label(connect_frame, text="Command host:")
         host_command_label.pack(
             side=tkinter.LEFT, fill=tkinter.BOTH, padx=5, pady=10, expand=True
@@ -1319,6 +1424,10 @@ class ClientWindow(tkinter.Frame):
         self.stream_packets_lb.pack(
             side=tkinter.RIGHT, fill=tkinter.BOTH, padx=6, expand=True
         )
+        if args.sensor_dev:
+            global compass
+            compass = CompassSensor()
+            compass.start()
 
     def create_canvas(self) -> None:
         """
@@ -1396,6 +1505,46 @@ class ClientWindow(tkinter.Frame):
         with open("hosts.txt", "w") as f1:
             f1.write(self.host_command.get() + "\n")
             f1.write(self.host_stream.get() + "\n")
+
+    def save_octave_commands(self) -> None:
+        """
+        Action of the "Connect" button
+        """
+        with open(f"octave{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt", "w") as f1:
+            global roi_data
+            global compass_data
+            f1.writelines(
+                "\n".join(
+                    [
+                        "# Created by CSTestClient, " + str(datetime.now()),
+                        "# name: roi",
+                        "# type: matrix",
+                        "# rows: " + str(roi_data.shape[0]),
+                        "# columns: 2",
+                    ]
+                )
+            )
+            f1.write("\n")
+            f1.writelines("\n".join([" ".join(row.astype(str)) for row in roi_data]))
+            f1.write("\n\n")
+
+            f1.writelines(
+                "\n".join(
+                    [
+                        "# name: compass",
+                        "# type: matrix",
+                        "# rows: " + str(compass_data.shape[0]),
+                        "# columns: 3",
+                    ]
+                )
+            )
+            f1.write("\n\n")
+            f1.writelines(
+                "\n".join([" ".join(row.astype(str)) for row in compass_data])
+            )
+            f1.write("\n\n")
+            roi_data = np.zeros([2, 2])
+            compass_data = np.zeros([2, 3])
 
     def disconnect_commands(self) -> None:
         """
