@@ -75,8 +75,8 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-roi_data = np.zeros([2, 2])
-compass_data = np.zeros([2, 3])
+roi_data = np.empty([0, 2])
+compass_data = np.empty([0, 3])
 
 
 class CompassSensor(threading.Thread):
@@ -353,7 +353,7 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
         Helper variable to packet ratio. This is the counter variable.
         """
 
-        self.counter_block_size_parameter: int = 100000000
+        self.counter_block_size_parameter: int = 2000000000
         """
         This parameter sets the counting window of the packet ratio calculation.
         """
@@ -852,12 +852,24 @@ class StreamDisplayThread(threading.Thread):
                     ),
                     axis=0,
                 )
+                
+                global roi_data
+                global compass_data
                 if self.roi_enabled and compass is not None:
-                    global roi_data
-                    global compass_data
                     roi_data = np.append(
                         roi_data,
                         np.array([[self.roi_azimuth, self.roi_elevation]]),
+                        axis=0,
+                    )
+                    compass_data = np.append(
+                        compass_data,
+                        np.array([compass.compass]),
+                        axis=0,
+                    )
+                elif compass is not None:
+                    roi_data = np.append(
+                        roi_data,
+                        np.array([["NaN", "NaN"]]),
                         axis=0,
                     )
                     compass_data = np.append(
@@ -1543,8 +1555,8 @@ class ClientWindow(tkinter.Frame):
                 "\n".join([" ".join(row.astype(str)) for row in compass_data])
             )
             f1.write("\n\n")
-            roi_data = np.zeros([2, 2])
-            compass_data = np.zeros([2, 3])
+            roi_data = np.empty([0, 2])
+            compass_data = np.empty([0, 3])
 
     def disconnect_commands(self) -> None:
         """
