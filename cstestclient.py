@@ -89,6 +89,7 @@ class CoreServicePacket:
         self.roi_level: float = 0.0
         self.roi_azimuth: float = 0.0
         self.roi_elevation: float = 0.0
+        self.title: str = ""
 
     def __str__(self) -> str:
         return {
@@ -101,6 +102,7 @@ class CoreServicePacket:
                 f"El: {self.roi_elevation:.2f} ({self.roi_elevation / np.pi * 180:.2f}deg) "
             ),
             4: f"#{self.packet_index} ROI lack of signal",
+            6: f"#{self.packet_index} Debug {self.title}",
         }[self.packet_type]
 
 
@@ -429,7 +431,17 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
             elif cs_packet.packet_type == 4:  # roi lack of signal
                 self.insert_packet(cs_packet)
                 self.buffer = self.buffer[8:]
-            elif cs_packet.packet_type > 4:
+            elif len(self.buffer) >= 24 and cs_packet.packet_type == 6:  # debug
+                category_size = int.from_bytes(self.buffer[12:16], "little")
+                data_size = int.from_bytes(self.buffer[16:24], "little")
+                print(f"debug {category_size} {data_size} {len(self.buffer)}")
+                if len(self.buffer) >= 24 + category_size + data_size:
+                    cs_packet.title = self.buffer[24 : 24 + category_size].decode()
+                    self.insert_packet(cs_packet)
+                    self.buffer = self.buffer[(24 + category_size + data_size) :]
+                else:
+                    break
+            elif cs_packet.packet_type > 6:
                 self.buffer = self.buffer[4:]
                 self.display_status(
                     f"Stream {cs_packet.stream_id}, "
