@@ -85,6 +85,7 @@ args = parser.parse_args()
 
 roi_data = np.empty([0, 2])
 compass_data = np.empty([0, 3])
+phases_data = np.empty([0, 3])
 
 
 class CompassSensor(threading.Thread):
@@ -928,15 +929,21 @@ class StreamDisplayThread(threading.Thread):
                     ),
                     axis=0,
                 )
+                global roi_data
+                global compass_data
+                global phases_data
                 if args.phases_roi_wf:
                     self.roi_phases = np.append(
                         self.roi_phases[-self.waterfall_size + 1 :, :],
                         np.array([debug_phases if self.roi_enabled else [0, 0, 0]]),
                         axis=0,
                     )
+                    phases_data = np.append(
+                        phases_data,
+                        np.array([debug_phases if self.roi_enabled else [0, 0, 0]]),
+                        axis=0,
+                    )
 
-                global roi_data
-                global compass_data
                 if self.roi_enabled and compass is not None:
                     roi_data = np.append(
                         roi_data,
@@ -1654,6 +1661,7 @@ class ClientWindow(tkinter.Frame):
         with open(f"octave{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt", "w") as f1:
             global roi_data
             global compass_data
+            global phases_data
             f1.writelines(
                 "\n".join(
                     [
@@ -1684,6 +1692,25 @@ class ClientWindow(tkinter.Frame):
                 "\n".join([" ".join(row.astype(str)) for row in compass_data])
             )
             f1.write("\n\n")
+
+            if args.phases_roi_wf:
+                f1.writelines(
+                    "\n".join(
+                        [
+                            "# name: phases",
+                            "# type: matrix",
+                            "# rows: " + str(phases_data.shape[0]),
+                            "# columns: 3",
+                        ]
+                    )
+                )
+                f1.write("\n\n")
+                f1.writelines(
+                    "\n".join([" ".join(row.astype(str)) for row in phases_data])
+                )
+                f1.write("\n\n")
+
+            phases_data = np.empty([0, 2])
             roi_data = np.empty([0, 2])
             compass_data = np.empty([0, 3])
 
