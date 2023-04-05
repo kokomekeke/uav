@@ -58,6 +58,13 @@ parser.add_argument(
     "--no-disp", dest="disp", action="store_false", help="turn off matplotlib display"
 )
 parser.add_argument(
+    "--phases-roi-wf",
+    dest="phases_roi_wf",
+    default=False,
+    action="store_true",
+    help="display phases roi waterfall",
+)
+parser.add_argument(
     "--roi-wf",
     dest="roi_wf",
     default=False,
@@ -90,6 +97,7 @@ class CoreServicePacket:
         self.roi_azimuth: float = 0.0
         self.roi_elevation: float = 0.0
         self.title: str = ""
+        self.contents: bytes = b""
 
     def __str__(self) -> str:
         return {
@@ -359,7 +367,9 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
                 f"index {cs_packet.sample_index} , speed: {self.counter_packet_ratio} packets/sec, "
                 f"queue count on insert: {self.mp_queue.qsize()}"
             )
-        except NotImplementedError:  # multiprocessing.Queue.qsize() not implemented on Mac OS X
+        except (
+            NotImplementedError
+        ):  # multiprocessing.Queue.qsize() not implemented on Mac OS X
             self.display_status(
                 f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
                 f"index {cs_packet.sample_index}"
@@ -434,9 +444,11 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
             elif len(self.buffer) >= 24 and cs_packet.packet_type == 6:  # debug
                 category_size = int.from_bytes(self.buffer[12:16], "little")
                 data_size = int.from_bytes(self.buffer[16:24], "little")
-                print(f"debug {category_size} {data_size} {len(self.buffer)}")
                 if len(self.buffer) >= 24 + category_size + data_size:
                     cs_packet.title = self.buffer[24 : 24 + category_size].decode()
+                    cs_packet.contents = self.buffer[
+                        (24 + category_size) : (24 + category_size + data_size)
+                    ]
                     self.insert_packet(cs_packet)
                     self.buffer = self.buffer[(24 + category_size + data_size) :]
                 else:
@@ -494,6 +506,11 @@ class StreamDisplayThread(threading.Thread):
         self.roi_waterfall = np.ones([1, 1])
         """
         ROI waterfall data (Rows: time, Cols: [Az, El])
+        """
+
+        self.roi_phases = np.ones([1, 1])
+        """
+        ROI waterfall data (Rows: time, Cols: [ch1-ch0, ch2-ch0, ch3-ch0])
         """
 
         self.roi_enabled: bool = False
@@ -571,6 +588,21 @@ class StreamDisplayThread(threading.Thread):
         Matplotlib image object for the ROI waterfall elevation
         """
 
+        self.roi_waterfall_phase1_image: Optional[matplotlib.artist.Artist] = None
+        """
+        Matplotlib image object for the ROI waterfall Phase 1
+        """
+
+        self.roi_waterfall_phase2_image: Optional[matplotlib.artist.Artist] = None
+        """
+        Matplotlib image object for the ROI waterfall Phase 1
+        """
+
+        self.roi_waterfall_phase3_image: Optional[matplotlib.artist.Artist] = None
+        """
+        Matplotlib image object for the ROI waterfall Phase 1
+        """
+
         self.animation: Optional[matplotlib.animation.FuncAnimation] = None
         """
         Matplotlib FuncAnimation object for animating the graphs
@@ -589,6 +621,11 @@ class StreamDisplayThread(threading.Thread):
         self._iq_rate: float = 0
         """
         Iq rate of the last burst
+        """
+
+        self._bin_count: int = 0
+        """
+        Bin count of the last burst
         """
 
         self.status_label_ref: Optional[tkinter.Label] = None
@@ -690,6 +727,7 @@ class StreamDisplayThread(threading.Thread):
         stream_process.host_port = self.host_port
         stream_process.start()
 
+        debug_phases: list[float] = [0.0, 0.0, 0.0]
         # The code below will handle the preprocessed packets from the stream process
         assert self.status_label_ref
         while True:
@@ -722,6 +760,32 @@ class StreamDisplayThread(threading.Thread):
                 self.roi_elevation = packet.roi_elevation
             if packet.packet_type == 4:
                 self.roi_enabled = False
+            if packet.packet_type == 6:
+                spec_len = self._bin_count * 4
+                ch1_spectrum: npt.NDArray[np.float32] = np.asarray(
+                    struct.unpack(
+                        f"{self._bin_count}f",
+                        packet.contents[0:spec_len],
+                    )
+                )
+                ch2_spectrum: npt.NDArray[np.float32] = np.asarray(
+                    struct.unpack(
+                        f"{self._bin_count}f",
+                        packet.contents[spec_len : spec_len * 2],
+                    )
+                )
+                ch3_spectrum: npt.NDArray[np.float32] = np.asarray(
+                    struct.unpack(
+                        f"{self._bin_count}f",
+                        packet.contents[spec_len * 2 : spec_len * 3],
+                    )
+                )
+                if self.roi_bin < self._bin_count:
+                    debug_phases = [
+                        ch1_spectrum[self.roi_bin],
+                        ch2_spectrum[self.roi_bin],
+                        ch3_spectrum[self.roi_bin],
+                    ]
             if packet.packet_type > 2:
                 continue
             if packet.bin_count == 0:
@@ -763,6 +827,7 @@ class StreamDisplayThread(threading.Thread):
                     vmax=0,  # float(np.max(magnitude)),
                 )  # type: ignore
                 self._iq_rate = packet.iq_rate
+                self._bin_count = packet.bin_count
                 self._center_frequency = packet.center_frequency
                 self.animation_started = True
 
@@ -786,6 +851,12 @@ class StreamDisplayThread(threading.Thread):
                     ),
                     axis=0,
                 )
+                if args.phases_roi_wf:
+                    self.roi_phases = np.append(
+                        self.roi_phases[-self.waterfall_size + 1 :, :],
+                        np.array([debug_phases if self.roi_enabled else [0, 0, 0]]),
+                        axis=0,
+                    )
 
             # self.status_label_ref.config(
             #     text=f"Packet {packet.packet_index} - Stream {packet.stream_id}, index {packet.sample_index}"
@@ -806,7 +877,6 @@ class StreamDisplayThread(threading.Thread):
         vmin: float,
         vmax: float,
     ) -> None:
-
         global args
         pi_chr = chr(0x03C0)
         """
@@ -865,36 +935,50 @@ class StreamDisplayThread(threading.Thread):
             """
             Called on each frame of the graph animation
             """
+            update_list: list[matplotlib.artist.Artist] = [self.magnitude_image]
             self.magnitude_image.set_data(self.waterfall)
             if args.roi_wf:
                 self.roi_waterfall_azimuth_image.set_xdata(self.roi_waterfall[:, 0])
                 self.roi_waterfall_elevation_image.set_xdata(self.roi_waterfall[:, 1])
-                return [
-                    self.magnitude_image,
-                    self.roi_waterfall_azimuth_image,
-                    self.roi_waterfall_elevation_image,
-                ]
+                update_list.extend(
+                    [
+                        self.roi_waterfall_azimuth_image,
+                        self.roi_waterfall_elevation_image,
+                    ]
+                )
+                if args.phases_roi_wf:
+                    self.roi_waterfall_phase1_image.set_xdata(self.roi_phases[:, 0])
+                    self.roi_waterfall_phase2_image.set_xdata(self.roi_phases[:, 1])
+                    self.roi_waterfall_phase3_image.set_xdata(self.roi_phases[:, 2])
+                    update_list.extend(
+                        [
+                            self.roi_waterfall_phase1_image,
+                            self.roi_waterfall_phase2_image,
+                            self.roi_waterfall_phase3_image,
+                        ]
+                    )
             else:
                 self.azimuth_image.set_ydata(self.azimuth_spectrum)
                 self.elevation_image.set_ydata(self.elevation_spectrum)
-                self.azimuth_roi_image.set_xdata(self.roi_bin)
-                self.azimuth_roi_image.set_ydata(self.roi_azimuth)
-                self.elevation_roi_image.set_xdata(self.roi_bin)
-                self.elevation_roi_image.set_ydata(self.roi_elevation)
+                update_list.extend(
+                    [
+                        self.azimuth_image,
+                        self.elevation_image,
+                    ]
+                )
                 if self.roi_enabled:
-                    return [
-                        self.magnitude_image,
-                        self.azimuth_image,
-                        self.elevation_image,
-                        self.azimuth_roi_image,
-                        self.elevation_roi_image,
-                    ]
-                else:
-                    return [
-                        self.magnitude_image,
-                        self.azimuth_image,
-                        self.elevation_image,
-                    ]
+                    self.azimuth_roi_image.set_xdata(self.roi_bin)
+                    self.azimuth_roi_image.set_ydata(self.roi_azimuth)
+                    self.elevation_roi_image.set_xdata(self.roi_bin)
+                    self.elevation_roi_image.set_ydata(self.roi_elevation)
+                    update_list.extend(
+                        [
+                            self.azimuth_roi_image,
+                            self.elevation_roi_image,
+                        ]
+                    )
+
+            return update_list
 
         def bin_freq_formatter(x: float, pos: Any = None) -> str:
             return f"{((x - data_bin_count / 2) * (iq_rate / data_bin_count) + center_freq) / 1e6:.3f}M"
@@ -933,6 +1017,9 @@ class StreamDisplayThread(threading.Thread):
         self.elevation_spectrum = np.zeros([data_bin_count])
         self.roi_waterfall = np.empty([self.waterfall_size, 2])
         self.roi_waterfall.fill(None)
+
+        self.roi_phases = np.empty([self.waterfall_size, 3])
+        self.roi_phases.fill(None)
 
         assert self.fig_ref
         self.fig_ref.clf()
@@ -973,6 +1060,7 @@ class StreamDisplayThread(threading.Thread):
                 color="green",
                 animated=True,
                 label="Az",
+                zorder=100,
             )[0]
             self.roi_waterfall_elevation_image = self.roi_waterfall_plot.plot(
                 self.roi_waterfall[:, 1],
@@ -981,7 +1069,37 @@ class StreamDisplayThread(threading.Thread):
                 color="blue",
                 animated=True,
                 label="El",
+                zorder=50,
             )[0]
+            if args.phases_roi_wf:
+                self.roi_waterfall_phase1_image = self.roi_waterfall_plot.plot(
+                    self.roi_phases[:, 0],
+                    np.arange(0, self.waterfall_size),
+                    lw=2,
+                    color="lightgreen",
+                    animated=True,
+                    label="ch0-ch1",
+                    zorder=10,
+                )[0]
+                self.roi_waterfall_phase2_image = self.roi_waterfall_plot.plot(
+                    self.roi_phases[:, 1],
+                    np.arange(0, self.waterfall_size),
+                    lw=2,
+                    color="lightblue",
+                    animated=True,
+                    label="ch0-ch2",
+                    zorder=5,
+                )[0]
+                self.roi_waterfall_phase3_image = self.roi_waterfall_plot.plot(
+                    self.roi_phases[:, 2],
+                    np.arange(0, self.waterfall_size),
+                    lw=2,
+                    color="lightpink",
+                    animated=True,
+                    label="ch0-ch3",
+                    zorder=0,
+                )[0]
+
             self.roi_waterfall_plot.yaxis.set_major_formatter(
                 matplotlib.ticker.FuncFormatter(sample_id_formatter)
             )
