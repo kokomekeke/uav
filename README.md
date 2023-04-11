@@ -27,3 +27,33 @@ python cstestclient.py
  4. Magnitude waterfall plot, azimuth and elevation plots can be observed in the middle panel. Use the toolbar to interact with the plots.
 
 
+## Options
+
+Display only 2048 bins and 100 packets on the graph with 10 frames per second (useful on slower machines):
+
+```bash
+python cstestclient.py --bin 2048 --wf 100 --fps 10
+```
+
+Display packet types only and do not show matplotlib graphs at all:
+
+```bash
+python cstestclient.py --no-disp
+```
+
+Display ROI azimuth and elevation waterfall instead of spectrum:
+
+```bash
+python cstestclient.py --roi-wf
+```
+
+Include ROI antenna phase differences on the azimuth and elevation waterfall:
+
+```bash
+python cstestclient.py --roi-wf --phases-roi-wf
+```
+
+Use a compass sensor on serial port `COM1`:
+```bash
+python cstestclient.py --roi-wf --sensor-dev COM1
+```
