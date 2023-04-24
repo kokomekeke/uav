@@ -5,8 +5,8 @@ pkg load signal
 cavg = [movavg(compass(:,1),24,24) movavg(compass(:,2),24,24) movavg(compass(:,3),24,24)];
 center = [(max(cavg(:,1))+min(cavg(:,1)))/2 ; (max(cavg(:,2))+min(cavg(:,2)))/2 ; (max(cavg(:,3))+min(cavg(:,3)))/2 ];
 
-figure; title("Compass sensor values");
-hold on; plot3(cavg(:,1),cavg(:,2),cavg(:,3)); plot3(center(1),center(2),center(3),'x'); grid on;
+#figure; title("Compass sensor values");
+#hold on; plot3(cavg(:,1),cavg(:,2),cavg(:,3)); plot3(center(1),center(2),center(3),'x'); grid on;
 
 ccorr = [cavg(:,1).-center(1) cavg(:,2).-center(2) cavg(:,3).-center(3)];
 angles = atan2(ccorr(:,2), ccorr(:,1));
@@ -45,12 +45,18 @@ adiff(~isfinite(adiff))=0;
 ##end
 figure; title("Compass and CS measurement");
 hold on;
-area ( adiff ,'LineStyle','none','FaceColor','y');
-plot (phases(:, 1), "LineWidth", 2, "Color", "#AAFFAA");
-plot (phases(:, 2), "LineWidth", 2, "Color", "#AAAAFF");
-plot (phases(:, 3), "LineWidth", 2, "Color", "#FFAAFF");
-plot (angles, "m");
-plot (roi_azimuth, "b");
+area ( adiff*180/pi ,'LineStyle','none','FaceColor','y');
+#plot (phases(:, 1), "LineWidth", 2, "Color", "#AAFFAA");
+#plot (phases(:, 2), "LineWidth", 2, "Color", "#AAAAFF");
+#plot (phases(:, 3), "LineWidth", 2, "Color", "#FFAAFF");
+plot (angles*180/pi, "m");
+plot (roi_azimuth*180/pi, "b");
 hold off;
+yticks(-180:10:180);
 grid on;
-legend("Error","ch0-ch1", "ch0-ch2", "ch0-ch3",  "Compass sensor", "CoreService ROI azimuth");
+grid minor;
+rms(adiff*180/pi)
+#legend("Error","ch0-ch1", "ch0-ch2", "ch0-ch3",  "Compass sensor", "CoreService ROI azimuth");
+legend("Error","Compass sensor", "CoreService ROI azimuth");
+xlabel("Time (samples)");
+ylabel("Azimuth (deg)");
