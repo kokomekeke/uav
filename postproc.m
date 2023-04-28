@@ -60,3 +60,13 @@ rms(adiff*180/pi)
 legend("Error","Compass sensor", "CoreService ROI azimuth");
 xlabel("Time (samples)");
 ylabel("Azimuth (deg)");
+
+figure;
+plot (angles*180/pi, roi_azimuth*180/pi, "m");
+xlabel("Compass sensor (deg)");
+ylabel("CoreService ROI Azimuth (deg)");
+xticks(-180:20:180);
+yticks(-180:20:180);
+ daspect ([1 1 1]);
+grid on;
+title("Angle-angle diagram");
