@@ -68,5 +68,7 @@ ylabel("CoreService ROI Azimuth (deg)");
 xticks(-180:20:180);
 yticks(-180:20:180);
  daspect ([1 1 1]);
+ xlim([-180 180]);
+ ylim([-180 180]);
 grid on;
 title("Angle-angle diagram");
