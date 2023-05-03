@@ -81,11 +81,119 @@ parser.add_argument(
     type=str,
     help="sensor device",
 )
+parser.add_argument(
+    "--aaronia",
+    dest="aaronia",
+    default=False,
+    action="store_true",
+    help="compass sensor is aaronia",
+)
 args = parser.parse_args()
 
 roi_data = np.empty([0, 2])
 compass_data = np.empty([0, 3])
 phases_data = np.empty([0, 3])
+
+
+class CompassParser:
+    def __init__(self) -> None:
+        self.raw_values: Optional[npt.NDArray[np.float64]] = None
+        self.values: Optional[npt.NDArray[np.float64]] = None
+        self.angle: Optional[float] = None
+
+    def parse(self, line: bytes) -> bool:
+        return False
+
+
+class SimpleParser(CompassParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.pattern = re.compile(
+            r"\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*"
+        )
+        self.minmax: npt.NDArray[np.float64] = np.array(
+            [
+                [np.inf, -np.inf],
+                [np.inf, -np.inf],
+                [np.inf, -np.inf],
+            ]
+        )
+
+    def parse(self, line: bytes) -> bool:
+        tokens = self.pattern.match(line.decode())
+        if tokens is None:
+            self.raw_values = None
+            self.values = None
+            self.angle = None
+            return False
+        try:
+            self.raw_values = np.array(
+                [
+                    float(tokens.group(4)),
+                    float(tokens.group(5)),
+                    float(tokens.group(6)),
+                ]
+            )
+            self.minmax = np.array(
+                [
+                    [
+                        min(minmax[0], self.raw_values[0]),
+                        max(minmax[1], self.raw_values[0]),
+                    ]
+                    for minmax in self.minmax
+                ]
+            )
+            self.values = np.array(
+                [
+                    self.raw_values - (minmax[0] + minmax[1] / 2)
+                    for minmax, raw in zip(self.minmax, self.raw_values)
+                ]
+            )
+            self.angle = math.atan2(self.values[0], self.values[1])
+            print(self)
+            return True
+        except ValueError:
+            self.raw_values = None
+            self.values = None
+            self.angle = None
+            return False
+
+
+class AaroniaParser(CompassParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.pattern = re.compile(
+            r"\$PAAG,DATA,(.),(\d{6})\.(\d*),([-\d.]*),([-\d.]*),([-\d.]*),(.)\*([0-9A-F]{2})"
+        )
+
+    def parse(self, line: bytes) -> bool:
+        line = line.strip()
+        if not (line[0] == ord("$") and line[-3] == ord("*")):
+            return False
+        data_checksum = line[-2:]
+        char_check = 0
+        for char in line[1:-3]:
+            char_check ^= char
+        if f"{char_check:02X}".encode() != data_checksum:
+            return False
+        tokens = self.pattern.match(line.decode())
+        if tokens is None:
+            return False
+        if tokens is not None:
+            data_type = tokens[1]
+            data_hms = (int(tokens[2][0:2]), int(tokens[2][2:4]), int(tokens[2][4:6]))
+            data_timestamp = data_hms[0] * 3600 + data_hms[1] * 60 + data_hms[2]
+            data_idx = int(tokens[3])
+            data_coord = (float(tokens[4]), float(tokens[5]), float(tokens[6]))
+            data_ok = tokens[7]
+            if data_ok == "A" and data_type == "C":
+                self.raw_values = np.array(data_coord)
+                self.values = np.array(
+                    [data_coord[0] / 1090, data_coord[1] / 1090, data_coord[2] / 1090]
+                )
+                self.angle = math.atan2(data_coord[1], data_coord[0])
+                return True
+            return False
 
 
 class CompassSensor(threading.Thread):
@@ -116,27 +224,20 @@ class CompassSensor(threading.Thread):
 
         self.addr = None
 
+        self.parser: CompassParser = AaroniaParser() if args.aaronia else SimpleParser()
+
     def run(self) -> None:
         pattern = re.compile(
             r"\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*"
         )
         while True:
             line = self.ser.readline()
-            tokens = pattern.match(line.decode())
-            if tokens is None:
-                continue
-            try:
-                self.compass = np.array(
-                    [
-                        float(tokens.group(4)),
-                        float(tokens.group(5)),
-                        float(tokens.group(6)),
-                    ]
-                )
+            if self.parser.parse(line):
+                assert self.parser.raw_values is not None
+                assert self.parser.angle is not None
+                self.compass = self.parser.raw_values
+                self.sensor = self.parser.angle
                 print(self.compass)
-                self.sensor = math.atan2(self.compass[0], self.compass[1])
-            except ValueError:
-                pass
 
     def close(self) -> None:
         self.ser.close()
