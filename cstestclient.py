@@ -111,11 +111,14 @@ class SimpleParser(CompassParser):
         self.pattern = re.compile(
             r"\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*"
         )
-        self.minmax: npt.NDArray[np.float64] = np.array(
+        self.mins: npt.NDArray[np.float64] = np.array(
             [
-                [np.inf, -np.inf],
-                [np.inf, -np.inf],
-                [np.inf, -np.inf],
+                np.inf, np.inf, np.inf
+            ]
+        )
+        self.maxs: npt.NDArray[np.float64] = np.array(
+            [
+                -np.inf, -np.inf, -np.inf
             ]
         )
 
@@ -134,23 +137,27 @@ class SimpleParser(CompassParser):
                     float(tokens.group(6)),
                 ]
             )
-            self.minmax = np.array(
+            self.mins = np.array(
                 [
-                    [
-                        min(minmax[0], self.raw_values[0]),
-                        max(minmax[1], self.raw_values[0]),
-                    ]
-                    for minmax in self.minmax
+
+                    min(mini, raw)
+                    for mini, raw in zip(self.mins, self.raw_values)
+                ]
+            )
+            self.maxs = np.array(
+                [
+
+                    max(maxi, raw)
+                    for maxi, raw in zip(self.maxs, self.raw_values)
                 ]
             )
             self.values = np.array(
                 [
-                    self.raw_values - (minmax[0] + minmax[1] / 2)
-                    for minmax, raw in zip(self.minmax, self.raw_values)
+                    raw - ((mini + maxi) / 2)
+                    for mini, maxi, raw in zip(self.mins, self.maxs, self.raw_values)
                 ]
             )
             self.angle = math.atan2(self.values[0], self.values[1])
-            print(self)
             return True
         except ValueError:
             self.raw_values = None
