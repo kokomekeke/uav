@@ -98,8 +98,17 @@ phases_data = np.empty([0, 3])
 class CompassParser:
     def __init__(self) -> None:
         self.raw_values: Optional[npt.NDArray[np.float64]] = None
+        """
+        Raw coordinates received from compass sensor
+        """
         self.values: Optional[npt.NDArray[np.float64]] = None
+        """
+        Processed coordinates from compass sensor
+        """
         self.angle: Optional[float] = None
+        """
+        Calculated compass angle
+        """
 
     def parse(self, line: bytes) -> bool:
         return False
@@ -111,16 +120,17 @@ class SimpleParser(CompassParser):
         self.pattern = re.compile(
             r"\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*"
         )
-        self.mins: npt.NDArray[np.float64] = np.array(
-            [
-                np.inf, np.inf, np.inf
-            ]
-        )
-        self.maxs: npt.NDArray[np.float64] = np.array(
-            [
-                -np.inf, -np.inf, -np.inf
-            ]
-        )
+        """
+        Regex pattern to find coordinates in serial data lines
+        """
+        self.mins: npt.NDArray[np.float64] = np.array([np.inf, np.inf, np.inf])
+        """
+        Minimum coordinate values, used for calibration
+        """
+        self.maxs: npt.NDArray[np.float64] = np.array([-np.inf, -np.inf, -np.inf])
+        """
+        Maximum coordinate values, used for calibration
+        """
 
     def parse(self, line: bytes) -> bool:
         tokens = self.pattern.match(line.decode())
@@ -138,18 +148,10 @@ class SimpleParser(CompassParser):
                 ]
             )
             self.mins = np.array(
-                [
-
-                    min(mini, raw)
-                    for mini, raw in zip(self.mins, self.raw_values)
-                ]
+                [min(mini, raw) for mini, raw in zip(self.mins, self.raw_values)]
             )
             self.maxs = np.array(
-                [
-
-                    max(maxi, raw)
-                    for maxi, raw in zip(self.maxs, self.raw_values)
-                ]
+                [max(maxi, raw) for maxi, raw in zip(self.maxs, self.raw_values)]
             )
             self.values = np.array(
                 [
