@@ -14,6 +14,7 @@ import tkinter
 import typing
 from datetime import datetime
 from time import sleep
+from tkinter import messagebox
 from typing import Any, Callable, Optional
 
 import matplotlib.cm
@@ -255,6 +256,10 @@ class TestStreamDisplayThread(threading.Thread):
             4: self.handle_roi_lack_of_signal_packet,
             6: self.handle_debug_packet,
         }
+        self.debug_handlers: dict[str, Callable[[CoreServicePacket], None]] = {
+            "error": self.handle_debug_error_message,
+            "exportPhaseDiffs": self.handle_debug_phases_packet,
+        }
 
     def status_watcher_thread(
         self, status_queue: queue.Queue[str], packet_string_queue: queue.Queue[str]
@@ -373,8 +378,12 @@ class TestStreamDisplayThread(threading.Thread):
         self.roi_packet = None
 
     def handle_debug_packet(self, packet: CoreServicePacket):
-        self.handle_debug_phases_packet(packet)
+        self.debug_handlers[packet.title](packet)
 
+    def handle_debug_error_message(self, packet: CoreServicePacket):
+        messagebox.showerror(
+            packet.title.capitalize(), packet.contents.decode()
+        )
     def handle_debug_phases_packet(self, packet: CoreServicePacket):
         spec_len = self.params.bin_count * 4
         ch1_spectrum: npt.NDArray[np.float32] = np.asarray(
