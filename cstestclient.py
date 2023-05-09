@@ -16,6 +16,7 @@ import tkinter
 import typing
 from datetime import datetime
 from time import sleep
+from tkinter import messagebox
 from typing import Any, Callable, Optional
 
 import matplotlib.cm
@@ -761,31 +762,36 @@ class StreamDisplayThread(threading.Thread):
             if packet.packet_type == 4:
                 self.roi_enabled = False
             if packet.packet_type == 6:
-                spec_len = self._bin_count * 4
-                ch1_spectrum: npt.NDArray[np.float32] = np.asarray(
-                    struct.unpack(
-                        f"{self._bin_count}f",
-                        packet.contents[0:spec_len],
+                if packet.title == "error":
+                    messagebox.showerror(
+                        packet.title.capitalize(), packet.contents.decode()
                     )
-                )
-                ch2_spectrum: npt.NDArray[np.float32] = np.asarray(
-                    struct.unpack(
-                        f"{self._bin_count}f",
-                        packet.contents[spec_len : spec_len * 2],
+                elif packet.title == "exportPhaseDiffs":
+                    spec_len = self._bin_count * 4
+                    ch1_spectrum: npt.NDArray[np.float32] = np.asarray(
+                        struct.unpack(
+                            f"{self._bin_count}f",
+                            packet.contents[0:spec_len],
+                        )
                     )
-                )
-                ch3_spectrum: npt.NDArray[np.float32] = np.asarray(
-                    struct.unpack(
-                        f"{self._bin_count}f",
-                        packet.contents[spec_len * 2 : spec_len * 3],
+                    ch2_spectrum: npt.NDArray[np.float32] = np.asarray(
+                        struct.unpack(
+                            f"{self._bin_count}f",
+                            packet.contents[spec_len : spec_len * 2],
+                        )
                     )
-                )
-                if self.roi_bin < self._bin_count:
-                    debug_phases = [
-                        ch1_spectrum[self.roi_bin],
-                        ch2_spectrum[self.roi_bin],
-                        ch3_spectrum[self.roi_bin],
-                    ]
+                    ch3_spectrum: npt.NDArray[np.float32] = np.asarray(
+                        struct.unpack(
+                            f"{self._bin_count}f",
+                            packet.contents[spec_len * 2 : spec_len * 3],
+                        )
+                    )
+                    if self.roi_bin < self._bin_count:
+                        debug_phases = [
+                            ch1_spectrum[self.roi_bin],
+                            ch2_spectrum[self.roi_bin],
+                            ch3_spectrum[self.roi_bin],
+                        ]
             if packet.packet_type > 2:
                 continue
             if packet.bin_count == 0:
