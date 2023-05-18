@@ -7,7 +7,9 @@ class AutocompleteCommandBox(tkinter.Frame):
     def __init__(self, master: Misc) -> None:
         super().__init__(master, relief=tkinter.RAISED, borderwidth=1)
 
-        self.send_command_action: Optional[Callable[[], None]] = None
+        self.send_command_action: Optional[
+            Callable[[tkinter.Event[tkinter.Entry]], object]
+        ] = None
         self.command_string = tkinter.StringVar(value="")
         """
         Variable for the current value of the command box
@@ -20,9 +22,9 @@ class AutocompleteCommandBox(tkinter.Frame):
             side=tkinter.TOP, fill=tkinter.X, padx=5, expand=False
         )
 
-        self.command_suggestions = set()
+        self.command_suggestions: set[str] = set()
 
-    def initialize(self):
+    def initialize(self) -> None:
         self.command_entry.bind("<Return>", self.send_command_action)
         self.command_entry.bind("<KeyRelease>", self.suggestions_filter)
         self.command_entry.bind("<Tab>", self.autocomplete)
@@ -36,7 +38,7 @@ class AutocompleteCommandBox(tkinter.Frame):
         self.command_suggestions_lb.bind("<Return>", self.to_command_box)
         self.command_suggestions_lb.bind("<Double-Button>", self.to_command_box)
 
-    def add_to_suggestions(self, command: str):
+    def add_to_suggestions(self, command: str) -> None:
         self.command_suggestions.add(command)
         # Also save fragments of commands
         if ":" in command:  # Save command group fragment.
@@ -119,14 +121,14 @@ class AutocompleteCommandBox(tkinter.Frame):
         self.suggestions_filter()
         return "break"
 
-    def enable(self):
+    def enable(self) -> None:
         self.command_suggestions_lb.configure(state="normal")
         self.command_entry.configure(state="normal")
 
-    def disable(self):
+    def disable(self) -> None:
         self.command_string.set("")
         self.command_suggestions_lb.configure(state="disabled")
         self.command_entry.configure(state="disabled")
 
-    def focus(self):
+    def focus_textbox(self) -> None:
         self.command_entry.focus()

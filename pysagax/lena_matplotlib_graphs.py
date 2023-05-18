@@ -6,8 +6,9 @@ from typing import Any, Optional
 import matplotlib.cm
 import numpy as np
 import numpy.typing as npt
+import typing
 from matplotlib.animation import FuncAnimation  # type: ignore
-from matplotlib.backend_bases import KeyEvent  # type: ignore
+from matplotlib.backend_bases import KeyEvent
 from matplotlib.backends.backend_tkagg import (  # type: ignore
     FigureCanvasTkAgg,
     NavigationToolbar2Tk,
@@ -15,8 +16,8 @@ from matplotlib.backends.backend_tkagg import (  # type: ignore
 
 
 class GraphParameters:
-    def __init__(self):
-        self.iq_rate: int = 0
+    def __init__(self) -> None:
+        self.iq_rate: float = 0
         """
         IQ rate of the last burst
         """
@@ -38,7 +39,7 @@ class GraphParameters:
 
 
 class GraphImage:
-    def __init__(self, plot: matplotlib.axes.SubplotBase):
+    def __init__(self, plot: matplotlib.axes.SubplotBase) -> None:
         self.plot: matplotlib.axes.SubplotBase = plot
         """
         Matplotlib plot (axes) object for the plot
@@ -54,23 +55,19 @@ class GraphImage:
         Matplotlib image object
         """
 
-    def init_plot(self):
+    def init_plot(self) -> None:
         pass
 
-    def init_image(self):
+    def init_image(self) -> None:
         pass
 
-    def make_plot(self):
-        self.init_plot()
-        return self
-
-    def update(self):
+    def update(self) -> None:
         pass
 
-    def add_data(self, data: npt.NDArray[np.float64]):
+    def add_data(self, data: npt.NDArray[np.float64]) -> None:
         pass
 
-    def collect_images(self):
+    def collect_images(self) -> list[matplotlib.artist.Artist]:
         image_list = []
         if self.image is not None:
             image_list.append(self.image)
@@ -119,17 +116,19 @@ class HalfLocator(matplotlib.ticker.Locator):  # type: ignore
             step /= 2
         if self._max <= vmax:
             locs.append(self._max)
-        return self.raise_if_exceeds(locs)
+        return self.raise_if_exceeds(locs)  # type: ignore
 
     def view_limits(self, dmin: float, dmax: float) -> tuple[float, float]:
         """
         Set the view limits
         """
-        return matplotlib.transforms.nonsingular(dmin, dmax, expander=1e-12, tiny=1e-13)
+        return matplotlib.transforms.nonsingular(dmin, dmax, expander=1e-12, tiny=1e-13)  # type: ignore
 
 
 class WaterfallMagnitudeGraph(GraphImage):
-    def __init__(self, plot: matplotlib.axes.SubplotBase, params: GraphParameters):
+    def __init__(
+        self, plot: matplotlib.axes.SubplotBase, params: GraphParameters
+    ) -> None:
         super().__init__(plot)
         self.params = params
         self.waterfall = np.ones([self.params.waterfall_size, self.params.bin_count])
@@ -149,45 +148,47 @@ class WaterfallMagnitudeGraph(GraphImage):
     def magnitude_format_coord(self, x: float, y: float) -> str:
         return f"Frequency: {self.bin_freq_formatter(x)} (bin {int(x)}), Packet: {self.sample_id_formatter(y)}"
 
-    def initialize(self):
+    def initialize(self) -> "WaterfallMagnitudeGraph":
         self.init_image()
         return self
 
-    def init_image(self):
+    def make_plot(self) -> "WaterfallMagnitudeGraph":
+        self.init_plot()
+        return self
+
+    def init_image(self) -> None:
         super().init_image()
         assert self.plot is not None
         self.waterfall = np.zeros([self.params.waterfall_size, self.params.bin_count])
         self.image = self.plot.imshow(
             self.waterfall,
-            cmap=matplotlib.cm.get_cmap("gnuplot"),
+            cmap=matplotlib.cm.get_cmap("gnuplot"),  # type: ignore
             animated=True,
             vmax=self.vmax,
             vmin=self.vmin,
         )
 
-    def init_plot(self):
+    def init_plot(self) -> None:
         super().init_plot()
         assert self.plot is not None
-        self.plot.xaxis.set_major_formatter(
-            matplotlib.ticker.FuncFormatter(self.bin_freq_formatter)
+        self.plot.xaxis.set_major_formatter(  # type: ignore
+            matplotlib.ticker.FuncFormatter(self.bin_freq_formatter)  # type: ignore
         )
-        self.plot.xaxis.set_major_locator(HalfLocator(max=self.params.bin_count))
-        self.plot.tick_params(axis="x", labelrotation=45)
-        self.plot.yaxis.set_major_formatter(
-            matplotlib.ticker.FuncFormatter(self.sample_id_formatter)
+        self.plot.xaxis.set_major_locator(HalfLocator(max=self.params.bin_count))  # type: ignore
+        self.plot.tick_params(axis="x", labelrotation=45)  # type: ignore
+        self.plot.yaxis.set_major_formatter(  # type: ignore
+            matplotlib.ticker.FuncFormatter(self.sample_id_formatter)  # type: ignore
         )
-        self.plot.format_coord = self.magnitude_format_coord
-        # self.fig_ref.colorbar(self.magnitude_image)
-
-        self.plot.set_label("Magnitude")
+        self.plot.format_coord = self.magnitude_format_coord  # type: ignore
+        self.plot.set_label("Magnitude")  # type: ignore
         self.plot.set_ylabel("Packets")
-        self.plot.set_aspect("auto")
+        self.plot.set_aspect("auto")  # type: ignore
 
-    def update(self):
+    def update(self) -> None:
         super().update()
-        self.image.set_data(self.waterfall)
+        self.image.set_data(self.waterfall)  # type: ignore
 
-    def add_data(self, data: npt.NDArray[np.float64]):
+    def add_data(self, data: npt.NDArray[np.float64]) -> None:
         super().add_data(data)
         self.waterfall = np.append(
             self.waterfall[-self.params.waterfall_size + 1 :, :],
@@ -197,7 +198,9 @@ class WaterfallMagnitudeGraph(GraphImage):
 
 
 class AngleSpectrumGraph(GraphImage):
-    def __init__(self, plot: matplotlib.axes.SubplotBase, params: GraphParameters):
+    def __init__(
+        self, plot: matplotlib.axes.SubplotBase, params: GraphParameters
+    ) -> None:
         super().__init__(plot)
         self.params = params
 
@@ -226,7 +229,7 @@ class AngleSpectrumGraph(GraphImage):
         """
 
     def bin_freq_formatter(self, x: float, pos: Any = None) -> str:
-        return f"{((x - self.params.bin_count / 2) * (self.params.iq_rate / self.params.bin_count) + self.center_frequency) / 1e6:.3f}M"
+        return f"{((x - self.params.bin_count / 2) * (self.params.iq_rate / self.params.bin_count) + self.params.center_frequency) / 1e6:.3f}M"
 
     def angle_format_coord(self, x: float, y: float) -> str:
         if 0 < x < len(self.spectrum):
@@ -238,56 +241,64 @@ class AngleSpectrumGraph(GraphImage):
             f"Angle: {val:.3f} rad ({val / np.pi * 180:.2f} deg)"
         )
 
-    def init_image(self):
+    def init_image(self) -> None:
         super().init_image()
         self.spectrum = np.zeros([self.params.bin_count])
         self.image = self.plot.plot(
             self.spectrum, lw=1, color=self.color, animated=True
-        )[0]
-        self.marker_image = self.plot.plot(0, 0, "or", animated=True)[0]
+        )[
+            0
+        ]  # type: ignore
+        self.marker_image = self.plot.plot(0, 0, "or", animated=True)[0]  # type: ignore
 
-    def initialize(self, color: str):
+    def initialize(self, color: str) -> "AngleSpectrumGraph":
         self.color = color
         self.init_image()
         return self
 
-    def init_plot(self, plot: matplotlib.axes.SubplotBase):
-        super().init_plot(plot)
+    def make_plot(self) -> "AngleSpectrumGraph":
+        self.init_plot()
+        return self
+
+    def init_plot(self) -> None:
+        super().init_plot()
         assert self.plot is not None
-        self.plot.xaxis.set_major_formatter(
-            matplotlib.ticker.FuncFormatter(self.bin_freq_formatter)
+        self.plot.xaxis.set_major_formatter(  # type: ignore
+            matplotlib.ticker.FuncFormatter(self.bin_freq_formatter)  # type: ignore
         )
 
-        self.plot.xaxis.set_major_locator(HalfLocator(max=self.params.bin_count))
-        self.plot.tick_params(axis="x", labelrotation=45)
-        self.plot.yaxis.set_major_formatter(
-            matplotlib.ticker.StrMethodFormatter("{x:.2f}")
+        self.plot.xaxis.set_major_locator(HalfLocator(max=self.params.bin_count))  # type: ignore
+        self.plot.tick_params(axis="x", labelrotation=45)  # type: ignore
+        self.plot.yaxis.set_major_formatter(  # type: ignore
+            matplotlib.ticker.StrMethodFormatter("{x:.2f}")  # type: ignore
         )
         self.plot.grid(axis="both")
-        self.plot.format_coord = self.angle_format_coord
+        self.plot.format_coord = self.angle_format_coord  # type: ignore
         self.plot.set_ylim(-np.pi, np.pi)
         self.plot.set_yticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi])
         self.plot.set_yticklabels(
             [f"-{pi_chr}", f"-{pi_chr}/2", "0", f"+{pi_chr}/2", f"+{pi_chr}"]
         )
-        self.plot.set_aspect("auto")
+        self.plot.set_aspect("auto")  # type: ignore
 
-    def update(self):
+    def update(self) -> None:
         super().update()
-        self.image.set_ydata(self.spectrum)
-        self.marker_image.set_xdata(self.marker_bin)
-        self.marker_image.set_ydata(self.marker_value)
+        self.image.set_ydata(self.spectrum)  # type: ignore
+        self.marker_image.set_xdata(self.marker_bin)  # type: ignore
+        self.marker_image.set_ydata(self.marker_value)  # type: ignore
 
-    def add_data(self, data: npt.NDArray[np.float64]):
+    def add_data(self, data: npt.NDArray[np.float64]) -> None:
         super().add_data(data)
         self.set_data(data)
 
-    def set_data(self, data: npt.NDArray[np.float64]):
+    def set_data(self, data: npt.NDArray[np.float64]) -> None:
         self.spectrum = data
 
 
 class WaterfallAngleGraph(GraphImage):
-    def __init__(self, plot: matplotlib.axes.SubplotBase, params: GraphParameters):
+    def __init__(
+        self, plot: matplotlib.axes.SubplotBase, params: GraphParameters
+    ) -> None:
         super().__init__(plot)
 
         self.params = params
@@ -318,10 +329,10 @@ class WaterfallAngleGraph(GraphImage):
             f"Angle: {x:.3f} rad ({x / np.pi * 180:.2f} deg)"
         )
 
-    def init_image(self):
+    def init_image(self) -> None:
         super().init_image()
         assert self.plot is not None
-        self.image = self.plot.plot(
+        self.image = self.plot.plot(  # type: ignore
             self.waterfall,
             np.arange(0, self.params.waterfall_size),
             lw=1,
@@ -330,49 +341,53 @@ class WaterfallAngleGraph(GraphImage):
             label=self.label,
         )[0]
 
-    def initialize(self, color: str, label: str):
+    def initialize(self, color: str, label: str) -> "WaterfallAngleGraph":
         self.color = color
         self.label = label
         self.init_image()
         return self
 
-    def init_plot(self):
+    def make_plot(self) -> "WaterfallAngleGraph":
+        self.init_plot()
+        return self
+
+    def init_plot(self) -> None:
         super().init_plot()
 
-        self.plot.yaxis.set_major_formatter(
-            matplotlib.ticker.FuncFormatter(self.sample_id_formatter)
+        self.plot.yaxis.set_major_formatter(  # type: ignore
+            matplotlib.ticker.FuncFormatter(self.sample_id_formatter)  # type: ignore
         )
         self.plot.set_ylabel("Packets")
-        self.plot.set_aspect("auto")
+        self.plot.set_aspect("auto")  # type: ignore
 
-        self.plot.xaxis.set_major_formatter(lambda x, y: f"{x/np.pi:.2f}{pi_chr}")
+        self.plot.xaxis.set_major_formatter(lambda x, y: f"{x/np.pi:.2f}{pi_chr}")  # type: ignore
         self.plot.grid(axis="both")
 
         self.plot.set_xlim(-np.pi, np.pi)
-        self.plot.xaxis.set_major_locator(HalfLocator(min=-np.pi, max=np.pi))
+        self.plot.xaxis.set_major_locator(HalfLocator(min=-np.pi, max=np.pi))  # type: ignore
         # self.plot.set_xticks(
         #    [-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi]
         # )
         # self.plot.set_xticklabels(
         #    [f"-{pi_chr}", f"-{pi_chr}/2", "0", f"+{pi_chr}/2", f"+{pi_chr}"]
         # )
-        self.plot.format_coord = self.roi_format_coord
-        self.plot.set_label(self.plot_label)
-        self.plot.set_aspect("auto")
-        self.plot.invert_yaxis()
+        self.plot.format_coord = self.roi_format_coord  # type: ignore
+        self.plot.set_label(self.plot_label)  # type: ignore
+        self.plot.set_aspect("auto")  # type: ignore
+        self.plot.invert_yaxis()  # type: ignore
         self.plot.set_ylim(self.params.waterfall_size, 0)
-        self.plot.yaxis.set_label_position("right")
-        self.plot.yaxis.tick_right()
+        self.plot.yaxis.set_label_position("right")  # type: ignore
+        self.plot.yaxis.tick_right()  # type: ignore
         self.plot.legend()
 
-    def update(self):
+    def update(self) -> None:
         super().update()
-        self.image.set_xdata(self.waterfall)
+        self.image.set_xdata(self.waterfall)  # type: ignore
 
-    def add_data(self, data: npt.NDArray[np.float64]):
+    def add_data(self, data: npt.NDArray[np.float64]) -> None:
         super().add_data(data)
 
-    def add_point(self, point: Optional[float]):
+    def add_point(self, point: Optional[float]) -> None:
         self.waterfall = np.append(
             self.waterfall[-self.params.waterfall_size + 1 :],
             np.array([point]),

@@ -185,7 +185,11 @@ class TestStreamDisplayThread(threading.Thread):
         Matplotlib image object for the ROI waterfall elevation
         """
 
-        self.roi_waterfall_phase_graph: list[WaterfallAngleGraph] = []
+        self.roi_waterfall_phase_graph: list[Optional[WaterfallAngleGraph]] = [
+            None,
+            None,
+            None,
+        ]
         """
         Matplotlib image object for the ROI waterfall Phases
         """
@@ -303,27 +307,11 @@ class TestStreamDisplayThread(threading.Thread):
             except RuntimeError:
                 return  # it might happen on the UI when closing the window
 
-    def handle_spectrum_packet(self, packet: CoreServicePacket):
+    def handle_spectrum_packet(self, packet: CoreServicePacket) -> None:
         if packet.bin_count == 0:
             return
         if not args.disp:
             return
-        magnitude = packet.magnitude_spectrum
-        azimuth = packet.azimuth_spectrum
-        elevation = packet.elevation_spectrum
-        if (
-            args.bin > 0
-        ):  # args.bin is the maximum bin count the display can handle. 0 if disabled
-            # Max bin count the matplotlib frontend can manage to display smoothly.
-            # Can be adjusted to PC configuration.
-            decimate = 1
-            while packet.bin_count / decimate > args.bin:
-                decimate *= 2
-            if decimate > 1:
-                magnitude = magnitude[:-1:decimate]
-                azimuth = azimuth[:-1:decimate]
-                elevation = elevation[:-1:decimate]
-            packet.bin_count = magnitude.size
         if (
             not self.animation_started  # start matplotlib animation if it has not started yet
             or packet.bin_count
@@ -337,12 +325,14 @@ class TestStreamDisplayThread(threading.Thread):
             self.params.bin_count = packet.bin_count
             self.params.iq_rate = packet.iq_rate
             self.params.center_frequency = packet.center_frequency
-            self.create_anim()  # type: ignore
+            self.create_anim()
             self.animation_started = True
-
-        self.magnitude_graph.add_data(magnitude)
+        assert self.magnitude_graph is not None
+        self.magnitude_graph.add_data(packet.magnitude_spectrum)
 
         if args.roi_wf:
+            assert self.roi_waterfall_azimuth_graph is not None
+            assert self.roi_waterfall_elevation_graph is not None
             self.roi_waterfall_azimuth_graph.add_point(
                 self.roi_packet.roi_azimuth if self.roi_packet else None
             )
@@ -351,19 +341,20 @@ class TestStreamDisplayThread(threading.Thread):
             )
 
             if args.phases_roi_wf:
-                for i in range(3):
-                    self.roi_waterfall_phase_graph[i].add_point(
-                        self.debug_phases[i] if self.roi_packet else 0
-                    )
+                for graph, i in zip(self.roi_waterfall_phase_graph, range(3)):
+                    assert graph is not None
+                    graph.add_point(self.debug_phases[i] if self.roi_packet else 0)
         else:
-            self.azimuth_graph.set_data(azimuth)
-            self.elevation_graph.set_data(elevation)
+            assert self.azimuth_graph is not None
+            assert self.elevation_graph is not None
+            self.azimuth_graph.set_data(packet.azimuth_spectrum)
+            self.elevation_graph.set_data(packet.elevation_spectrum)
             self.azimuth_graph.marker_bin = self.roi_bin
 
-    def handle_eof_packet(self, packet: CoreServicePacket):
+    def handle_eof_packet(self, packet: CoreServicePacket) -> None:
         pass
 
-    def handle_roi_result_packet(self, packet: CoreServicePacket):
+    def handle_roi_result_packet(self, packet: CoreServicePacket) -> None:
         if self.params.iq_rate == 0:
             self.roi_bin = 0
         else:
@@ -374,17 +365,16 @@ class TestStreamDisplayThread(threading.Thread):
             )
             self.roi_packet = packet
 
-    def handle_roi_lack_of_signal_packet(self, packet: CoreServicePacket):
+    def handle_roi_lack_of_signal_packet(self, packet: CoreServicePacket) -> None:
         self.roi_packet = None
 
-    def handle_debug_packet(self, packet: CoreServicePacket):
+    def handle_debug_packet(self, packet: CoreServicePacket) -> None:
         self.debug_handlers[packet.title](packet)
 
-    def handle_debug_error_message(self, packet: CoreServicePacket):
-        messagebox.showerror(
-            packet.title.capitalize(), packet.contents.decode()
-        )
-    def handle_debug_phases_packet(self, packet: CoreServicePacket):
+    def handle_debug_error_message(self, packet: CoreServicePacket) -> None:
+        messagebox.showerror(packet.title.capitalize(), packet.contents.decode())
+
+    def handle_debug_phases_packet(self, packet: CoreServicePacket) -> None:
         spec_len = self.params.bin_count * 4
         ch1_spectrum: npt.NDArray[np.float32] = np.asarray(
             struct.unpack(
@@ -417,7 +407,7 @@ class TestStreamDisplayThread(threading.Thread):
         """
 
         global args
-        status_queue: queue.Queue[str] = multiprocessing.Queue()
+        status_queue: multiprocessing.Queue[str] = multiprocessing.Queue()
         """
         The string elements of the status queue are the messages to be displayed on the GUI status bar
         """
@@ -472,12 +462,10 @@ class TestStreamDisplayThread(threading.Thread):
     def update_imag(self, frame_number: int) -> list[matplotlib.artist.Artist]:
         image_list = []
         for graph in self.graph_list:
-            if graph is not None:
-                graph.update()
-                image_list.extend(graph.collect_images())
+            graph.update()
+            image_list.extend(graph.collect_images())
         return image_list
 
-    @typing.no_type_check  # no typing for matplotlib
     def create_anim(self) -> None:
         global args
         """
@@ -489,19 +477,24 @@ class TestStreamDisplayThread(threading.Thread):
         assert self.fig_ref
         self.fig_ref.clf()
 
-        grid_spec = self.fig_ref.add_gridspec(
+        grid_spec = self.fig_ref.add_gridspec(  # type: ignore
             nrows=2, ncols=2, width_ratios=(3, 2), height_ratios=(1, 1)
         )
         self.magnitude_plot = self.fig_ref.add_subplot(grid_spec[:, 0])
         self.magnitude_graph = WaterfallMagnitudeGraph(
             self.magnitude_plot, self.params
         ).initialize()
-        colorbar = self.fig_ref.colorbar(
+        colorbar = self.fig_ref.colorbar(  # type: ignore
             self.magnitude_graph.image, format=lambda x, _: f"{x:.0f}dB"
         )
         self.magnitude_graph.make_plot()
         if args.roi_wf:
             self.roi_waterfall_plot = self.fig_ref.add_subplot(grid_spec[:, 1])
+            if args.phases_roi_wf:
+                for i, color in zip(range(3), ["lightgreen", "lightblue", "lightpink"]):
+                    self.roi_waterfall_phase_graph[i] = WaterfallAngleGraph(
+                        self.roi_waterfall_plot, self.params
+                    ).initialize(color, f"ch{i+1}-ch0")
             self.roi_waterfall_azimuth_graph = WaterfallAngleGraph(
                 self.roi_waterfall_plot, self.params
             ).initialize("green", "Az")
@@ -510,11 +503,6 @@ class TestStreamDisplayThread(threading.Thread):
                 .initialize("blue", "El")
                 .make_plot()
             )
-            if args.phases_roi_wf:
-                for i in range(3):
-                    self.roi_waterfall_phase_graph[i] = WaterfallAngleGraph(
-                        self.roi_waterfall_plot, self.params
-                    ).initialize()
 
         else:
             self.azimuth_plot = self.fig_ref.add_subplot(grid_spec[0, 1])
@@ -531,11 +519,18 @@ class TestStreamDisplayThread(threading.Thread):
             )
 
         self.graph_list = [
-            self.magnitude_graph,
-            self.azimuth_graph,
-            self.elevation_graph,
-            self.roi_waterfall_azimuth_graph,
-            self.roi_waterfall_elevation_graph,
+            graph
+            for graph in [
+                self.magnitude_graph,
+                self.azimuth_graph,
+                self.elevation_graph,
+                self.roi_waterfall_azimuth_graph,
+                self.roi_waterfall_elevation_graph,
+                self.roi_waterfall_phase_graph[0],
+                self.roi_waterfall_phase_graph[1],
+                self.roi_waterfall_phase_graph[2],
+            ]
+            if graph is not None
         ]
         self.animation = FuncAnimation(
             self.fig_ref, self.update_imag, interval=int(1000 / args.fps), blit=True
@@ -544,7 +539,7 @@ class TestStreamDisplayThread(threading.Thread):
         grid_spec.tight_layout(figure=self.fig_ref)
         grid_spec.update()
 
-        self.fig_ref.canvas.draw()
+        self.fig_ref.canvas.draw()  # type: ignore
 
 
 class ClientWindow(tkinter.Frame):
@@ -747,7 +742,7 @@ class ClientWindow(tkinter.Frame):
         self.canvas_toolbar.pack(side=tkinter.TOP, fill=tkinter.X, expand=False)
         if self.stream_thread is not None:
             self.stream_thread.fig_ref = self.fig
-            self.autocomplete_command_frame.focus()
+            self.autocomplete_command_frame.focus_textbox()
 
     def connect_action(self) -> None:
         """
@@ -758,7 +753,7 @@ class ClientWindow(tkinter.Frame):
         self.host_stream_entry.configure(state="disabled")
         self.disconnect_button.configure(state="normal")
         self.autocomplete_command_frame.enable()
-        self.autocomplete_command_frame.focus()
+        self.autocomplete_command_frame.focus_textbox()
 
     def disconnect_action(self) -> None:
         """
