@@ -34,12 +34,13 @@ import pysagax
 from pysagax import (
     AngleSpectrumGraph,
     BaseConnection,
+    CompassSensor,
     CoreServicePacket,
     GraphImage,
     GraphParameters,
     StreamConnectionProcess,
     WaterfallAngleGraph,
-    WaterfallMagnitudeGraph, CompassSensor,
+    WaterfallMagnitudeGraph,
 )
 
 parser = argparse.ArgumentParser(description="CS Test client parameters")
@@ -100,6 +101,12 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
+roi_data = np.empty([0, 2])
+compass_data = np.empty([0, 3])
+phases_data = np.empty([0, 3])
+
+compass: Optional[CompassSensor] = None
+
 
 class CommandsConnectionThread(BaseConnection, threading.Thread):
     def __init__(self) -> None:
@@ -142,210 +149,12 @@ class CommandsConnectionThread(BaseConnection, threading.Thread):
         self.run_socket()
 
 
-class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
-    """
-    This thread (process) will handle the stream socket and place the incoming samples in a numpy structure.
-    The purpose of moving the stream TCP/IP connection and preprocessing of the packets to a separate
-    multiprocessing process is to ensure there are no delays on the reception, and to be independent of the GUI
-    """
-
-    def __init__(
-        self,
-        packets_queue: multiprocessing.Queue[CoreServicePacket],
-        disconnect_value: multiprocessing.managers.ValueProxy[int],
-        status_value: multiprocessing.Queue[str],
-    ):
-        super(StreamConnectionProcess, self).__init__()
-
-        self.counter_packet_ratio: float = 0
-        """
-        Used to count number of received packets in a uniform period of time. Ratio is the result of that calculation.
-        """
-
-        self.counter_ns: int = time.time_ns()
-        """
-        Helper variable to packet ratio. Counter_ns is a nanosecond timestamp 
-        that marks the start of the current counting block.
-        """
-
-        self.counter_packet_index: int = 0
-        """
-        Helper variable to packet ratio. This is the counter variable.
-        """
-
-        self.counter_block_size_parameter: int = 100000000
-        """
-        This parameter sets the counting window of the packet ratio calculation.
-        """
-
-        self.mp_status: multiprocessing.Queue[str] = status_value
-        """
-        Status message queue for multiprocessing process
-        """
-
-        self.mp_disconnect: multiprocessing.managers.ValueProxy[int] = disconnect_value
-        """
-        Disconnect signal for multiprocessing process
-        """
-
-        self.mp_queue: multiprocessing.Queue[CoreServicePacket] = packets_queue
-        """
-        CS packet queue for multiprocessing process
-        """
-
-        self.buffer = bytearray()
-        """
-        Binary packet data buffer
-        """
-
-        self.packet_count = 0
-        """
-        Overall packet count
-        """
-
-        self.buf_size = 131072  # 65536
-        """
-        This buffer size will be read at once from the TCP socket.
-        """
-
-    def run(self) -> None:
-        """
-        Entry point of the stream collecting process.
-        """
-        self.run_socket()
-        self.mp_status.put("END")
-
-    def is_disconnect(self) -> bool:
-        """
-        Returns: if the socket should manually disconnect
-        """
-        assert self.mp_disconnect is not None
-        return bool(self.mp_disconnect.value)
-
-    def display_status(self, message: str) -> None:
-        """
-        Display a status message (on the GUI status bar)
-        """
-        assert self.mp_status
-        self.mp_status.put(message)
-
-    def insert_packet(self, cs_packet: CoreServicePacket) -> None:
-        self.packet_count += 1
-        cs_packet.packet_index = self.packet_count
-        self.mp_queue.put(cs_packet)
-        while self.counter_ns + self.counter_block_size_parameter <= time.time_ns():
-            self.counter_packet_ratio = self.counter_packet_index * (
-                1e9 / self.counter_block_size_parameter
-            )
-            self.counter_packet_index = 0
-            self.counter_ns += self.counter_block_size_parameter
-        self.counter_packet_index += 1
-        try:
-            self.display_status(
-                f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
-                f"index {cs_packet.sample_index} , speed: {self.counter_packet_ratio} packets/sec, "
-                f"queue count on insert: {self.mp_queue.qsize()}"
-            )
-        except (
-            NotImplementedError
-        ):  # multiprocessing.Queue.qsize() not implemented on Mac OS X
-            self.display_status(
-                f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
-                f"index {cs_packet.sample_index}"
-            )
-
-    def receive_on_socket(self, data: bytes) -> None:
-        """
-        When data is received on the socket, this function will construct a packet object from the binary data.
-        """
-        assert self.mp_queue
-        self.buffer += bytearray(data)
-        while len(self.buffer) >= 8:  # packet header is 28 bytes
-            cs_packet = CoreServicePacket()
-            cs_packet.stream_id = int.from_bytes(self.buffer[0:4], "little")
-            cs_packet.packet_type = int.from_bytes(self.buffer[4:8], "little")
-            cs_packet.time_ns = time.time_ns()
-
-            if len(self.buffer) >= 28 and cs_packet.packet_type == 1:
-                cs_packet.center_frequency = struct.unpack("f", self.buffer[8:12])[0]
-                cs_packet.iq_rate = struct.unpack("f", self.buffer[12:16])[0]
-                cs_packet.sample_index = int.from_bytes(self.buffer[16:24], "little")
-                cs_packet.bin_count = int.from_bytes(self.buffer[24:28], "little")
-                packet_size = 3 * 4 * cs_packet.bin_count + 28
-                if (
-                    len(self.buffer) >= packet_size
-                ):  # we got the entire packet in buffer
-                    cs_packet.magnitude_spectrum = np.asarray(
-                        struct.unpack(
-                            f"{cs_packet.bin_count}f",
-                            self.buffer[28 : 28 + cs_packet.bin_count * 4],
-                        )
-                    )
-                    cs_packet.azimuth_spectrum = np.asarray(
-                        struct.unpack(
-                            f"{cs_packet.bin_count}f",
-                            self.buffer[
-                                (28 + cs_packet.bin_count * 4) : (
-                                    28 + cs_packet.bin_count * 4 * 2
-                                )
-                            ],
-                        )
-                    )
-                    cs_packet.elevation_spectrum = np.asarray(
-                        struct.unpack(
-                            f"{cs_packet.bin_count}f",
-                            self.buffer[
-                                (28 + cs_packet.bin_count * 4 * 2) : (
-                                    28 + cs_packet.bin_count * 4 * 3
-                                )
-                            ],
-                        )
-                    )
-                    self.insert_packet(cs_packet)
-                    self.buffer = self.buffer[packet_size:]  # drop packet from buffer
-                else:
-                    break  # wait until next tcp read
-            elif cs_packet.packet_type == 2:  # end of file
-                cs_packet.end_of_file = True
-                self.insert_packet(cs_packet)
-                self.buffer = self.buffer[8:]
-            elif len(self.buffer) >= 28 and cs_packet.packet_type == 3:  # roi result
-                cs_packet.center_frequency = struct.unpack("f", self.buffer[8:12])[0]
-                cs_packet.span = struct.unpack("f", self.buffer[12:16])[0]
-                cs_packet.roi_level = struct.unpack("f", self.buffer[16:20])[0]
-                cs_packet.roi_azimuth = struct.unpack("f", self.buffer[20:24])[0]
-                cs_packet.roi_elevation = struct.unpack("f", self.buffer[24:28])[0]
-                self.insert_packet(cs_packet)
-                self.buffer = self.buffer[28:]  # drop packet from buffer
-            elif cs_packet.packet_type == 4:  # roi lack of signal
-                self.insert_packet(cs_packet)
-                self.buffer = self.buffer[8:]
-            elif len(self.buffer) >= 24 and cs_packet.packet_type == 6:  # debug
-                category_size = int.from_bytes(self.buffer[12:16], "little")
-                data_size = int.from_bytes(self.buffer[16:24], "little")
-                if len(self.buffer) >= 24 + category_size + data_size:
-                    cs_packet.title = self.buffer[24 : 24 + category_size].decode()
-                    cs_packet.contents = self.buffer[
-                        (24 + category_size) : (24 + category_size + data_size)
-                    ]
-                    self.insert_packet(cs_packet)
-                    self.buffer = self.buffer[(24 + category_size + data_size) :]
-                else:
-                    break
-            elif cs_packet.packet_type > 6:
-                self.buffer = self.buffer[4:]
-                self.display_status(
-                    f"Stream {cs_packet.stream_id}, "
-                    f"Unsupported packet type {cs_packet.packet_type}"
-                )
-            else:
-                break  # no whole packet in the buffer, or unsupported data
-
-
 """
 This thread is responsible for handling the multiprocessing stream process and for displaying the stream contents
 on the matplotlib plots
 """
+
+
 class TestStreamDisplayThread(threading.Thread):
     def __init__(self) -> None:
         super().__init__()
@@ -393,6 +202,11 @@ class TestStreamDisplayThread(threading.Thread):
         self.elevation_graph: Optional[AngleSpectrumGraph] = None
         """
         Matplotlib image object for the elevation plot
+        """
+
+        self.roi_waterfall_compass: Optional[WaterfallAngleGraph] = None
+        """
+        Matplotlib image object for the ROI waterfall compass sensor
         """
 
         self.roi_waterfall_azimuth_graph: Optional[WaterfallAngleGraph] = None
@@ -527,6 +341,47 @@ class TestStreamDisplayThread(threading.Thread):
             except RuntimeError:
                 return  # it might happen on the UI when closing the window
 
+    def log_octave_data(self) -> None:
+        global args
+        global roi_data
+        global compass_data
+        global phases_data
+
+        phases_data = np.append(
+            phases_data,
+            np.array(
+                [
+                    self.debug_phases
+                    if self.roi_packet and args.phases_roi_wf
+                    else [0, 0, 0]
+                ]
+            ),
+            axis=0,
+        )
+        roi_data = np.append(
+            roi_data,
+            np.array(
+                [
+                    [self.roi_packet.roi_azimuth, self.roi_packet.roi_elevation]
+                    if self.roi_packet is not None
+                    else ["NaN", "NaN"]  # type: ignore
+                ]
+            ),
+            axis=0,
+        )
+        compass_data = np.append(
+            compass_data,
+            np.array(
+                [compass.compass if compass is not None else ["NaN", "NaN", "NaN"]]
+            ),
+            axis=0,
+        )
+
+    def read_from_compass_sensor(self) -> None:
+        global compass
+        if compass is not None and self.roi_waterfall_compass is not None:
+            self.roi_waterfall_compass.add_point(compass.sensor)
+
     def handle_spectrum_packet(self, packet: CoreServicePacket) -> None:
         if packet.bin_count == 0:
             return
@@ -549,7 +404,8 @@ class TestStreamDisplayThread(threading.Thread):
             self.animation_started = True
         assert self.magnitude_graph is not None
         self.magnitude_graph.add_data(packet.magnitude_spectrum)
-
+        self.read_from_compass_sensor()
+        self.log_octave_data()
         if args.roi_wf:
             assert self.roi_waterfall_azimuth_graph is not None
             assert self.roi_waterfall_elevation_graph is not None
@@ -562,8 +418,9 @@ class TestStreamDisplayThread(threading.Thread):
 
             if args.phases_roi_wf:
                 for graph, i in zip(self.roi_waterfall_phase_graph, range(3)):
-                    assert graph is not None
-                    graph.add_point(self.debug_phases[i] if self.roi_packet else 0)
+                    if graph is not None:
+                        graph.add_point(self.debug_phases[i] if self.roi_packet else 0)
+
         else:
             assert self.azimuth_graph is not None
             assert self.elevation_graph is not None
@@ -675,7 +532,6 @@ class TestStreamDisplayThread(threading.Thread):
             )  # handle UI in a separate thread, because UI calls are slow
             self.packet_handlers[packet.packet_type](packet)
 
-
         self.animation_started = False
         stream_process.join()
         stream_process.terminate()
@@ -716,12 +572,17 @@ class TestStreamDisplayThread(threading.Thread):
                     self.roi_waterfall_phase_graph[i] = WaterfallAngleGraph(
                         self.roi_waterfall_plot, self.params
                     ).initialize(color, f"ch{i+1}-ch0")
+            global compass
+            if compass is not None:
+                self.roi_waterfall_compass = WaterfallAngleGraph(
+                    self.roi_waterfall_plot, self.params
+                ).initialize("red", "Compass")
             self.roi_waterfall_azimuth_graph = WaterfallAngleGraph(
                 self.roi_waterfall_plot, self.params
-            ).initialize("green", "Az")
+            ).initialize("green", "Azim")
             self.roi_waterfall_elevation_graph = (
                 WaterfallAngleGraph(self.roi_waterfall_plot, self.params)
-                .initialize("blue", "El")
+                .initialize("blue", "Elev")
                 .make_plot()
             )
         else:
@@ -749,6 +610,7 @@ class TestStreamDisplayThread(threading.Thread):
                 self.roi_waterfall_phase_graph[0],
                 self.roi_waterfall_phase_graph[1],
                 self.roi_waterfall_phase_graph[2],
+                self.roi_waterfall_compass,
             ]
             if graph is not None
         ]
@@ -896,9 +758,14 @@ class ClientWindow(tkinter.Frame):
         self.stream_packets_lb.pack(
             side=tkinter.RIGHT, fill=tkinter.BOTH, padx=6, expand=True
         )
-        if args.sensor_dev:
+        if args.sensor_dev or args.aaronia:
             global compass
-            compass = CompassSensor()
+            compass = CompassSensor(
+                pysagax.open_aaronia_serial_dev()
+                if args.aaronia
+                else pysagax.open_arduino_serial_dev(args.sensor_dev),
+                pysagax.AaroniaParser() if args.aaronia else pysagax.SimpleParser(),
+            )
             compass.start()
 
     def save_command_to_suggestions(self, command: str) -> None:
@@ -1022,61 +889,17 @@ class ClientWindow(tkinter.Frame):
         """
         Action of the "Connect" button
         """
-        with open(f"octave{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt", "w") as f1:
-            global roi_data
-            global compass_data
-            global phases_data
-            f1.writelines(
-                "\n".join(
-                    [
-                        "# Created by CSTestClient, " + str(datetime.now()),
-                        "# name: roi",
-                        "# type: matrix",
-                        "# rows: " + str(roi_data.shape[0]),
-                        "# columns: 2",
-                    ]
-                )
-            )
-            f1.write("\n")
-            f1.writelines("\n".join([" ".join(row.astype(str)) for row in roi_data]))
-            f1.write("\n\n")
+        global compass_data
+        global phases_data
+        global roi_data
+        pysagax.save_octave(
+            filename=f"octave{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+            variables={"roi": roi_data, "compass": compass_data, "phases": phases_data},
+        )
 
-            f1.writelines(
-                "\n".join(
-                    [
-                        "# name: compass",
-                        "# type: matrix",
-                        "# rows: " + str(compass_data.shape[0]),
-                        "# columns: 3",
-                    ]
-                )
-            )
-            f1.write("\n\n")
-            f1.writelines(
-                "\n".join([" ".join(row.astype(str)) for row in compass_data])
-            )
-            f1.write("\n\n")
-
-            if args.phases_roi_wf:
-                f1.writelines(
-                    "\n".join(
-                        [
-                            "# name: phases",
-                            "# type: matrix",
-                            "# rows: " + str(phases_data.shape[0]),
-                            "# columns: 3",
-                        ]
-                    )
-                )
-                f1.write("\n\n")
-                f1.writelines(
-                    "\n".join([" ".join(row.astype(str)) for row in phases_data])
-                )
-                f1.write("\n\n")
-
-            phases_data = np.empty([0, 2])
-            roi_data = np.empty([0, 2])
-            compass_data = np.empty([0, 3])
+        phases_data = np.empty([0, 2])
+        roi_data = np.empty([0, 2])
+        compass_data = np.empty([0, 3])
 
     def disconnect_commands(self) -> None:
         """

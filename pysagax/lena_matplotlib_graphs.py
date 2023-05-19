@@ -244,11 +244,11 @@ class AngleSpectrumGraph(GraphImage):
     def init_image(self) -> None:
         super().init_image()
         self.spectrum = np.zeros([self.params.bin_count])
-        self.image = self.plot.plot(
+        self.image = self.plot.plot(  # type: ignore
             self.spectrum, lw=1, color=self.color, animated=True
         )[
             0
-        ]  # type: ignore
+        ]
         self.marker_image = self.plot.plot(0, 0, "or", animated=True)[0]  # type: ignore
 
     def initialize(self, color: str) -> "AngleSpectrumGraph":
