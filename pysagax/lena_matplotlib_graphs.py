@@ -3,10 +3,12 @@
 #
 from typing import Any, Optional
 
-import matplotlib.cm
 import numpy as np
 import numpy.typing as npt
 import typing
+
+import matplotlib
+from matplotlib import cm
 from matplotlib.animation import FuncAnimation  # type: ignore
 from matplotlib.backend_bases import KeyEvent
 from matplotlib.backends.backend_tkagg import (  # type: ignore
@@ -246,9 +248,7 @@ class AngleSpectrumGraph(GraphImage):
         self.spectrum = np.zeros([self.params.bin_count])
         self.image = self.plot.plot(  # type: ignore
             self.spectrum, lw=1, color=self.color, animated=True
-        )[
-            0
-        ]
+        )[0]
         self.marker_image = self.plot.plot(0, 0, "or", animated=True)[0]  # type: ignore
 
     def initialize(self, color: str) -> "AngleSpectrumGraph":
@@ -393,3 +393,191 @@ class WaterfallAngleGraph(GraphImage):
             np.array([point]),
             axis=0,
         )
+
+
+class ThreeDimensionGraph(GraphImage):
+    def __init__(
+        self, plot: matplotlib.axes.SubplotBase, params: GraphParameters
+    ) -> None:
+        super().__init__(plot)
+
+        self.params = params
+        self.waterfall = np.empty([self.params.waterfall_size, 3])
+        self.waterfall.fill(None)
+        """
+        Wf data (numpy vector)
+        """
+        self.color: str = "blue"
+        """
+        Color of the plot image
+        """
+        self.label: str = ""
+        """
+        Label of the plot image
+        """
+        self.plot_label: str = ""
+        """
+        Label of the plot
+        """
+
+    def sample_id_formatter(self, x: float, pos: Any = None) -> str:
+        return f"{x - self.params.waterfall_size:.0f}"
+
+    def roi_format_coord(self, x: float, y: float) -> str:
+        return (
+            f"Packet: {self.sample_id_formatter(y)}, "
+            f"Angle: {x:.3f} rad ({x / np.pi * 180:.2f} deg)"
+        )
+
+    def init_image(self) -> None:
+        super().init_image()
+        assert self.plot is not None
+        self.image = self.plot.plot(  # type: ignore
+            xs=self.waterfall[:, 0],
+            ys=self.waterfall[:, 1],
+            zs=self.waterfall[:, 2],
+            color=self.color,
+            animated=True,
+            label=self.label,
+        )[0]
+
+        self.marker_image = self.plot.plot(0, 0, "or", animated=True)[0]  # type: ignore
+
+    def initialize(self, color: str, label: str) -> "ThreeDimensionGraph":
+        self.label = label
+        self.color = color
+        self.init_image()
+        return self
+
+    def make_plot(self) -> "ThreeDimensionGraph":
+        self.init_plot()
+        return self
+
+    def init_plot(self) -> None:
+        super().init_plot()
+
+        # self.plot.yaxis.set_major_formatter(  # type: ignore
+        #     matplotlib.ticker.FuncFormatter(self.sample_id_formatter)  # type: ignore
+        # )
+        # self.plot.set_ylabel("Packets")
+        # self.plot.set_aspect("auto")  # type: ignore
+        #
+        # self.plot.xaxis.set_major_formatter(lambda x, y: f"{x/np.pi:.2f}{pi_chr}")  # type: ignore
+        # self.plot.grid(axis="both")
+        #
+        self.plot.set_xlim(-1000, 1000)
+        self.plot.set_ylim(-1000, 1000)
+        self.plot.set_zlim(-1000, 1000)  # type: ignore
+
+        # self.plot.xaxis.set_major_locator(HalfLocator(min=-np.pi, max=np.pi))  # type: ignore
+        # # self.plot.set_xticks(
+        # #    [-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi]
+        # # )
+        # # self.plot.set_xticklabels(
+        # #    [f"-{pi_chr}", f"-{pi_chr}/2", "0", f"+{pi_chr}/2", f"+{pi_chr}"]
+        # # )
+        # self.plot.format_coord = self.roi_format_coord  # type: ignore
+        # self.plot.set_label(self.plot_label)  # type: ignore
+        # self.plot.set_aspect("auto")  # type: ignore
+        # self.plot.invert_yaxis()  # type: ignore
+        # self.plot.set_ylim(self.params.waterfall_size, 0)
+        # self.plot.yaxis.set_label_position("right")  # type: ignore
+        # self.plot.yaxis.tick_right()  # type: ignore
+        self.plot.legend()
+
+    def update(self) -> None:
+        super().update()
+        self.image.set_xdata(self.waterfall[:, 0])  # type: ignore
+        self.image.set_ydata(self.waterfall[:, 1])  # type: ignore
+        self.image.set_3d_properties(self.waterfall[:, 2])  # type: ignore
+
+        self.marker_image.set_xdata(self.waterfall[-1, 0])  # type: ignore
+        self.marker_image.set_ydata(self.waterfall[-1, 1])  # type: ignore
+        self.marker_image.set_3d_properties(self.waterfall[-1, 2])  # type: ignore
+
+    def add_data(self, data: npt.NDArray[np.float64]) -> None:
+        super().add_data(data)
+
+    def add_point(
+        self, x: Optional[float], y: Optional[float], z: Optional[float]
+    ) -> None:
+        self.waterfall = np.append(
+            self.waterfall[-self.params.waterfall_size + 1 :, :],
+            np.array([[x, y, z]]),
+            axis=0,
+        )
+
+
+class CompassGraph(GraphImage):
+    def __init__(
+        self, plot: matplotlib.axes.SubplotBase, params: GraphParameters
+    ) -> None:
+        super().__init__(plot)
+
+        self.params = params
+        self.angle: float = 0
+        """
+        Compass angle
+        """
+        self.radius: float = 1
+        self.color: str = "blue"
+        """
+        Color of the plot image
+        """
+        self.label: str = ""
+        """
+        Label of the plot image
+        """
+        self.plot_label: str = ""
+        """
+        Label of the plot
+        """
+
+    def sample_id_formatter(self, x: float, pos: Any = None) -> str:
+        return f"{x - self.params.waterfall_size:.0f}"
+
+    def roi_format_coord(self, x: float, y: float) -> str:
+        return (
+            f"Packet: {self.sample_id_formatter(y)}, "
+            f"Angle: {x:.3f} rad ({x / np.pi * 180:.2f} deg)"
+        )
+
+    def init_image(self) -> None:
+        super().init_image()
+        assert self.plot is not None
+        self.image = self.plot.plot(  # type: ignore
+            [0, self.angle],
+            [0, self.radius],
+            color=self.color,
+            animated=True,
+            label=self.label,
+        )[0]
+
+    def initialize(self, color: str, label: str) -> "CompassGraph":
+        self.label = label
+        self.color = color
+        self.init_image()
+        return self
+
+    def make_plot(self) -> "CompassGraph":
+        self.init_plot()
+        return self
+
+    def init_plot(self) -> None:
+        super().init_plot()
+        self.plot.set_theta_direction(-1)  # type: ignore
+        self.plot.set_theta_offset(np.pi / 2.0)  # type: ignore
+        self.plot.set_rmax(1)  # type: ignore
+        self.plot.set_rticks([0.5, 1])  # type: ignore
+        self.plot.grid(True)
+
+    def update(self) -> None:
+        super().update()
+        self.image.set_xdata([0, self.angle])  # type: ignore
+        self.image.set_ydata([0, self.radius])  # type: ignore
+
+    def add_data(self, data: npt.NDArray[np.float64]) -> None:
+        super().add_data(data)
+
+    def add_point(self, value: float) -> None:
+        self.angle = value
