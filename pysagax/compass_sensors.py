@@ -184,4 +184,6 @@ def open_aaronia_serial_dev() -> serial.Serial:
         print(e)
     import pyftdi.serialext  # type: ignore
 
-    return pyftdi.serialext.serial_for_url("ftdi://ftdi:0xe8db/1", baudrate=625000)  # type: ignore
+    aaronia: serial.Serial = pyftdi.serialext.serial_for_url("ftdi://ftdi:0xe8db/1", baudrate=625000)  # type: ignore
+    aaronia.write(b"$PAAG,MODE,START\r\n")
+    return aaronia
