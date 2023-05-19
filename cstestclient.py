@@ -897,7 +897,7 @@ class ClientWindow(tkinter.Frame):
             variables={"roi": roi_data, "compass": compass_data, "phases": phases_data},
         )
 
-        phases_data = np.empty([0, 2])
+        phases_data = np.empty([0, 3])
         roi_data = np.empty([0, 2])
         compass_data = np.empty([0, 3])
 

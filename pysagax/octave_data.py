@@ -10,6 +10,7 @@ def save_octave(filename: str, variables: dict[str, npt.NDArray[np.float64]]) ->
             "\n".join(
                 [
                     "# Created by SagaxPyClient, " + str(datetime.now()),
+                    "",
                 ]
             )
         )
