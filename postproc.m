@@ -5,9 +5,9 @@ pkg load signal
 cavg = [movavg(compass(:,1),24,24) movavg(compass(:,2),24,24) movavg(compass(:,3),24,24)];
 center = [(max(cavg(:,1))+min(cavg(:,1)))/2 ; (max(cavg(:,2))+min(cavg(:,2)))/2 ; (max(cavg(:,3))+min(cavg(:,3)))/2 ];
 
-#figure; title("Compass sensor values");
-#hold on; plot3(cavg(:,1),cavg(:,2),cavg(:,3)); plot3(center(1),center(2),center(3),'x'); grid on;
-
+figure; title("Compass sensor values");xlabel("x");ylabel("y");zlabel("z");
+hold on; plot3(compass(:,1),compass(:,2),compass(:,3)); plot3(cavg(:,1),cavg(:,2),cavg(:,3)); plot3(center(1),center(2),center(3),'x'); grid on;
+legend("Nyers compass szenzor adat","Mozgo atlag", "Szamitott referencia pont");
 ccorr = [cavg(:,1).-center(1) cavg(:,2).-center(2) cavg(:,3).-center(3)];
 angles = atan2(ccorr(:,2), ccorr(:,1));
 roi_azimuth = roi(:, 1);
