@@ -21,6 +21,7 @@ from matplotlib.backends.backend_tkagg import (  # type: ignore
     FigureCanvasTkAgg,
     NavigationToolbar2Tk,
 )
+from matplotlib.widgets import CheckButtons
 
 import pysagax
 from pysagax import (
@@ -30,6 +31,7 @@ from pysagax import (
     WaterfallAngleGraph,
     ThreeDimensionGraph,
     CompassGraph,
+    ThreeDimensionObject,
 )
 
 parser = argparse.ArgumentParser(description="Compass tester parameters")
@@ -101,9 +103,24 @@ class DisplayThread(threading.Thread):
         Matplotlib plot (axes) object for the 3d plot
         """
 
-        self.three_d: Optional[ThreeDimensionGraph] = None
+        self.three_d_heading: Optional[ThreeDimensionObject] = None
         """
-        Matplotlib image object for the compass sensor waterfall
+        Matplotlib image object for the heading
+        """
+
+        self.three_d_magnetometer: Optional[ThreeDimensionGraph] = None
+        """
+        Matplotlib image object for the magnetometer sensor
+        """
+
+        self.three_d_accelerometer: Optional[ThreeDimensionGraph] = None
+        """
+        Matplotlib image object for the acc sensor
+        """
+
+        self.three_d_gyroscope: Optional[ThreeDimensionGraph] = None
+        """
+        Matplotlib image object for the gyro sensor
         """
 
         self.waterfall_plot: Optional[object] = None
@@ -166,19 +183,45 @@ class DisplayThread(threading.Thread):
         global args
         if compass is not None:
             if self.waterfall_compass is not None:
-                self.waterfall_compass.add_point(compass.sensor)
+                self.waterfall_compass.add_point(compass.angle)
 
             if self.compass_graph is not None:
-                self.compass_graph.add_point(compass.sensor)
+                self.compass_graph.add_point(compass.angle)
 
-            if self.three_d is not None:
-                self.three_d.add_point(
-                    compass.compass[0], compass.compass[1], compass.compass[2]
-                )
+            if self.three_d_heading is not None:
+                if compass.heading is not None:
+                    self.three_d_heading.add_point(compass.quaternion)
+                if (
+                    compass.parser.magnetometer_values is not None
+                    and self.three_d_magnetometer is not None
+                ):
+                    self.three_d_magnetometer.add_point(
+                        compass.parser.magnetometer_values[0] / 100000.0,
+                        compass.parser.magnetometer_values[1] / 100000.0,
+                        compass.parser.magnetometer_values[2] / 100000.0,
+                    )
+                if (
+                    compass.parser.gyroscope_values is not None
+                    and self.three_d_gyroscope is not None
+                ):
+                    self.three_d_gyroscope.add_point(
+                        compass.parser.gyroscope_values[0],
+                        compass.parser.gyroscope_values[1],
+                        compass.parser.gyroscope_values[2],
+                    )
+                if (
+                    compass.parser.accelerometer_values is not None
+                    and self.three_d_accelerometer is not None
+                ):
+                    self.three_d_accelerometer.add_point(
+                        compass.parser.accelerometer_values[0],
+                        compass.parser.accelerometer_values[1],
+                        compass.parser.accelerometer_values[2],
+                    )
             compass_data = np.append(  # for octave export
                 compass_data,
                 np.array(
-                    [compass.compass if compass is not None else ["NaN", "NaN", "NaN"]]
+                    [compass.heading if compass is not None else ["NaN", "NaN", "NaN"]]
                 ),
                 axis=0,
             )
@@ -238,11 +281,23 @@ class DisplayThread(threading.Thread):
             self.waterfall_compass.plot.yaxis.set_major_formatter(  # type: ignore
                 lambda x, y: f"{float(x - self.params.waterfall_size)/float(args.fs):.2f}s"
             )
-            self.three_d = (
+            self.three_d_heading = ThreeDimensionObject(
+                self.three_d_plot, self.params
+            ).initialize("red", "Heading")
+            self.three_d_magnetometer = ThreeDimensionGraph(
+                self.three_d_plot, self.params
+            ).initialize("blue", "Magnetometer [Gauss]")
+            self.three_d_accelerometer = ThreeDimensionGraph(
+                self.three_d_plot, self.params
+            ).initialize("green", "Accelerometer [m/s²]")
+            self.three_d_gyroscope = (
                 ThreeDimensionGraph(self.three_d_plot, self.params)
-                .initialize("black", "Compass")
+                .initialize("yellow", "Gyroscope [rad/s]")
                 .make_plot()
             )
+            self.three_d_gyroscope.image.set_visible(False)  # type: ignore
+            self.three_d_accelerometer.image.set_visible(False)  # type: ignore
+            self.three_d_magnetometer.image.set_visible(False)  # type: ignore
             self.compass_graph = (
                 CompassGraph(self.compass_plot, self.params)
                 .initialize("red", "Compass")
@@ -253,13 +308,20 @@ class DisplayThread(threading.Thread):
             graph
             for graph in [
                 self.waterfall_compass,
-                self.three_d,
+                self.three_d_heading,
+                self.three_d_magnetometer,
+                self.three_d_accelerometer,
+                self.three_d_gyroscope,
                 self.compass_graph,
             ]
             if graph is not None
         ]
         self.animation = FuncAnimation(
-            self.fig_ref, self.update_imag, interval=int(1000 / args.fps), blit=True
+            self.fig_ref,
+            self.update_imag,
+            interval=int(1000 / args.fps),
+            blit=True,
+            cache_frame_data=False,
         )
 
         grid_spec.tight_layout(figure=self.fig_ref)

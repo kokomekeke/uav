@@ -372,7 +372,7 @@ class TestStreamDisplayThread(threading.Thread):
         compass_data = np.append(
             compass_data,
             np.array(
-                [compass.compass if compass is not None else ["NaN", "NaN", "NaN"]]
+                [compass.heading if compass is not None else ["NaN", "NaN", "NaN"]]
             ),
             axis=0,
         )
@@ -380,7 +380,7 @@ class TestStreamDisplayThread(threading.Thread):
     def read_from_compass_sensor(self) -> None:
         global compass
         if compass is not None and self.roi_waterfall_compass is not None:
-            self.roi_waterfall_compass.add_point(compass.sensor)
+            self.roi_waterfall_compass.add_point(compass.angle)
 
     def handle_spectrum_packet(self, packet: CoreServicePacket) -> None:
         if packet.bin_count == 0:

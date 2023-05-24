@@ -1,6 +1,7 @@
 import math
 import re
 import threading
+import time
 from typing import Optional
 
 import numpy as np
@@ -10,13 +11,29 @@ import serial
 
 class CompassParser:
     def __init__(self) -> None:
-        self.raw_values: Optional[npt.NDArray[np.float64]] = None
+        self.raw_magnetometer_values: Optional[npt.NDArray[np.float64]] = None
         """
-        Raw coordinates received from compass sensor
+        Raw coordinates received from magnetometer sensor
         """
-        self.values: Optional[npt.NDArray[np.float64]] = None
-        """,
-        Processed coordinates from compass sensor
+        self.raw_accelerometer_values: Optional[npt.NDArray[np.float64]] = None
+        """
+        Raw coordinates coordinates from accelerometer sensor (if present)
+        """
+        self.raw_gyroscope_values: Optional[npt.NDArray[np.float64]] = None
+        """
+        Raw coordinates coordinates from gyroscope sensor (if present)
+        """
+        self.magnetometer_values: Optional[npt.NDArray[np.float64]] = None
+        """
+        Processed coordinates from magnetometer sensor
+        """
+        self.accelerometer_values: Optional[npt.NDArray[np.float64]] = None
+        """
+        Processed coordinates from accelerometer sensor (if present)
+        """
+        self.gyroscope_values: Optional[npt.NDArray[np.float64]] = None
+        """
+        Processed coordinates from gyroscope sensor (if present)
         """
         self.angle: Optional[float] = None
         """
@@ -48,35 +65,52 @@ class SimpleParser(CompassParser):
     def parse(self, line: bytes) -> bool:
         tokens = self.pattern.match(line.decode())
         if tokens is None:
-            self.raw_values = None
-            self.values = None
+            self.raw_magnetometer_values = None
+            self.magnetometer_values = None
             self.angle = None
             return False
         try:
-            self.raw_values = np.array(
+            self.raw_magnetometer_values = np.array(
                 [
                     float(tokens.group(4)),
                     float(tokens.group(5)),
                     float(tokens.group(6)),
                 ]
             )
-            self.mins = np.array(
-                [min(mini, raw) for mini, raw in zip(self.mins, self.raw_values)]
-            )
-            self.maxs = np.array(
-                [max(maxi, raw) for maxi, raw in zip(self.maxs, self.raw_values)]
-            )
-            self.values = np.array(
+            self.raw_accelerometer_values = np.array(
                 [
-                    raw - ((mini + maxi) / 2)
-                    for mini, maxi, raw in zip(self.mins, self.maxs, self.raw_values)
+                    float(tokens.group(1)),
+                    float(tokens.group(2)),
+                    float(tokens.group(3)),
                 ]
             )
-            self.angle = math.atan2(self.values[0], self.values[1])
+            self.mins = np.array(
+                [
+                    min(mini, raw)
+                    for mini, raw in zip(self.mins, self.raw_magnetometer_values)
+                ]
+            )
+            self.maxs = np.array(
+                [
+                    max(maxi, raw)
+                    for maxi, raw in zip(self.maxs, self.raw_magnetometer_values)
+                ]
+            )
+            self.magnetometer_values = np.array(
+                [
+                    raw - ((mini + maxi) / 2)
+                    for mini, maxi, raw in zip(
+                        self.mins, self.maxs, self.raw_magnetometer_values
+                    )
+                ]
+            )
+            self.angle = math.atan2(
+                float(self.magnetometer_values[0]), float(self.magnetometer_values[1])
+            )
             return True
         except ValueError:
-            self.raw_values = None
-            self.values = None
+            self.raw_magnetometer_values = None
+            self.magnetometer_values = None
             self.angle = None
             return False
 
@@ -84,12 +118,15 @@ class SimpleParser(CompassParser):
 class AaroniaParser(CompassParser):
     def __init__(self) -> None:
         super().__init__()
+        self.is_new: tuple[bool, bool, bool] = (False, False, False)
         self.pattern = re.compile(
             r"\$PAAG,DATA,(.),(\d{6})\.(\d*),([-\d.]*),([-\d.]*),([-\d.]*),(.)\*([0-9A-F]{2})"
         )
 
     def parse(self, line: bytes) -> bool:
         line = line.strip()
+        if len(line) < 3:
+            return False
         if not (line[0] == ord("$") and line[-3] == ord("*")):
             return False
         data_checksum = line[-2:]
@@ -108,13 +145,54 @@ class AaroniaParser(CompassParser):
             data_idx = int(tokens[3])
             data_coord = (float(tokens[4]), float(tokens[5]), float(tokens[6]))
             data_ok = tokens[7]
-            if data_ok == "A" and data_type == "C":
-                self.raw_values = np.array(data_coord)
-                self.values = np.array(
-                    [data_coord[0] / 1090, data_coord[1] / 1090, data_coord[2] / 1090]
-                )
-                self.angle = math.atan2(data_coord[1], data_coord[0])
-                return True
+            # Aaronia Raw data processing, see
+            # https://dev.aaronia-shop.com/downloads/gps/manuals/gps_logger_programming_guide_en.pdf
+            if data_ok == "A":
+                if data_type == "C":
+                    scalar = 100000.0 / 1090.0  # nanotesla
+                    self.raw_magnetometer_values = np.array(data_coord)
+                    self.magnetometer_values = np.array(
+                        [
+                            data_coord[0] * scalar,
+                            data_coord[1] * scalar,
+                            data_coord[2] * scalar,
+                        ]
+                    )
+                    self.angle = math.atan2(data_coord[1], data_coord[0])
+                    self.is_new = (True, self.is_new[1], self.is_new[2])
+                if data_type == "G":
+                    self.raw_gyroscope_values = np.array(data_coord)
+                    scalar = np.pi / (180.0 * 14.375)
+                    self.gyroscope_values = np.array(
+                        [
+                            data_coord[0] * scalar,
+                            data_coord[1] * scalar,
+                            data_coord[2] * scalar,
+                        ]
+                    )
+                    self.is_new = (self.is_new[0], True, self.is_new[2])
+                if data_type == "T":
+                    self.raw_accelerometer_values = np.array(data_coord)
+                    scalar = 9.80665 / 8192.0  # Range is -2g..2g
+                    self.accelerometer_values = np.array(
+                        [
+                            data_coord[0] * scalar,
+                            data_coord[1] * scalar,
+                            data_coord[2] * scalar,
+                        ]
+                    )
+                    # d_pi = 180.0 / np.pi
+                    # accelerometer_rotation = np.array(
+                    #     [
+                    #         -math.atan2(y, math.sqrt((x * x) + (z * z))) * d_pi,
+                    #         math.atan2(-x, (-1 if z < 0 else 1) * math.sqrt((y * y) + (z * z))) * d_pi,
+                    #         0
+                    #     ]
+                    # )
+                    self.is_new = (self.is_new[0], self.is_new[1], True)
+                if all(self.is_new):
+                    self.is_new = (False, False, False)
+                    return True
             return False
 
 
@@ -124,27 +202,66 @@ class CompassSensor(threading.Thread):
         self.daemon = True
         self.ser: serial.Serial = sensor_dev  # serial.Serial()
 
-        self.sensor: float = 0.0
-        self.compass = np.array([0.0, 0.0, 0.0])
+        self.angle: float = 0.0
+        self.yaw: float = 0.0
+        self.pitch: float = 0.0
+        self.roll: float = 0.0
+        self.heading = np.array([0.0, 0.0, 0.0])
 
         self.addr = None
 
         self.parser: CompassParser = parser
 
+        import ahrs
+
+        self.ahrs_filter = ahrs.filters.EKF()
+        self.ahrs_filter.Dt = 0.1
+        self.quaternion = np.array([1.0, 0.0, 0.0, 0.0])
+
     def run(self) -> None:
         pattern = re.compile(
             r"\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*"
         )
+        previous_time = time.time()
         while True:
+            line = b""
             try:
                 line = self.ser.readline()
-                if self.parser.parse(line):
-                    assert self.parser.raw_values is not None
-                    assert self.parser.angle is not None
-                    self.compass = self.parser.raw_values
-                    self.sensor = self.parser.angle
             except Exception as e:
                 print(e)
+            if self.parser.parse(line):
+                current_time = time.time()
+                self.ahrs_filter.Dt = current_time - previous_time
+                self.quaternion = self.ahrs_filter.update(
+                    q=self.quaternion,
+                    gyr=self.parser.gyroscope_values,
+                    acc=self.parser.accelerometer_values,
+                    mag=self.parser.magnetometer_values,
+                )
+                previous_time = current_time
+                self.heading = self.quaternion[1:4]
+                self.calculate_angle()
+                self.angle = self.yaw
+                print(self.quaternion)
+
+    def calculate_angle(self) -> None:
+        w, x, y, z = (
+            self.quaternion[0],
+            self.quaternion[1],
+            self.quaternion[2],
+            self.quaternion[3],
+        )
+        sinr_cosp = 2 * (w * x + y * z)
+        cosr_cosp = 1 - 2 * (x * x + y * y)
+        self.roll = math.atan2(sinr_cosp, cosr_cosp)
+
+        sinp = math.sqrt(1 + 2 * (w * y - x * z))
+        cosp = math.sqrt(1 - 2 * (w * y - x * z))
+        self.pitch = 2 * math.atan2(sinp, cosp) - np.pi / 2
+
+        siny_cosp = 2 * (w * z + x * y)
+        cosy_cosp = 1 - 2 * (y * y + z * z)
+        self.yaw = math.atan2(siny_cosp, cosy_cosp)
 
     def close(self) -> None:
         self.ser.close()
@@ -182,8 +299,11 @@ def open_aaronia_serial_dev() -> serial.Serial:
         Ftdi.add_custom_product(0x0403, 0xE8DB)
     except Exception as e:
         print(e)
+    Ftdi.show_devices()
     import pyftdi.serialext  # type: ignore
 
-    aaronia: serial.Serial = pyftdi.serialext.serial_for_url("ftdi://ftdi:0xe8db/1", baudrate=625000)
+    aaronia: serial.Serial = pyftdi.serialext.serial_for_url(
+        "ftdi://ftdi:0xe8db/1", baudrate=625000
+    )
     aaronia.write(b"$PAAG,MODE,START\r\n")
     return aaronia
