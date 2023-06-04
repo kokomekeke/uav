@@ -22,6 +22,7 @@ from pysagax.compass_sensors import (
     CompassSensor,
     open_aaronia_serial_dev,
     open_arduino_serial_dev,
+    CalibrationStatus
 )
 from pysagax.octave_data import save_octave
 
@@ -42,6 +43,7 @@ __all__ = [
     "CompassSensor",
     "SimpleParser",
     "AaroniaParser",
+    "CalibrationStatus",
     "open_aaronia_serial_dev",
     "open_arduino_serial_dev",
     "save_octave",

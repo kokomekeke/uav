@@ -5,13 +5,15 @@
 from __future__ import annotations
 
 import argparse
+import math
 import multiprocessing
 import threading
 import time
 import tkinter
 from datetime import datetime
-from typing import Callable, Optional
+from typing import Callable, Optional, Any
 
+import tkinter.messagebox
 import matplotlib.cm
 import numpy as np
 from matplotlib import pyplot
@@ -21,7 +23,6 @@ from matplotlib.backends.backend_tkagg import (  # type: ignore
     FigureCanvasTkAgg,
     NavigationToolbar2Tk,
 )
-from matplotlib.widgets import CheckButtons
 
 import pysagax
 from pysagax import (
@@ -32,6 +33,7 @@ from pysagax import (
     ThreeDimensionGraph,
     CompassGraph,
     ThreeDimensionObject,
+    CalibrationStatus,
 )
 
 parser = argparse.ArgumentParser(description="Compass tester parameters")
@@ -74,7 +76,12 @@ args = parser.parse_args()
 
 compass_data = np.empty([0, 3])
 
-compass: Optional[CompassSensor] = None
+compass = CompassSensor(
+    pysagax.open_aaronia_serial_dev()
+    if args.aaronia
+    else pysagax.open_arduino_serial_dev(args.sensor_dev),
+    pysagax.AaroniaParser() if args.aaronia else pysagax.SimpleParser(),
+)
 
 
 """
@@ -113,6 +120,11 @@ class DisplayThread(threading.Thread):
         Matplotlib image object for the magnetometer sensor
         """
 
+        self.three_d_magneto_heading: Optional[ThreeDimensionGraph] = None
+        """
+        Matplotlib image object for the magnetometer sensor
+        """
+
         self.three_d_accelerometer: Optional[ThreeDimensionGraph] = None
         """
         Matplotlib image object for the acc sensor
@@ -139,6 +151,16 @@ class DisplayThread(threading.Thread):
         """
 
         self.compass_graph: Optional[CompassGraph] = None
+        """
+        Matplotlib image object for the compass sensor waterfall
+        """
+
+        self.compass_heading_graph: Optional[CompassGraph] = None
+        """
+        Matplotlib image object for the compass sensor waterfall
+        """
+
+        self.compass_magneto_graph: Optional[CompassGraph] = None
         """
         Matplotlib image object for the compass sensor waterfall
         """
@@ -193,30 +215,52 @@ class DisplayThread(threading.Thread):
                     self.three_d_heading.add_point(compass.quaternion)
                 if (
                     compass.parser.magnetometer_values is not None
+                    and compass.magnetometer_values is not None
                     and self.three_d_magnetometer is not None
+                    and self.compass_magneto_graph is not None
+                    and self.three_d_magneto_heading is not None
+                    and self.compass_heading_graph is not None
                 ):
+                    from pyquaternion import Quaternion  # type: ignore
+
+                    self.compass_magneto_graph.add_point(
+                        -math.atan2(
+                            compass.magnetometer_values[1],
+                            compass.magnetometer_values[0],
+                        )
+                    )
+                    quaternion = Quaternion(compass.quaternion)
+                    magneto_rot = quaternion.rotate(compass.magnetometer_values)
+                    self.three_d_magneto_heading.add_point(
+                        magneto_rot[0] * 10,
+                        magneto_rot[1] * 10,
+                        magneto_rot[2] * 10,
+                    )
+                    self.compass_heading_graph.add_point(
+                        Quaternion([1, *magneto_rot]).yaw_pitch_roll[0]
+                    )
                     self.three_d_magnetometer.add_point(
-                        compass.parser.magnetometer_values[0] / 100000.0,
-                        compass.parser.magnetometer_values[1] / 100000.0,
-                        compass.parser.magnetometer_values[2] / 100000.0,
+                        compass.magnetometer_values[0] * 10,
+                        compass.magnetometer_values[1] * 10,
+                        compass.magnetometer_values[2] * 10,
                     )
                 if (
-                    compass.parser.gyroscope_values is not None
+                    compass.gyroscope_values is not None
                     and self.three_d_gyroscope is not None
                 ):
                     self.three_d_gyroscope.add_point(
-                        compass.parser.gyroscope_values[0],
-                        compass.parser.gyroscope_values[1],
-                        compass.parser.gyroscope_values[2],
+                        compass.gyroscope_values[0],
+                        compass.gyroscope_values[1],
+                        compass.gyroscope_values[2],
                     )
                 if (
-                    compass.parser.accelerometer_values is not None
+                    compass.accelerometer_values is not None
                     and self.three_d_accelerometer is not None
                 ):
                     self.three_d_accelerometer.add_point(
-                        compass.parser.accelerometer_values[0],
-                        compass.parser.accelerometer_values[1],
-                        compass.parser.accelerometer_values[2],
+                        compass.accelerometer_values[0],
+                        compass.accelerometer_values[1],
+                        compass.accelerometer_values[2],
                     )
             compass_data = np.append(  # for octave export
                 compass_data,
@@ -250,6 +294,20 @@ class DisplayThread(threading.Thread):
         for graph in self.graph_list:
             graph.update()
             image_list.extend(graph.collect_images())
+
+        calibrations = {
+            "Magnetometer": compass.magnetometer_calibration,
+            "Gyroscope": compass.gyroscope_calibration,
+        }
+        status_text = []
+        for label, calibration in calibrations.items():
+            if calibration.status == CalibrationStatus.CALIBRATING:
+                status_text = [f"{label}: {calibration}"]
+                break
+            else:
+                status_text.append(f"{label}: {calibration}")
+        if self.status_label_ref:
+            self.status_label_ref.config(text=", ".join(status_text))
         return image_list
 
     def create_anim(self) -> None:
@@ -274,7 +332,7 @@ class DisplayThread(threading.Thread):
         if compass is not None:
             self.waterfall_compass = (
                 WaterfallAngleGraph(self.waterfall_plot, self.params)
-                .initialize("red", "Compass")
+                .initialize("red", "AHRS Heading")
                 .make_plot()
             )
             self.waterfall_compass.plot.set_ylabel("")
@@ -286,7 +344,10 @@ class DisplayThread(threading.Thread):
             ).initialize("red", "Heading")
             self.three_d_magnetometer = ThreeDimensionGraph(
                 self.three_d_plot, self.params
-            ).initialize("blue", "Magnetometer [Gauss]")
+            ).initialize("blue", "Magnetometer [nT*10]")
+            self.three_d_magneto_heading = ThreeDimensionGraph(
+                self.three_d_plot, self.params
+            ).initialize("purple", "Magnetometer direction", vector_disp=True)
             self.three_d_accelerometer = ThreeDimensionGraph(
                 self.three_d_plot, self.params
             ).initialize("green", "Accelerometer [m/s²]")
@@ -297,10 +358,16 @@ class DisplayThread(threading.Thread):
             )
             self.three_d_gyroscope.image.set_visible(False)  # type: ignore
             self.three_d_accelerometer.image.set_visible(False)  # type: ignore
-            self.three_d_magnetometer.image.set_visible(False)  # type: ignore
-            self.compass_graph = (
+            self.three_d_magneto_heading.image.set_visible(False)  # type: ignore
+            self.compass_graph = CompassGraph(
+                self.compass_plot, self.params
+            ).initialize("red", "AHRS Heading")
+            self.compass_magneto_graph = CompassGraph(
+                self.compass_plot, self.params
+            ).initialize("blue", "Magnetometer Heading")
+            self.compass_heading_graph = (
                 CompassGraph(self.compass_plot, self.params)
-                .initialize("red", "Compass")
+                .initialize("purple", "AHRS magnetometer direction")
                 .make_plot()
             )
 
@@ -310,9 +377,12 @@ class DisplayThread(threading.Thread):
                 self.waterfall_compass,
                 self.three_d_heading,
                 self.three_d_magnetometer,
+                self.three_d_magneto_heading,
                 self.three_d_accelerometer,
                 self.three_d_gyroscope,
                 self.compass_graph,
+                self.compass_heading_graph,
+                self.compass_magneto_graph,
             ]
             if graph is not None
         ]
@@ -350,6 +420,54 @@ class ClientWindow(tkinter.Frame):
             status_frame, text="Save Octave", command=self.save_octave_commands
         )
         self.save_octave_button.pack(side=tkinter.RIGHT)
+
+        self.reset_ahrs_button = tkinter.Button(
+            status_frame, text="Reset AHRS", command=self.reset_ahrs_commands
+        )
+        self.reset_ahrs_button.pack(side=tkinter.RIGHT)
+
+        self.calibrate_gyro_button = tkinter.Button(
+            status_frame, text="Calibrate Gyro", command=self.gyro_calibration_commands
+        )
+        self.calibrate_gyro_button.pack(side=tkinter.RIGHT)
+
+        # self.calibrate_acc_button = tkinter.Button(
+        #     status_frame, text="Calibrate Acc", command=self.acc_calibration_commands
+        # )
+        # self.calibrate_acc_button.pack(side=tkinter.RIGHT)
+
+        self.calibrate_magneto_button = tkinter.Button(
+            status_frame,
+            text="Calibrate Magneto",
+            command=self.magneto_calibration_commands,
+        )
+        self.calibrate_magneto_button.pack(side=tkinter.RIGHT)
+
+        self.load_calibration_button = tkinter.Button(
+            status_frame,
+            text="Load Calibration",
+            command=self.load_calibration_commands,
+        )
+        self.load_calibration_button.pack(side=tkinter.RIGHT)
+
+        self.save_calibration_button = tkinter.Button(
+            status_frame,
+            text="Save Calibration",
+            command=self.save_calibration_commands,
+        )
+        self.save_calibration_button.pack(side=tkinter.RIGHT)
+
+        self.beta_scale = tkinter.Scale(
+            status_frame,
+            command=self.set_beta_commands,
+            from_=0,
+            to=0.5,
+            resolution=0.002,
+            length=200,
+            orient=tkinter.HORIZONTAL,
+        )
+        self.beta_scale.pack(side=tkinter.RIGHT)
+
         status_label_label = tkinter.Label(
             status_frame,
             text="Status:",
@@ -366,15 +484,9 @@ class ClientWindow(tkinter.Frame):
         self.create_canvas()
         self.plot_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
 
-        if args.sensor_dev or args.aaronia:
-            global compass
-            compass = CompassSensor(
-                pysagax.open_aaronia_serial_dev()
-                if args.aaronia
-                else pysagax.open_arduino_serial_dev(args.sensor_dev),
-                pysagax.AaroniaParser() if args.aaronia else pysagax.SimpleParser(),
-            )
-            compass.start()
+        global compass
+        compass.start()
+        self.status_label.config(text="Connected")
 
         self.connect_commands()
 
@@ -427,6 +539,48 @@ class ClientWindow(tkinter.Frame):
         )
 
         compass_data = np.empty([0, 3])
+
+    def gyro_calibration_commands(self) -> None:
+        if self.calibrate_gyro_button.config("relief")[-1] == "sunken":
+            self.calibrate_gyro_button.config(relief="raised")
+            compass.gyroscope_calibration.end_calibration()
+            self.beta_scale.set(compass.gyroscope_calibration.gyro_beta)
+        else:
+            self.calibrate_gyro_button.config(relief="sunken")
+            compass.gyroscope_calibration.begin_calibration()
+
+    # def acc_calibration_commands(self) -> None:
+    #     if self.calibrate_acc_button.config('relief')[-1] == 'sunken':
+    #         self.calibrate_acc_button.config(relief="raised")
+    #     else:
+    #         self.calibrate_acc_button.config(relief="sunken")
+
+    def magneto_calibration_commands(self) -> None:
+        if self.calibrate_magneto_button.config("relief")[-1] == "sunken":
+            self.calibrate_magneto_button.config(relief="raised")
+            compass.magnetometer_calibration.end_calibration()
+        else:
+            self.calibrate_magneto_button.config(relief="sunken")
+            compass.magnetometer_calibration.begin_calibration()
+
+    def reset_ahrs_commands(self) -> None:
+        compass.reset_ahrs_filter()
+
+    def save_calibration_commands(self) -> None:
+        compass.save_calibration()
+        tkinter.messagebox.showinfo(
+            title="Saved", message="Calibration saved to calibration.npz"
+        )
+
+    def load_calibration_commands(self) -> None:
+        compass.load_calibration()
+        self.beta_scale.set(compass.gyroscope_calibration.gyro_beta)
+        tkinter.messagebox.showinfo(
+            title="Loaded", message="Loaded calibration from calibration.npz"
+        )
+
+    def set_beta_commands(self, args: Any) -> None:
+        compass.gyroscope_calibration.gyro_beta = self.beta_scale.get()
 
     def disconnect_commands(self) -> None:
         """

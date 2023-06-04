@@ -1,23 +1,18 @@
 #
 # Created by aron.szabo@sagaxcommunications.com on 15/05/2022.
 #
-import math
 from typing import Any, Optional
 
-import mpl_toolkits.mplot3d.proj3d
+import matplotlib
 import numpy as np
 import numpy.typing as npt
-import typing
-
-import matplotlib
 from matplotlib import cm
 from matplotlib.animation import FuncAnimation  # type: ignore
-from matplotlib.backend_bases import KeyEvent
 from matplotlib.backends.backend_tkagg import (  # type: ignore
     FigureCanvasTkAgg,
     NavigationToolbar2Tk,
 )
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection  # type: ignore
 
 
 class GraphParameters:
@@ -422,6 +417,7 @@ class ThreeDimensionGraph(GraphImage):
         """
         Label of the plot
         """
+        self.vector_disp: bool = False
 
     def init_image(self) -> None:
         super().init_image()
@@ -435,21 +431,22 @@ class ThreeDimensionGraph(GraphImage):
             label=self.label,
         )[0]
 
-        self.marker_image = self.plot.plot(
+        self.marker_image = self.plot.plot(  # type: ignore
             0,
             0,
-            "o",
+            "" if self.vector_disp else "o",
             color=self.color,
             animated=True,
             markerfacecolor=self.color,
             markeredgecolor="red",
-        )[
-            0
-        ]  # type: ignore
+        )[0]
 
-    def initialize(self, color: str, label: str) -> "ThreeDimensionGraph":
+    def initialize(
+        self, color: str, label: str, vector_disp: bool = False
+    ) -> "ThreeDimensionGraph":
         self.label = label
         self.color = color
+        self.vector_disp = vector_disp
         self.init_image()
         return self
 
@@ -497,9 +494,9 @@ class ThreeDimensionGraph(GraphImage):
         self.image.set_ydata(self.waterfall[:, 1])  # type: ignore
         self.image.set_3d_properties(self.waterfall[:, 2])  # type: ignore
 
-        self.marker_image.set_xdata(self.waterfall[-1, 0])  # type: ignore
-        self.marker_image.set_ydata(self.waterfall[-1, 1])  # type: ignore
-        self.marker_image.set_3d_properties(self.waterfall[-1, 2])  # type: ignore
+        self.marker_image.set_xdata([0, self.waterfall[-1, 0]] if self.vector_disp else self.waterfall[-1, 0])  # type: ignore
+        self.marker_image.set_ydata([0, self.waterfall[-1, 1]] if self.vector_disp else self.waterfall[-1, 1])  # type: ignore
+        self.marker_image.set_3d_properties([0, self.waterfall[-1, 2]] if self.vector_disp else self.waterfall[-1, 2])  # type: ignore
 
     def add_data(self, data: npt.NDArray[np.float64]) -> None:
         super().add_data(data)
@@ -575,6 +572,7 @@ class CompassGraph(GraphImage):
         self.plot.set_theta_offset(np.pi / 2.0)  # type: ignore
         self.plot.set_rmax(1)  # type: ignore
         self.plot.set_rticks([0.5, 1])  # type: ignore
+        self.plot.legend()
         self.plot.grid(True)
 
     def update(self) -> None:
@@ -697,8 +695,8 @@ class ThreeDimensionObject(GraphImage):
                         + (s * s - np.dot(u, u)) * np.array(v)
                         + 2.0 * s * np.cross(u, np.array(v))
                     )
-                    for v in vert
-                )  # type: ignore
+                    for v in vert  # type: ignore
+                )
                 for vert in self.verts
             ]
         )

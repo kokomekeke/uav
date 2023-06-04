@@ -4,10 +4,22 @@ Simple test client for CoreService written in Python.
 
 ## Requirements
 
- * Python3
- * Tkinter
+ * Python3 with tkinter
+
+### Required pip packages
+
  * Numpy
  * Matplotlib
+
+### Additional required pip packages for compass sensors
+
+ * scipy
+ * pyusb
+ * pyftdi
+ * ahrs
+ * pyquaternion
+
+# CS Test Client
 
 ## How to use
 
@@ -56,4 +68,18 @@ python cstestclient.py --roi-wf --phases-roi-wf
 Use a compass sensor on serial port `COM1`:
 ```bash
 python cstestclient.py --roi-wf --sensor-dev COM1
+```
+
+# Compass tester
+
+## How to use
+
+Start `compass_tester.py` using Python 3. Specify the sensor type in the command line arguments.
+
+```bash
+python compass_tester.py --sensor-dev COM1
+```
+
+```bash
+python compass_tester.py --aaronia
 ```

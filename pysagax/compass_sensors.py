@@ -2,14 +2,22 @@ import math
 import re
 import threading
 import time
-from typing import Optional
+from enum import Enum
+from pathlib import Path
+from typing import Optional, Callable
 
+import ahrs  # type: ignore
 import numpy as np
 import numpy.typing as npt
 import serial
+from pysagax.magnetometer_calibration import MagnetometerCalibration
 
 
 class CompassParser:
+    """
+    Base class for compass sensor hardware handler driver
+    """
+
     def __init__(self) -> None:
         self.raw_magnetometer_values: Optional[npt.NDArray[np.float64]] = None
         """
@@ -45,6 +53,10 @@ class CompassParser:
 
 
 class SimpleParser(CompassParser):
+    """
+    The parser driver class for arduino compass sensors.
+    """
+
     def __init__(self) -> None:
         super().__init__()
         self.pattern = re.compile(
@@ -116,9 +128,17 @@ class SimpleParser(CompassParser):
 
 
 class AaroniaParser(CompassParser):
+    """
+    Parser driver class for the Aaronia AG GPS Data Logger sensor
+    """
+
     def __init__(self) -> None:
         super().__init__()
         self.is_new: tuple[bool, bool, bool] = (False, False, False)
+        """
+        A sample is processed when all three sensors have new data.
+        """
+
         self.pattern = re.compile(
             r"\$PAAG,DATA,(.),(\d{6})\.(\d*),([-\d.]*),([-\d.]*),([-\d.]*),(.)\*([0-9A-F]{2})"
         )
@@ -140,8 +160,14 @@ class AaroniaParser(CompassParser):
             return False
         if tokens is not None:
             data_type = tokens[1]
-            data_hms = (int(tokens[2][0:2]), int(tokens[2][2:4]), int(tokens[2][4:6]))
-            data_timestamp = data_hms[0] * 3600 + data_hms[1] * 60 + data_hms[2]
+            data_hms = (
+                int(tokens[2][0:2]),
+                int(tokens[2][2:4]),
+                int(tokens[2][4:6]),
+            )  # original timestamp is HHMMSS format
+            data_timestamp = (
+                data_hms[0] * 3600 + data_hms[1] * 60 + data_hms[2]
+            )  # Timestamp is converted to total seconds
             data_idx = int(tokens[3])
             data_coord = (float(tokens[4]), float(tokens[5]), float(tokens[6]))
             data_ok = tokens[7]
@@ -149,7 +175,7 @@ class AaroniaParser(CompassParser):
             # https://dev.aaronia-shop.com/downloads/gps/manuals/gps_logger_programming_guide_en.pdf
             if data_ok == "A":
                 if data_type == "C":
-                    scalar = 100000.0 / 1090.0  # nanotesla
+                    scalar = 100000.0 / 1090.0  # -> nanotesla
                     self.raw_magnetometer_values = np.array(data_coord)
                     self.magnetometer_values = np.array(
                         [
@@ -158,11 +184,11 @@ class AaroniaParser(CompassParser):
                             data_coord[2] * scalar,
                         ]
                     )
-                    self.angle = math.atan2(data_coord[1], data_coord[0])
+                    self.angle = math.atan2(data_coord[1], data_coord[0])  # not used
                     self.is_new = (True, self.is_new[1], self.is_new[2])
                 if data_type == "G":
                     self.raw_gyroscope_values = np.array(data_coord)
-                    scalar = np.pi / (180.0 * 14.375)
+                    scalar = np.pi / (180.0 * 14.375 * 7)  # -> radians / sec
                     self.gyroscope_values = np.array(
                         [
                             data_coord[0] * scalar,
@@ -172,8 +198,10 @@ class AaroniaParser(CompassParser):
                     )
                     self.is_new = (self.is_new[0], True, self.is_new[2])
                 if data_type == "T":
-                    self.raw_accelerometer_values = np.array(data_coord)
-                    scalar = 9.80665 / 8192.0  # Range is -2g..2g
+                    self.raw_accelerometer_values = np.array(
+                        data_coord
+                    )  # Range is -2g..2g
+                    scalar = 9.80665 / 8192.0  # -> m/s^2
                     self.accelerometer_values = np.array(
                         [
                             data_coord[0] * scalar,
@@ -196,7 +224,110 @@ class AaroniaParser(CompassParser):
             return False
 
 
+class CalibrationStatus(Enum):
+    NONE = 0
+    CALIBRATING = 1
+    CALIBRATED = 2
+
+
+class Calibration:
+    def __init__(
+        self,
+        get_sample: Callable[[npt.NDArray[np.float64]], npt.NDArray[np.float64]],
+        do_calibration: Callable[[npt.NDArray[np.float64]], None],
+    ):
+        self.status: CalibrationStatus = CalibrationStatus.NONE
+        self.calibration_dataset: npt.NDArray[np.float64] = np.empty([0, 3])
+        """
+        The samples that are used to calibrate the sensor
+        """
+
+        self.do_calibration: Callable[[npt.NDArray[np.float64]], None] = do_calibration
+        """
+        A function that calculates the calibration parameters based on the calibration dataset.
+        """
+
+        self.get_sample: Callable[
+            [npt.NDArray[np.float64]], npt.NDArray[np.float64]
+        ] = get_sample
+        """
+        A function that converts an uncalibrated sample to a calibrated one
+        """
+
+        self.calibration_instructions = ""
+        """
+        A message that tells how the calibration should be performed.
+        """
+
+    def s(self, vec: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        """
+        Calculates a calibrated sample from an uncalibrated one if sensor is calibrated.
+        """
+        if self.status == CalibrationStatus.CALIBRATING:
+            self.calibration_dataset = np.append(
+                self.calibration_dataset,
+                np.array([vec]),
+                axis=0,
+            )
+            return vec
+        elif self.status == CalibrationStatus.CALIBRATED:
+            return self.get_sample(vec)
+        else:
+            return vec
+
+    def begin_calibration(self) -> None:
+        """
+        Begins the calibration data collection phase.
+        """
+        self.calibration_dataset = np.empty([0, 3])
+        self.status = CalibrationStatus.CALIBRATING
+
+    def end_calibration(self) -> None:
+        """
+        Ends the calibration data collection phase and does the calibration parameter calculation.
+        """
+        self.do_calibration(self.calibration_dataset)
+        self.status = CalibrationStatus.CALIBRATED
+
+    def __str__(self) -> str:
+        return [
+            "Not calibrated",
+            f"Calibrating... ({self.calibration_dataset.size} samples) {self.calibration_instructions}",
+            "Calibrated",
+        ][self.status.value]
+
+
+class GyroCalibration(Calibration):
+    def __init__(self) -> None:
+        super().__init__(self.do_sample, self.do_calibrate)
+        self.gyro_offsets = np.zeros([3])
+        self.gyro_max_variance = np.zeros([3])
+        self.gyro_beta = 0.0
+        """
+        Beta is the parameter of the AHRS filter.
+        """
+
+    def do_calibrate(self, ds: npt.NDArray[np.float64]) -> None:
+        for i in range(
+            0, 3
+        ):  # https://makersportal.com/blog/calibration-of-an-inertial-measurement-unit-imu-with-raspberry-pi-part-ii
+            self.gyro_offsets[i] = np.mean(np.array(ds)[:, i])
+            self.gyro_max_variance[i] = np.max(
+                np.array(ds)[:, i] - self.gyro_offsets[i]
+            )
+        print(f"Gyro offsets: {self.gyro_offsets}")
+        print(f"Gyro error: {self.gyro_max_variance}")
+        self.gyro_beta = float(np.max(self.gyro_max_variance) * 3)
+
+    def do_sample(self, vec: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        return vec - self.gyro_offsets
+
+
 class CompassSensor(threading.Thread):
+    def reset_ahrs_filter(self) -> None:
+        self.ahrs_filter = ahrs.filters.Madgwick()
+        self.quaternion = np.array([1.0, 0.0, 0.0, 0.0])
+
     def __init__(self, sensor_dev: serial.Serial, parser: CompassParser) -> None:
         super().__init__()
         self.daemon = True
@@ -212,11 +343,31 @@ class CompassSensor(threading.Thread):
 
         self.parser: CompassParser = parser
 
-        import ahrs
-
-        self.ahrs_filter = ahrs.filters.EKF()
-        self.ahrs_filter.Dt = 0.1
+        self.ahrs_filter = ahrs.filters.Madgwick()
         self.quaternion = np.array([1.0, 0.0, 0.0, 0.0])
+
+        self.magnetometer_calib_helper = MagnetometerCalibration()
+        self.magnetometer_calibration = Calibration(
+            get_sample=self.magnetometer_calib_helper.get_calibrated,
+            do_calibration=self.magnetometer_calib_helper.calibrate,
+        )
+        self.magnetometer_calibration.calibration_instructions = (
+            "Move the sensor in the shape of the number 8"
+        )
+        self.gyroscope_calibration: GyroCalibration = GyroCalibration()
+
+        self.magnetometer_values: Optional[npt.NDArray[np.float64]] = None
+        """
+        Processed coordinates from magnetometer sensor
+        """
+        self.accelerometer_values: Optional[npt.NDArray[np.float64]] = None
+        """
+        Processed coordinates from accelerometer sensor (if present)
+        """
+        self.gyroscope_values: Optional[npt.NDArray[np.float64]] = None
+        """
+        Processed coordinates from gyroscope sensor (if present)
+        """
 
     def run(self) -> None:
         pattern = re.compile(
@@ -230,21 +381,39 @@ class CompassSensor(threading.Thread):
             except Exception as e:
                 print(e)
             if self.parser.parse(line):
+                if (
+                    self.parser.accelerometer_values is None
+                    or self.parser.magnetometer_values is None
+                    or self.parser.gyroscope_values is None
+                ):
+                    print("Parse error")
+                    continue
+
                 current_time = time.time()
                 self.ahrs_filter.Dt = current_time - previous_time
-                self.quaternion = self.ahrs_filter.update(
+                self.gyroscope_values = self.gyroscope_calibration.s(
+                    self.parser.gyroscope_values
+                )
+                self.accelerometer_values = self.parser.accelerometer_values
+                self.magnetometer_values = self.magnetometer_calibration.s(
+                    self.parser.magnetometer_values * 1e-6
+                )  # mT
+                self.ahrs_filter.gain = self.gyroscope_calibration.gyro_beta
+                self.quaternion = self.ahrs_filter.updateMARG(
                     q=self.quaternion,
-                    gyr=self.parser.gyroscope_values,
-                    acc=self.parser.accelerometer_values,
-                    mag=self.parser.magnetometer_values,
+                    gyr=self.gyroscope_values,
+                    acc=self.accelerometer_values,
+                    mag=self.magnetometer_values,
                 )
                 previous_time = current_time
                 self.heading = self.quaternion[1:4]
                 self.calculate_angle()
                 self.angle = self.yaw
-                print(self.quaternion)
 
     def calculate_angle(self) -> None:
+        """
+        Calculates yaw, pitch, roll from quaternion
+        """
         w, x, y, z = (
             self.quaternion[0],
             self.quaternion[1],
@@ -265,6 +434,26 @@ class CompassSensor(threading.Thread):
 
     def close(self) -> None:
         self.ser.close()
+
+    def save_calibration(self) -> None:
+        np.savez(
+            Path("calibration.npz"),
+            gyro_offsets=self.gyroscope_calibration.gyro_offsets,
+            gyro_max_variance=self.gyroscope_calibration.gyro_max_variance,
+            gyro_beta=np.array([self.gyroscope_calibration.gyro_beta]),
+            magnetometer_soft_iron_matrix=self.magnetometer_calib_helper.A_1,
+            magnetometer_hard_iron_bias=self.magnetometer_calib_helper.b,
+        )
+
+    def load_calibration(self) -> None:
+        with np.load(Path("calibration.npz")) as data:
+            self.gyroscope_calibration.gyro_offsets = data["gyro_offsets"]
+            self.gyroscope_calibration.gyro_max_variance = data["gyro_max_variance"]
+            self.gyroscope_calibration.gyro_beta = float(data["gyro_beta"])
+            self.magnetometer_calib_helper.A_1 = data["magnetometer_soft_iron_matrix"]
+            self.magnetometer_calib_helper.b = data["magnetometer_hard_iron_bias"]
+            self.gyroscope_calibration.status = CalibrationStatus.CALIBRATED
+            self.magnetometer_calibration.status = CalibrationStatus.CALIBRATED
 
 
 def open_arduino_serial_dev(device_string: str) -> serial.Serial:
@@ -306,4 +495,5 @@ def open_aaronia_serial_dev() -> serial.Serial:
         "ftdi://ftdi:0xe8db/1", baudrate=625000
     )
     aaronia.write(b"$PAAG,MODE,START\r\n")
+    aaronia.write(b"$PAAG,MODE,RATE,35\r\n")
     return aaronia
