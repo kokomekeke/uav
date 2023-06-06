@@ -55,4 +55,4 @@ Thumbs.db
 commands.txt
 hosts.txt
 octave*.txt
-calibration.npz
+calibration*.npz

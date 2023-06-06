@@ -328,10 +328,10 @@ class CompassSensor(threading.Thread):
         self.ahrs_filter = ahrs.filters.Madgwick()
         self.quaternion = np.array([1.0, 0.0, 0.0, 0.0])
 
-    def __init__(self, sensor_dev: serial.Serial, parser: CompassParser) -> None:
+    def __init__(self, parser: CompassParser) -> None:
         super().__init__()
         self.daemon = True
-        self.ser: serial.Serial = sensor_dev  # serial.Serial()
+        self.ser: Optional[serial.Serial] = None  # serial.Serial()
 
         self.angle: float = 0.0
         self.yaw: float = 0.0
@@ -369,7 +369,16 @@ class CompassSensor(threading.Thread):
         Processed coordinates from gyroscope sensor (if present)
         """
 
+        self.calibration_file = "calibration.npz"
+        """
+        File that stores sensor calibration values
+        """
+
+    def set_serial_device(self, sensor_dev: serial.Serial) -> None:
+        self.ser = sensor_dev
+
     def run(self) -> None:
+        assert self.ser is not None
         pattern = re.compile(
             r"\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*"
         )
@@ -433,20 +442,22 @@ class CompassSensor(threading.Thread):
         self.yaw = math.atan2(siny_cosp, cosy_cosp)
 
     def close(self) -> None:
-        self.ser.close()
+        if self.ser is not None:
+            self.ser.close()
 
     def save_calibration(self) -> None:
         np.savez(
-            Path("calibration.npz"),
+            Path(self.calibration_file),
             gyro_offsets=self.gyroscope_calibration.gyro_offsets,
             gyro_max_variance=self.gyroscope_calibration.gyro_max_variance,
             gyro_beta=np.array([self.gyroscope_calibration.gyro_beta]),
             magnetometer_soft_iron_matrix=self.magnetometer_calib_helper.A_1,
             magnetometer_hard_iron_bias=self.magnetometer_calib_helper.b,
         )
+        print(f"Compass calibration saved to {self.calibration_file}")
 
     def load_calibration(self) -> None:
-        with np.load(Path("calibration.npz")) as data:
+        with np.load(Path(self.calibration_file)) as data:
             self.gyroscope_calibration.gyro_offsets = data["gyro_offsets"]
             self.gyroscope_calibration.gyro_max_variance = data["gyro_max_variance"]
             self.gyroscope_calibration.gyro_beta = float(data["gyro_beta"])
@@ -454,6 +465,7 @@ class CompassSensor(threading.Thread):
             self.magnetometer_calib_helper.b = data["magnetometer_hard_iron_bias"]
             self.gyroscope_calibration.status = CalibrationStatus.CALIBRATED
             self.magnetometer_calibration.status = CalibrationStatus.CALIBRATED
+            print(f"Compass calibration loaded from {self.calibration_file}")
 
 
 def open_arduino_serial_dev(device_string: str) -> serial.Serial:
@@ -495,5 +507,5 @@ def open_aaronia_serial_dev() -> serial.Serial:
         "ftdi://ftdi:0xe8db/1", baudrate=625000
     )
     aaronia.write(b"$PAAG,MODE,START\r\n")
-    aaronia.write(b"$PAAG,MODE,RATE,35\r\n")
+    aaronia.write(b"$PAAG,MODE,RATE,25\r\n")
     return aaronia

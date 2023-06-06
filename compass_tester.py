@@ -41,7 +41,7 @@ parser.add_argument(
     "--wf",
     metavar="N",
     type=int,
-    default=200,
+    default=1000,
     help="waterfall size (set if experiencing performance issues)",
 )
 parser.add_argument(
@@ -55,7 +55,7 @@ parser.add_argument(
     "--fs",
     metavar="N",
     type=int,
-    default=10,
+    default=25,
     help="compass sensor sampling rate",
 )
 parser.add_argument(
@@ -77,9 +77,6 @@ args = parser.parse_args()
 compass_data = np.empty([0, 3])
 
 compass = CompassSensor(
-    pysagax.open_aaronia_serial_dev()
-    if args.aaronia
-    else pysagax.open_arduino_serial_dev(args.sensor_dev),
     pysagax.AaroniaParser() if args.aaronia else pysagax.SimpleParser(),
 )
 
@@ -138,6 +135,11 @@ class DisplayThread(threading.Thread):
         self.waterfall_plot: Optional[object] = None
         """
         Matplotlib plot (axes) object for the waterfall plot
+        """
+
+        self.waterfall_magneto: Optional[WaterfallAngleGraph] = None
+        """
+        Matplotlib image object for the compass sensor waterfall
         """
 
         self.waterfall_compass: Optional[WaterfallAngleGraph] = None
@@ -220,10 +222,17 @@ class DisplayThread(threading.Thread):
                     and self.compass_magneto_graph is not None
                     and self.three_d_magneto_heading is not None
                     and self.compass_heading_graph is not None
+                    and self.waterfall_magneto is not None
                 ):
                     from pyquaternion import Quaternion  # type: ignore
 
                     self.compass_magneto_graph.add_point(
+                        -math.atan2(
+                            compass.magnetometer_values[1],
+                            compass.magnetometer_values[0],
+                        )
+                    )
+                    self.waterfall_magneto.add_point(
                         -math.atan2(
                             compass.magnetometer_values[1],
                             compass.magnetometer_values[0],
@@ -330,6 +339,10 @@ class DisplayThread(threading.Thread):
             grid_spec[1, 1], projection="polar"
         )
         if compass is not None:
+            self.waterfall_magneto = (
+                WaterfallAngleGraph(self.waterfall_plot, self.params)
+                .initialize("blue", "Magnetometer Heading")
+            )
             self.waterfall_compass = (
                 WaterfallAngleGraph(self.waterfall_plot, self.params)
                 .initialize("red", "AHRS Heading")
@@ -375,6 +388,7 @@ class DisplayThread(threading.Thread):
             graph
             for graph in [
                 self.waterfall_compass,
+                self.waterfall_magneto,
                 self.three_d_heading,
                 self.three_d_magnetometer,
                 self.three_d_magneto_heading,
@@ -485,7 +499,13 @@ class ClientWindow(tkinter.Frame):
         self.plot_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
 
         global compass
+        compass.set_serial_device(
+            pysagax.open_aaronia_serial_dev()
+            if args.aaronia
+            else pysagax.open_arduino_serial_dev(args.sensor_dev)
+        )
         compass.start()
+
         self.status_label.config(text="Connected")
 
         self.connect_commands()

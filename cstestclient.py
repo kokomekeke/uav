@@ -761,10 +761,13 @@ class ClientWindow(tkinter.Frame):
         if args.sensor_dev or args.aaronia:
             global compass
             compass = CompassSensor(
+                pysagax.AaroniaParser() if args.aaronia else pysagax.SimpleParser(),
+            )
+            compass.load_calibration()
+            compass.set_serial_device(
                 pysagax.open_aaronia_serial_dev()
                 if args.aaronia
-                else pysagax.open_arduino_serial_dev(args.sensor_dev),
-                pysagax.AaroniaParser() if args.aaronia else pysagax.SimpleParser(),
+                else pysagax.open_arduino_serial_dev(args.sensor_dev)
             )
             compass.start()
 
