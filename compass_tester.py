@@ -305,12 +305,16 @@ class DisplayThread(threading.Thread):
             image_list.extend(graph.collect_images())
 
         calibrations = {
-            "Magnetometer": compass.magnetometer_calibration,
-            "Gyroscope": compass.gyroscope_calibration,
+            "Magneto": compass.magnetometer_calibration,
+            "Gyro": compass.gyroscope_calibration,
+            "Accel": compass.accelerometer_calibration,
         }
         status_text = []
         for label, calibration in calibrations.items():
-            if calibration.status == CalibrationStatus.CALIBRATING:
+            if calibration.status in [
+                CalibrationStatus.CALIBRATING,
+                CalibrationStatus.ACTION_REQUIRED,
+            ]:
                 status_text = [f"{label}: {calibration}"]
                 break
             else:
@@ -339,10 +343,9 @@ class DisplayThread(threading.Thread):
             grid_spec[1, 1], projection="polar"
         )
         if compass is not None:
-            self.waterfall_magneto = (
-                WaterfallAngleGraph(self.waterfall_plot, self.params)
-                .initialize("blue", "Magnetometer Heading")
-            )
+            self.waterfall_magneto = WaterfallAngleGraph(
+                self.waterfall_plot, self.params
+            ).initialize("blue", "Magnetometer Heading")
             self.waterfall_compass = (
                 WaterfallAngleGraph(self.waterfall_plot, self.params)
                 .initialize("red", "AHRS Heading")
@@ -380,7 +383,7 @@ class DisplayThread(threading.Thread):
             ).initialize("blue", "Magnetometer Heading")
             self.compass_heading_graph = (
                 CompassGraph(self.compass_plot, self.params)
-                .initialize("purple", "AHRS magnetometer direction")
+                .initialize("purple", "Magnetometer Reference")
                 .make_plot()
             )
 
@@ -429,50 +432,60 @@ class ClientWindow(tkinter.Frame):
 
         status_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
         status_frame.pack(fill=tkinter.BOTH, side=tkinter.BOTTOM, expand=False)
+        self.status_label = tkinter.Label(
+            status_frame, text="", font=tkinter.font.Font(size=10)
+        )
+        self.status_label.pack(side=tkinter.TOP, padx=5, pady=10, anchor="w")
+        buttons_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
+        buttons_frame.pack(fill=tkinter.BOTH, side=tkinter.BOTTOM, expand=False)
 
         self.save_octave_button = tkinter.Button(
-            status_frame, text="Save Octave", command=self.save_octave_commands
+            buttons_frame, text="Save Octave", command=self.save_octave_commands
         )
         self.save_octave_button.pack(side=tkinter.RIGHT)
 
         self.reset_ahrs_button = tkinter.Button(
-            status_frame, text="Reset AHRS", command=self.reset_ahrs_commands
+            buttons_frame, text="Reset AHRS", command=self.reset_ahrs_commands
         )
         self.reset_ahrs_button.pack(side=tkinter.RIGHT)
 
         self.calibrate_gyro_button = tkinter.Button(
-            status_frame, text="Calibrate Gyro", command=self.gyro_calibration_commands
+            buttons_frame, text="Calibrate Gyro", command=self.gyro_calibration_commands
         )
         self.calibrate_gyro_button.pack(side=tkinter.RIGHT)
 
-        # self.calibrate_acc_button = tkinter.Button(
-        #     status_frame, text="Calibrate Acc", command=self.acc_calibration_commands
-        # )
-        # self.calibrate_acc_button.pack(side=tkinter.RIGHT)
+        self.calibrate_acc_button = tkinter.Button(
+            buttons_frame, text="Calibrate Acc", command=self.acc_calibration_commands
+        )
+        self.calibrate_acc_button.pack(side=tkinter.RIGHT)
 
         self.calibrate_magneto_button = tkinter.Button(
-            status_frame,
+            buttons_frame,
             text="Calibrate Magneto",
             command=self.magneto_calibration_commands,
         )
         self.calibrate_magneto_button.pack(side=tkinter.RIGHT)
 
         self.load_calibration_button = tkinter.Button(
-            status_frame,
+            buttons_frame,
             text="Load Calibration",
             command=self.load_calibration_commands,
         )
         self.load_calibration_button.pack(side=tkinter.RIGHT)
 
         self.save_calibration_button = tkinter.Button(
-            status_frame,
+            buttons_frame,
             text="Save Calibration",
             command=self.save_calibration_commands,
         )
         self.save_calibration_button.pack(side=tkinter.RIGHT)
 
+        beta_scale_label = tkinter.Label(
+            buttons_frame, text="Filter beta: ", font=tkinter.font.Font(size=10)
+        )
+        beta_scale_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
         self.beta_scale = tkinter.Scale(
-            status_frame,
+            buttons_frame,
             command=self.set_beta_commands,
             from_=0,
             to=0.5,
@@ -480,19 +493,7 @@ class ClientWindow(tkinter.Frame):
             length=200,
             orient=tkinter.HORIZONTAL,
         )
-        self.beta_scale.pack(side=tkinter.RIGHT)
-
-        status_label_label = tkinter.Label(
-            status_frame,
-            text="Status:",
-            font=tkinter.font.Font(weight=tkinter.font.BOLD, size=10),
-        )
-        status_label_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
-
-        self.status_label = tkinter.Label(
-            status_frame, text="", font=tkinter.font.Font(size=10)
-        )
-        self.status_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
+        self.beta_scale.pack(side=tkinter.LEFT)
 
         self.plot_frame = tkinter.Frame(self)
         self.create_canvas()
@@ -569,11 +570,8 @@ class ClientWindow(tkinter.Frame):
             self.calibrate_gyro_button.config(relief="sunken")
             compass.gyroscope_calibration.begin_calibration()
 
-    # def acc_calibration_commands(self) -> None:
-    #     if self.calibrate_acc_button.config('relief')[-1] == 'sunken':
-    #         self.calibrate_acc_button.config(relief="raised")
-    #     else:
-    #         self.calibrate_acc_button.config(relief="sunken")
+    def acc_calibration_commands(self) -> None:
+        compass.accelerometer_calibration.next_calibration_step()
 
     def magneto_calibration_commands(self) -> None:
         if self.calibrate_magneto_button.config("relief")[-1] == "sunken":

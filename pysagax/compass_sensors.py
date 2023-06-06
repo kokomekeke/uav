@@ -9,6 +9,7 @@ from typing import Optional, Callable
 import ahrs  # type: ignore
 import numpy as np
 import numpy.typing as npt
+import scipy  # type: ignore
 import serial
 from pysagax.magnetometer_calibration import MagnetometerCalibration
 
@@ -43,10 +44,6 @@ class CompassParser:
         """
         Processed coordinates from gyroscope sensor (if present)
         """
-        self.angle: Optional[float] = None
-        """
-        Calculated compass angle
-        """
 
     def parse(self, line: bytes) -> bool:
         return False
@@ -62,17 +59,6 @@ class SimpleParser(CompassParser):
         self.pattern = re.compile(
             r"\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*"
         )
-        """
-        Regex pattern to find coordinates in serial data lines
-        """
-        self.mins: npt.NDArray[np.float64] = np.array([np.inf, np.inf, np.inf])
-        """
-        Minimum coordinate values, used for calibration
-        """
-        self.maxs: npt.NDArray[np.float64] = np.array([-np.inf, -np.inf, -np.inf])
-        """
-        Maximum coordinate values, used for calibration
-        """
 
     def parse(self, line: bytes) -> bool:
         tokens = self.pattern.match(line.decode())
@@ -89,6 +75,7 @@ class SimpleParser(CompassParser):
                     float(tokens.group(6)),
                 ]
             )
+            self.magnetometer_values = self.raw_magnetometer_values
             self.raw_accelerometer_values = np.array(
                 [
                     float(tokens.group(1)),
@@ -96,34 +83,11 @@ class SimpleParser(CompassParser):
                     float(tokens.group(3)),
                 ]
             )
-            self.mins = np.array(
-                [
-                    min(mini, raw)
-                    for mini, raw in zip(self.mins, self.raw_magnetometer_values)
-                ]
-            )
-            self.maxs = np.array(
-                [
-                    max(maxi, raw)
-                    for maxi, raw in zip(self.maxs, self.raw_magnetometer_values)
-                ]
-            )
-            self.magnetometer_values = np.array(
-                [
-                    raw - ((mini + maxi) / 2)
-                    for mini, maxi, raw in zip(
-                        self.mins, self.maxs, self.raw_magnetometer_values
-                    )
-                ]
-            )
-            self.angle = math.atan2(
-                float(self.magnetometer_values[0]), float(self.magnetometer_values[1])
-            )
+            self.accelerometer_values = self.raw_accelerometer_values
             return True
         except ValueError:
             self.raw_magnetometer_values = None
             self.magnetometer_values = None
-            self.angle = None
             return False
 
 
@@ -228,6 +192,7 @@ class CalibrationStatus(Enum):
     NONE = 0
     CALIBRATING = 1
     CALIBRATED = 2
+    ACTION_REQUIRED = 3
 
 
 class Calibration:
@@ -292,8 +257,9 @@ class Calibration:
     def __str__(self) -> str:
         return [
             "Not calibrated",
-            f"Calibrating... ({self.calibration_dataset.size} samples) {self.calibration_instructions}",
+            f"Calibrating... ({self.calibration_dataset.shape[0]} samples) {self.calibration_instructions}",
             "Calibrated",
+            f"{self.calibration_instructions}",
         ][self.status.value]
 
 
@@ -306,6 +272,7 @@ class GyroCalibration(Calibration):
         """
         Beta is the parameter of the AHRS filter.
         """
+        self.calibration_instructions = "Hold the sensor still on a horizontal surface"
 
     def do_calibrate(self, ds: npt.NDArray[np.float64]) -> None:
         for i in range(
@@ -323,13 +290,105 @@ class GyroCalibration(Calibration):
         return vec - self.gyro_offsets
 
 
-class CompassSensor(threading.Thread):
-    def reset_ahrs_filter(self) -> None:
-        self.ahrs_filter = ahrs.filters.Madgwick()
-        self.quaternion = np.array([1.0, 0.0, 0.0, 0.0])
+class AccelCalibration(Calibration, threading.Thread):
+    def __init__(self) -> None:
+        threading.Thread.__init__(self)
+        self.daemon = True
+        super().__init__(self.do_sample, self.do_calibrate)
+        self.gyro_offsets = np.zeros([3])
+        self.gyro_max_variance = np.zeros([3])
+        self.gyro_beta = 0.0
+        """
+        Beta is the parameter of the AHRS filter.
+        """
+        self.calibration_instructions = "Hold the sensor still on a horizontal surface"
 
+        self.mpu_offsets: list[list[float]] = [[], [], []]  # offset array to be printed
+
+    def accel_fit(self, x_input: float, m_x: float, b: float) -> float:
+        return (m_x * x_input) + b  # fit equation for accel calibration
+
+    def run(self) -> None:
+        super().run()
+        cal_size = 100
+        axis_vec = ["z", "y", "x"]  # axis labels
+        cal_directions = [
+            "upward",
+            "downward",
+            "perpendicular to gravity",
+        ]  # direction for IMU cal
+        cal_indices = [2, 1, 0]  # axis indices
+        for axis_index, axis_label in enumerate(axis_vec):
+            ax_offsets: list[list[float]] = [[], [], []]
+            print("-" * 50)
+            for dir_index, dir_label in enumerate(cal_directions):
+                self.calibration_instructions = (
+                    f"Keep IMU Steady with the {axis_label}-axis pointed {dir_label}"
+                )
+                self.status = CalibrationStatus.ACTION_REQUIRED
+                while self.status == CalibrationStatus.ACTION_REQUIRED:
+                    time.sleep(0.1)
+                self.calibration_instructions = f"Calibrating, keep IMU Steady with the {axis_label}-axis pointed {dir_label}"
+                self.calibration_dataset = np.empty([0, 3])
+                while self.calibration_dataset.shape[0] < cal_size:
+                    time.sleep(0.1)
+                ax_offsets[dir_index] = list(
+                    np.array(self.calibration_dataset)[:, cal_indices[axis_index]]
+                )  # offsets for direction
+
+            # Use three calibrations (+1g, -1g, 0g) for linear fit
+            popts = scipy.optimize.curve_fit(
+                self.accel_fit,
+                np.append(np.append(ax_offsets[0], ax_offsets[1]), ax_offsets[2]),
+                np.append(
+                    np.append(
+                        1.0 * np.ones(np.shape(ax_offsets[0])),
+                        -1.0 * np.ones(np.shape(ax_offsets[1])),
+                    ),
+                    0.0 * np.ones(np.shape(ax_offsets[2])),
+                ),
+                maxfev=10000,
+            )
+            self.mpu_offsets[cal_indices[axis_index]] = popts[
+                0
+            ]  # place slope and intercept in offset array
+        print("Accelerometer Calibrations Complete")
+        print(self.mpu_offsets)
+        self.status = CalibrationStatus.CALIBRATED
+
+    def do_calibrate(self, ds: npt.NDArray[np.float64]) -> None:
+        pass
+
+    def do_sample(self, vec: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        return np.array(
+            [
+                float(
+                    self.accel_fit(
+                        vec[ax], self.mpu_offsets[ax][0], self.mpu_offsets[ax][1]
+                    )
+                )
+                * ahrs.MEAN_NORMAL_GRAVITY
+                for ax in range(3)
+            ]
+        )
+
+    def next_calibration_step(self) -> None:
+        if (
+            self.status == CalibrationStatus.NONE
+            or self.status == CalibrationStatus.CALIBRATED
+        ):
+            self.status = CalibrationStatus.ACTION_REQUIRED
+            self.start()
+        elif self.status == CalibrationStatus.ACTION_REQUIRED:
+            self.status = CalibrationStatus.CALIBRATING
+
+
+class CompassSensor(threading.Thread):
     def __init__(self, parser: CompassParser) -> None:
         super().__init__()
+
+        self.ahrs_class = ahrs.filters.Madgwick
+
         self.daemon = True
         self.ser: Optional[serial.Serial] = None  # serial.Serial()
 
@@ -343,7 +402,7 @@ class CompassSensor(threading.Thread):
 
         self.parser: CompassParser = parser
 
-        self.ahrs_filter = ahrs.filters.Madgwick()
+        self.ahrs_filter = self.ahrs_class()
         self.quaternion = np.array([1.0, 0.0, 0.0, 0.0])
 
         self.magnetometer_calib_helper = MagnetometerCalibration()
@@ -355,6 +414,7 @@ class CompassSensor(threading.Thread):
             "Move the sensor in the shape of the number 8"
         )
         self.gyroscope_calibration: GyroCalibration = GyroCalibration()
+        self.accelerometer_calibration: AccelCalibration = AccelCalibration()
 
         self.magnetometer_values: Optional[npt.NDArray[np.float64]] = None
         """
@@ -374,6 +434,10 @@ class CompassSensor(threading.Thread):
         File that stores sensor calibration values
         """
 
+    def reset_ahrs_filter(self) -> None:
+        self.ahrs_filter = self.ahrs_class()
+        self.quaternion = np.array([1.0, 0.0, 0.0, 0.0])
+
     def set_serial_device(self, sensor_dev: serial.Serial) -> None:
         self.ser = sensor_dev
 
@@ -390,20 +454,24 @@ class CompassSensor(threading.Thread):
             except Exception as e:
                 print(e)
             if self.parser.parse(line):
-                if (
-                    self.parser.accelerometer_values is None
-                    or self.parser.magnetometer_values is None
-                    or self.parser.gyroscope_values is None
-                ):
-                    print("Parse error")
-                    continue
+                if self.parser.accelerometer_values is None:
+                    print("No accelerometer value")
+                    self.parser.accelerometer_values = np.array([0, 0, 0])
+                if self.parser.magnetometer_values is None:
+                    print("No magnetometer value")
+                    self.parser.magnetometer_values = np.array([0, 0, 0])
+                if self.parser.gyroscope_values is None:
+                    print("No gyroscope value")
+                    self.parser.gyroscope_values = np.array([0, 0, 0])
 
                 current_time = time.time()
                 self.ahrs_filter.Dt = current_time - previous_time
                 self.gyroscope_values = self.gyroscope_calibration.s(
                     self.parser.gyroscope_values
                 )
-                self.accelerometer_values = self.parser.accelerometer_values
+                self.accelerometer_values = self.accelerometer_calibration.s(
+                    self.parser.accelerometer_values
+                )
                 self.magnetometer_values = self.magnetometer_calibration.s(
                     self.parser.magnetometer_values * 1e-6
                 )  # mT
@@ -453,6 +521,9 @@ class CompassSensor(threading.Thread):
             gyro_beta=np.array([self.gyroscope_calibration.gyro_beta]),
             magnetometer_soft_iron_matrix=self.magnetometer_calib_helper.A_1,
             magnetometer_hard_iron_bias=self.magnetometer_calib_helper.b,
+            accelerometer_mpu_offsets=np.array(
+                self.accelerometer_calibration.mpu_offsets
+            ),
         )
         print(f"Compass calibration saved to {self.calibration_file}")
 
@@ -463,8 +534,12 @@ class CompassSensor(threading.Thread):
             self.gyroscope_calibration.gyro_beta = float(data["gyro_beta"])
             self.magnetometer_calib_helper.A_1 = data["magnetometer_soft_iron_matrix"]
             self.magnetometer_calib_helper.b = data["magnetometer_hard_iron_bias"]
+            self.accelerometer_calibration.mpu_offsets = data[
+                "accelerometer_mpu_offsets"
+            ]
             self.gyroscope_calibration.status = CalibrationStatus.CALIBRATED
             self.magnetometer_calibration.status = CalibrationStatus.CALIBRATED
+            self.accelerometer_calibration.status = CalibrationStatus.CALIBRATED
             print(f"Compass calibration loaded from {self.calibration_file}")
 
 
