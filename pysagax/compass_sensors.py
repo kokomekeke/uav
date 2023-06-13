@@ -342,10 +342,10 @@ class AccelCalibration(Calibration, threading.Thread):
                 np.append(np.append(ax_offsets[0], ax_offsets[1]), ax_offsets[2]),
                 np.append(
                     np.append(
-                        1.0 * np.ones(np.shape(ax_offsets[0])),
-                        -1.0 * np.ones(np.shape(ax_offsets[1])),
+                        1.0 * np.ones(np.shape(ax_offsets[0])),  # type: ignore
+                        -1.0 * np.ones(np.shape(ax_offsets[1])),  # type: ignore
                     ),
-                    0.0 * np.ones(np.shape(ax_offsets[2])),
+                    0.0 * np.ones(np.shape(ax_offsets[2])),  # type: ignore
                 ),
                 maxfev=10000,
             )
@@ -528,7 +528,7 @@ class CompassSensor(threading.Thread):
         print(f"Compass calibration saved to {self.calibration_file}")
 
     def load_calibration(self) -> None:
-        with np.load(Path(self.calibration_file)) as data:
+        with np.load(Path(self.calibration_file)) as data:  # type: ignore
             self.gyroscope_calibration.gyro_offsets = data["gyro_offsets"]
             self.gyroscope_calibration.gyro_max_variance = data["gyro_max_variance"]
             self.gyroscope_calibration.gyro_beta = float(data["gyro_beta"])

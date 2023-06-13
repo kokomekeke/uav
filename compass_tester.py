@@ -278,7 +278,7 @@ class DisplayThread(threading.Thread):
                 ),
                 axis=0,
             )
-            time.sleep(1 / float(args.fs))
+        time.sleep(1 / float(args.fs))
 
     def run(self) -> None:
         """

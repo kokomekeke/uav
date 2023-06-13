@@ -61,7 +61,7 @@ class MagnetometerCalibration(object):
         # calibration parameters
         M_1 = linalg.inv(M)
         self.b = -np.dot(M_1, n)
-        self.A_1 = np.real(
+        self.A_1 = np.real(  # type: ignore
             self.F / np.sqrt(np.dot(n.T, np.dot(M_1, n)) - d) * linalg.sqrtm(M)
         )
         # self.A_1 = np.eye(3)

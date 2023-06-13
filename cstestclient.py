@@ -458,19 +458,19 @@ class TestStreamDisplayThread(threading.Thread):
                 f"{self.params.bin_count}f",
                 packet.contents[0:spec_len],
             )
-        )
+        )  # type: ignore
         ch2_spectrum: npt.NDArray[np.float32] = np.asarray(
             struct.unpack(
                 f"{self.params.bin_count}f",
                 packet.contents[spec_len : spec_len * 2],
             )
-        )
+        )  # type: ignore
         ch3_spectrum: npt.NDArray[np.float32] = np.asarray(
             struct.unpack(
                 f"{self.params.bin_count}f",
                 packet.contents[spec_len * 2 : spec_len * 3],
             )
-        )
+        )  # type: ignore
         if self.roi_bin < self.params.bin_count:
             self.debug_phases = [
                 float(ch1_spectrum[self.roi_bin]),

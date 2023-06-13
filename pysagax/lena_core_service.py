@@ -300,7 +300,7 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
                             f"{cs_packet.bin_count}f",
                             self.buffer[28 : 28 + cs_packet.bin_count * 4],
                         )
-                    )
+                    )  # type: ignore
                     cs_packet.azimuth_spectrum = np.asarray(
                         struct.unpack(
                             f"{cs_packet.bin_count}f",
@@ -310,7 +310,7 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
                                 )
                             ],
                         )
-                    )
+                    )  # type: ignore
                     cs_packet.elevation_spectrum = np.asarray(
                         struct.unpack(
                             f"{cs_packet.bin_count}f",
@@ -320,7 +320,7 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
                                 )
                             ],
                         )
-                    )
+                    )  # type: ignore
                     self.insert_packet(cs_packet)
                     self.buffer = self.buffer[packet_size:]  # drop packet from buffer
                 else:
