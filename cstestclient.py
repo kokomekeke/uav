@@ -5,11 +5,13 @@
 from __future__ import annotations
 
 import argparse
+import math
 import multiprocessing
 import os
 import queue
 import struct
 import threading
+import time
 import tkinter
 import typing
 from datetime import datetime
@@ -32,6 +34,7 @@ import pysagax
 from pysagax import (
     AngleSpectrumGraph,
     BaseConnection,
+    CompassSensor,
     CoreServicePacket,
     GraphImage,
     GraphParameters,
@@ -82,7 +85,27 @@ parser.add_argument(
     action="store_true",
     help="display roi waterfall",
 )
+parser.add_argument(
+    "--sensor-dev",
+    dest="sensor_dev",
+    metavar="N",
+    type=str,
+    help="sensor device",
+)
+parser.add_argument(
+    "--aaronia",
+    dest="aaronia",
+    default=False,
+    action="store_true",
+    help="compass sensor is aaronia",
+)
 args = parser.parse_args()
+
+roi_data = np.empty([0, 2])
+compass_data = np.empty([0, 3])
+phases_data = np.empty([0, 3])
+
+compass: Optional[CompassSensor] = None
 
 
 class CommandsConnectionThread(BaseConnection, threading.Thread):
@@ -124,6 +147,12 @@ class CommandsConnectionThread(BaseConnection, threading.Thread):
         """
         self.disconnect = False
         self.run_socket()
+
+
+"""
+This thread is responsible for handling the multiprocessing stream process and for displaying the stream contents
+on the matplotlib plots
+"""
 
 
 class TestStreamDisplayThread(threading.Thread):
@@ -173,6 +202,11 @@ class TestStreamDisplayThread(threading.Thread):
         self.elevation_graph: Optional[AngleSpectrumGraph] = None
         """
         Matplotlib image object for the elevation plot
+        """
+
+        self.roi_waterfall_compass: Optional[WaterfallAngleGraph] = None
+        """
+        Matplotlib image object for the ROI waterfall compass sensor
         """
 
         self.roi_waterfall_azimuth_graph: Optional[WaterfallAngleGraph] = None
@@ -307,6 +341,47 @@ class TestStreamDisplayThread(threading.Thread):
             except RuntimeError:
                 return  # it might happen on the UI when closing the window
 
+    def log_octave_data(self) -> None:
+        global args
+        global roi_data
+        global compass_data
+        global phases_data
+
+        phases_data = np.append(
+            phases_data,
+            np.array(
+                [
+                    self.debug_phases
+                    if self.roi_packet and args.phases_roi_wf
+                    else [0, 0, 0]
+                ]
+            ),
+            axis=0,
+        )
+        roi_data = np.append(
+            roi_data,
+            np.array(
+                [
+                    [self.roi_packet.roi_azimuth, self.roi_packet.roi_elevation]
+                    if self.roi_packet is not None
+                    else ["NaN", "NaN"]  # type: ignore
+                ]
+            ),
+            axis=0,
+        )
+        compass_data = np.append(
+            compass_data,
+            np.array(
+                [compass.heading if compass is not None else ["NaN", "NaN", "NaN"]]
+            ),
+            axis=0,
+        )
+
+    def read_from_compass_sensor(self) -> None:
+        global compass
+        if compass is not None and self.roi_waterfall_compass is not None:
+            self.roi_waterfall_compass.add_point(compass.angle)
+
     def handle_spectrum_packet(self, packet: CoreServicePacket) -> None:
         if packet.bin_count == 0:
             return
@@ -329,7 +404,8 @@ class TestStreamDisplayThread(threading.Thread):
             self.animation_started = True
         assert self.magnitude_graph is not None
         self.magnitude_graph.add_data(packet.magnitude_spectrum)
-
+        self.read_from_compass_sensor()
+        self.log_octave_data()
         if args.roi_wf:
             assert self.roi_waterfall_azimuth_graph is not None
             assert self.roi_waterfall_elevation_graph is not None
@@ -342,8 +418,9 @@ class TestStreamDisplayThread(threading.Thread):
 
             if args.phases_roi_wf:
                 for graph, i in zip(self.roi_waterfall_phase_graph, range(3)):
-                    assert graph is not None
-                    graph.add_point(self.debug_phases[i] if self.roi_packet else 0)
+                    if graph is not None:
+                        graph.add_point(self.debug_phases[i] if self.roi_packet else 0)
+
         else:
             assert self.azimuth_graph is not None
             assert self.elevation_graph is not None
@@ -381,19 +458,19 @@ class TestStreamDisplayThread(threading.Thread):
                 f"{self.params.bin_count}f",
                 packet.contents[0:spec_len],
             )
-        )
+        )  # type: ignore
         ch2_spectrum: npt.NDArray[np.float32] = np.asarray(
             struct.unpack(
                 f"{self.params.bin_count}f",
                 packet.contents[spec_len : spec_len * 2],
             )
-        )
+        )  # type: ignore
         ch3_spectrum: npt.NDArray[np.float32] = np.asarray(
             struct.unpack(
                 f"{self.params.bin_count}f",
                 packet.contents[spec_len * 2 : spec_len * 3],
             )
-        )
+        )  # type: ignore
         if self.roi_bin < self.params.bin_count:
             self.debug_phases = [
                 float(ch1_spectrum[self.roi_bin]),
@@ -495,15 +572,19 @@ class TestStreamDisplayThread(threading.Thread):
                     self.roi_waterfall_phase_graph[i] = WaterfallAngleGraph(
                         self.roi_waterfall_plot, self.params
                     ).initialize(color, f"ch{i+1}-ch0")
+            global compass
+            if compass is not None:
+                self.roi_waterfall_compass = WaterfallAngleGraph(
+                    self.roi_waterfall_plot, self.params
+                ).initialize("red", "Compass")
             self.roi_waterfall_azimuth_graph = WaterfallAngleGraph(
                 self.roi_waterfall_plot, self.params
-            ).initialize("green", "Az")
+            ).initialize("green", "Azim")
             self.roi_waterfall_elevation_graph = (
                 WaterfallAngleGraph(self.roi_waterfall_plot, self.params)
-                .initialize("blue", "El")
+                .initialize("blue", "Elev")
                 .make_plot()
             )
-
         else:
             self.azimuth_plot = self.fig_ref.add_subplot(grid_spec[0, 1])
             self.azimuth_graph = (
@@ -529,6 +610,7 @@ class TestStreamDisplayThread(threading.Thread):
                 self.roi_waterfall_phase_graph[0],
                 self.roi_waterfall_phase_graph[1],
                 self.roi_waterfall_phase_graph[2],
+                self.roi_waterfall_compass,
             ]
             if graph is not None
         ]
@@ -602,6 +684,10 @@ class ClientWindow(tkinter.Frame):
         connect_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
         connect_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
 
+        self.save_octave_button = tkinter.Button(
+            connect_frame, text="Save Octave", command=self.save_octave_commands
+        )
+        self.save_octave_button.pack(side=tkinter.LEFT)
         host_command_label = tkinter.Label(connect_frame, text="Command host:")
         host_command_label.pack(
             side=tkinter.LEFT, fill=tkinter.BOTH, padx=5, pady=10, expand=True
@@ -672,6 +758,18 @@ class ClientWindow(tkinter.Frame):
         self.stream_packets_lb.pack(
             side=tkinter.RIGHT, fill=tkinter.BOTH, padx=6, expand=True
         )
+        if args.sensor_dev or args.aaronia:
+            global compass
+            compass = CompassSensor(
+                pysagax.AaroniaParser() if args.aaronia else pysagax.SimpleParser(),
+            )
+            compass.load_calibration()
+            compass.set_serial_device(
+                pysagax.open_aaronia_serial_dev()
+                if args.aaronia
+                else pysagax.open_arduino_serial_dev(args.sensor_dev)
+            )
+            compass.start()
 
     def save_command_to_suggestions(self, command: str) -> None:
         """
@@ -789,6 +887,22 @@ class ClientWindow(tkinter.Frame):
         with open("hosts.txt", "w") as f1:
             f1.write(self.host_command.get() + "\n")
             f1.write(self.host_stream.get() + "\n")
+
+    def save_octave_commands(self) -> None:
+        """
+        Action of the "Connect" button
+        """
+        global compass_data
+        global phases_data
+        global roi_data
+        pysagax.save_octave(
+            filename=f"octave{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+            variables={"roi": roi_data, "compass": compass_data, "phases": phases_data},
+        )
+
+        phases_data = np.empty([0, 3])
+        roi_data = np.empty([0, 2])
+        compass_data = np.empty([0, 3])
 
     def disconnect_commands(self) -> None:
         """

@@ -3,16 +3,17 @@
 #
 from typing import Any, Optional
 
-import matplotlib.cm
+import matplotlib
+import numpy
 import numpy as np
 import numpy.typing as npt
-import typing
+from matplotlib import cm
 from matplotlib.animation import FuncAnimation  # type: ignore
-from matplotlib.backend_bases import KeyEvent
 from matplotlib.backends.backend_tkagg import (  # type: ignore
     FigureCanvasTkAgg,
     NavigationToolbar2Tk,
 )
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection  # type: ignore
 
 
 class GraphParameters:
@@ -235,7 +236,7 @@ class AngleSpectrumGraph(GraphImage):
         if 0 < x < len(self.spectrum):
             val = self.spectrum[int(x)]
         else:
-            val = 0
+            val = numpy.float64(0.0)
         return (
             f"Frequency: {self.bin_freq_formatter(x)} (bin {int(x)}), "
             f"Angle: {val:.3f} rad ({val / np.pi * 180:.2f} deg)"
@@ -244,11 +245,9 @@ class AngleSpectrumGraph(GraphImage):
     def init_image(self) -> None:
         super().init_image()
         self.spectrum = np.zeros([self.params.bin_count])
-        self.image = self.plot.plot(
+        self.image = self.plot.plot(  # type: ignore
             self.spectrum, lw=1, color=self.color, animated=True
-        )[
-            0
-        ]  # type: ignore
+        )[0]
         self.marker_image = self.plot.plot(0, 0, "or", animated=True)[0]  # type: ignore
 
     def initialize(self, color: str) -> "AngleSpectrumGraph":
@@ -392,4 +391,339 @@ class WaterfallAngleGraph(GraphImage):
             self.waterfall[-self.params.waterfall_size + 1 :],
             np.array([point]),
             axis=0,
+        )
+
+
+class ThreeDimensionGraph(GraphImage):
+    def __init__(
+        self, plot: matplotlib.axes.SubplotBase, params: GraphParameters
+    ) -> None:
+        super().__init__(plot)
+
+        self.params = params
+        self.waterfall = np.empty([self.params.waterfall_size, 3])
+        self.waterfall.fill(None)
+        """
+        Wf data (numpy vector)
+        """
+        self.color: str = "blue"
+        """
+        Color of the plot image
+        """
+        self.label: str = ""
+        """
+        Label of the plot image
+        """
+        self.plot_label: str = ""
+        """
+        Label of the plot
+        """
+        self.vector_disp: bool = False
+
+    def init_image(self) -> None:
+        super().init_image()
+        assert self.plot is not None
+        self.image = self.plot.plot(  # type: ignore
+            xs=self.waterfall[:, 0],
+            ys=self.waterfall[:, 1],
+            zs=self.waterfall[:, 2],
+            color=self.color,
+            animated=True,
+            label=self.label,
+        )[0]
+
+        self.marker_image = self.plot.plot(  # type: ignore
+            0,
+            0,
+            "" if self.vector_disp else "o",
+            color=self.color,
+            animated=True,
+            markerfacecolor=self.color,
+            markeredgecolor="red",
+        )[0]
+
+    def initialize(
+        self, color: str, label: str, vector_disp: bool = False
+    ) -> "ThreeDimensionGraph":
+        self.label = label
+        self.color = color
+        self.vector_disp = vector_disp
+        self.init_image()
+        return self
+
+    def make_plot(self) -> "ThreeDimensionGraph":
+        self.init_plot()
+        return self
+
+    def init_plot(self) -> None:
+        super().init_plot()
+
+        # self.plot.yaxis.set_major_formatter(  # type: ignore
+        #     matplotlib.ticker.FuncFormatter(self.sample_id_formatter)  # type: ignore
+        # )
+        # self.plot.set_ylabel("Packets")
+        # self.plot.set_aspect("auto")  # type: ignore
+        #
+        # self.plot.xaxis.set_major_formatter(lambda x, y: f"{x/np.pi:.2f}{pi_chr}")  # type: ignore
+        # self.plot.grid(axis="both")
+        #
+        self.plot.set_xlim(-4, 4)
+        self.plot.set_ylim(-4, 4)
+        self.plot.set_zlim(-4, 4)  # type: ignore
+        self.plot.set_xlabel("x")
+        self.plot.set_ylabel("y")
+        self.plot.set_zlabel("z")  # type: ignore
+        # self.plot.xaxis.set_major_locator(HalfLocator(min=-np.pi, max=np.pi))  # type: ignore
+        # # self.plot.set_xticks(
+        # #    [-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi]
+        # # )
+        # # self.plot.set_xticklabels(
+        # #    [f"-{pi_chr}", f"-{pi_chr}/2", "0", f"+{pi_chr}/2", f"+{pi_chr}"]
+        # # )
+        # self.plot.format_coord = self.roi_format_coord  # type: ignore
+        # self.plot.set_label(self.plot_label)  # type: ignore
+        # self.plot.set_aspect("auto")  # type: ignore
+        # self.plot.invert_yaxis()  # type: ignore
+        # self.plot.set_ylim(self.params.waterfall_size, 0)
+        # self.plot.yaxis.set_label_position("right")  # type: ignore
+        # self.plot.yaxis.tick_right()  # type: ignore
+        self.plot.legend()
+
+    def update(self) -> None:
+        super().update()
+        self.image.set_xdata(self.waterfall[:, 0])  # type: ignore
+        self.image.set_ydata(self.waterfall[:, 1])  # type: ignore
+        self.image.set_3d_properties(self.waterfall[:, 2])  # type: ignore
+
+        self.marker_image.set_xdata([0, self.waterfall[-1, 0]] if self.vector_disp else self.waterfall[-1, 0])  # type: ignore
+        self.marker_image.set_ydata([0, self.waterfall[-1, 1]] if self.vector_disp else self.waterfall[-1, 1])  # type: ignore
+        self.marker_image.set_3d_properties([0, self.waterfall[-1, 2]] if self.vector_disp else self.waterfall[-1, 2])  # type: ignore
+
+    def add_data(self, data: npt.NDArray[np.float64]) -> None:
+        super().add_data(data)
+
+    def add_point(
+        self, x: Optional[float], y: Optional[float], z: Optional[float]
+    ) -> None:
+        self.waterfall = np.append(
+            self.waterfall[-self.params.waterfall_size + 1 :, :],
+            np.array([[x, y, z]]),
+            axis=0,
+        )
+
+
+class CompassGraph(GraphImage):
+    def __init__(
+        self, plot: matplotlib.axes.SubplotBase, params: GraphParameters
+    ) -> None:
+        super().__init__(plot)
+
+        self.params = params
+        self.angle: float = 0
+        """
+        Compass angle
+        """
+        self.radius: float = 1
+        self.color: str = "blue"
+        """
+        Color of the plot image
+        """
+        self.label: str = ""
+        """
+        Label of the plot image
+        """
+        self.plot_label: str = ""
+        """
+        Label of the plot
+        """
+
+    def sample_id_formatter(self, x: float, pos: Any = None) -> str:
+        return f"{x - self.params.waterfall_size:.0f}"
+
+    def roi_format_coord(self, x: float, y: float) -> str:
+        return (
+            f"Packet: {self.sample_id_formatter(y)}, "
+            f"Angle: {x:.3f} rad ({x / np.pi * 180:.2f} deg)"
+        )
+
+    def init_image(self) -> None:
+        super().init_image()
+        assert self.plot is not None
+        self.image = self.plot.plot(  # type: ignore
+            [0, self.angle],
+            [0, self.radius],
+            color=self.color,
+            animated=True,
+            label=self.label,
+        )[0]
+
+    def initialize(self, color: str, label: str) -> "CompassGraph":
+        self.label = label
+        self.color = color
+        self.init_image()
+        return self
+
+    def make_plot(self) -> "CompassGraph":
+        self.init_plot()
+        return self
+
+    def init_plot(self) -> None:
+        super().init_plot()
+        self.plot.set_theta_direction(-1)  # type: ignore
+        self.plot.set_theta_offset(np.pi / 2.0)  # type: ignore
+        self.plot.set_rmax(1)  # type: ignore
+        self.plot.set_rticks([0.5, 1])  # type: ignore
+        self.plot.legend()
+        self.plot.grid(True)
+
+    def update(self) -> None:
+        super().update()
+        self.image.set_xdata([0, self.angle])  # type: ignore
+        self.image.set_ydata([0, self.radius])  # type: ignore
+
+    def add_data(self, data: npt.NDArray[np.float64]) -> None:
+        super().add_data(data)
+
+    def add_point(self, value: Optional[float]) -> None:
+        if value is None:
+            self.image.set_visible(False)  # type: ignore
+        else:
+            self.angle = value
+            self.image.set_visible(True)  # type: ignore
+
+
+class ThreeDimensionObject(GraphImage):
+    def __init__(
+        self, plot: matplotlib.axes.SubplotBase, params: GraphParameters
+    ) -> None:
+        super().__init__(plot)
+
+        self.params = params
+        self.quaternion: npt.NDArray[np.float64] = np.array([1.0, 0.0, 0.0, 0.0])
+
+        """
+        Wf data (numpy vector)
+        """
+        self.color: str = "blue"
+        """
+        Color of the plot image
+        """
+        self.label: str = ""
+        """
+        Label of the plot image
+        """
+        self.plot_label: str = ""
+        """
+        Label of the plot
+        """
+        face_x = [0.5, 0.5, 0.3, -0.3, -0.5, -0.5]
+        face_y = [-1, 0.7, 1, 1, 0.7, -1]
+        d = 0.3
+        top_scale = 0.8
+        self.verts = [
+            list(
+                zip(
+                    [x * top_scale for x in face_x],
+                    [y * top_scale for y in face_y],
+                    np.repeat(d, len(face_x)),
+                )
+            ),
+            list(zip(face_x, face_y, np.repeat(-d, len(face_x)))),
+            *[
+                [
+                    [x1, y1, -d],
+                    [x1 * top_scale, y1 * top_scale, d],
+                    [x2 * top_scale, y2 * top_scale, d],
+                    [x2, y2, -d],
+                ]
+                for x1, y1, x2, y2 in zip(
+                    face_x[1:], face_y[1:], face_x[:-1], face_y[:-1]
+                )
+            ],
+        ]
+        self.poly: Optional[Poly3DCollection] = None
+
+    def init_image(self) -> None:
+        super().init_image()
+        assert self.plot is not None
+
+        self.poly = Poly3DCollection(verts=self.verts)
+        self.poly.set_edgecolor("blue")
+        self.poly.set_facecolor(self.color)
+        self.image = self.plot.add_collection3d(self.poly)  # type: ignore
+
+    def initialize(self, color: str, label: str) -> "ThreeDimensionObject":
+        self.label = label
+        self.color = color
+        self.init_image()
+        return self
+
+    def make_plot(self) -> "ThreeDimensionObject":
+        self.init_plot()
+        return self
+
+    def init_plot(self) -> None:
+        super().init_plot()
+
+    def update(self) -> None:
+        super().update()
+        # yaw_matrix = np.array(
+        #     [
+        #         [math.cos(self.yaw), -math.sin(self.yaw), 0],
+        #         [math.sin(self.yaw), math.cos(self.yaw), 0],
+        #         [0, 0, 1],
+        #     ]
+        # )
+        # pitch_matrix = np.array(
+        #     [
+        #         [math.cos(self.pitch), 0, math.sin(self.pitch)],
+        #         [0, 1, 0],
+        #         [-math.sin(self.pitch), 0, math.cos(self.pitch)],
+        #     ]
+        # )
+        # roll_matrix = np.array(
+        #     [
+        #         [1, 0, 0],
+        #         [0, math.cos(self.roll), -math.sin(self.roll)],
+        #         [0, math.sin(self.roll), math.cos(self.roll)],
+        #     ]
+        # )
+        # rot_matrix = yaw_matrix @ pitch_matrix @ roll_matrix
+        u = self.quaternion[1:4]
+        s = self.quaternion[0]
+        new_points = list(
+            [
+                # np.matmul(vert, rot_matrix)
+                list(
+                    np.array(
+                        2.0 * np.dot(u, np.array(v)) * u
+                        + (s * s - np.dot(u, u)) * np.array(v)
+                        + 2.0 * s * np.cross(u, np.array(v))  # type: ignore
+                    )
+                    for v in vert  # type: ignore
+                )
+                for vert in self.verts
+            ]
+        )
+        # self.poly.set_verts(new_points)
+        # self.poly.do_3d_projection()
+        if self.image is not None:
+            self.image.remove()
+
+        self.poly = Poly3DCollection(verts=new_points)
+        self.poly.set_edgecolor(self.color)
+        self.poly.set_facecolor("black")
+        self.image = self.plot.add_collection3d(self.poly)  # type: ignore
+
+    def add_data(self, data: npt.NDArray[np.float64]) -> None:
+        super().add_data(data)
+
+    def add_point(self, quaternion: npt.NDArray[np.float64]) -> None:
+        self.quaternion = quaternion
+
+    def collect_images(self) -> list[matplotlib.artist.Artist]:
+        return (
+            [self.poly, self.image]
+            if self.poly is not None and self.image is not None
+            else []
         )
