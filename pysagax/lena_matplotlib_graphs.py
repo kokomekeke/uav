@@ -4,6 +4,7 @@
 from typing import Any, Optional
 
 import matplotlib
+import numpy
 import numpy as np
 import numpy.typing as npt
 from matplotlib import cm
@@ -235,7 +236,7 @@ class AngleSpectrumGraph(GraphImage):
         if 0 < x < len(self.spectrum):
             val = self.spectrum[int(x)]
         else:
-            val = 0
+            val = numpy.float64(0.0)
         return (
             f"Frequency: {self.bin_freq_formatter(x)} (bin {int(x)}), "
             f"Angle: {val:.3f} rad ({val / np.pi * 180:.2f} deg)"
@@ -583,8 +584,12 @@ class CompassGraph(GraphImage):
     def add_data(self, data: npt.NDArray[np.float64]) -> None:
         super().add_data(data)
 
-    def add_point(self, value: float) -> None:
-        self.angle = value
+    def add_point(self, value: Optional[float]) -> None:
+        if value is None:
+            self.image.set_visible(False)  # type: ignore
+        else:
+            self.angle = value
+            self.image.set_visible(True)  # type: ignore
 
 
 class ThreeDimensionObject(GraphImage):
@@ -693,7 +698,7 @@ class ThreeDimensionObject(GraphImage):
                     np.array(
                         2.0 * np.dot(u, np.array(v)) * u
                         + (s * s - np.dot(u, u)) * np.array(v)
-                        + 2.0 * s * np.cross(u, np.array(v))
+                        + 2.0 * s * np.cross(u, np.array(v))  # type: ignore
                     )
                     for v in vert  # type: ignore
                 )
