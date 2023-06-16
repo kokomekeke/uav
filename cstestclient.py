@@ -102,7 +102,7 @@ parser.add_argument(
 args = parser.parse_args()
 
 roi_data = np.empty([0, 2])
-compass_data = np.empty([0, 3])
+compass_data = np.empty([0, 1])
 phases_data = np.empty([0, 3])
 
 compass: Optional[CompassSensor] = None
@@ -372,7 +372,7 @@ class TestStreamDisplayThread(threading.Thread):
         compass_data = np.append(
             compass_data,
             np.array(
-                [compass.heading if compass is not None else ["NaN", "NaN", "NaN"]]
+                [[compass.angle] if compass is not None else ["NaN"]]
             ),
             axis=0,
         )
@@ -902,7 +902,7 @@ class ClientWindow(tkinter.Frame):
 
         phases_data = np.empty([0, 3])
         roi_data = np.empty([0, 2])
-        compass_data = np.empty([0, 3])
+        compass_data = np.empty([0, 1])
 
     def disconnect_commands(self) -> None:
         """
