@@ -5,6 +5,7 @@ import time
 from multiprocessing.managers import RemoteError
 from typing import Callable, Optional
 
+import numpy as np
 import pyvisa
 
 from pysagax import CoreServicePacket, StreamConnectionProcess, BaseConnection
@@ -89,31 +90,35 @@ class DDF260(DfModule):
         self.inst: Optional[pyvisa.resources.TCPIPSocket] = None
         print(self.rm.list_resources())
 
+    def send_cmd(self, cmd: str):
+        print(cmd)
+        self.inst.write(cmd)
+
     def set_freq(self, frequency: float) -> None:
         assert self.inst is not None
-        self.inst.write(f"FREQ {frequency:.0f}")
+        self.send_cmd(f"FREQ {frequency:.0f}")
 
     def set_bandwidth(self, bandwidth: float) -> None:
         assert self.inst is not None
-        self.inst.write(f"BAND {bandwidth:.0f}")
+        self.send_cmd(f"BAND {bandwidth:.0f}")
 
     def start_measurement(self) -> None:
         assert self.inst is not None
         # Activate DF sensor function
-        self.inst.write('FUNC "AZIM","DFQ","DFL"')
+        self.send_cmd('FUNC "AZIM","DFQ","DFL"')
         # Start measurement trace
         # Command: TRAC:FEED:CONT MTRACE,ALW
-        self.inst.write("""TRAC:FEED:CONT MTRACE,ALW""")
+        self.send_cmd("""TRAC:FEED:CONT MTRACE,ALW""")
         # Configure measurement time
         # Command: MEAS:DF:TIME <value> # in seconds
         # Note: <value> in seconds, e.g. 0.1 for 100 ms.
-        self.inst.write("MEAS:DF:TIME MIN")
-        self.inst.write("TRACE:FEED:CONT MTRACE, ALWays")  # CONT or PER
-        self.inst.write("MEAS:DF:MODE OFF")  # CONT or PER
-        self.inst.write("ROUT:GAIN ON")  # OFF, ON
-        self.inst.write("ROUT:POL VERT")  # HOR , VERT
-        self.inst.write("ROUT:RPAT 0")  # ant path, num, min or max
-        self.inst.write("MEAS:MODE PER")  # PER or CONT
+        self.send_cmd("MEAS:DF:TIME MIN")
+        self.send_cmd("TRACE:FEED:CONT MTRACE, ALWays")  # CONT or PER
+        self.send_cmd("MEAS:DF:MODE OFF")  # CONT or PER
+        self.send_cmd("ROUT:GAIN ON")  # OFF, ON
+        self.send_cmd("ROUT:POL VERT")  # HOR , VERT
+        self.send_cmd("ROUT:RPAT 0")  # ant path, num, min or max
+        self.send_cmd("MEAS:MODE PER")  # PER or CONT
         self._start_thread()
 
     def _loop(self) -> None:
@@ -128,11 +133,14 @@ class DDF260(DfModule):
             assert len(values) == 4
             result.level = values[0]
             result.df_level = values[1]
-            result.azimuth = values[2]
+            result.azimuth = values[2] * (np.pi / 180.0)
+            if result.azimuth > np.pi:
+                result.azimuth -= 2 * np.pi
             result.df_quality = values[3]
             self.df_callback(result)
 
     def _connect_ip(self, host: str, port: int) -> None:
+        print(f"Connecting TCPIP::{host}::{port}::SOCKET")
         inst = self.rm.open_resource(
             resource_name=f"TCPIP::{host}::{port}::SOCKET", open_timeout=5000
         )
@@ -141,6 +149,8 @@ class DDF260(DfModule):
         self.inst.read_termination = self.RD_TERMINATION
         self.inst.write_termination = self.WR_TERMINATION
         self.inst.query_delay = self.QUERY_DELAY
+        print(f"Connected TCPIP::{host}::{port}::SOCKET")
+        # print(f"Instrument info : {self.inst.get_info()}")
         print(self.inst.query("*IDN?"))
 
 
