@@ -307,6 +307,7 @@ class ClientWindow(tkinter.Frame):
     def update_tdms_file(self, new_tdms_file: str) -> None:
         button_text = "TDMS File"
         if new_tdms_file:
+            new_tdms_file = os.path.join(self.tdms_dir, new_tdms_file)
             button_text += f"\n{os.path.basename(new_tdms_file)}\n{convert_bytes(os.path.getsize(new_tdms_file))}"
         self.tdms_file_button_text.set(button_text)
         self.tdms_file_path = new_tdms_file
@@ -314,6 +315,7 @@ class ClientWindow(tkinter.Frame):
     def update_octave_file(self, new_octave_file: str) -> None:
         button_text = "Octave File"
         if new_octave_file:
+            new_octave_file = os.path.join(self.octave_dir, new_octave_file)
             button_text += f"\n{os.path.basename(new_octave_file)}\n{convert_bytes(os.path.getsize(new_octave_file))}"
         self.octave_file_button_text.set(button_text)
         self.octave_file_path = new_octave_file
