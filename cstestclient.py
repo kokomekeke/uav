@@ -22,6 +22,7 @@ from typing import Any, Callable, Optional
 import matplotlib.cm
 import numpy as np
 import numpy.typing as npt
+import serial
 from matplotlib import pyplot
 from matplotlib.animation import FuncAnimation  # type: ignore
 from matplotlib.backend_bases import KeyEvent, key_press_handler  # type: ignore
@@ -778,12 +779,23 @@ class ClientWindow(tkinter.Frame):
             compass = CompassSensor(
                 pysagax.AaroniaParser() if args.aaronia else pysagax.SimpleParser(),
             )
-            compass.load_calibration()
-            compass.set_serial_device(
-                pysagax.open_aaronia_serial_dev()
-                if args.aaronia
-                else pysagax.open_arduino_serial_dev(args.sensor_dev)
-            )
+            try:
+                compass.load_calibration()
+            except FileNotFoundError:
+                messagebox.showerror(
+                    "Calibration file calibration.npz not found. Make sure sgx-pc is your workdir."
+                )
+            try:
+                compass.set_serial_device(
+                    pysagax.open_aaronia_serial_dev()
+                    if args.aaronia
+                    else pysagax.open_arduino_serial_dev(args.sensor_dev)
+                )
+            except serial.SerialException:
+                messagebox.showerror(
+                    "Compass sensor not connected. Make sure it is turned on."
+                )
+
             compass.start()
 
     def save_command_to_suggestions(self, command: str) -> None:

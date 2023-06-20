@@ -11,11 +11,13 @@ import threading
 import time
 import tkinter
 from datetime import datetime
+from tkinter import messagebox
 from typing import Callable, Optional, Any
 
 import tkinter.messagebox
 import matplotlib.cm
 import numpy as np
+import serial
 from matplotlib import pyplot
 from matplotlib.animation import FuncAnimation  # type: ignore
 from matplotlib.backend_bases import KeyEvent, key_press_handler  # type: ignore
@@ -500,11 +502,14 @@ class ClientWindow(tkinter.Frame):
         self.plot_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
 
         global compass
-        compass.set_serial_device(
-            pysagax.open_aaronia_serial_dev()
-            if args.aaronia
-            else pysagax.open_arduino_serial_dev(args.sensor_dev)
-        )
+        try:
+            compass.set_serial_device(
+                pysagax.open_aaronia_serial_dev()
+                if args.aaronia
+                else pysagax.open_arduino_serial_dev(args.sensor_dev)
+            )
+        except serial.SerialException:
+            messagebox.showerror("Compass sensor not connected. Make sure it is turned on.")
         compass.start()
 
         self.status_label.config(text="Connected")
