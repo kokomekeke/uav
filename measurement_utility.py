@@ -107,12 +107,20 @@ def generate_diagrams(octave_data_fn: str, tmp_dir_name: str) -> None:
     with open(
         os.path.join(tmp_dir_name, "cstestclient_octave_graphs_tmp.m"), "w"
     ) as octave_file_out:
-        octave_file_out.write(f'load("{os.path.realpath(octave_data_fn)}");\n')
+        octave_file_out.write(f"load({repr(os.path.realpath(octave_data_fn))});\n")
         octave_file_out.write(octave_commands)
     current_cwd = os.getcwd()
     os.chdir(tmp_dir_name)
     print(tmp_dir_name)
-    os.system("octave --silent cstestclient_octave_graphs_tmp.m")
+    ret = os.system("octave --silent cstestclient_octave_graphs_tmp.m")
+    if ret:
+        messagebox.showwarning(
+            "Octave error",
+            "Octave error! \n * Make sure octave bin directory \n"
+            "(C:\\Program Files\\GNU Octave\\Octave-8.1.0\\mingw64\\bin)\n"
+            "is in the system PATH. \n * Octave data file must be in a correct format.\n "
+            "* Check the console for further errors.",
+        )
     os.chdir(current_cwd)
     print("created temporary directory", tmp_dir_name)
 
@@ -358,7 +366,7 @@ class ClientWindow(tkinter.Frame):
 
     def octave_file_picker_commands(self) -> None:
         new_file = filedialog.askopenfilename(
-            initialdir=self.tdms_dir, filetypes=[("octave txt", "*.txt")]
+            initialdir=self.octave_dir, filetypes=[("octave txt", "*.txt")]
         )
         if new_file:
             self.update_octave_file(new_file)
