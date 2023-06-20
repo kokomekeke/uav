@@ -518,8 +518,6 @@ class ClientWindow(tkinter.Frame):
                         (f"{i + 1}.{match.start()}", f"{i + 1}.{match.end()}")
                     )
 
-            print(f"{name} at {matches}")
-
             for start, end in matches:
                 self.comments_textarea.tag_add(name, start, end)
 
