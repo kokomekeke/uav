@@ -1,4 +1,3 @@
-pkg load financial
 pkg load matgeom
 pkg load statistics
 pkg load signal
@@ -59,6 +58,7 @@ rms(adiff*180/pi)
 legend("Error","Compass sensor", "CoreService ROI azimuth");
 xlabel("Time (samples)");
 ylabel("Azimuth (deg)");
+print -dpng time.png
 
 figure;
 plot (angles*180/pi, roi_azimuth*180/pi, "m");
@@ -71,3 +71,4 @@ yticks(-180:20:180);
  ylim([-180 180]);
 grid on;
 title("Angle-angle diagram");
+print -dpng angles.png
