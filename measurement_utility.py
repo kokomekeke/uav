@@ -54,10 +54,13 @@ parser.add_argument(
 args = parser.parse_args()
 
 
-def get_dir_list(dir_path: str, filt: Callable[[str], bool]) -> set[str]:
+def get_dir_list(dir_path: str, filt: Callable[[str], bool]) -> set[tuple[str, float]]:
     return set(
         [
-            os.path.realpath(os.path.join(dir_path, f))
+            (
+                os.path.realpath(os.path.join(dir_path, f)),
+                os.path.getmtime(os.path.join(dir_path, f)),
+            )
             for f in os.listdir(dir_path)
             if os.path.isfile(os.path.join(dir_path, f)) and filt(f)
         ]
@@ -130,10 +133,10 @@ class FileWatcherThread(threading.Thread):
     def __init__(self, window: ClientWindow) -> None:
         super().__init__(daemon=True)
         self.window = window
-        self.tdms_file_list: set[str] = get_dir_list(
+        self.tdms_file_list: set[tuple[str, float]] = get_dir_list(
             self.window.tdms_dir, lambda f: f.endswith(".tdms")
         )
-        self.octave_file_list: set[str] = get_dir_list(
+        self.octave_file_list: set[tuple[str, float]] = get_dir_list(
             self.window.octave_dir, lambda f: f.endswith(".txt") and "octave" in f
         )
 
@@ -143,17 +146,17 @@ class FileWatcherThread(threading.Thread):
             new_tdms_file_list = get_dir_list(
                 self.window.tdms_dir, lambda f: f.endswith(".tdms")
             )
-            new_octave_file_list: set[str] = get_dir_list(
+            new_octave_file_list = get_dir_list(
                 self.window.octave_dir, lambda f: f.endswith(".txt") and "octave" in f
             )
             tdms_diff = new_tdms_file_list.difference(self.tdms_file_list)
             if len(tdms_diff) > 0:
                 new_tdms_file = tdms_diff.pop()
-                self.window.update_tdms_file(new_tdms_file)
+                self.window.update_tdms_file(new_tdms_file[0])
             octave_diff = new_octave_file_list.difference(self.octave_file_list)
             if len(octave_diff) > 0:
                 new_octave_file = octave_diff.pop()
-                self.window.update_octave_file(new_octave_file)
+                self.window.update_octave_file(new_octave_file[0])
 
             self.tdms_file_list = new_tdms_file_list
             self.octave_file_list = new_octave_file_list
