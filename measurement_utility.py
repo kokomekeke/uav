@@ -14,6 +14,7 @@ import threading
 import time
 import tkinter
 import tkinter.font
+from datetime import datetime
 from tkinter import messagebox
 from pathlib import Path
 from tkinter import ttk, filedialog
@@ -77,7 +78,7 @@ def convert_bytes(num: float) -> str:
 def convert_si(num: float) -> str:
     for x in ["", "k", "M", "G", "T"]:
         if num < 1000.0:
-            return "%3.3f %s" % (num, x)
+            return "%3.3f%s" % (num, x)
         num /= 1000.0
     return "%3.1f" % num
 
@@ -392,7 +393,8 @@ class ClientWindow(tkinter.Frame):
         )
         print("\tcomments.md")
         Path(os.path.join(save_path, "comments.md")).write_text(
-            self.comments_textarea.get("1.0", tkinter.END)
+            f"**Timestamp:** {datetime.now():%Y-%m-%d %H:%M:%S%z}  \n\n"
+            + self.comments_textarea.get("1.0", tkinter.END)
         )
         if self.tdms_file_path:
             print(f"\t{os.path.basename(self.tdms_file_path)}")
@@ -481,7 +483,7 @@ class ClientWindow(tkinter.Frame):
                 if os.path.isfile(os.path.join(folder_path, f)) and f.endswith(".png")
             ]
             for png_file in png_files:
-                doc += f"\n\n![{png_file}]({folder_path}/{png_file} =500x)"
+                doc += f"\n\n![{png_file}]({os.path.basename(folder_path)}/{png_file})"
         Path(os.path.join(m_dir, "index.md")).write_text(doc)
 
     def refresh_markdown_editor(self, *args: Any) -> None:
