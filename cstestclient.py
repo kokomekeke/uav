@@ -280,6 +280,11 @@ class TestStreamDisplayThread(threading.Thread):
         Host and port in <address>:<tcp port> format.
         """
 
+        self.notification_message = ""
+        """
+        Last notification message from the stream port
+        """
+
         manager = multiprocessing.get_context("spawn").Manager()
         self.disconnect_value = manager.Value("i", 0)
         """
@@ -296,6 +301,8 @@ class TestStreamDisplayThread(threading.Thread):
         }
         self.debug_handlers: dict[str, Callable[[CoreServicePacket], None]] = {
             "error": self.handle_debug_error_message,
+            "warning": self.handle_debug_warning_message,
+            "notification": self.handle_debug_notification_message,
             "exportPhaseDiffs": self.handle_debug_phases_packet,
         }
 
@@ -319,7 +326,11 @@ class TestStreamDisplayThread(threading.Thread):
                     if message == "END":
                         terminate = True
                     else:
-                        disp_message = message
+                        disp_message = (
+                            f"{self.notification_message}\n{message}"
+                            if self.notification_message
+                            else message
+                        )
                 if (
                     disp_message != ""
                 ):  # only send the last message to UI (UI calls are slow)
@@ -371,9 +382,7 @@ class TestStreamDisplayThread(threading.Thread):
         )
         compass_data = np.append(
             compass_data,
-            np.array(
-                [[compass.angle] if compass is not None else ["NaN"]]
-            ),
+            np.array([[compass.angle] if compass is not None else ["NaN"]]),  # type: ignore
             axis=0,
         )
 
@@ -447,6 +456,12 @@ class TestStreamDisplayThread(threading.Thread):
 
     def handle_debug_packet(self, packet: CoreServicePacket) -> None:
         self.debug_handlers[packet.title](packet)
+
+    def handle_debug_notification_message(self, packet: CoreServicePacket) -> None:
+        self.notification_message = packet.contents.decode()
+
+    def handle_debug_warning_message(self, packet: CoreServicePacket) -> None:
+        messagebox.showwarning(packet.title.capitalize(), packet.contents.decode())
 
     def handle_debug_error_message(self, packet: CoreServicePacket) -> None:
         messagebox.showerror(packet.title.capitalize(), packet.contents.decode())

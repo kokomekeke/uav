@@ -5,3 +5,4 @@ pyserial~=3.5
 matplotlib~=3.7.1
 future~=0.18.3
 PyVISA~=1.13.0
+Pillow~=9.5.0

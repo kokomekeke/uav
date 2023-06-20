@@ -90,7 +90,8 @@ class DDF260(DfModule):
         self.inst: Optional[pyvisa.resources.TCPIPSocket] = None
         print(self.rm.list_resources())
 
-    def send_cmd(self, cmd: str):
+    def send_cmd(self, cmd: str) -> None:
+        assert self.inst is not None
         print(cmd)
         self.inst.write(cmd)
 
