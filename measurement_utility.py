@@ -396,7 +396,7 @@ class ClientWindow(tkinter.Frame):
         )
         print("\tcomments.md")
         Path(os.path.join(save_path, "comments.md")).write_text(
-            f"**Timestamp:** {datetime.now():%Y-%m-%d %H:%M:%S%z}  \n\n"
+            f"**Timestamp:** {datetime.now():%Y.%m.%d. %H:%M:%S%z}  \n\n"
             + self.comments_textarea.get("1.0", tkinter.END)
         )
         if self.tdms_file_path:
@@ -446,13 +446,13 @@ class ClientWindow(tkinter.Frame):
                     r"SOURCE:BurstStride! (\d+)", commands_txt
                 )
                 gains = [
-                    find_with_re(rf"SOURCE:ChannelGain! {i} (\d+)", commands_txt)
+                    find_with_re(rf"SOURCE:ChannelGain! {i} (-?\d+)", commands_txt)
                     for i in range(4)
                 ]
                 gains_str = [gain + "dB" if gain is not None else "?" for gain in gains]
                 aoa_freq = find_num_with_re(r"ROI:CenterFrequency! (\d+)", commands_txt)
                 aoa_span = find_num_with_re(r"ROI:Span! (\d+)", commands_txt)
-                aoa_thres = find_num_with_re(r"ROI:Threshold! (\d+)", commands_txt)
+                aoa_thres = find_with_re(r"ROI:Threshold! (-?\d+)", commands_txt)
                 doc += "\n"
                 doc += f"\n**IQ Rate:** {iq_rate}  " if iq_rate is not None else ""
                 doc += (
