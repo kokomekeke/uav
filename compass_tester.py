@@ -509,7 +509,7 @@ class ClientWindow(tkinter.Frame):
                 else pysagax.open_arduino_serial_dev(args.sensor_dev)
             )
         except serial.SerialException:
-            messagebox.showerror("Compass sensor not connected. Make sure it is turned on.")
+            messagebox.showerror("Startup error", "Compass sensor not connected. Make sure it is turned on.")
         compass.start()
 
         self.status_label.config(text="Connected")

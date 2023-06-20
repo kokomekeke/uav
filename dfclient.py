@@ -387,7 +387,7 @@ class ClientWindow(tkinter.Frame):
                 self.compass.load_calibration()
             except FileNotFoundError:
                 messagebox.showerror(
-                    "Calibration file calibration.npz not found. Make sure sgx-pc is your workdir."
+                    "Startup error", "Calibration file calibration.npz not found. Make sure sgx-pc is your workdir."
                 )
 
             try:
@@ -398,7 +398,7 @@ class ClientWindow(tkinter.Frame):
                 )
             except serial.SerialException:
                 messagebox.showerror(
-                    "Compass sensor not connected. Make sure it is turned on."
+                    "Startup error", "Compass sensor not connected. Make sure it is turned on."
                 )
 
             self.compass.start()
