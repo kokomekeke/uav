@@ -53,7 +53,7 @@ hold off;
 yticks(-180:10:180);
 grid on;
 grid minor;
-rms(adiff*180/pi)
+
 #legend("Error","ch0-ch1", "ch0-ch2", "ch0-ch3",  "Compass sensor", "CoreService ROI azimuth");
 legend("Error","Compass sensor", "CoreService ROI azimuth");
 xlabel("Time (samples)");
@@ -72,3 +72,7 @@ yticks(-180:20:180);
 grid on;
 title("Angle-angle diagram");
 print -dpng angles.png
+
+rms_error = rms(adiff*180/pi);
+save octave_processed.txt rms_error
+

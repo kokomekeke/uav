@@ -54,6 +54,18 @@ parser.add_argument(
 args = parser.parse_args()
 
 
+def octave_to_md(octave_data: str) -> str:
+    md = ""
+    for variable, data in re.findall(r"# name: (\w+)\n(?:# .*\n)*([\n\w .-]*)", octave_data):
+        md = f"#### {variable}  \n"
+        table = [line.strip().split(" ") for line in str(data).splitlines() if line.strip()]
+        md += "|" + "|".join(["   "]*len(table[0])) + "|\n"
+        md += "|" + "|".join(["---"] * len(table[0])) + "|\n"
+        for row in table:
+            md += "| " + " | ".join(row) + " |\n"
+    return md
+
+
 def get_dir_list(dir_path: str, filt: Callable[[str], bool]) -> set[tuple[str, float]]:
     return set(
         [
@@ -313,6 +325,7 @@ class ClientWindow(tkinter.Frame):
         self.file_watcher_thread = FileWatcherThread(window=self)
         self.file_watcher_thread.start()
         self.images_cache: list[tuple[str, bytes]] = []
+        self.octave_outputs_cache: str = ""
         self.octave_file_path = ""
         self.tdms_file_path = ""
 
@@ -355,6 +368,9 @@ class ClientWindow(tkinter.Frame):
                 self.images_cache.append(
                     (os.path.basename(png_file), Path(png_file).read_bytes())
                 )
+            self.octave_outputs_cache = Path(
+                os.path.realpath(os.path.join(tmp_dir_name, "octave_processed.txt"))
+            ).read_text()
 
     def dir_picker_commands(self) -> None:
         new_dir = filedialog.askdirectory(initialdir=self.measurement_dir_string.get())
@@ -398,6 +414,10 @@ class ClientWindow(tkinter.Frame):
         Path(os.path.join(save_path, "comments.md")).write_text(
             f"**Timestamp:** {datetime.now():%Y.%m.%d. %H:%M:%S%z}  \n\n"
             + self.comments_textarea.get("1.0", tkinter.END)
+        )
+        print("\toctave_outputs.txt")
+        Path(os.path.join(save_path, "octave_outputs.txt")).write_text(
+            self.octave_outputs_cache
         )
         if self.tdms_file_path:
             print(f"\t{os.path.basename(self.tdms_file_path)}")
@@ -474,7 +494,10 @@ class ClientWindow(tkinter.Frame):
                     if aoa_freq and aoa_span and aoa_thres
                     else ""
                 )
-
+            if os.path.exists(os.path.join(folder_path, "octave_outputs.txt")):
+                doc += (
+                    "\n\n" + octave_to_md(Path(os.path.join(folder_path, "octave_outputs.txt")).read_text())
+                )
             if os.path.exists(os.path.join(folder_path, "comments.md")):
                 doc += (
                     "\n\n" + Path(os.path.join(folder_path, "comments.md")).read_text()
