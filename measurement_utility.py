@@ -474,7 +474,7 @@ class ClientWindow(tkinter.Frame):
                 aoa_span = find_num_with_re(r"ROI:Span! (\d+)", commands_txt)
                 aoa_thres = find_with_re(r"ROI:Threshold! (-?\d+)", commands_txt)
                 doc += "\n"
-                doc += f"\n**IQ Rate:** {iq_rate}  " if iq_rate is not None else ""
+                doc += f"\n**IQ rate:** {iq_rate}  " if iq_rate is not None else ""
                 doc += (
                     f"\n**Center frequency:** {center_freq}  "
                     if center_freq is not None
@@ -490,7 +490,7 @@ class ClientWindow(tkinter.Frame):
                 )
                 doc += f"\n**Gains:** {', '.join(gains_str)}  "
                 doc += (
-                    f"\n**AOA freq:** {aoa_freq}, **span:** {aoa_span}, **thres:** {aoa_thres}"
+                    f"\n**ROI frequency:** {aoa_freq}, **span:** {aoa_span}, **threshold:** {aoa_thres}"
                     if aoa_freq and aoa_span and aoa_thres
                     else ""
                 )
