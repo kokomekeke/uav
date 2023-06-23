@@ -3,8 +3,8 @@ pkg load matgeom
 pkg load statistics
 pkg load signal
 
-index = (1:length(ahrs))
-ahrs_n = ahrs + (90.0/180.0)*pi;
+index = (1:length(ahrs));
+ahrs_n = ahrs + (90.0/180.0)*pi;  # manual angle correction
 df_n = df;
 
 
@@ -56,3 +56,6 @@ yticks(-180:20:180);
  ylim([-180 180]);
 grid on;
 title("Angle-angle diagram");
+
+adiff = angleDiff(rmmissing(ahrs_n), rmmissing(df_n));
+rms_error = rms(adiff*180/pi)
