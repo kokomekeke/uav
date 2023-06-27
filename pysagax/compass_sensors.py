@@ -12,6 +12,7 @@ import numpy.typing as npt
 import scipy  # type: ignore
 import serial
 from pysagax.magnetometer_calibration import MagnetometerCalibration
+from tkinter import messagebox
 
 
 class CompassParser:
@@ -452,7 +453,14 @@ class CompassSensor(threading.Thread):
             try:
                 line = self.ser.readline()
             except Exception as e:
+                messagebox.showerror(
+                    "Compass sensor error",
+                    f"Could not read from compass sensor, it might be disconnected. \n"
+                    f"Please reconnect the sensor and then restart the python program. \n"
+                    f"{str(e)}"
+                )
                 print(e)
+                return
             if self.parser.parse(line):
                 if self.parser.accelerometer_values is None:
                     print("No accelerometer value")
