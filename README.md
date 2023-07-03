@@ -19,7 +19,14 @@ Simple test client for CoreService written in Python.
  * ahrs
  * pyquaternion
 
+
+```bash
+pip install -r requirements.txt
+```
+
 # CS Test Client
+
+Confluence page: https://sagaxcommunications.atlassian.net/wiki/spaces/WBDF/pages/88637445/Forgatott+antenn+s+m+r+s#M%C3%A9r%C3%A9s-l%C3%A9p%C3%A9sei
 
 ## How to use
 
@@ -72,6 +79,8 @@ python cstestclient.py --roi-wf --sensor-dev COM1
 
 # Compass tester
 
+Confluence page: https://sagaxcommunications.atlassian.net/wiki/spaces/BP/pages/111640592/Aaronia+ir+nyt+szenzor+kalibr+l+szoftver
+
 ## How to use
 
 Start `compass_tester.py` using Python 3. Specify the sensor type in the command line arguments.
@@ -82,4 +91,20 @@ python compass_tester.py --sensor-dev COM1
 
 ```bash
 python compass_tester.py --aaronia
+```
+
+# Measurement utility
+
+Confluence page: https://sagaxcommunications.atlassian.net/wiki/spaces/WBDF/pages/111575041/M+r+si+seg+dprogram
+
+## How to use
+
+Start `measurement_utility.py` using Python 3. Specify the data folders in the command line arguments.
+
+```
+pythonw.exe C:\Users\sgx\Documents\sgx-pc\measurement_utility.py --octave-dir "C:\Users\sgx\Documents\sgx-pc" --tdms-dir "C:\Users\sgx\Documents\LENA\CurrentVersion\cs64" --measurement-dir "C:\Users\sgx\Documents\Meresek\JelenlegiMeres"
+```
+
+```bash
+python measurement_utility.py --octave-dir . --tdms-dir ../sgx-cs/build --measurement-dir ../measurements
 ```

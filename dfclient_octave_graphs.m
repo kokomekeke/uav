@@ -34,14 +34,14 @@ hold on;
 #plot (phases(:, 1), "LineWidth", 2, "Color", "#AAFFAA");
 #plot (phases(:, 2), "LineWidth", 2, "Color", "#AAAAFF");
 #plot (phases(:, 3), "LineWidth", 2, "Color", "#FFAAFF");
+area(abs(angleDiff(rmmissing(ahrs_n), rmmissing(df_n)))*180/pi,'LineStyle','none','FaceColor', '#FFAAAA')
 plot (index, ahrs_n*180/pi, "m");
 plot (index, df_n*180/pi, "b");
 hold off;
 yticks(-180:10:180);
 grid on;
 grid minor;
-#legend("Error","ch0-ch1", "ch0-ch2", "ch0-ch3",  "Compass sensor", "CoreService ROI azimuth");
-legend("Compass sensor", "DF azimuth");
+legend("Error", "Compass sensor", "DF azimuth");
 xlabel("Time (samples)");
 ylabel("Azimuth (deg)");
 
