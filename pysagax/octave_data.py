@@ -28,3 +28,4 @@ def save_octave(filename: str, variables: dict[str, npt.NDArray[np.float64]]) ->
             f1.write("\n")
             f1.writelines("\n".join([" ".join(row.astype(str)) for row in value]))
             f1.write("\n\n")
+        print(f"Saved {repr(list(variables.keys()))} to {filename}")

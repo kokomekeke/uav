@@ -76,6 +76,7 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
+octave_recording = False
 compass_data = np.empty([0, 3])
 
 compass = CompassSensor(
@@ -273,13 +274,18 @@ class DisplayThread(threading.Thread):
                         compass.accelerometer_values[1],
                         compass.accelerometer_values[2],
                     )
-            compass_data = np.append(  # for octave export
-                compass_data,
-                np.array(
-                    [compass.heading if compass is not None else ["NaN", "NaN", "NaN"]]
-                ),
-                axis=0,
-            )
+            if octave_recording:
+                compass_data = np.append(  # for octave export
+                    compass_data,
+                    np.array(
+                        [
+                            compass.heading
+                            if compass is not None
+                            else ["NaN", "NaN", "NaN"]
+                        ]
+                    ),
+                    axis=0,
+                )
         time.sleep(1 / float(args.fs))
 
     def run(self) -> None:
@@ -442,7 +448,7 @@ class ClientWindow(tkinter.Frame):
         buttons_frame.pack(fill=tkinter.BOTH, side=tkinter.BOTTOM, expand=False)
 
         self.save_octave_button = tkinter.Button(
-            buttons_frame, text="Save Octave", command=self.save_octave_commands
+            buttons_frame, text="Rec Octave", command=self.save_octave_commands
         )
         self.save_octave_button.pack(side=tkinter.RIGHT)
 
@@ -509,7 +515,10 @@ class ClientWindow(tkinter.Frame):
                 else pysagax.open_arduino_serial_dev(args.sensor_dev)
             )
         except serial.SerialException:
-            messagebox.showerror("Startup error", "Compass sensor not connected. Make sure it is turned on.")
+            messagebox.showerror(
+                "Startup error",
+                "Compass sensor not connected. Make sure it is turned on.",
+            )
         compass.start()
 
         self.status_label.config(text="Connected")
@@ -556,15 +565,23 @@ class ClientWindow(tkinter.Frame):
 
     def save_octave_commands(self) -> None:
         """
-        Action of the "Connect" button
+        Action of the "Rec Octave" button
         """
         global compass_data
-        pysagax.save_octave(
-            filename=f"octave{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-            variables={"compass": compass_data},
-        )
+        global octave_recording
 
-        compass_data = np.empty([0, 3])
+        if octave_recording:
+            pysagax.save_octave(
+                filename=f"octave{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                variables={"compass": compass_data},
+            )
+
+            compass_data = np.empty([0, 3])
+            octave_recording = False
+            self.save_octave_button.config(relief="raised")
+        else:
+            octave_recording = True
+            self.save_octave_button.config(relief="sunken")
 
     def gyro_calibration_commands(self) -> None:
         if self.calibrate_gyro_button.config("relief")[-1] == "sunken":

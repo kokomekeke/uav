@@ -86,6 +86,7 @@ parser.add_argument(
     help="compass sensor sampling rate",
 )
 args = parser.parse_args()
+octave_recording = False
 
 
 class DisplayThread(threading.Thread):
@@ -306,7 +307,7 @@ class ClientWindow(tkinter.Frame):
         connect_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
 
         self.save_octave_button = tkinter.Button(
-            connect_frame, text="Save Octave", command=self.save_octave_commands
+            connect_frame, text="Rec Octave", command=self.save_octave_commands
         )
         self.save_octave_button.pack(side=tkinter.LEFT)
         host_command_label = tkinter.Label(connect_frame, text="Host:")
@@ -387,7 +388,8 @@ class ClientWindow(tkinter.Frame):
                 self.compass.load_calibration()
             except FileNotFoundError:
                 messagebox.showerror(
-                    "Startup error", "Calibration file calibration.npz not found. Make sure sgx-pc is your workdir."
+                    "Startup error",
+                    "Calibration file calibration.npz not found. Make sure sgx-pc is your workdir.",
                 )
 
             try:
@@ -398,7 +400,8 @@ class ClientWindow(tkinter.Frame):
                 )
             except serial.SerialException:
                 messagebox.showerror(
-                    "Startup error", "Compass sensor not connected. Make sure it is turned on."
+                    "Startup error",
+                    "Compass sensor not connected. Make sure it is turned on.",
                 )
 
             self.compass.start()
@@ -415,35 +418,39 @@ class ClientWindow(tkinter.Frame):
         if self.compass is not None:
             self.display_thread.waterfall_compass.add_point(self.compass.angle)
             self.display_thread.compass_graph.add_point(self.compass.angle)
-            self.heading_ahrs_history = np.append(
-                self.heading_ahrs_history,
-                np.array([[self.compass.angle]]),
-                axis=0,
-            )
+            if octave_recording:
+                self.heading_ahrs_history = np.append(
+                    self.heading_ahrs_history,
+                    np.array([[self.compass.angle]]),
+                    axis=0,
+                )
         else:
             self.display_thread.waterfall_compass.add_point(None)
             self.display_thread.compass_graph.add_point(None)
-            self.heading_ahrs_history = np.append(
-                self.heading_ahrs_history,
-                np.array([["NaN"]]),
-                axis=0,
-            )
+            if octave_recording:
+                self.heading_ahrs_history = np.append(
+                    self.heading_ahrs_history,
+                    np.array([["NaN"]]),
+                    axis=0,
+                )
         if not result.no_signal:
             self.display_thread.waterfall_df.add_point(result.azimuth)
             self.display_thread.df_graph.add_point(result.azimuth)
-            self.heading_df_history = np.append(
-                self.heading_df_history,
-                np.array([[result.azimuth]]),
-                axis=0,
-            )
+            if octave_recording:
+                self.heading_df_history = np.append(
+                    self.heading_df_history,
+                    np.array([[result.azimuth]]),
+                    axis=0,
+                )
         else:
             self.display_thread.waterfall_df.add_point(None)
             self.display_thread.df_graph.add_point(None)
-            self.heading_df_history = np.append(
-                self.heading_df_history,
-                np.array([["NaN"]]),
-                axis=0,
-            )
+            if octave_recording:
+                self.heading_df_history = np.append(
+                    self.heading_df_history,
+                    np.array([["NaN"]]),
+                    axis=0,
+                )
 
     def create_canvas(self) -> None:
         """
@@ -497,19 +504,26 @@ class ClientWindow(tkinter.Frame):
 
     def save_octave_commands(self) -> None:
         """
-        Action of the "Connect" button
+        Action of the "Rec Octave" button
         """
+        global octave_recording
 
-        pysagax.save_octave(
-            filename=f"octave{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-            variables={
-                "df": self.heading_df_history,
-                "ahrs": self.heading_ahrs_history,
-            },
-        )
+        if octave_recording:
+            pysagax.save_octave(
+                filename=f"octave{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                variables={
+                    "df": self.heading_df_history,
+                    "ahrs": self.heading_ahrs_history,
+                },
+            )
 
-        self.heading_df_history = np.empty([0, 1])
-        self.heading_ahrs_history = np.empty([0, 1])
+            self.heading_df_history = np.empty([0, 1])
+            self.heading_ahrs_history = np.empty([0, 1])
+            octave_recording = False
+            self.save_octave_button.config(relief="raised")
+        else:
+            octave_recording = True
+            self.save_octave_button.config(relief="sunken")
 
     def disconnect_commands(self) -> None:
         """

@@ -107,6 +107,7 @@ compass_data = np.empty([0, 1])
 phases_data = np.empty([0, 3])
 
 compass: Optional[CompassSensor] = None
+octave_recording = False
 
 
 class CommandsConnectionThread(BaseConnection, threading.Thread):
@@ -354,6 +355,8 @@ class TestStreamDisplayThread(threading.Thread):
                 return  # it might happen on the UI when closing the window
 
     def log_octave_data(self) -> None:
+        if not octave_recording:
+            return
         global args
         global roi_data
         global compass_data
@@ -701,7 +704,7 @@ class ClientWindow(tkinter.Frame):
         connect_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
 
         self.save_octave_button = tkinter.Button(
-            connect_frame, text="Save Octave", command=self.save_octave_commands
+            connect_frame, text="Rec Octave", command=self.save_octave_commands
         )
         self.save_octave_button.pack(side=tkinter.LEFT)
         host_command_label = tkinter.Label(connect_frame, text="Command host:")
@@ -783,7 +786,8 @@ class ClientWindow(tkinter.Frame):
                 compass.load_calibration()
             except FileNotFoundError:
                 messagebox.showerror(
-                    "Startup error", "Calibration file calibration.npz not found. Make sure sgx-pc is your workdir."
+                    "Startup error",
+                    "Calibration file calibration.npz not found. Make sure sgx-pc is your workdir.",
                 )
             try:
                 compass.set_serial_device(
@@ -793,7 +797,8 @@ class ClientWindow(tkinter.Frame):
                 )
             except serial.SerialException:
                 messagebox.showerror(
-                    "Startup error", "Compass sensor not connected. Make sure it is turned on."
+                    "Startup error",
+                    "Compass sensor not connected. Make sure it is turned on.",
                 )
 
             compass.start()
@@ -917,19 +922,31 @@ class ClientWindow(tkinter.Frame):
 
     def save_octave_commands(self) -> None:
         """
-        Action of the "Connect" button
+        Action of the "Rec Octave" button
         """
         global compass_data
         global phases_data
         global roi_data
-        pysagax.save_octave(
-            filename=f"octave{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-            variables={"roi": roi_data, "compass": compass_data, "phases": phases_data},
-        )
+        global octave_recording
 
-        phases_data = np.empty([0, 3])
-        roi_data = np.empty([0, 2])
-        compass_data = np.empty([0, 1])
+        if octave_recording:
+            pysagax.save_octave(
+                filename=f"octave{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                variables={
+                    "roi": roi_data,
+                    "compass": compass_data,
+                    "phases": phases_data,
+                },
+            )
+
+            phases_data = np.empty([0, 3])
+            roi_data = np.empty([0, 2])
+            compass_data = np.empty([0, 1])
+            octave_recording = False
+            self.save_octave_button.config(relief="raised")
+        else:
+            octave_recording = True
+            self.save_octave_button.config(relief="sunken")
 
     def disconnect_commands(self) -> None:
         """
