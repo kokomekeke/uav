@@ -100,6 +100,14 @@ parser.add_argument(
     action="store_true",
     help="compass sensor is aaronia",
 )
+parser.add_argument(
+    "--rec-count",
+    dest="rec_count",
+    metavar="N",
+    type=int,
+    default=0,
+    help="Count of data points in the octave recording",
+)
 args = parser.parse_args()
 
 roi_data = np.empty([0, 2])
@@ -108,6 +116,8 @@ phases_data = np.empty([0, 3])
 
 compass: Optional[CompassSensor] = None
 octave_recording = False
+
+recording_sample_callback: Optional[Callable[[], None]]
 
 
 class CommandsConnectionThread(BaseConnection, threading.Thread):
@@ -358,6 +368,7 @@ class TestStreamDisplayThread(threading.Thread):
         if not octave_recording:
             return
         global args
+        global recording_sample_callback
         global roi_data
         global compass_data
         global phases_data
@@ -389,6 +400,8 @@ class TestStreamDisplayThread(threading.Thread):
             np.array([[compass.angle] if compass is not None else ["NaN"]]),  # type: ignore
             axis=0,
         )
+        if recording_sample_callback is not None:
+            recording_sample_callback()
 
     def read_from_compass_sensor(self) -> None:
         global compass
@@ -704,9 +717,12 @@ class ClientWindow(tkinter.Frame):
         connect_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
 
         self.save_octave_button = tkinter.Button(
-            connect_frame, text="Rec Octave", command=self.save_octave_commands
+            connect_frame,
+            text=f"Rec {args.rec_count}" if args.rec_count else "Rec Octave",
+            command=self.save_octave_commands,
         )
         self.save_octave_button.pack(side=tkinter.LEFT)
+
         host_command_label = tkinter.Label(connect_frame, text="Command host:")
         host_command_label.pack(
             side=tkinter.LEFT, fill=tkinter.BOTH, padx=5, pady=10, expand=True
@@ -777,6 +793,10 @@ class ClientWindow(tkinter.Frame):
         self.stream_packets_lb.pack(
             side=tkinter.RIGHT, fill=tkinter.BOTH, padx=6, expand=True
         )
+
+        global recording_sample_callback
+        recording_sample_callback = self.recording_sample_callback
+
         if args.sensor_dev or args.aaronia:
             global compass
             compass = CompassSensor(
@@ -928,6 +948,7 @@ class ClientWindow(tkinter.Frame):
         global phases_data
         global roi_data
         global octave_recording
+        global args
 
         if octave_recording:
             pysagax.save_octave(
@@ -944,9 +965,23 @@ class ClientWindow(tkinter.Frame):
             compass_data = np.empty([0, 1])
             octave_recording = False
             self.save_octave_button.config(relief="raised")
+            self.save_octave_button.config(
+                text=f"Rec {args.rec_count}" if args.rec_count else "Rec Octave"
+            )
         else:
             octave_recording = True
             self.save_octave_button.config(relief="sunken")
+
+    def recording_sample_callback(self) -> None:
+        if args.rec_count:
+            if roi_data.shape[0] >= args.rec_count:
+                self.save_octave_commands()
+            else:
+                self.save_octave_button.config(
+                    text=f"Rec {roi_data.shape[0]}/{args.rec_count}"
+                )
+        else:
+            self.save_octave_button.config(text=f"Rec {roi_data.shape[0]}")
 
     def disconnect_commands(self) -> None:
         """
