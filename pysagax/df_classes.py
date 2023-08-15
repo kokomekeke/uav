@@ -203,7 +203,14 @@ class LenaDf(DfModule):
         }
         self.command_thread = LenaCommandThread()
         self.freq: float = 0
+        self.roi_freq: float = 0
         self.bw: float = 0
+
+        self.gain: int = 40
+        self.connect_string: str = 'UHD "serial=8001680,serial=8001820" "A:A A:B"'
+
+        self.burst_stride: int = 4096
+        self.bin_count: int = 4096
 
         self.result_buffer = DfResult()
         self.result_buffer.no_signal = True
@@ -293,7 +300,8 @@ class LenaDf(DfModule):
         self.result_buffer.no_signal = True
 
     def set_freq(self, frequency: float) -> None:
-        self.freq = frequency
+        self.freq = frequency - 5000
+        self.roi_freq = frequency
 
     def set_bandwidth(self, bandwidth: float) -> None:
         self.bw = bandwidth
@@ -301,20 +309,20 @@ class LenaDf(DfModule):
     def start_measurement(self) -> None:
         super().start_measurement()
         self.send_command(
-            f"SOURCE:Path! USRP MXI1Port1Dev1;"
-            f"SOURCE:BurstStride! 32768;"
-            f"SOURCE:ChannelGain! 0 60;"
-            f"SOURCE:ChannelGain! 1 60;"
-            f"SOURCE:ChannelGain! 2 60;"
-            f"SOURCE:ChannelGain! 3 60;"
-            f"SOURCE:CenterFrequency! {self.freq-5000:.0f};"
+            f"SOURCE:Path! {self.connect_string};"
+            f"SOURCE:CenterFrequency! {self.freq:.0f};"
             f"SOURCE:IqRate! {self.bw:.0f};"
+            f"SOURCE:ChannelGain! 0 {self.gain};"
+            f"SOURCE:ChannelGain! 1 {self.gain};"
+            f"SOURCE:ChannelGain! 2 {self.gain};"
+            f"SOURCE:ChannelGain! 3 {self.gain};"
+            f"AOA:BinCount! {self.bin_count};"
+            f"SOURCE:BurstStride! {self.burst_stride};"
             f"SOURCE:Configure!;"
-            f"AOA:BinCount! 4096;"
             f"AOA:Configure!;"
             f"SOURCE:Start!;"
             f"ROI:Enable! 1;"
-            f"ROI:CenterFrequency! {self.freq};"
+            f"ROI:CenterFrequency! {self.roi_freq:.0f};"
             f"ROI:Span! 2500;"
             f"ROI:Threshold! -150;"
             f"ROI:Configure!;"
