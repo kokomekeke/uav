@@ -318,6 +318,10 @@ class WaterfallAngleGraph(GraphImage):
         """
         Label of the plot
         """
+        self.rad: bool = False
+        """
+        Display angles in radians
+        """
 
     def sample_id_formatter(self, x: float, pos: Any = None) -> str:
         return f"{x - self.params.waterfall_size:.0f}"
@@ -340,9 +344,12 @@ class WaterfallAngleGraph(GraphImage):
             label=self.label,
         )[0]
 
-    def initialize(self, color: str, label: str) -> "WaterfallAngleGraph":
+    def initialize(
+        self, color: str, label: str, rad: bool = True
+    ) -> "WaterfallAngleGraph":
         self.color = color
         self.label = label
+        self.rad = rad
         self.init_image()
         return self
 
@@ -359,7 +366,11 @@ class WaterfallAngleGraph(GraphImage):
         self.plot.set_ylabel("Packets")
         self.plot.set_aspect("auto")  # type: ignore
 
-        self.plot.xaxis.set_major_formatter(lambda x, y: f"{x/np.pi:.2f}{pi_chr}")  # type: ignore
+        if self.rad:
+            self.plot.xaxis.set_major_formatter(lambda x, y: f"{x/np.pi:.2f}{pi_chr}")  # type: ignore
+        else:
+            self.plot.xaxis.set_major_formatter(lambda x, y: f"{x/np.pi*180:.2f}°")  # type: ignore
+
         self.plot.grid(axis="both")
 
         self.plot.set_xlim(-np.pi, np.pi)
@@ -536,6 +547,10 @@ class CompassGraph(GraphImage):
         """
         Label of the plot
         """
+        self.nesw = False
+        """
+        Display compass labels
+        """
 
     def sample_id_formatter(self, x: float, pos: Any = None) -> str:
         return f"{x - self.params.waterfall_size:.0f}"
@@ -557,9 +572,10 @@ class CompassGraph(GraphImage):
             label=self.label,
         )[0]
 
-    def initialize(self, color: str, label: str) -> "CompassGraph":
+    def initialize(self, color: str, label: str, nesw: bool = False) -> "CompassGraph":
         self.label = label
         self.color = color
+        self.nesw = nesw
         self.init_image()
         return self
 
@@ -571,8 +587,10 @@ class CompassGraph(GraphImage):
         super().init_plot()
         self.plot.set_theta_direction(-1)  # type: ignore
         self.plot.set_theta_offset(np.pi / 2.0)  # type: ignore
+        if self.nesw:
+            self.plot.set_thetagrids(range(0, 360, 45), ("N", "NE", "E", "SE", "S", "SW", "W", "NW"))  # type: ignore
         self.plot.set_rmax(1)  # type: ignore
-        self.plot.set_rticks([0.5, 1])  # type: ignore
+        self.plot.set_rticks([])  # type: ignore
         self.plot.legend()
         self.plot.grid(True)
 
