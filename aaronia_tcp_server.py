@@ -1,8 +1,11 @@
+#!/usr/bin/env python3
+#
+# Created by aron.szabo@sagaxcommunications.com on 21/08/2023.
+#
 import queue
 import socketserver
 import socket
 import threading
-from typing import Callable, Iterable, Any, Mapping
 from queue import Queue
 
 import serial
