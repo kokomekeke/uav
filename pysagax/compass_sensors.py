@@ -1,5 +1,7 @@
+import io
 import math
 import re
+import socket
 import threading
 import time
 from enum import Enum
@@ -391,7 +393,7 @@ class CompassSensor(threading.Thread):
         self.ahrs_class = ahrs.filters.Madgwick
 
         self.daemon = True
-        self.ser: Optional[serial.Serial] = None  # serial.Serial()
+        self.ser: Optional[io.RawIOBase] = None  # serial.Serial()
 
         self.angle: float = 0.0
         self.yaw: float = 0.0
@@ -439,7 +441,7 @@ class CompassSensor(threading.Thread):
         self.ahrs_filter = self.ahrs_class()
         self.quaternion = np.array([1.0, 0.0, 0.0, 0.0])
 
-    def set_serial_device(self, sensor_dev: serial.Serial) -> None:
+    def set_serial_device(self, sensor_dev: io.RawIOBase) -> None:
         self.ser = sensor_dev
 
     def run(self) -> None:
@@ -457,7 +459,7 @@ class CompassSensor(threading.Thread):
                     "Compass sensor error",
                     f"Could not read from compass sensor, it might be disconnected. \n"
                     f"Please reconnect the sensor and then restart the python program. \n"
-                    f"{str(e)}"
+                    f"{str(e)}",
                 )
                 print(e)
                 return
@@ -592,3 +594,17 @@ def open_aaronia_serial_dev() -> serial.Serial:
     aaronia.write(b"$PAAG,MODE,START\r\n")
     aaronia.write(b"$PAAG,MODE,RATE,25\r\n")
     return aaronia
+
+
+def open_aaronia_socket_dev(host_port: str) -> socket.SocketIO:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    host_port_split = host_port.split(":")
+    print(f"Connecting {host_port_split[0]} port {int(host_port_split[1])}")
+    sock.connect((host_port_split[0], int(host_port_split[1])))
+    print("Connected")
+    sock_reader: socket.SocketIO = socket.SocketIO(sock, mode="r")
+    print("Socket reader created")
+    # Initializing not needed: it is done on the server side.
+    # aaronia.write(b"$PAAG,MODE,START\r\n")
+    # aaronia.write(b"$PAAG,MODE,RATE,25\r\n")
+    return sock_reader

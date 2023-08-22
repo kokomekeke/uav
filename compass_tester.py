@@ -74,13 +74,22 @@ parser.add_argument(
     action="store_true",
     help="compass sensor is aaronia",
 )
+parser.add_argument(
+    "--aaronia-socket",
+    dest="aaronia_socket",
+    metavar="N",
+    type=str,
+    help="compass sensor aaronia host:port",
+)
 args = parser.parse_args()
 
 octave_recording = False
 compass_data = np.empty([0, 3])
 
 compass = CompassSensor(
-    pysagax.AaroniaParser() if args.aaronia else pysagax.SimpleParser(),
+    pysagax.AaroniaParser()
+    if args.aaronia or args.aaronia_socket
+    else pysagax.SimpleParser(),
 )
 
 
@@ -512,6 +521,8 @@ class ClientWindow(tkinter.Frame):
             compass.set_serial_device(
                 pysagax.open_aaronia_serial_dev()
                 if args.aaronia
+                else pysagax.open_aaronia_socket_dev(args.aaronia_socket)
+                if args.aaronia_socket
                 else pysagax.open_arduino_serial_dev(args.sensor_dev)
             )
         except serial.SerialException:
