@@ -22,6 +22,7 @@ from pysagax.compass_sensors import (
     CompassSensor,
     open_aaronia_serial_dev,
     open_arduino_serial_dev,
+    open_aaronia_socket_dev,
     CalibrationStatus,
 )
 from pysagax.df_classes import DfModule, DfResult, DDF260, LenaDf
@@ -76,6 +77,7 @@ __all__ = [
     "CalibrationStatus",
     "open_aaronia_serial_dev",
     "open_arduino_serial_dev",
+    "open_aaronia_socket_dev",
     "save_octave",
     "DfResult",
     "DfModule",
