@@ -45,12 +45,12 @@ class CoreServicePacket:
             1: f"#{self.packet_index} Spectrum (C: {self.center_frequency/1e6:.3f}M, IQ: {self.iq_rate/1e6:.2f}M, {self.bin_count} bins)",
             2: f"#{self.packet_index} EOF",
             3: (
-                f"#{self.packet_index} ROI peak {self.center_frequency/1e6:.3f}M, "
+                f"#{self.packet_index} ROI peak {self.center_frequency/1e6:.3f}M, {self.roi_level:.1f}dB "
                 f"Az: {self.roi_azimuth:.2f} ({self.roi_azimuth / np.pi * 180:.2f}deg), "
                 f"El: {self.roi_elevation:.2f} ({self.roi_elevation / np.pi * 180:.2f}deg) "
             ),
             4: f"#{self.packet_index} ROI lack of signal",
-            6: f"#{self.packet_index} Debug {self.title}",
+            6: f"#{self.packet_index} Debug {self.title} {'' if len(self.contents)>128 else self.contents.decode()}",
         }[self.packet_type]
 
 
