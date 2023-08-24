@@ -136,9 +136,28 @@ class WaterfallMagnitudeGraph(GraphImage):
         """
         Magnitude waterfall data (numpy matrix)
         """
+        self.decimated_waterfall = np.ones(
+            [self.params.waterfall_size, self.params.bin_count]
+        )
 
-        self.vmin: float = -100
+        self.vmin: float = -120
         self.vmax: float = 0
+
+        self.decimate = 1
+        self.new_lim = (0, self.params.bin_count)
+        self.max_points = 1024
+
+    def ax_update(self, event_ax: Any) -> None:
+        if event_ax is None:
+            xlims = (0, self.params.bin_count)
+        else:
+            xlims = event_ax.get_xlim()
+        self.new_lim = int(max(0, xlims[0])), int(min(self.params.bin_count, xlims[1]))
+        self.decimate = (self.new_lim[1] - self.new_lim[0]) // self.max_points
+        if self.decimate < 1:
+            self.decimate = 1
+        # self.decimated_waterfall = self.waterfall[:, self.new_lim[0]:self.new_lim[1]:self.decimate]
+        self.decimated_waterfall = self.waterfall[:, :: self.decimate]
 
     def bin_freq_formatter(self, x: float, pos: Any = None) -> str:
         return f"{((x - self.params.bin_count / 2) * (self.params.iq_rate / self.params.bin_count) + self.params.center_frequency) / 1e6:.3f}M"
@@ -184,10 +203,13 @@ class WaterfallMagnitudeGraph(GraphImage):
         self.plot.set_label("Magnitude")  # type: ignore
         self.plot.set_ylabel("Packets")
         self.plot.set_aspect("auto")  # type: ignore
+        self.plot.callbacks.connect("xlim_changed", self.ax_update)  # type:ignore
+        # self.plot.callbacks.connect("ylim_changed", self.ax_update)
+        self.ax_update(None)
 
     def update(self) -> None:
         super().update()
-        self.image.set_data(self.waterfall)  # type: ignore
+        self.image.set_data(self.decimated_waterfall)  # type: ignore
 
     def add_data(self, data: npt.NDArray[np.float64]) -> None:
         super().add_data(data)
@@ -196,6 +218,14 @@ class WaterfallMagnitudeGraph(GraphImage):
             np.array([data]),
             axis=0,
         )
+        try:
+            self.decimated_waterfall = np.append(
+                self.decimated_waterfall[-self.params.waterfall_size + 1 :, :],
+                np.array([data[:: self.decimate]]),
+                axis=0,
+            )
+        except ValueError:
+            self.decimated_waterfall = self.waterfall[:, :: self.decimate]
 
 
 class AngleSpectrumGraph(GraphImage):
