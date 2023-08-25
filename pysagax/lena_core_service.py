@@ -262,9 +262,9 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
         self.counter_packet_index += 1
         try:
             self.display_status(
-                f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
-                f"index {cs_packet.sample_index} , speed: {self.counter_packet_ratio} packets/sec, "
-                f"queue count on insert: {self.mp_queue.qsize()}"
+                f"P#{cs_packet.packet_index} - S{cs_packet.stream_id}"
+                f"i{cs_packet.sample_index} , sp: {self.counter_packet_ratio} p/s, "
+                f"queue: {self.mp_queue.qsize()}"
             )
         except (
             NotImplementedError

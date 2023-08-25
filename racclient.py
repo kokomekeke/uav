@@ -42,14 +42,18 @@ from pysagax import (
     StreamConnectionProcess,
     WaterfallAngleGraph,
     WaterfallMagnitudeGraph,
-    DfModule,
-    DfResult,
-    LenaDf,
     CompassGraph,
-    DDF260,
 )
+from pysagax.sgx_dfg_map_server import DFGMapServer
 
-parser = argparse.ArgumentParser(description="CS Test client parameters")
+parser = argparse.ArgumentParser(description="RAC client parameters")
+parser.add_argument(
+    "--bin",
+    metavar="N",
+    type=int,
+    default=0,
+    help="maximum displayed bin count (set if experiencing performance issues) 0=disable decimation",
+)
 parser.add_argument(
     "--wf",
     metavar="N",
@@ -65,24 +69,63 @@ parser.add_argument(
     help="matplotlib display framerate",
 )
 parser.add_argument(
-    "--aaronia",
-    dest="aaronia",
-    default=False,
-    action="store_true",
-    help="compass sensor is aaronia",
-)
-parser.add_argument(
-    "--fs",
+    "--rec-count",
+    dest="rec_count",
     metavar="N",
     type=int,
-    default=25,
-    help="compass sensor sampling rate",
+    default=0,
+    help="Count of data points in the octave recording",
 )
 args = parser.parse_args()
+
+roi_data = np.empty([0, 2])
+compass_data = np.empty([0, 1])
+
+compass: Optional[CompassSensor] = None
+compass_heading: float = 0
+df_value: Optional[float] = 2
 octave_recording = False
 
+recording_sample_callback: Optional[Callable[[], None]]
 
-class DisplayThread(threading.Thread):
+dfg_map_server = DFGMapServer()
+
+
+class CommandsConnectionThread(BaseConnection, threading.Thread):
+    def __init__(self) -> None:
+        super(CommandsConnectionThread, self).__init__()
+        self.incoming_buffer: bytearray = bytearray()
+        self.status_text: str = ""
+        self.incoming_messages_queue: queue.Queue[str] = queue.Queue()
+
+    def receive_on_socket(self, data: bytes) -> None:
+        """
+        When text is received on the command socket, display it in the console textbox.
+        """
+        self.incoming_buffer += data
+        while b";" in self.incoming_buffer:
+            idx = self.incoming_buffer.find(b";")
+            self.incoming_messages_queue.put(self.incoming_buffer[0:idx].decode())
+            self.incoming_buffer = self.incoming_buffer[idx + 1 :]
+
+    def display_status(self, message: str) -> None:
+        self.status_text = message
+
+    def run(self) -> None:
+        """
+        Entry point of the thread
+        """
+        self.disconnect = False
+        self.run_socket()
+
+
+"""
+This thread is responsible for handling the multiprocessing stream process and for displaying the stream contents
+on the matplotlib plots
+"""
+
+
+class TestStreamDisplayThread(threading.Thread):
     def __init__(self) -> None:
         super().__init__()
         global args
@@ -96,25 +139,24 @@ class DisplayThread(threading.Thread):
         """
         Reference to the matplotlib figure.
         """
-
-        self.waterfall_plot: Optional[object] = None
+        self.magnitude_plot: Optional[object] = None
         """
-        Matplotlib plot (axes) object for the waterfall plot
-        """
-
-        self.waterfall_df: Optional[WaterfallAngleGraph] = None
-        """
-        Matplotlib image object for the compass sensor waterfall
+        Matplotlib plot (axes) object for the magnitude plot
         """
 
-        self.waterfall_compass: Optional[WaterfallAngleGraph] = None
+        self.magnitude_graph: Optional[WaterfallMagnitudeGraph] = None
         """
-        Matplotlib image object for the compass sensor waterfall
+        Matplotlib image object for the magnitude plot
         """
 
         self.compass_plot: Optional[object] = None
         """
-        Matplotlib plot (axes) object for the waterfall plot
+        Matplotlib plot (axes) object for the compass plot
+        """
+
+        self.df_plot: Optional[object] = None
+        """
+        Matplotlib plot (axes) object for the df compass plot
         """
 
         self.compass_graph: Optional[CompassGraph] = None
@@ -122,7 +164,7 @@ class DisplayThread(threading.Thread):
         Matplotlib image object for the compass sensor waterfall
         """
 
-        self.compass_heading_graph: Optional[CompassGraph] = None
+        self.compass_df_graph: Optional[CompassGraph] = None
         """
         Matplotlib image object for the compass sensor waterfall
         """
@@ -149,14 +191,39 @@ class DisplayThread(threading.Thread):
         Reference of the status label on the main window
         """
 
+        self.packets_lb_ref: Optional[tkinter.Listbox] = None
+        """
+        Reference of the packets listbox on the main window
+        """
+
         self.recreate_canvas_action: Optional[Callable[[], None]] = None
         """
         Action that recreates plot canvas
         """
 
+        self.roi_packet: Optional[CoreServicePacket] = None
+        """
+        Latest ROI packet
+        """
+
+        self.roi_bin: int = 0
+        """
+        FFT bin position of ROI result
+        """
+
         self.disconnect: bool = False
         """
         When the disconnect flag is set, the thread loop will quit on the next iteration.
+        """
+
+        self.host_port = ""
+        """
+        Host and port in <address>:<tcp port> format.
+        """
+
+        self.notification_message = ""
+        """
+        Last notification message from the stream port
         """
 
         manager = multiprocessing.get_context("spawn").Manager()
@@ -166,28 +233,248 @@ class DisplayThread(threading.Thread):
         next iteration.
         """
 
+        self.packet_handlers: dict[int, Callable[[CoreServicePacket], None]] = {
+            1: self.handle_spectrum_packet,
+            2: self.handle_eof_packet,
+            3: self.handle_roi_result_packet,
+            4: self.handle_roi_lack_of_signal_packet,
+            6: self.handle_debug_packet,
+        }
+        self.debug_handlers: dict[str, Callable[[CoreServicePacket], None]] = {
+            "error": self.handle_debug_error_message,
+            "warning": self.handle_debug_warning_message,
+            "notification": self.handle_debug_notification_message,
+        }
+
+    def status_watcher_thread(
+        self, status_queue: queue.Queue[str], packet_string_queue: queue.Queue[str]
+    ) -> None:
+        """
+        Entry point of the watcher thread
+        """
+        assert self.status_label_ref is not None
+        assert self.packets_lb_ref is not None
+        while True:
+            try:
+                terminate = False
+                self.disconnect_value.value = self.disconnect
+                disp_message = ""
+                while not status_queue.empty():
+                    message = status_queue.get(
+                        timeout=0.2
+                    )  # get status message from stream process
+                    if message == "END":
+                        terminate = True
+                    else:
+                        disp_message = (
+                            f"{self.notification_message}\n{message}"
+                            if self.notification_message
+                            else message
+                        )
+                if (
+                    disp_message != ""
+                ):  # only send the last message to UI (UI calls are slow)
+                    self.status_label_ref.config(text=disp_message)  # slow UI call
+                list_items: list[str] = []
+                while not packet_string_queue.empty():
+                    list_items.append(packet_string_queue.get())
+                self.packets_lb_ref.insert(tkinter.END, *list_items)  # slow UI call
+                self.packets_lb_ref.delete(
+                    0, self.packets_lb_ref.size() - 1000
+                )  # slow UI call
+                self.packets_lb_ref.see(tkinter.END)  # slow UI call
+                if terminate:
+                    return
+            except queue.Empty:
+                pass
+            except BrokenPipeError:
+                return
+            except RuntimeError:
+                return  # it might happen on the UI when closing the window
+
+    def log_octave_data(self) -> None:
+        if not octave_recording:
+            return
+        global args
+        global recording_sample_callback
+        global roi_data
+        global compass_data
+        roi_data = np.append(
+            roi_data,
+            np.array(
+                [
+                    [self.roi_packet.roi_azimuth, self.roi_packet.roi_elevation]
+                    if self.roi_packet is not None
+                    else ["NaN", "NaN"]  # type: ignore
+                ]
+            ),
+            axis=0,
+        )
+        compass_data = np.append(
+            compass_data,
+            np.array([[compass.angle] if compass is not None else ["NaN"]]),  # type: ignore
+            axis=0,
+        )
+        if recording_sample_callback is not None:
+            recording_sample_callback()
+
+    def update_sensors_and_graphs(self) -> None:
+        global compass
+        global compass_heading
+        global df_value
+        global dfg_map_server
+        dfg_map_server.update_timestamp()
+        if compass is not None and compass.magnetometer_values is not None:
+            assert self.compass_graph is not None
+            assert self.compass_df_graph is not None
+            angle = (
+                math.atan2(
+                    compass.magnetometer_values[1],
+                    compass.magnetometer_values[0],
+                )
+                + np.pi
+            )
+            compass_heading = angle if angle < np.pi else angle - 2 * np.pi
+            self.compass_graph.add_point(compass_heading)
+            if df_value is not None:
+                df_corrected = compass_heading + df_value
+                df_corrected = (
+                    df_corrected if df_corrected < np.pi else df_corrected - 2 * np.pi
+                )
+                self.compass_df_graph.add_point(df_corrected)
+                dfg_map_server.update_angle(df_corrected, 1e6)
+            else:
+                self.compass_df_graph.add_point(None)
+
+        if (
+            compass is not None
+            and compass.parser.lat is not None
+            and compass.parser.lon is not None
+        ):
+            dfg_map_server.update_lat_lon(compass.parser.lat, compass.parser.lon)
+        assert self.df_graph is not None
+        self.df_graph.add_point(df_value)
+
+    def handle_spectrum_packet(self, packet: CoreServicePacket) -> None:
+        if packet.bin_count == 0:
+            return
+        if (
+            not self.animation_started  # start matplotlib animation if it has not started yet
+            or packet.bin_count
+            != self.params.bin_count  # or restart if the dimensions change
+            or packet.center_frequency
+            != self.params.center_frequency  # or restart if the axes change
+            or packet.iq_rate != self.params.iq_rate
+        ):
+            # Animation can be created, because at this point we know bin count and other properties
+            # Also restart when bin count or any other parameter has changed
+            self.params.bin_count = packet.bin_count
+            self.params.iq_rate = packet.iq_rate
+            self.params.center_frequency = packet.center_frequency
+            self.create_anim()
+            self.animation_started = True
+
+        assert self.magnitude_graph is not None
+        self.magnitude_graph.add_data(packet.magnitude_spectrum)
+        self.update_sensors_and_graphs()
+        self.log_octave_data()
+
+        global df_value
+        df_value = self.roi_packet.roi_azimuth if self.roi_packet else None
+
+    def handle_eof_packet(self, packet: CoreServicePacket) -> None:
+        pass
+
+    def handle_roi_result_packet(self, packet: CoreServicePacket) -> None:
+        if self.params.iq_rate == 0:
+            self.roi_bin = 0
+        else:
+            self.roi_bin = int(
+                (packet.center_frequency - self.params.center_frequency)
+                * (self.params.bin_count / self.params.iq_rate)
+                + self.params.bin_count / 2
+            )
+            self.roi_packet = packet
+
+    def handle_roi_lack_of_signal_packet(self, packet: CoreServicePacket) -> None:
+        self.roi_packet = None
+
+    def handle_debug_packet(self, packet: CoreServicePacket) -> None:
+        self.debug_handlers[packet.title](packet)
+
+    def handle_debug_notification_message(self, packet: CoreServicePacket) -> None:
+        self.notification_message = packet.contents.decode()
+
+    def handle_debug_warning_message(self, packet: CoreServicePacket) -> None:
+        messagebox.showwarning(packet.title.capitalize(), packet.contents.decode())
+
+    def handle_debug_error_message(self, packet: CoreServicePacket) -> None:
+        messagebox.showerror(packet.title.capitalize(), packet.contents.decode())
+
     def run(self) -> None:
         """
         Entry point of the data handling thread
         """
 
         global args
+        status_queue: multiprocessing.Queue[str] = multiprocessing.Queue()
+        """
+        The string elements of the status queue are the messages to be displayed on the GUI status bar
+        """
+
+        packet_string_queue: queue.Queue[str] = queue.Queue()
+
+        # The purpose of the watcher thread is to take the status messages from the multiprocessing process and display
+        # them on the GUI, and to forward the disconnect signal to the process if the "Disconnect" button is clicked.
+        watcher_thread = threading.Thread(
+            target=self.status_watcher_thread,
+            args=(status_queue, packet_string_queue),
+            daemon=True,
+        )
+        watcher_thread.start()
+
+        packets_queue: multiprocessing.Queue[
+            CoreServicePacket
+        ] = multiprocessing.Queue()
+        """
+        This queue will transfer the processed packets from the stream process to the main (GUI) process
+        """
+
+        stream_process = StreamConnectionProcess(
+            packets_queue, self.disconnect_value, status_queue
+        )
+
+        stream_process.host_port = self.host_port
+        stream_process.start()
 
         # The code below will handle the preprocessed packets from the stream process
-        self.create_anim()
-        self.animation_started = True
-        while not self.disconnect:
-            # self.read_from_compass_sensor()
-            time.sleep(1)
+        assert self.status_label_ref
+        while True:
+            if self.disconnect:
+                break
+            try:
+                packet: CoreServicePacket = packets_queue.get(
+                    timeout=0.5
+                )  # get a packet from the stream process
+            except queue.Empty:
+                continue
+            ts = datetime.fromtimestamp(packet.time_ns / 1e9, tz=None)
+            packet_string_queue.put(
+                f"[{packet.stream_id}] {ts.strftime('%H:%M:%S')}.{int((packet.time_ns % 1e9) / 1e6):03d} - "
+                f"{str(packet)}",
+            )  # handle UI in a separate thread, because UI calls are slow
+            self.packet_handlers[packet.packet_type](packet)
 
         self.animation_started = False
+        stream_process.join()
+        stream_process.terminate()
 
     def update_imag(self, frame_number: int) -> list[matplotlib.artist.Artist]:
+        self.update_sensors_and_graphs()
         image_list = []
         for graph in self.graph_list:
             graph.update()
             image_list.extend(graph.collect_images())
-
         return image_list
 
     def create_anim(self) -> None:
@@ -202,61 +489,54 @@ class DisplayThread(threading.Thread):
         self.fig_ref.clf()
 
         grid_spec = self.fig_ref.add_gridspec(  # type: ignore
-            nrows=2, ncols=2, height_ratios=(1, 1)
+            nrows=2, ncols=2, width_ratios=(3, 2), height_ratios=(1, 1)
         )
-        self.waterfall_plot = self.fig_ref.add_subplot(grid_spec[0, :])
+        self.magnitude_plot = self.fig_ref.add_subplot(grid_spec[:, 0])
+        self.magnitude_graph = WaterfallMagnitudeGraph(
+            self.magnitude_plot, self.params
+        ).initialize()
+        colorbar = self.fig_ref.colorbar(  # type: ignore
+            self.magnitude_graph.image, format=lambda x, _: f"{x:.0f}dB"
+        )
+        self.magnitude_graph.make_plot()
+
         self.compass_plot = self.fig_ref.add_subplot(
-            grid_spec[1, 0], projection="polar"
+            grid_spec[0, 1], projection="polar"
         )
-        self.df_compass_plot = self.fig_ref.add_subplot(
-            grid_spec[1, 1], projection="polar"
-        )
-        self.waterfall_df = WaterfallAngleGraph(
-            self.waterfall_plot, self.params
-        ).initialize("blue", "DF Heading", rad=False)
-        self.waterfall_compass = (
-            WaterfallAngleGraph(self.waterfall_plot, self.params)
-            .initialize("red", "UAV Heading", rad=False)
-            .make_plot()
-        )
-        self.waterfall_compass.plot.set_ylabel("")
-        self.waterfall_compass.plot.yaxis.set_major_formatter(  # type: ignore
-            lambda x, y: f"{float(x - self.params.waterfall_size)/float(args.fs):.2f}s"
-        )
+        self.df_plot = self.fig_ref.add_subplot(grid_spec[1, 1], projection="polar")
         self.df_graph = (
-            CompassGraph(self.df_compass_plot, self.params)
-            .initialize("blue", "DF Heading", nesw=True)
+            CompassGraph(self.df_plot, self.params)
+            .initialize("blue", "DF Angle")
             .make_plot()
         )
 
+        self.compass_df_graph = CompassGraph(self.compass_plot, self.params).initialize(
+            "blue", "DF Heading"
+        )
         self.compass_graph = (
             CompassGraph(self.compass_plot, self.params)
             .initialize("red", "UAV Heading", nesw=True)
             .make_plot()
         )
+
         self.graph_list = [
             graph
             for graph in [
-                self.waterfall_compass,
-                self.waterfall_df,
-                self.compass_graph,
-                self.compass_heading_graph,
+                self.magnitude_graph,
                 self.df_graph,
+                self.compass_graph,
+                self.compass_df_graph,
             ]
             if graph is not None
         ]
+
         self.animation = FuncAnimation(
-            self.fig_ref,
-            self.update_imag,
-            interval=int(1000 / args.fps),
-            blit=True,
-            cache_frame_data=False,
+            self.fig_ref, self.update_imag, interval=int(1000 / args.fps), blit=True
         )
 
         grid_spec.tight_layout(figure=self.fig_ref)
         grid_spec.update()
-
-        self.fig_ref.canvas.draw()  # type: ignore
+        # self.fig_ref.canvas.draw()  # type: ignore
 
 
 class ClientWindow(tkinter.Frame):
@@ -264,11 +544,8 @@ class ClientWindow(tkinter.Frame):
         global args
         super().__init__()
 
-        self.supported_host_types: dict[str, typing.Type[DfModule]] = {
-            "LENA": LenaDf,
-        }
-
-        self.connection: DfModule = DfModule(self.df_callback, self.status_callback)
+        self.command_thread: Optional[CommandsConnectionThread] = None
+        self.stream_thread: Optional[TestStreamDisplayThread] = None
 
         self.fig: Optional[pyplot.Figure] = None
         self.canvas: Optional[FigureCanvasTkAgg] = None
@@ -276,49 +553,87 @@ class ClientWindow(tkinter.Frame):
 
         self.pack(fill=tkinter.BOTH, expand=1)
 
-        self.host_string = tkinter.StringVar(value="localhost")
-        self.host_type = tkinter.StringVar(value="LENA")
+        self.host_address = tkinter.StringVar(value="10.1.1.113")
+
         self.freq_string = tkinter.StringVar(value="300M")
         self.bw_string = tkinter.StringVar(value="300k")
-
-        # ## STATUS FRAME
+        """
+        Variable for the current value of the host textbox
+        """
 
         status_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
         status_frame.pack(fill=tkinter.BOTH, side=tkinter.BOTTOM, expand=False)
 
-        status_label_label = tkinter.Label(
+        status_command_label_label = tkinter.Label(
             status_frame,
-            text="Status:",
+            text="Command:",
             font=tkinter.font.Font(weight=tkinter.font.BOLD, size=10),
         )
-        status_label_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
+        status_command_label_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
 
-        self.status_label = tkinter.Label(
+        self.status_command_label = tkinter.Label(
             status_frame, text="Not connected", font=tkinter.font.Font(size=10)
         )
-        self.status_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
+        self.status_command_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
 
-        # ## CONNECT FRAME
+        status_stream_label_label = tkinter.Label(
+            status_frame,
+            text="Stream:",
+            font=tkinter.font.Font(weight=tkinter.font.BOLD, size=10),
+        )
+        status_stream_label_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
+
+        self.status_stream_label = tkinter.Label(
+            status_frame, text="Not connected", font=tkinter.font.Font(size=10)
+        )
+        self.status_stream_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
+
+        status_compass_label_label = tkinter.Label(
+            status_frame,
+            text="GPS/Compass:",
+            font=tkinter.font.Font(weight=tkinter.font.BOLD, size=10),
+        )
+        status_compass_label_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
+
+        self.status_compass_label = tkinter.Label(
+            status_frame, text="Not connected", font=tkinter.font.Font(size=10)
+        )
+        self.status_compass_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
+
+        status_map_server_label_label = tkinter.Label(
+            status_frame,
+            text="Map server:",
+            font=tkinter.font.Font(weight=tkinter.font.BOLD, size=10),
+        )
+        status_map_server_label_label.pack(
+            side=tkinter.LEFT, padx=5, pady=10, anchor="w"
+        )
+
+        self.status_map_server_label = tkinter.Label(
+            status_frame, text="Down", font=tkinter.font.Font(size=10)
+        )
+        self.status_map_server_label.pack(
+            side=tkinter.LEFT, padx=5, pady=10, anchor="w"
+        )
 
         connect_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
         connect_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
 
-        # self.save_octave_button = tkinter.Button(
-        #     connect_frame, text="Rec Octave", command=self.save_octave_commands
-        # )
-        # self.save_octave_button.pack(side=tkinter.LEFT)
-        host_command_label = tkinter.Label(connect_frame, text="Host:")
-        host_command_label.pack(
+        self.save_octave_button = tkinter.Button(
+            connect_frame,
+            text=f"Rec {args.rec_count}" if args.rec_count else "Rec Octave",
+            command=self.save_octave_commands,
+        )
+        self.save_octave_button.pack(side=tkinter.LEFT)
+
+        host_label = tkinter.Label(connect_frame, text="Host:")
+        host_label.pack(
             side=tkinter.LEFT, fill=tkinter.BOTH, padx=5, pady=10, expand=True
         )
 
-        self.host_entry = tkinter.Entry(connect_frame, textvariable=self.host_string)
+        self.host_entry = tkinter.Entry(connect_frame, textvariable=self.host_address)
         self.host_entry.pack(side=tkinter.LEFT, padx=5, expand=True)
 
-        self.type_combo = ttk.Combobox(connect_frame, textvariable=self.host_type)
-        self.type_combo["values"] = list(self.supported_host_types.keys())
-        self.type_combo["state"] = "readonly"
-        self.type_combo.pack(side=tkinter.LEFT, padx=5, expand=True)
         self.disconnect_button = tkinter.Button(
             connect_frame, text="Disconnect", command=self.disconnect_commands
         )
@@ -329,18 +644,15 @@ class ClientWindow(tkinter.Frame):
             connect_frame, text="Connect", command=self.connect_commands
         )
         self.connect_button.pack(side=tkinter.RIGHT)
+        self.plot_frame = tkinter.Frame(self)
+        self.create_canvas()
+        self.plot_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
 
-        # ## MAIN FRAME
-
-        main_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
-        main_frame.pack(fill=tkinter.BOTH, side=tkinter.TOP, expand=True)
-        self.plot_frame = tkinter.Frame(main_frame)
-        self.plot_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.RIGHT)
-
-        # ## CONTROL FRAME
-
-        control_frame = tkinter.Frame(main_frame, relief=tkinter.RAISED, borderwidth=1)
-        # control_frame.configure(background='red')
+        bottom_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
+        bottom_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
+        control_frame = tkinter.Frame(
+            bottom_frame, relief=tkinter.RAISED, borderwidth=1
+        )
 
         control_frame.columnconfigure(0, weight=1)
         control_frame.columnconfigure(1, weight=1)
@@ -363,18 +675,24 @@ class ClientWindow(tkinter.Frame):
         self.start_button.grid(
             column=1, row=2, padx=10, pady=20, sticky=tkinter.E + tkinter.W
         )
-        self.stop_button = tkinter.Button(
-            control_frame, text="Rec", command=self.stop_commands
+        self.rec_button = tkinter.Button(
+            control_frame, text="Rec", command=self.rec_commands
         )
-        self.stop_button.grid(
+        self.rec_button.grid(
             column=0, row=2, padx=10, pady=20, sticky=tkinter.E + tkinter.W
         )
 
-        deviation_disp_label = ttk.Label(control_frame, text="DF deviation:")
+        control_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.LEFT)
+
+        stat_frame = tkinter.Frame(bottom_frame, relief=tkinter.RAISED, borderwidth=1)
+
+        stat_frame.columnconfigure(0, weight=1)
+        stat_frame.columnconfigure(1, weight=1)
+        deviation_disp_label = ttk.Label(stat_frame, text="DF deviation:")
         deviation_disp_label.grid(column=0, row=3, sticky=tkinter.W, padx=5, pady=5)
         disp_font = tkinter.font.Font(family="serif", size=16)
         deviation_disp = ttk.Label(
-            control_frame,
+            stat_frame,
             text="0.05 °",
             font=disp_font,
             foreground="red",
@@ -383,84 +701,84 @@ class ClientWindow(tkinter.Frame):
         deviation_disp.grid(
             column=1, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=5
         )
+        stat_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.RIGHT)
 
-        control_frame.pack(fill=tkinter.BOTH, side=tkinter.LEFT, expand=True)
+        self.stream_packets_lb = tkinter.Listbox(bottom_frame, height=4)
 
-        self.heading_df_history = np.empty([0, 1])
-        self.heading_ahrs_history = np.empty([0, 1])
+        self.stream_packets_lb.pack(
+            side=tkinter.BOTTOM, fill=tkinter.BOTH, padx=6, expand=True
+        )
 
-        self.compass: Optional[CompassSensor] = None
+        global recording_sample_callback
+        recording_sample_callback = self.recording_sample_callback
 
-        if args.aaronia:
-            self.compass = CompassSensor(pysagax.AaroniaParser())
+        self.status_watcher_thread = threading.Thread(
+            target=self.status_watcher, daemon=True
+        )
+        global dfg_map_server
+        dfg_map_server.start()
+        self.status_watcher_thread.start()
+
+    def start_commands(self) -> None:
+        connect_string = 'UHD "serial=8001680,serial=8001820" "A:A A:B"'
+        freq = 145.49e6
+        bw = 300000
+        gain = 45
+        bin_count = burst_stride = 1024
+        roi_freq = 145.5e6
+        roi_span = 2500
+        self.send_commands(
+            f"SOURCE:Path! {connect_string};"
+            f"SOURCE:CenterFrequency! {freq:.0f};"
+            f"SOURCE:IqRate! {bw:.0f};"
+            f"SOURCE:ChannelGain! 0 {gain};"
+            f"SOURCE:ChannelGain! 1 {gain};"
+            f"SOURCE:ChannelGain! 2 {gain};"
+            f"SOURCE:ChannelGain! 3 {gain};"
+            f"AOA:BinCount! {bin_count};"
+            f"SOURCE:BurstStride! {burst_stride};"
+            f"SOURCE:Configure!;"
+            f"AOA:Configure!;"
+            f"SOURCE:Start!;"
+            f"ROI:Enable! 1;"
+            f"ROI:CenterFrequency! {roi_freq:.0f};"
+            f"ROI:Span! {roi_span:.0f};"
+            f"ROI:Threshold! -150;"
+            f"ROI:Configure!;"
+        )
+
+    def rec_commands(self) -> None:
+        pass  # TODO
+
+    def send_commands(self, commands: str) -> None:
+        """
+        Send the commands and wait for response
+        """
+        assert self.command_thread
+        assert self.command_thread.client_socket
+        commands = commands.replace("\n", "").replace("\r", "")
+        for command in commands.split(";"):  # One command per line
+            if not command:
+                continue
+            while not self.command_thread.incoming_messages_queue.empty():
+                print(
+                    f"Unprocessed command message: {self.command_thread.incoming_messages_queue.get()}"
+                )
+            print(f"{command};")
+            self.command_thread.client_socket.send(f"{command};".encode())
             try:
-                self.compass.load_calibration()
-            except FileNotFoundError:
-                messagebox.showerror(
-                    "Startup error",
-                    "Calibration file calibration.npz not found. Make sure sgx-pc is your workdir.",
+                response = self.command_thread.incoming_messages_queue.get(
+                    block=True, timeout=30
                 )
+                print(response)
+                response_parts = response.split(" ")
+                error_code = int(response_parts[0])
+                if error_code:
+                    messagebox.showerror("Command error", f"{command}\n{response}")
+            except queue.Empty:
+                messagebox.showwarning("Timeout", f"Command {command} timed out.")
 
-            try:
-                self.compass.set_serial_device(pysagax.open_aaronia_serial_dev())
-            except serial.SerialException:
-                messagebox.showerror(
-                    "Startup error",
-                    "Compass sensor not connected. Make sure it is turned on.",
-                )
-
-            self.compass.start()
-
-        self.display_thread = DisplayThread()
-        self.display_thread.recreate_canvas_action = self.create_canvas
-        self.display_thread.status_label_ref = self.status_label
-        self.display_thread.start()
-
-    def status_callback(self, status: str) -> None:
-        self.status_label.config(text=status)
-
-    def df_callback(self, result: DfResult) -> None:
-        assert self.display_thread.waterfall_compass is not None
-        assert self.display_thread.compass_graph is not None
-        assert self.display_thread.waterfall_df is not None
-        assert self.display_thread.df_graph is not None
-
-        if self.compass is not None:
-            self.display_thread.waterfall_compass.add_point(self.compass.angle)
-            self.display_thread.compass_graph.add_point(self.compass.angle)
-            if octave_recording:
-                self.heading_ahrs_history = np.append(
-                    self.heading_ahrs_history,
-                    np.array([[self.compass.angle]]),
-                    axis=0,
-                )
-        else:
-            self.display_thread.waterfall_compass.add_point(None)
-            self.display_thread.compass_graph.add_point(None)
-            if octave_recording:
-                self.heading_ahrs_history = np.append(
-                    self.heading_ahrs_history,
-                    np.array([["NaN"]]),
-                    axis=0,
-                )
-        if not result.no_signal:
-            self.display_thread.waterfall_df.add_point(result.azimuth)
-            self.display_thread.df_graph.add_point(result.azimuth)
-            if octave_recording:
-                self.heading_df_history = np.append(
-                    self.heading_df_history,
-                    np.array([[result.azimuth]]),
-                    axis=0,
-                )
-        else:
-            self.display_thread.waterfall_df.add_point(None)
-            self.display_thread.df_graph.add_point(None)
-            if octave_recording:
-                self.heading_df_history = np.append(
-                    self.heading_df_history,
-                    np.array([["NaN"]]),
-                    axis=0,
-                )
+            sleep(0.1)
 
     def create_canvas(self) -> None:
         """
@@ -487,66 +805,154 @@ class ClientWindow(tkinter.Frame):
             key_press_handler(event, self.canvas, self.canvas_toolbar)
 
         self.canvas.mpl_connect("key_press_event", on_canvas_key_press)
-        self.canvas_toolbar.pack(side=tkinter.BOTTOM, fill=tkinter.X, expand=False)
-        if self.display_thread is not None:
-            self.display_thread.fig_ref = self.fig
+        self.canvas_toolbar.pack(side=tkinter.TOP, fill=tkinter.X, expand=False)
+        if self.stream_thread is not None:
+            self.stream_thread.fig_ref = self.fig
 
-    def start_commands(self) -> None:
-        self.connection.set_freq(pysagax.si_to_float(self.freq_string.get()))
-        self.connection.set_bandwidth(pysagax.si_to_float(self.bw_string.get()))
-        self.connection.start_measurement()
+    def status_watcher(self) -> None:
+        """
+        This runs in a separate thread and keeps the status bar updated
+        """
+        global dfg_map_server
+        global compass
+        try:
+            while True:
+                if self.command_thread is not None:
+                    self.status_command_label.config(
+                        text=self.command_thread.status_text
+                    )
+                else:
+                    self.status_command_label.config(text="Not connected")
+                # Streaming manages its status label on its own
+                if compass is not None:
+                    ser_class = repr(compass.ser.__class__).split("'")[1]
+                    self.status_compass_label.config(text=(f"Connected {ser_class}"))
+                else:
+                    self.status_compass_label.config(text=(f"Not connected"))
 
-    def stop_commands(self) -> None:
-        self.connection.stop_measurement()
+                if dfg_map_server is not None:
+                    dfg_map_server.update_clients()  # send update to clients every 0.2 seconds
+                    self.status_map_server_label.config(
+                        text=(
+                            f"Up on port {dfg_map_server.port}, "
+                            f"{dfg_map_server.count_clients()} clients, "
+                            f"{dfg_map_server.total_packets} packets"
+                        )
+                    )
+                else:
+                    self.status_map_server_label.config(text="Down")
+                time.sleep(0.2)
+        except RuntimeError:
+            pass  # it might happen while closing the window
+
+    def connect_action(self) -> None:
+        """
+        Events triggered by successful connection
+        """
+        self.connect_button.configure(state="disabled")
+        self.host_entry.configure(state="disabled")
+        self.disconnect_button.configure(state="normal")
+
+    def disconnect_action(self) -> None:
+        """
+        Events triggered by client disconnect
+        """
+        try:
+            self.disconnect_button.configure(state="disabled")
+            self.host_entry.configure(state="normal")
+            self.connect_button.configure(state="normal")
+            self.disconnect_commands()  # to disconnect the other thread
+        except RuntimeError:
+            pass  # it might happen when closing the window
 
     def connect_commands(self) -> None:
         """
         Action of the "Connect" button
         """
-        conn_class = self.supported_host_types[self.host_type.get()]
-        self.connection = conn_class(self.df_callback, self.status_callback)
-        self.connection.status_callback = self.status_callback
-        self.connection.df_callback = self.df_callback
-        self.connection.connect(self.host_string.get())
-        self.connect_button.configure(state="disabled")
-        self.host_entry.configure(state="disabled")
-        self.disconnect_button.configure(state="normal")
-
-    def save_octave_commands(self) -> None:
-        """
-        Action of the "Rec Octave" button
-        """
-        global octave_recording
-
-        if octave_recording:
-            pysagax.save_octave(
-                filename=f"octave{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                variables={
-                    "df": self.heading_df_history,
-                    "ahrs": self.heading_ahrs_history,
-                },
+        self.command_thread = CommandsConnectionThread()
+        self.command_thread.connect_action = self.connect_action
+        self.command_thread.disconnect_action = self.disconnect_action
+        self.command_thread.host_port = f"{self.host_address.get()}:12936"
+        self.command_thread.start()
+        self.stream_thread = TestStreamDisplayThread()
+        self.stream_thread.recreate_canvas_action = self.create_canvas
+        self.stream_thread.host_port = f"{self.host_address.get()}:12937"
+        self.stream_thread.status_label_ref = self.status_stream_label
+        self.stream_thread.packets_lb_ref = self.stream_packets_lb
+        self.stream_thread.start()
+        global compass
+        compass = CompassSensor(pysagax.AaroniaParser())
+        try:
+            compass.load_calibration()
+        except FileNotFoundError:
+            messagebox.showerror(
+                "Startup error",
+                "Calibration file calibration.npz not found. Make sure sgx-pc is your workdir.",
             )
 
-            self.heading_df_history = np.empty([0, 1])
-            self.heading_ahrs_history = np.empty([0, 1])
-            octave_recording = False
-            # self.save_octave_button.config(relief="raised")
-        else:
-            octave_recording = True
-            # self.save_octave_button.config(relief="sunken")
+        try:
+            compass.set_serial_device(
+                pysagax.open_aaronia_socket_dev(f"{self.host_address.get()}:12938")
+            )
+        except serial.SerialException:
+            self.status_compass_label.config(text="Compass sensor not connected")
+
+        compass.start()
 
     def disconnect_commands(self) -> None:
         """
         Action of the "Disconnect" button
         """
-        self.connection.disconnect()
-        self.display_thread.disconnect = True
-        try:
-            self.disconnect_button.configure(state="disabled")
-            self.host_entry.configure(state="normal")
-            self.connect_button.configure(state="normal")
-        except tkinter.TclError:
-            pass
+        if self.command_thread is not None:
+            self.command_thread.disconnect = True
+        if self.stream_thread is not None:
+            self.stream_thread.disconnect = True
+            if self.stream_thread.disconnect_value is not None:
+                self.stream_thread.disconnect_value.value = True
+        global compass
+        if compass is not None:
+            compass.do_stop = True
+            compass = None
+
+    def save_octave_commands(self) -> None:
+        """
+        Action of the "Rec Octave" button
+        """
+        global compass_data
+        global roi_data
+        global octave_recording
+        global args
+
+        if octave_recording:
+            pysagax.save_octave(
+                filename=f"octave{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                variables={
+                    "roi": roi_data,
+                    "compass": compass_data,
+                },
+            )
+
+            roi_data = np.empty([0, 2])
+            compass_data = np.empty([0, 1])
+            octave_recording = False
+            self.save_octave_button.config(relief="raised")
+            self.save_octave_button.config(
+                text=f"Rec {args.rec_count}" if args.rec_count else "Rec Octave"
+            )
+        else:
+            octave_recording = True
+            self.save_octave_button.config(relief="sunken")
+
+    def recording_sample_callback(self) -> None:
+        if args.rec_count:
+            if roi_data.shape[0] >= args.rec_count:
+                self.save_octave_commands()
+            else:
+                self.save_octave_button.config(
+                    text=f"Rec {roi_data.shape[0]}/{args.rec_count}"
+                )
+        else:
+            self.save_octave_button.config(text=f"Rec {roi_data.shape[0]}")
 
 
 if __name__ == "__main__":
@@ -554,6 +960,6 @@ if __name__ == "__main__":
     root = tkinter.Tk()
     ex = ClientWindow()
     root.geometry("1024x768")
-    root.wm_title("RAC Client")
+    root.wm_title("RAC Test Client")
     root.mainloop()
     ex.disconnect_commands()

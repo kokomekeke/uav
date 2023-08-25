@@ -48,6 +48,15 @@ class CompassParser:
         Processed coordinates from gyroscope sensor (if present)
         """
 
+        self.lat: Optional[float] = None
+        """
+        GPS Latitude coordinate
+        """
+        self.lon: Optional[float] = 0.0
+        """
+        GPS Longitude coordinate
+        """
+
     def parse(self, line: bytes) -> bool:
         return False
 
@@ -106,8 +115,13 @@ class AaroniaParser(CompassParser):
         A sample is processed when all three sensors have new data.
         """
 
-        self.pattern = re.compile(
+        self.sensors_pattern = re.compile(
             r"\$PAAG,DATA,(.),(\d{6})\.(\d*),([-\d.]*),([-\d.]*),([-\d.]*),(.)\*([0-9A-F]{2})"
+        )
+
+        self.gps_pattern = re.compile(
+            r"\$GPGGA,(\d{6})\.(\d*),(\d*)(\d{2}\.\d*)?,([NS]?),(\d*)(\d{2}\.\d*)?,([EW]?),"
+            r"([01]),(\d*),([\d.]*),([\d.]*),([A-Z]*),([\d.]*),([A-Z]*),[a-zA-Z0-9]*,[a-zA-Z0-9]*.*\*([0-9A-F]{2})"
         )
 
     def parse(self, line: bytes) -> bool:
@@ -122,73 +136,106 @@ class AaroniaParser(CompassParser):
             char_check ^= char
         if f"{char_check:02X}".encode() != data_checksum:
             return False
-        tokens = self.pattern.match(line.decode())
-        if tokens is None:
-            return False
+        tokens = self.sensors_pattern.match(line.decode())
         if tokens is not None:
-            data_type = tokens[1]
-            data_hms = (
-                int(tokens[2][0:2]),
-                int(tokens[2][2:4]),
-                int(tokens[2][4:6]),
-            )  # original timestamp is HHMMSS format
-            data_timestamp = (
-                data_hms[0] * 3600 + data_hms[1] * 60 + data_hms[2]
-            )  # Timestamp is converted to total seconds
-            data_idx = int(tokens[3])
-            data_coord = (float(tokens[4]), float(tokens[5]), float(tokens[6]))
-            data_ok = tokens[7]
-            # Aaronia Raw data processing, see
-            # https://dev.aaronia-shop.com/downloads/gps/manuals/gps_logger_programming_guide_en.pdf
-            if data_ok == "A":
-                if data_type == "C":
-                    scalar = 100000.0 / 1090.0  # -> nanotesla
-                    self.raw_magnetometer_values = np.array(data_coord)
-                    self.magnetometer_values = np.array(
-                        [
-                            data_coord[0] * scalar,
-                            data_coord[1] * scalar,
-                            data_coord[2] * scalar,
-                        ]
-                    )
-                    self.angle = math.atan2(data_coord[1], data_coord[0])  # not used
-                    self.is_new = (True, self.is_new[1], self.is_new[2])
-                if data_type == "G":
-                    self.raw_gyroscope_values = np.array(data_coord)
-                    scalar = np.pi / (180.0 * 14.375 * 7)  # -> radians / sec
-                    self.gyroscope_values = np.array(
-                        [
-                            data_coord[0] * scalar,
-                            data_coord[1] * scalar,
-                            data_coord[2] * scalar,
-                        ]
-                    )
-                    self.is_new = (self.is_new[0], True, self.is_new[2])
-                if data_type == "T":
-                    self.raw_accelerometer_values = np.array(
-                        data_coord
-                    )  # Range is -2g..2g
-                    scalar = 9.80665 / 8192.0  # -> m/s^2
-                    self.accelerometer_values = np.array(
-                        [
-                            data_coord[0] * scalar,
-                            data_coord[1] * scalar,
-                            data_coord[2] * scalar,
-                        ]
-                    )
-                    # d_pi = 180.0 / np.pi
-                    # accelerometer_rotation = np.array(
-                    #     [
-                    #         -math.atan2(y, math.sqrt((x * x) + (z * z))) * d_pi,
-                    #         math.atan2(-x, (-1 if z < 0 else 1) * math.sqrt((y * y) + (z * z))) * d_pi,
-                    #         0
-                    #     ]
-                    # )
-                    self.is_new = (self.is_new[0], self.is_new[1], True)
-                if all(self.is_new):
-                    self.is_new = (False, False, False)
-                    return True
+            return self.parse_sensor_line(tokens)
+        else:
+            tokens = self.gps_pattern.match(line.decode())
+            if tokens is not None:
+                return self.parse_gps_line(tokens)
             return False
+
+    def parse_gps_line(self, tokens: re.Match[str]) -> bool:
+        data_hms = (
+            int(tokens[1][0:2]),
+            int(tokens[1][2:4]),
+            int(tokens[1][4:6]),
+        )  # original timestamp is HHMMSS format
+        data_timestamp = (
+            data_hms[0] * 3600 + data_hms[1] * 60 + data_hms[2]
+        )  # Timestamp is converted to total seconds
+        data_idx = int(tokens[2])
+        data_ok = int(tokens[9])
+        if data_ok:
+            lat_deg = int(tokens[3])
+            lat_min = float(tokens[4])
+            lat_hem = tokens[5]
+            lon_deg = int(tokens[6])
+            lon_min = float(tokens[7])
+            lon_hem = tokens[8]
+            self.lat = (1 if lat_hem == "N" else -1) * (lat_deg + lat_min / 60)
+            self.lon = (1 if lon_hem == "E" else -1) * (lon_deg + lon_min / 60)
+            number_of_satellites = int(tokens[10])
+            horizontal_deviation = float(tokens[11])
+            elevation = float(tokens[12])
+            elevation_units = tokens[13]
+            geoidal_separation = float(tokens[14])
+            geoidal_separation_units = tokens[15]
+            return True
+        return False
+
+    def parse_sensor_line(self, tokens: re.Match[str]) -> bool:
+        data_type = tokens[1]
+        data_hms = (
+            int(tokens[2][0:2]),
+            int(tokens[2][2:4]),
+            int(tokens[2][4:6]),
+        )  # original timestamp is HHMMSS format
+        data_timestamp = (
+            data_hms[0] * 3600 + data_hms[1] * 60 + data_hms[2]
+        )  # Timestamp is converted to total seconds
+        data_idx = int(tokens[3])
+        data_coord = (float(tokens[4]), float(tokens[5]), float(tokens[6]))
+        data_ok = tokens[7]
+        # Aaronia Raw data processing, see
+        # https://dev.aaronia-shop.com/downloads/gps/manuals/gps_logger_programming_guide_en.pdf
+        if data_ok == "A":
+            if data_type == "C":
+                scalar = 100000.0 / 1090.0  # -> nanotesla
+                self.raw_magnetometer_values = np.array(data_coord)
+                self.magnetometer_values = np.array(
+                    [
+                        data_coord[0] * scalar,
+                        data_coord[1] * scalar,
+                        data_coord[2] * scalar,
+                    ]
+                )
+                self.angle = math.atan2(data_coord[1], data_coord[0])  # not used
+                self.is_new = (True, self.is_new[1], self.is_new[2])
+            if data_type == "G":
+                self.raw_gyroscope_values = np.array(data_coord)
+                scalar = np.pi / (180.0 * 14.375 * 7)  # -> radians / sec
+                self.gyroscope_values = np.array(
+                    [
+                        data_coord[0] * scalar,
+                        data_coord[1] * scalar,
+                        data_coord[2] * scalar,
+                    ]
+                )
+                self.is_new = (self.is_new[0], True, self.is_new[2])
+            if data_type == "T":
+                self.raw_accelerometer_values = np.array(data_coord)  # Range is -2g..2g
+                scalar = 9.80665 / 8192.0  # -> m/s^2
+                self.accelerometer_values = np.array(
+                    [
+                        data_coord[0] * scalar,
+                        data_coord[1] * scalar,
+                        data_coord[2] * scalar,
+                    ]
+                )
+                # d_pi = 180.0 / np.pi
+                # accelerometer_rotation = np.array(
+                #     [
+                #         -math.atan2(y, math.sqrt((x * x) + (z * z))) * d_pi,
+                #         math.atan2(-x, (-1 if z < 0 else 1) * math.sqrt((y * y) + (z * z))) * d_pi,
+                #         0
+                #     ]
+                # )
+                self.is_new = (self.is_new[0], self.is_new[1], True)
+            if all(self.is_new):
+                self.is_new = (False, False, False)
+                return True
+        return False
 
 
 class CalibrationStatus(Enum):
@@ -437,6 +484,11 @@ class CompassSensor(threading.Thread):
         File that stores sensor calibration values
         """
 
+        self.do_stop: bool = False
+        """
+        Stops the loop if true
+        """
+
     def reset_ahrs_filter(self) -> None:
         self.ahrs_filter = self.ahrs_class()
         self.quaternion = np.array([1.0, 0.0, 0.0, 0.0])
@@ -446,11 +498,8 @@ class CompassSensor(threading.Thread):
 
     def run(self) -> None:
         assert self.ser is not None
-        pattern = re.compile(
-            r"\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*"
-        )
         previous_time = time.time()
-        while True:
+        while not self.do_stop:
             line = b""
             try:
                 line = self.ser.readline()
@@ -496,6 +545,7 @@ class CompassSensor(threading.Thread):
                 self.heading = self.quaternion[1:4]
                 self.calculate_angle()
                 self.angle = self.yaw
+        self.ser.close()
 
     def calculate_angle(self) -> None:
         """
@@ -593,17 +643,15 @@ def open_aaronia_serial_dev() -> serial.Serial:
     )
     aaronia.write(b"$PAAG,MODE,START\r\n")
     aaronia.write(b"$PAAG,MODE,RATE,25\r\n")
+    aaronia.write(b"$GPGGA,MODE,START\r\n")
     return aaronia
 
 
 def open_aaronia_socket_dev(host_port: str) -> socket.SocketIO:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     host_port_split = host_port.split(":")
-    print(f"Connecting {host_port_split[0]} port {int(host_port_split[1])}")
     sock.connect((host_port_split[0], int(host_port_split[1])))
-    print("Connected")
     sock_reader: socket.SocketIO = socket.SocketIO(sock, mode="r")
-    print("Socket reader created")
     # Initializing not needed: it is done on the server side.
     # aaronia.write(b"$PAAG,MODE,START\r\n")
     # aaronia.write(b"$PAAG,MODE,RATE,25\r\n")
