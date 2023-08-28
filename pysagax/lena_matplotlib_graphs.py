@@ -324,6 +324,125 @@ class AngleSpectrumGraph(GraphImage):
         self.spectrum = data
 
 
+class MagnitudeSpectrumGraph(GraphImage):
+    def __init__(
+        self, plot: matplotlib.axes.SubplotBase, params: GraphParameters
+    ) -> None:
+        super().__init__(plot)
+        self.params = params
+
+        self.spectrum = np.zeros([self.params.bin_count])
+        """
+        Spectrum data (numpy vector)
+        """
+        self.marker_enabled: bool = False
+        """
+        Marker display is enabled
+        """
+
+        self.marker_bin: int = 0
+        """
+        Location of the marker
+        """
+
+        self.marker_value: float = 0
+        """
+        Value of marker
+        """
+
+        self.color: str = "blue"
+        """
+        Color of the plot image
+        """
+        self.vmin: float = -120
+        self.vmax: float = 0
+        self.rect: Any = None
+        self.roi_center = 0
+        self.roi_width = 0
+
+    def coord_to_freq(self, coord: float) -> float:
+        return (coord - self.params.bin_count / 2) * (
+            self.params.iq_rate / self.params.bin_count
+        ) + self.params.center_frequency
+
+    def bin_freq_formatter(self, x: float, pos: Any = None) -> str:
+        return f"{self.coord_to_freq(x) / 1e6:.3f}M"
+
+    def angle_format_coord(self, x: float, y: float) -> str:
+        if 0 < x < len(self.spectrum):
+            val = self.spectrum[int(x)]
+        else:
+            val = numpy.float64(0.0)
+        return (
+            f"Frequency: {self.bin_freq_formatter(x)} (bin {int(x)}), "
+            f"Value: {val:.3f} "
+        )
+
+    def init_image(self) -> None:
+        super().init_image()
+        self.spectrum = np.zeros([self.params.bin_count])
+        self.image = self.plot.plot(  # type: ignore
+            self.spectrum, lw=1, color=self.color, animated=True
+        )[0]
+        # Create a Rectangle patch
+        self.rect = matplotlib.patches.Rectangle(
+            (0, self.vmin),
+            0,
+            self.vmax - self.vmin,
+            linewidth=1,
+            edgecolor="r",
+            facecolor="none",
+        )  # type:ignore
+
+        # Add the patch to the Axes
+        self.plot.add_patch(self.rect)  # type:ignore
+        self.marker_image = self.plot.plot(0, 0, "or", animated=True)[0]  # type: ignore
+
+    def initialize(self, color: str) -> "MagnitudeSpectrumGraph":
+        self.color = color
+        self.init_image()
+        return self
+
+    def make_plot(self) -> "MagnitudeSpectrumGraph":
+        self.init_plot()
+        return self
+
+    def init_plot(self) -> None:
+        super().init_plot()
+        assert self.plot is not None
+        self.plot.xaxis.set_major_formatter(  # type: ignore
+            matplotlib.ticker.FuncFormatter(self.bin_freq_formatter)  # type: ignore
+        )
+
+        self.plot.xaxis.set_major_locator(HalfLocator(max=self.params.bin_count))  # type: ignore
+        self.plot.tick_params(axis="x", labelrotation=45)  # type: ignore
+        self.plot.yaxis.set_major_formatter(  # type: ignore
+            matplotlib.ticker.StrMethodFormatter("{x:.2f}")  # type: ignore
+        )
+        self.plot.grid(axis="both")
+        self.plot.set_ylim(self.vmin, self.vmax)
+        self.plot.set_aspect("auto")  # type: ignore
+
+    def update(self) -> None:
+        super().update()
+        self.image.set_ydata(self.spectrum)  # type: ignore
+        self.rect.set_x(self.roi_center - self.roi_width // 2)
+        self.rect.set_width(self.roi_width)
+        self.marker_image.set_xdata(self.marker_bin)  # type: ignore
+        self.marker_image.set_ydata(self.marker_value)  # type: ignore
+
+    def add_data(self, data: npt.NDArray[np.float64]) -> None:
+        super().add_data(data)
+        self.set_data(data)
+
+    def set_data(self, data: npt.NDArray[np.float64]) -> None:
+        self.spectrum = data
+
+    def collect_images(self) -> list[matplotlib.artist.Artist]:
+        assert self.image is not None
+        return [self.image, self.rect]
+
+
 class WaterfallAngleGraph(GraphImage):
     def __init__(
         self, plot: matplotlib.axes.SubplotBase, params: GraphParameters

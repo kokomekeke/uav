@@ -43,6 +43,7 @@ from pysagax import (
     WaterfallAngleGraph,
     WaterfallMagnitudeGraph,
     CompassGraph,
+    MagnitudeSpectrumGraph,
 )
 from pysagax.sgx_dfg_map_server import DFGMapServer
 
@@ -89,6 +90,7 @@ octave_recording = False
 recording_sample_callback: Optional[Callable[[], None]]
 
 dfg_map_server = DFGMapServer()
+send_cs_commands: Optional[Callable[[str], None]] = None
 
 
 class CommandsConnectionThread(BaseConnection, threading.Thread):
@@ -139,12 +141,20 @@ class TestStreamDisplayThread(threading.Thread):
         """
         Reference to the matplotlib figure.
         """
-        self.magnitude_plot: Optional[object] = None
+        self.magnitude_waterfall_plot: Optional[object] = None
         """
         Matplotlib plot (axes) object for the magnitude plot
         """
+        self.magnitude_waterfall_graph: Optional[WaterfallMagnitudeGraph] = None
+        """
+        Matplotlib image object for the magnitude plot
+        """
 
-        self.magnitude_graph: Optional[WaterfallMagnitudeGraph] = None
+        self.magnitude_spectrum_plot: Optional[object] = None
+        """
+        Matplotlib plot (axes) object for the magnitude plot
+        """
+        self.magnitude_spectrum_graph: Optional[MagnitudeSpectrumGraph] = None
         """
         Matplotlib image object for the magnitude plot
         """
@@ -374,9 +384,10 @@ class TestStreamDisplayThread(threading.Thread):
             self.create_anim()
             self.animation_started = True
 
-        assert self.magnitude_graph is not None
-        self.magnitude_graph.add_data(packet.magnitude_spectrum)
-        self.update_sensors_and_graphs()
+        assert self.magnitude_waterfall_graph is not None
+        assert self.magnitude_spectrum_graph is not None
+        self.magnitude_waterfall_graph.add_data(packet.magnitude_spectrum)
+        self.magnitude_spectrum_graph.add_data(packet.magnitude_spectrum)
         self.log_octave_data()
 
         global df_value
@@ -477,6 +488,27 @@ class TestStreamDisplayThread(threading.Thread):
             image_list.extend(graph.collect_images())
         return image_list
 
+    def click_handler(self, event: Any) -> None:
+        if self.magnitude_spectrum_graph is None:
+            return
+        if event.inaxes == self.magnitude_spectrum_graph.plot:
+            global send_cs_commands
+            assert send_cs_commands is not None
+            roi_span = 5000
+            roi_freq = self.magnitude_spectrum_graph.coord_to_freq(event.xdata)
+            print(f"{roi_freq:0f}Hz")
+            send_cs_commands(
+                f"ROI:CenterFrequency! {roi_freq:.0f};"
+                f"ROI:Span! {roi_span:.0f};"
+                f"ROI:Configure!;"
+            )
+            self.magnitude_spectrum_graph.roi_center = event.xdata
+            self.magnitude_spectrum_graph.roi_width = int(
+                roi_span * (self.params.bin_count / self.params.iq_rate)
+            )
+
+        # print(vars(event))
+
     def create_anim(self) -> None:
         global args
         """
@@ -489,21 +521,30 @@ class TestStreamDisplayThread(threading.Thread):
         self.fig_ref.clf()
 
         grid_spec = self.fig_ref.add_gridspec(  # type: ignore
-            nrows=2, ncols=2, width_ratios=(3, 2), height_ratios=(1, 1)
+            nrows=3, ncols=2, width_ratios=(3, 2), height_ratios=(2, 1, 1)
         )
-        self.magnitude_plot = self.fig_ref.add_subplot(grid_spec[:, 0])
-        self.magnitude_graph = WaterfallMagnitudeGraph(
-            self.magnitude_plot, self.params
+        self.magnitude_waterfall_plot = self.fig_ref.add_subplot(grid_spec[0:2, 0])
+        self.magnitude_waterfall_graph = WaterfallMagnitudeGraph(
+            self.magnitude_waterfall_plot, self.params
         ).initialize()
-        colorbar = self.fig_ref.colorbar(  # type: ignore
-            self.magnitude_graph.image, format=lambda x, _: f"{x:.0f}dB"
+        # colorbar = self.fig_ref.colorbar(  # type: ignore
+        #     self.magnitude_waterfall_graph.image, format=lambda x, _: f"{x:.0f}dB"
+        # )
+        self.magnitude_waterfall_graph.make_plot()
+
+        self.magnitude_spectrum_plot = self.fig_ref.add_subplot(grid_spec[2, 0])
+        self.magnitude_spectrum_graph = (
+            MagnitudeSpectrumGraph(self.magnitude_spectrum_plot, self.params)
+            .initialize(color="blue")
+            .make_plot()
         )
-        self.magnitude_graph.make_plot()
+
+        self.fig_ref.canvas.callbacks.connect("button_press_event", self.click_handler)  # type: ignore
 
         self.compass_plot = self.fig_ref.add_subplot(
-            grid_spec[0, 1], projection="polar"
+            grid_spec[1:, 1], projection="polar"
         )
-        self.df_plot = self.fig_ref.add_subplot(grid_spec[1, 1], projection="polar")
+        self.df_plot = self.fig_ref.add_subplot(grid_spec[0, 1], projection="polar")
         self.df_graph = (
             CompassGraph(self.df_plot, self.params)
             .initialize("blue", "DF Angle")
@@ -522,7 +563,8 @@ class TestStreamDisplayThread(threading.Thread):
         self.graph_list = [
             graph
             for graph in [
-                self.magnitude_graph,
+                self.magnitude_waterfall_graph,
+                self.magnitude_spectrum_graph,
                 self.df_graph,
                 self.compass_graph,
                 self.compass_df_graph,
@@ -718,6 +760,8 @@ class ClientWindow(tkinter.Frame):
         global dfg_map_server
         dfg_map_server.start()
         self.status_watcher_thread.start()
+        global send_cs_commands
+        send_cs_commands = self.send_commands  # todo this is ugly
 
     def start_commands(self) -> None:
         connect_string = 'UHD "serial=8001680,serial=8001820" "A:A A:B"'
@@ -725,8 +769,6 @@ class ClientWindow(tkinter.Frame):
         bw = 300000
         gain = 45
         bin_count = burst_stride = 1024
-        roi_freq = 145.5e6
-        roi_span = 2500
         self.send_commands(
             f"SOURCE:Path! {connect_string};"
             f"SOURCE:CenterFrequency! {freq:.0f};"
@@ -741,10 +783,7 @@ class ClientWindow(tkinter.Frame):
             f"AOA:Configure!;"
             f"SOURCE:Start!;"
             f"ROI:Enable! 1;"
-            f"ROI:CenterFrequency! {roi_freq:.0f};"
-            f"ROI:Span! {roi_span:.0f};"
             f"ROI:Threshold! -150;"
-            f"ROI:Configure!;"
         )
 
     def rec_commands(self) -> None:
