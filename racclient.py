@@ -496,7 +496,6 @@ class TestStreamDisplayThread(threading.Thread):
             assert send_cs_commands is not None
             roi_span = 5000
             roi_freq = self.magnitude_spectrum_graph.coord_to_freq(event.xdata)
-            print(f"{roi_freq:0f}Hz")
             send_cs_commands(
                 f"ROI:CenterFrequency! {roi_freq:.0f};"
                 f"ROI:Span! {roi_span:.0f};"
