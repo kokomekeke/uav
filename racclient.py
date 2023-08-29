@@ -90,7 +90,6 @@ octave_recording = False
 recording_sample_callback: Optional[Callable[[], None]]
 
 dfg_map_server = DFGMapServer()
-send_cs_commands: Optional[Callable[[str], None]] = None
 
 
 class CommandsConnectionThread(BaseConnection, threading.Thread):
@@ -128,10 +127,13 @@ on the matplotlib plots
 
 
 class TestStreamDisplayThread(threading.Thread):
-    def __init__(self) -> None:
+    def __init__(self, client_window) -> None:
         super().__init__()
         global args
         self.params = GraphParameters()
+
+        self.client_window = client_window
+
         self.params.waterfall_size = args.wf
         """
         Amount of spectrum lines to be displayed on the waterfall diagram.
@@ -500,9 +502,8 @@ class TestStreamDisplayThread(threading.Thread):
         if self.magnitude_spectrum_graph is None:
             return
         if event.inaxes == self.magnitude_spectrum_graph.plot:
-            global send_cs_commands
-            assert send_cs_commands is not None
             roi_span = 100000 ##5000 ##TODO
+            roi_span = pysagax.si_to_float(self.client_window.roi_span_string.get())
             roi_freq = self.magnitude_spectrum_graph.coord_to_freq(event.xdata)
             # roi_threshold = self.magnitude_spectrum_graph.coord_to_freq(event.ydata)
             roi_threshold = event.ydata
@@ -512,7 +513,7 @@ class TestStreamDisplayThread(threading.Thread):
             #     f"ROI:Threshold! {math.floor(roi_threshold):.0f};"
             #     f"ROI:Configure!;"
             # )
-            send_cs_commands(roi_freq, roi_span, math.floor(roi_threshold))
+            self.client_window.update_roi_settings(roi_freq, roi_span, math.floor(roi_threshold))
             self.magnitude_spectrum_graph.roi_center = event.xdata
             self.magnitude_spectrum_graph.roi_width = int(
                 roi_span * (self.params.bin_count / self.params.iq_rate)
@@ -613,8 +614,9 @@ class ClientWindow(tkinter.Frame):
         self.bw_string = tkinter.StringVar(value="1M")
         self.gain_string = tkinter.StringVar(value="50")    ##TODO: int instead of str
         self.bin_count_string = tkinter.StringVar(value="128")
+        self.burst_stride_string = tkinter.StringVar(value="128")
         self.roi_center_string = tkinter.StringVar(value="300M") 
-        self.roi_span_string = tkinter.StringVar(value="1M") 
+        self.roi_span_string = tkinter.StringVar(value="50k") 
         self.roi_threshold_string = tkinter.StringVar(value="-30") 
         """
         Variable for the current value of the host textbox
@@ -760,6 +762,12 @@ class ClientWindow(tkinter.Frame):
         roi_threshold_entry = ttk.Entry(control_frame, textvariable=self.roi_threshold_string)
         roi_threshold_entry.grid(column=3, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
 
+        burst_stride_entry_label = ttk.Label(control_frame, text="Burst stride:")  #TODO:separate bin count and burst stride setting?
+        burst_stride_entry_label.grid(column=2, row=3, sticky=tkinter.W, padx=5, pady=5)
+
+        burst_stride_entry = ttk.Entry(control_frame, textvariable=self.burst_stride_string)
+        burst_stride_entry.grid(column=3, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
+    
         self.start_button = tkinter.Button(
             control_frame, text="Start", command=self.start_commands
         )
@@ -809,8 +817,6 @@ class ClientWindow(tkinter.Frame):
         global dfg_map_server
         dfg_map_server.start()
         self.status_watcher_thread.start()
-        global send_cs_commands
-        send_cs_commands = self.update_roi_settings  # todo this is ugly
 
         self.recording_started = False
 
@@ -831,7 +837,8 @@ class ClientWindow(tkinter.Frame):
         freq = pysagax.si_to_float(self.freq_string.get())
         bw = pysagax.si_to_float(self.bw_string.get())
         gain = self.gain_string.get()
-        bin_count = burst_stride = self.bin_count_string.get()
+        bin_count = self.bin_count_string.get()
+        burst_stride = self.burst_stride_string.get()
         roi_center = pysagax.si_to_float(self.roi_center_string.get())
         roi_span = pysagax.si_to_float(self.roi_span_string.get())
         roi_threshold = self.roi_threshold_string.get()
@@ -989,7 +996,7 @@ class ClientWindow(tkinter.Frame):
         self.command_thread.disconnect_action = self.disconnect_action
         self.command_thread.host_port = f"{self.host_address.get()}:12936"
         self.command_thread.start()
-        self.stream_thread = TestStreamDisplayThread()
+        self.stream_thread = TestStreamDisplayThread(self)
         self.stream_thread.recreate_canvas_action = self.create_canvas
         self.stream_thread.host_port = f"{self.host_address.get()}:12937"
         self.stream_thread.status_label_ref = self.status_stream_label
