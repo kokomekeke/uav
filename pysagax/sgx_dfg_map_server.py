@@ -57,6 +57,7 @@ class DFGMapServer(threading.Thread):
         self.data_ms: int = 0
         self.data_freq: int = 0
         self.data_angle: int = 0
+        self.server: Optional[socketserver.TCPServer] = None
 
     def run(self) -> None:
         super().run()
@@ -65,6 +66,7 @@ class DFGMapServer(threading.Thread):
         with socketserver.TCPServer((self.host, self.port), MyTCPHandler) as server:
             # Activate the server; this will keep running until you
             # interrupt the program with Ctrl-C
+            self.server = server
             server.allow_reuse_port = True
             server.serve_forever()
 
