@@ -353,7 +353,7 @@ class AccelCalibration(Calibration, threading.Thread):
         """
         self.calibration_instructions = "Hold the sensor still on a horizontal surface"
 
-        self.mpu_offsets: list[list[float]] = [[], [], []]  # offset array to be printed
+        self.mpu_offsets: list[list[float]] = [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]]  # offset array to be printed
 
     def accel_fit(self, x_input: float, m_x: float, b: float) -> float:
         return (m_x * x_input) + b  # fit equation for accel calibration
