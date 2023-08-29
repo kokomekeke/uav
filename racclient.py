@@ -254,6 +254,7 @@ class TestStreamDisplayThread(threading.Thread):
             "error": self.handle_debug_error_message,
             "warning": self.handle_debug_warning_message,
             "notification": self.handle_debug_notification_message,
+            "exportPhaseDiffs": self.hande_debug_phase_diffs,
         }
 
     def status_watcher_thread(
@@ -413,7 +414,7 @@ class TestStreamDisplayThread(threading.Thread):
 
     def handle_debug_packet(self, packet: CoreServicePacket) -> None:
         if packet.title not in self.debug_handlers.keys():
-            print(f"Unknown debug packet \"{packet.title}\"")
+            # print(f"Unknown debug packet \"{packet.title}\"")
             return
         self.debug_handlers[packet.title](packet)
 
@@ -425,6 +426,9 @@ class TestStreamDisplayThread(threading.Thread):
 
     def handle_debug_error_message(self, packet: CoreServicePacket) -> None:
         messagebox.showerror(packet.title.capitalize(), packet.contents.decode())
+    
+    def hande_debug_phase_diffs(self, packet: CoreServicePacket) -> None:
+        pass    #TODO
 
     def run(self) -> None:
         """
@@ -502,12 +506,13 @@ class TestStreamDisplayThread(threading.Thread):
             roi_freq = self.magnitude_spectrum_graph.coord_to_freq(event.xdata)
             # roi_threshold = self.magnitude_spectrum_graph.coord_to_freq(event.ydata)
             roi_threshold = event.ydata
-            send_cs_commands(
-                f"ROI:CenterFrequency! {roi_freq:.0f};"
-                f"ROI:Span! {roi_span:.0f};"
-                f"ROI:Threshold! {math.floor(roi_threshold):.0f};"
-                f"ROI:Configure!;"
-            )
+            # send_cs_commands(
+            #     f"ROI:CenterFrequency! {roi_freq:.0f};"
+            #     f"ROI:Span! {roi_span:.0f};"
+            #     f"ROI:Threshold! {math.floor(roi_threshold):.0f};"
+            #     f"ROI:Configure!;"
+            # )
+            send_cs_commands(roi_freq, roi_span, math.floor(roi_threshold))
             self.magnitude_spectrum_graph.roi_center = event.xdata
             self.magnitude_spectrum_graph.roi_width = int(
                 roi_span * (self.params.bin_count / self.params.iq_rate)
@@ -608,6 +613,9 @@ class ClientWindow(tkinter.Frame):
         self.bw_string = tkinter.StringVar(value="1M")
         self.gain_string = tkinter.StringVar(value="50")    ##TODO: int instead of str
         self.bin_count_string = tkinter.StringVar(value="128")
+        self.roi_center_string = tkinter.StringVar(value="300M") 
+        self.roi_span_string = tkinter.StringVar(value="1M") 
+        self.roi_threshold_string = tkinter.StringVar(value="-30") 
         """
         Variable for the current value of the host textbox
         """
@@ -705,8 +713,10 @@ class ClientWindow(tkinter.Frame):
             bottom_frame, relief=tkinter.RAISED, borderwidth=1
         )
 
-        control_frame.columnconfigure(0, weight=1)
+        control_frame.columnconfigure(0, weight=2)
         control_frame.columnconfigure(1, weight=1)
+        control_frame.columnconfigure(2, weight=2)
+        control_frame.columnconfigure(3, weight=1)
 
         freq_entry_label = ttk.Label(control_frame, text="Frequency:")
         freq_entry_label.grid(column=0, row=0, sticky=tkinter.W, padx=5, pady=5)
@@ -726,11 +736,29 @@ class ClientWindow(tkinter.Frame):
         gain_entry = ttk.Entry(control_frame, textvariable=self.gain_string)
         gain_entry.grid(column=1, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
 
-        bin_count_entry_label = ttk.Label(control_frame, text="Bin count & burst stride:")  #TODO:separate bin count and burst stride setting?
+        bin_count_entry_label = ttk.Label(control_frame, text="Bin count:")  #TODO:separate bin count and burst stride setting?
         bin_count_entry_label.grid(column=0, row=3, sticky=tkinter.W, padx=5, pady=5)
 
         bin_count_entry = ttk.Entry(control_frame, textvariable=self.bin_count_string)
         bin_count_entry.grid(column=1, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
+        
+        roi_center_entry_label = ttk.Label(control_frame, text="ROI center freq:")
+        roi_center_entry_label.grid(column=2, row=0, sticky=tkinter.W, padx=5, pady=5)
+
+        roi_center_entry = ttk.Entry(control_frame, textvariable=self.roi_center_string)
+        roi_center_entry.grid(column=3, row=0, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
+
+        roi_span_entry_label = ttk.Label(control_frame, text="ROI span:")
+        roi_span_entry_label.grid(column=2, row=1, sticky=tkinter.W, padx=5, pady=5)
+
+        roi_span_entry = ttk.Entry(control_frame, textvariable=self.roi_span_string)
+        roi_span_entry.grid(column=3, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
+
+        roi_threshold_entry_label = ttk.Label(control_frame, text="ROI threshold")
+        roi_threshold_entry_label.grid(column=2, row=2, sticky=tkinter.W, padx=5, pady=5)
+
+        roi_threshold_entry = ttk.Entry(control_frame, textvariable=self.roi_threshold_string)
+        roi_threshold_entry.grid(column=3, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
 
         self.start_button = tkinter.Button(
             control_frame, text="Start", command=self.start_commands
@@ -782,20 +810,31 @@ class ClientWindow(tkinter.Frame):
         dfg_map_server.start()
         self.status_watcher_thread.start()
         global send_cs_commands
-        send_cs_commands = self.send_commands  # todo this is ugly
+        send_cs_commands = self.update_roi_settings  # todo this is ugly
 
         self.recording_started = False
 
+    def update_roi_settings(self, roi_center, roi_span, roi_threshold):
+        self.roi_center_string.set(f"{roi_center:.0f}") #TODO: display using si prefixes
+        #self.roi_span_string.set(f"{roi_span:.0f}") #TODO: set span using spectrum graph
+        self.roi_threshold_string.set(f"{roi_threshold:.0f}")
+
+        self.send_commands(
+            f"ROI:CenterFrequency! {roi_center:.0f};"
+            f"ROI:Span! {pysagax.si_to_float(self.roi_span_string.get()):.0f};"
+            f"ROI:Threshold! {roi_threshold:.0f};"
+            f"ROI:Configure!;"
+        )
+
     def start_commands(self) -> None:
         connect_string = 'UHD "serial=8001680,serial=8001820" "A:A A:B"'
-        freq = 301.0e6
-        bw = 1000000 #300000
-        gain = 50
-        bin_count = burst_stride = 128 #1024
         freq = pysagax.si_to_float(self.freq_string.get())
         bw = pysagax.si_to_float(self.bw_string.get())
         gain = self.gain_string.get()
         bin_count = burst_stride = self.bin_count_string.get()
+        roi_center = pysagax.si_to_float(self.roi_center_string.get())
+        roi_span = pysagax.si_to_float(self.roi_span_string.get())
+        roi_threshold = self.roi_threshold_string.get()
         self.send_commands(
             f"SOURCE:Path! {connect_string};"
             f"SOURCE:CenterFrequency! {freq:.0f};"
@@ -809,8 +848,10 @@ class ClientWindow(tkinter.Frame):
             f"SOURCE:Configure!;"
             f"AOA:Configure!;"
             f"SOURCE:Start!;"
-            f"ROI:Enable! 1;"
-            f"ROI:Threshold! -30;"
+            f"ROI:Enable! 1;"            
+            f"ROI:CenterFrequency! {roi_center:.0f};"
+            f"ROI:Span! {roi_span:.0f};"
+            f"ROI:Threshold! {roi_threshold};"
             f"ROI:Configure!;"
         )
 
