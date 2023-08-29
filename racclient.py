@@ -337,13 +337,14 @@ class TestStreamDisplayThread(threading.Thread):
         if compass is not None and compass.magnetometer_values is not None:
             assert self.compass_graph is not None
             assert self.compass_df_graph is not None
-            angle = (
-                math.atan2(
-                    compass.magnetometer_values[1],
-                    compass.magnetometer_values[0],
-                )
-                + np.pi
-            )
+            # angle = (
+            #     math.atan2(
+            #         compass.magnetometer_values[1],
+            #         compass.magnetometer_values[0],
+            #     )
+            #     + np.pi
+            # )
+            angle = compass.angle
             compass_heading = angle if angle < np.pi else angle - 2 * np.pi
             self.compass_graph.add_point(compass_heading)
             if df_value is not None:
@@ -497,17 +498,21 @@ class TestStreamDisplayThread(threading.Thread):
         if event.inaxes == self.magnitude_spectrum_graph.plot:
             global send_cs_commands
             assert send_cs_commands is not None
-            roi_span = 5000
+            roi_span = 100000 ##5000 ##TODO
             roi_freq = self.magnitude_spectrum_graph.coord_to_freq(event.xdata)
+            # roi_threshold = self.magnitude_spectrum_graph.coord_to_freq(event.ydata)
+            roi_threshold = event.ydata
             send_cs_commands(
                 f"ROI:CenterFrequency! {roi_freq:.0f};"
                 f"ROI:Span! {roi_span:.0f};"
+                f"ROI:Threshold! {math.floor(roi_threshold):.0f};"
                 f"ROI:Configure!;"
             )
             self.magnitude_spectrum_graph.roi_center = event.xdata
             self.magnitude_spectrum_graph.roi_width = int(
                 roi_span * (self.params.bin_count / self.params.iq_rate)
             )
+            self.magnitude_spectrum_graph.roi_threshold = int(math.floor(event.ydata))
 
         # print(vars(event))
 
@@ -523,9 +528,9 @@ class TestStreamDisplayThread(threading.Thread):
         self.fig_ref.clf()
 
         grid_spec = self.fig_ref.add_gridspec(  # type: ignore
-            nrows=3, ncols=2, width_ratios=(3, 2), height_ratios=(2, 1, 1)
+            nrows=2, ncols=2, width_ratios=(3, 2), height_ratios=(1, 1)
         )
-        self.magnitude_waterfall_plot = self.fig_ref.add_subplot(grid_spec[0:2, 0])
+        self.magnitude_waterfall_plot = self.fig_ref.add_subplot(grid_spec[1, 0])
         self.magnitude_waterfall_graph = WaterfallMagnitudeGraph(
             self.magnitude_waterfall_plot, self.params
         ).initialize()
@@ -534,7 +539,7 @@ class TestStreamDisplayThread(threading.Thread):
         # )
         self.magnitude_waterfall_graph.make_plot()
 
-        self.magnitude_spectrum_plot = self.fig_ref.add_subplot(grid_spec[2, 0])
+        self.magnitude_spectrum_plot = self.fig_ref.add_subplot(grid_spec[0, 0])
         self.magnitude_spectrum_graph = (
             MagnitudeSpectrumGraph(self.magnitude_spectrum_plot, self.params)
             .initialize(color="blue")
@@ -544,7 +549,7 @@ class TestStreamDisplayThread(threading.Thread):
         self.fig_ref.canvas.callbacks.connect("button_press_event", self.click_handler)  # type: ignore
 
         self.compass_plot = self.fig_ref.add_subplot(
-            grid_spec[1:, 1], projection="polar"
+            grid_spec[1, 1], projection="polar"
         )
         self.df_plot = self.fig_ref.add_subplot(grid_spec[0, 1], projection="polar")
         self.df_graph = (
@@ -599,8 +604,10 @@ class ClientWindow(tkinter.Frame):
 
         self.host_address = tkinter.StringVar(value="10.1.1.113")
 
-        self.freq_string = tkinter.StringVar(value="300M")
-        self.bw_string = tkinter.StringVar(value="300k")
+        self.freq_string = tkinter.StringVar(value="301M")
+        self.bw_string = tkinter.StringVar(value="1M")
+        self.gain_string = tkinter.StringVar(value="50")    ##TODO: int instead of str
+        self.bin_count_string = tkinter.StringVar(value="128")
         """
         Variable for the current value of the host textbox
         """
@@ -713,17 +720,29 @@ class ClientWindow(tkinter.Frame):
         bw_entry = ttk.Entry(control_frame, textvariable=self.bw_string)
         bw_entry.grid(column=1, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
 
+        gain_entry_label = ttk.Label(control_frame, text="USRP Gain:")
+        gain_entry_label.grid(column=0, row=2, sticky=tkinter.W, padx=5, pady=5)
+
+        gain_entry = ttk.Entry(control_frame, textvariable=self.gain_string)
+        gain_entry.grid(column=1, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
+
+        bin_count_entry_label = ttk.Label(control_frame, text="Bin count & burst stride:")  #TODO:separate bin count and burst stride setting?
+        bin_count_entry_label.grid(column=0, row=3, sticky=tkinter.W, padx=5, pady=5)
+
+        bin_count_entry = ttk.Entry(control_frame, textvariable=self.bin_count_string)
+        bin_count_entry.grid(column=1, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
+
         self.start_button = tkinter.Button(
             control_frame, text="Start", command=self.start_commands
         )
         self.start_button.grid(
-            column=1, row=2, padx=10, pady=20, sticky=tkinter.E + tkinter.W
+            column=1, row=4, padx=10, pady=20, sticky=tkinter.E + tkinter.W
         )
         self.rec_button = tkinter.Button(
             control_frame, text="Rec", command=self.rec_commands
         )
         self.rec_button.grid(
-            column=0, row=2, padx=10, pady=20, sticky=tkinter.E + tkinter.W
+            column=0, row=4, padx=10, pady=20, sticky=tkinter.E + tkinter.W
         )
 
         control_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.LEFT)
@@ -765,12 +784,18 @@ class ClientWindow(tkinter.Frame):
         global send_cs_commands
         send_cs_commands = self.send_commands  # todo this is ugly
 
+        self.recording_started = False
+
     def start_commands(self) -> None:
         connect_string = 'UHD "serial=8001680,serial=8001820" "A:A A:B"'
-        freq = 145.49e6
-        bw = 300000
-        gain = 45
-        bin_count = burst_stride = 1024
+        freq = 301.0e6
+        bw = 1000000 #300000
+        gain = 50
+        bin_count = burst_stride = 128 #1024
+        freq = pysagax.si_to_float(self.freq_string.get())
+        bw = pysagax.si_to_float(self.bw_string.get())
+        gain = self.gain_string.get()
+        bin_count = burst_stride = self.bin_count_string.get()
         self.send_commands(
             f"SOURCE:Path! {connect_string};"
             f"SOURCE:CenterFrequency! {freq:.0f};"
@@ -785,11 +810,19 @@ class ClientWindow(tkinter.Frame):
             f"AOA:Configure!;"
             f"SOURCE:Start!;"
             f"ROI:Enable! 1;"
-            f"ROI:Threshold! -150;"
+            f"ROI:Threshold! -30;"
+            f"ROI:Configure!;"
         )
 
     def rec_commands(self) -> None:
-        pass  # TODO
+        if self.recording_started:
+            self.send_commands("RECORDING:Stop!;")            
+            self.rec_button.config(text="Start recording", relief="raised")
+            self.recording_started = False
+        else:
+            self.send_commands("RECORDING:Start!;")
+            self.rec_button.config(text="Stop recording", relief="sunken")
+            self.recording_started = True
 
     def send_commands(self, commands: str) -> None:
         """
@@ -954,6 +987,9 @@ class ClientWindow(tkinter.Frame):
         if compass is not None:
             compass.do_stop = True
             compass = None
+        global dfg_map_server
+        dfg_map_server.server.server_close()
+        dfg_map_server.join()
 
     def save_octave_commands(self) -> None:
         """

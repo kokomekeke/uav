@@ -359,6 +359,7 @@ class MagnitudeSpectrumGraph(GraphImage):
         self.rect: Any = None
         self.roi_center = 0
         self.roi_width = 0
+        self.roi_threshold = 0
 
     def coord_to_freq(self, coord: float) -> float:
         return (coord - self.params.bin_count / 2) * (
@@ -427,7 +428,9 @@ class MagnitudeSpectrumGraph(GraphImage):
         super().update()
         self.image.set_ydata(self.spectrum)  # type: ignore
         self.rect.set_x(self.roi_center - self.roi_width // 2)
+        self.rect.set_y(self.roi_threshold)
         self.rect.set_width(self.roi_width)
+        # self.rect.set_height( -self.roi_threshold)
         self.marker_image.set_xdata(self.marker_bin)  # type: ignore
         self.marker_image.set_ydata(self.marker_value)  # type: ignore
 
