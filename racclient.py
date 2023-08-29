@@ -411,6 +411,9 @@ class TestStreamDisplayThread(threading.Thread):
         self.roi_packet = None
 
     def handle_debug_packet(self, packet: CoreServicePacket) -> None:
+        if packet.title not in self.debug_handlers.keys():
+            print(f"Unknown debug packet \"{packet.title}\"")
+            return
         self.debug_handlers[packet.title](packet)
 
     def handle_debug_notification_message(self, packet: CoreServicePacket) -> None:
