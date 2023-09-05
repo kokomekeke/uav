@@ -23,6 +23,7 @@ from typing import Any, Callable, Optional
 import matplotlib.cm
 import numpy as np
 import numpy.typing as npt
+import scipy
 import serial
 from matplotlib import pyplot
 from matplotlib.animation import FuncAnimation  # type: ignore
@@ -103,7 +104,7 @@ class DisplayThread(threading.Thread):
         Matplotlib image object for the compass sensor waterfall
         """
 
-        self.waterfall_error: Optional[WaterfallAngleGraph] = None  ###
+        self.waterfall_error: Optional[WaterfallAngleGraph] = None 
         """
         Matplotlib image object for the compass sensor waterfall
         """
@@ -791,7 +792,7 @@ class ClientWindow(tkinter.Frame):
             ]
         )
 
-        runtime_backup_dir = "pandas_backup"
+        runtime_backup_dir = "pandas_backup"    #The script will periodically save the data collected so far to this directory
         if not os.path.exists(runtime_backup_dir):
             os.makedirs(runtime_backup_dir)
 
@@ -803,10 +804,10 @@ class ClientWindow(tkinter.Frame):
                 self.reconf_commands()
                 time.sleep(10)
 
-                # radiuses_to_test = index_of_best_radius(self.ant_radius_list, pysagax.si_to_float(self.freq_string.get()))
-                radiuses_to_test = [3]  # 12.47cm radius for every freq
+                # radii_to_test = index_of_best_radius(self.ant_radius_list, pysagax.si_to_float(self.freq_string.get()))
+                radii_to_test = [3]  # 12.47cm radius for every freq
 
-                for ant_radius in radiuses_to_test:
+                for ant_radius in radii_to_test:
                     self.ant_radius_combo.current(ant_radius)
 
                     for angle in range(len(self.angle_combo["values"])):
@@ -859,15 +860,13 @@ class ClientWindow(tkinter.Frame):
 
         new_row = pd.DataFrame(
             {
-                "Freq": pysagax.si_to_float(
-                    self.freq_string.get()
-                ),  # self.connection.freq,
+                "Freq": pysagax.si_to_float(self.freq_string.get()),  # self.connection.freq,
                 "USRP gain": self.gain_string.get(),
                 "Ant radius": self.ant_radius_list[self.ant_radius_combo.current()],
                 "Sample count": len(np.squeeze(self.heading_df_history)),
                 "Expected angle": self.heading_angle_history[0, 0] * 180 / np.pi,
-                "Measured mean": history_pd["df_history"].mean() * 180 / np.pi,
-                "Measured std dev": history_pd["angle_error"].std() * 180 / np.pi,
+                "Measured mean": scipy.stats.circmean(history_pd["df_history"], high=np.pi, low=-np.pi) * 180 / np.pi,
+                "Measured std dev": scipy.stats.circstd(history_pd["angle_error"], high=np.pi, low=-np.pi) * 180 / np.pi,
                 "RMS error": ((history_pd["angle_error"] * 180 / np.pi) ** 2).mean()
                 ** 0.5,
             },
@@ -875,15 +874,6 @@ class ClientWindow(tkinter.Frame):
         )  # type: ignore
         self.result_pd = pd.concat([self.result_pd, new_row], ignore_index=True)
         print(self.result_pd)
-        print(
-            "df_std_dev:",
-            history_pd["df_history"].std() * 180 / np.pi,
-            "error_std_dev:",
-            history_pd["angle_error"].std() * 180 / np.pi,
-            "difference:",
-            history_pd["df_history"].std() * 180 / np.pi
-            - history_pd["angle_error"].std() * 180 / np.pi,
-        )  ###
 
         self.heading_df_history = np.empty([0, 1])
         self.heading_angle_history = np.empty([0, 1])
@@ -911,7 +901,7 @@ class ClientWindow(tkinter.Frame):
             f"ROI:Threshold! -60;"
             f"ROI:CenterFrequency! {self.connection.roi_freq:.0f};"
             f"ROI:Configure!;"
-        )  ###TODO: ROI span and ROI threshold was changed to 50k and -60 for reconf command. This should be implemented for start command as well.
+        )  
 
     def start_stop_commands(self) -> None:
         if self.started:
