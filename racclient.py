@@ -9,6 +9,7 @@ import math
 import multiprocessing
 import os
 import queue
+import re
 import struct
 import threading
 import time
@@ -256,7 +257,8 @@ class TestStreamDisplayThread(threading.Thread):
             "error": self.handle_debug_error_message,
             "warning": self.handle_debug_warning_message,
             "notification": self.handle_debug_notification_message,
-            "exportPhaseDiffs": self.hande_debug_phase_diffs,
+            "exportPhaseDiffs": self.handle_debug_phase_diffs,
+            "peaks": self.handle_debug_peaks,
         }
 
     def status_watcher_thread(
@@ -416,7 +418,7 @@ class TestStreamDisplayThread(threading.Thread):
 
     def handle_debug_packet(self, packet: CoreServicePacket) -> None:
         if packet.title not in self.debug_handlers.keys():
-            # print(f"Unknown debug packet \"{packet.title}\"")
+            print(f'Unknown debug packet "{packet.title}"')
             return
         self.debug_handlers[packet.title](packet)
 
@@ -428,9 +430,18 @@ class TestStreamDisplayThread(threading.Thread):
 
     def handle_debug_error_message(self, packet: CoreServicePacket) -> None:
         messagebox.showerror(packet.title.capitalize(), packet.contents.decode())
-    
-    def hande_debug_phase_diffs(self, packet: CoreServicePacket) -> None:
-        pass    #TODO
+
+    def handle_debug_phase_diffs(self, packet: CoreServicePacket) -> None:
+        pass  # TODO
+
+    def handle_debug_peaks(self, packet: CoreServicePacket) -> None:
+        regex = r"peak(\d+)=(\d+)"
+        matches = re.findall(
+            regex, str(packet)
+        )  # creating a list of (ChannelID, PeakValue) tuples from the debug message
+        peaks = [peak[1] for peak in matches]
+
+        self.client_window.update_peak_plot(peaks)
 
     def run(self) -> None:
         """
@@ -502,7 +513,6 @@ class TestStreamDisplayThread(threading.Thread):
         if self.magnitude_spectrum_graph is None:
             return
         if event.inaxes == self.magnitude_spectrum_graph.plot:
-            roi_span = 100000 ##5000 ##TODO
             roi_span = pysagax.si_to_float(self.client_window.roi_span_string.get())
             roi_freq = self.magnitude_spectrum_graph.coord_to_freq(event.xdata)
             # roi_threshold = self.magnitude_spectrum_graph.coord_to_freq(event.ydata)
@@ -513,7 +523,9 @@ class TestStreamDisplayThread(threading.Thread):
             #     f"ROI:Threshold! {math.floor(roi_threshold):.0f};"
             #     f"ROI:Configure!;"
             # )
-            self.client_window.update_roi_settings(roi_freq, roi_span, math.floor(roi_threshold))
+            self.client_window.update_roi_settings(
+                roi_freq, roi_span, math.floor(roi_threshold)
+            )
             self.magnitude_spectrum_graph.roi_center = event.xdata
             self.magnitude_spectrum_graph.roi_width = int(
                 roi_span * (self.params.bin_count / self.params.iq_rate)
@@ -610,14 +622,14 @@ class ClientWindow(tkinter.Frame):
 
         self.host_address = tkinter.StringVar(value="10.1.1.113")
 
-        self.freq_string = tkinter.StringVar(value="301M")
-        self.bw_string = tkinter.StringVar(value="1M")
-        self.gain_string = tkinter.StringVar(value="50")    ##TODO: int instead of str
+        self.freq_string = tkinter.StringVar(value="371.5M")
+        self.bw_string = tkinter.StringVar(value="0.5M")
+        self.gain_string = tkinter.StringVar(value="80")  ##TODO: int instead of str
         self.bin_count_string = tkinter.StringVar(value="128")
-        self.burst_stride_string = tkinter.StringVar(value="128")
-        self.roi_center_string = tkinter.StringVar(value="300M") 
-        self.roi_span_string = tkinter.StringVar(value="50k") 
-        self.roi_threshold_string = tkinter.StringVar(value="-30") 
+        self.burst_stride_string = tkinter.StringVar(value="50000")
+        self.roi_center_string = tkinter.StringVar(value="371.6M")
+        self.roi_span_string = tkinter.StringVar(value="50k")
+        self.roi_threshold_string = tkinter.StringVar(value="-40")
         """
         Variable for the current value of the host textbox
         """
@@ -738,36 +750,54 @@ class ClientWindow(tkinter.Frame):
         gain_entry = ttk.Entry(control_frame, textvariable=self.gain_string)
         gain_entry.grid(column=1, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
 
-        bin_count_entry_label = ttk.Label(control_frame, text="Bin count:")  #TODO:separate bin count and burst stride setting?
+        bin_count_entry_label = ttk.Label(
+            control_frame, text="Bin count:"
+        )  # TODO:separate bin count and burst stride setting?
         bin_count_entry_label.grid(column=0, row=3, sticky=tkinter.W, padx=5, pady=5)
 
         bin_count_entry = ttk.Entry(control_frame, textvariable=self.bin_count_string)
-        bin_count_entry.grid(column=1, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
-        
+        bin_count_entry.grid(
+            column=1, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+        )
+
         roi_center_entry_label = ttk.Label(control_frame, text="ROI center freq:")
         roi_center_entry_label.grid(column=2, row=0, sticky=tkinter.W, padx=5, pady=5)
 
         roi_center_entry = ttk.Entry(control_frame, textvariable=self.roi_center_string)
-        roi_center_entry.grid(column=3, row=0, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
+        roi_center_entry.grid(
+            column=3, row=0, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+        )
 
         roi_span_entry_label = ttk.Label(control_frame, text="ROI span:")
         roi_span_entry_label.grid(column=2, row=1, sticky=tkinter.W, padx=5, pady=5)
 
         roi_span_entry = ttk.Entry(control_frame, textvariable=self.roi_span_string)
-        roi_span_entry.grid(column=3, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
+        roi_span_entry.grid(
+            column=3, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+        )
 
         roi_threshold_entry_label = ttk.Label(control_frame, text="ROI threshold")
-        roi_threshold_entry_label.grid(column=2, row=2, sticky=tkinter.W, padx=5, pady=5)
+        roi_threshold_entry_label.grid(
+            column=2, row=2, sticky=tkinter.W, padx=5, pady=5
+        )
 
-        roi_threshold_entry = ttk.Entry(control_frame, textvariable=self.roi_threshold_string)
-        roi_threshold_entry.grid(column=3, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
+        roi_threshold_entry = ttk.Entry(
+            control_frame, textvariable=self.roi_threshold_string
+        )
+        roi_threshold_entry.grid(
+            column=3, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+        )
 
-        burst_stride_entry_label = ttk.Label(control_frame, text="Burst stride:")  #TODO:separate bin count and burst stride setting?
+        burst_stride_entry_label = ttk.Label(control_frame, text="Burst stride:")
         burst_stride_entry_label.grid(column=2, row=3, sticky=tkinter.W, padx=5, pady=5)
 
-        burst_stride_entry = ttk.Entry(control_frame, textvariable=self.burst_stride_string)
-        burst_stride_entry.grid(column=3, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
-    
+        burst_stride_entry = ttk.Entry(
+            control_frame, textvariable=self.burst_stride_string
+        )
+        burst_stride_entry.grid(
+            column=3, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+        )
+
         self.start_button = tkinter.Button(
             control_frame, text="Start", command=self.start_commands
         )
@@ -789,6 +819,30 @@ class ClientWindow(tkinter.Frame):
         stat_frame.columnconfigure(1, weight=1)
         deviation_disp_label = ttk.Label(stat_frame, text="DF deviation:")
         deviation_disp_label.grid(column=0, row=3, sticky=tkinter.W, padx=5, pady=5)
+
+        self.peak_chart = tkinter.Canvas(stat_frame)
+        self.peak_chart.grid(column=0, row=4, sticky=tkinter.W, padx=5, pady=5)
+        self.peak_bars = [
+            self.peak_chart.create_rectangle(0, 0, 100, 20, fill="yellow"),
+            self.peak_chart.create_rectangle(0, 25, 100, 45, fill="blue"),
+            self.peak_chart.create_rectangle(0, 50, 100, 70, fill="green"),
+            self.peak_chart.create_rectangle(0, 75, 100, 95, fill="red"),
+        ]
+        self.peak_texts = [
+            self.peak_chart.create_text(
+                30, 10, text="32555", fill="black", font=("Helvetica 13 bold")
+            ),
+            self.peak_chart.create_text(
+                30, 35, text="32555", fill="black", font=("Helvetica 13 bold")
+            ),
+            self.peak_chart.create_text(
+                30, 60, text="32555", fill="black", font=("Helvetica 13 bold")
+            ),
+            self.peak_chart.create_text(
+                30, 85, text="32555", fill="black", font=("Helvetica 13 bold")
+            ),
+        ]
+
         disp_font = tkinter.font.Font(family="serif", size=16)
         deviation_disp = ttk.Label(
             stat_frame,
@@ -821,8 +875,10 @@ class ClientWindow(tkinter.Frame):
         self.recording_started = False
 
     def update_roi_settings(self, roi_center, roi_span, roi_threshold):
-        self.roi_center_string.set(f"{roi_center:.0f}") #TODO: display using si prefixes
-        #self.roi_span_string.set(f"{roi_span:.0f}") #TODO: set span using spectrum graph
+        self.roi_center_string.set(
+            f"{roi_center:.0f}"
+        )  # TODO: display using si prefixes
+        # self.roi_span_string.set(f"{roi_span:.0f}") #TODO: set span using spectrum graph
         self.roi_threshold_string.set(f"{roi_threshold:.0f}")
 
         self.send_commands(
@@ -833,7 +889,10 @@ class ClientWindow(tkinter.Frame):
         )
 
     def start_commands(self) -> None:
-        connect_string = 'UHD "serial=8001680,serial=8001820" "A:A A:B"'
+        # connect_string = 'UHD "serial=8001680,serial=8001820" "A:A A:B"'      # for 10.1.1.113 (RAC setup)
+        connect_string = (
+            'UHD "serial=8002051,serial=8002065" "A:A A:B"'  # for 10.1.1.139 (aron)
+        )
         freq = pysagax.si_to_float(self.freq_string.get())
         bw = pysagax.si_to_float(self.bw_string.get())
         gain = self.gain_string.get()
@@ -855,16 +914,17 @@ class ClientWindow(tkinter.Frame):
             f"SOURCE:Configure!;"
             f"AOA:Configure!;"
             f"SOURCE:Start!;"
-            f"ROI:Enable! 1;"            
+            f"ROI:Enable! 1;"
             f"ROI:CenterFrequency! {roi_center:.0f};"
             f"ROI:Span! {roi_span:.0f};"
             f"ROI:Threshold! {roi_threshold};"
             f"ROI:Configure!;"
+            f"DEBUG:Enable! exportPhaseDiffs;"
         )
 
     def rec_commands(self) -> None:
         if self.recording_started:
-            self.send_commands("RECORDING:Stop!;")            
+            self.send_commands("RECORDING:Stop!;")
             self.rec_button.config(text="Start recording", relief="raised")
             self.recording_started = False
         else:
@@ -930,6 +990,23 @@ class ClientWindow(tkinter.Frame):
         self.canvas_toolbar.pack(side=tkinter.TOP, fill=tkinter.X, expand=False)
         if self.stream_thread is not None:
             self.stream_thread.fig_ref = self.fig
+
+    def update_peak_plot(self, peaks: list) -> None:
+        """
+        Updates the bar plots for peak values.
+        """
+        max_width = self.peak_chart.winfo_width()
+        adc_resolution = 2**15
+        bar_widths = [
+            int(peak) / adc_resolution * max_width for peak in peaks
+        ]  # dbFS scaling might be more practical
+        self.peak_chart.coords(self.peak_bars[0], 0, 0, bar_widths[0], 20)
+        self.peak_chart.coords(self.peak_bars[1], 0, 25, bar_widths[1], 45)
+        self.peak_chart.coords(self.peak_bars[2], 0, 50, bar_widths[2], 70)
+        self.peak_chart.coords(self.peak_bars[3], 0, 75, bar_widths[3], 95)
+
+        for i in range(4):
+            self.peak_chart.itemconfig(self.peak_texts[i], text=str(peaks[i]))
 
     def status_watcher(self) -> None:
         """
