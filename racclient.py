@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import collections
 import math
 import multiprocessing
 import os
@@ -23,6 +24,7 @@ from typing import Any, Callable, Optional
 import matplotlib.cm
 import numpy as np
 import numpy.typing as npt
+import scipy
 import serial
 from matplotlib import pyplot
 from matplotlib.animation import FuncAnimation  # type: ignore
@@ -134,6 +136,12 @@ class TestStreamDisplayThread(threading.Thread):
         self.params = GraphParameters()
 
         self.client_window = client_window
+
+        stats_rolling_window_size = 20
+        self.df_value_history: collections.deque = collections.deque(maxlen=stats_rolling_window_size)
+        self.compass_heading_history: collections.deque = collections.deque(
+            maxlen=stats_rolling_window_size
+        )
 
         self.params.waterfall_size = args.wf
         """
@@ -370,6 +378,25 @@ class TestStreamDisplayThread(threading.Thread):
             dfg_map_server.update_lat_lon(compass.parser.lat, compass.parser.lon)
         assert self.df_graph is not None
         self.df_graph.add_point(df_value)
+
+        # Stats:  #maybe export to separate function?
+        if df_value is not None and compass_heading:
+            self.df_value_history.append(df_value)
+        if len(self.df_value_history):
+            self.compass_heading_history.append(compass_heading)
+            df_value_mean = scipy.stats.circmean(
+                list(self.df_value_history), high=np.pi, low=-np.pi
+            )
+            df_value_deviation = scipy.stats.circstd(
+                list(self.df_value_history), high=np.pi, low=-np.pi
+            )
+
+            self.client_window.df_value_mean_string.set(
+                f"{(df_value_mean * 180 / np.pi):.2f}°"
+            )
+            self.client_window.df_value_deviation_string.set(
+                f"{(df_value_deviation * 180 / np.pi):.2f}°"
+            )
 
     def handle_spectrum_packet(self, packet: CoreServicePacket) -> None:
         if packet.bin_count == 0:
@@ -630,6 +657,9 @@ class ClientWindow(tkinter.Frame):
         self.roi_center_string = tkinter.StringVar(value="371.6M")
         self.roi_span_string = tkinter.StringVar(value="50k")
         self.roi_threshold_string = tkinter.StringVar(value="-40")
+        self.df_value_mean_string = tkinter.StringVar(value="NaN")
+        self.df_value_deviation_string = tkinter.StringVar(value="NaN")
+        self.df_value_rms_string = tkinter.StringVar(value="NaN")
         """
         Variable for the current value of the host textbox
         """
@@ -817,43 +847,76 @@ class ClientWindow(tkinter.Frame):
 
         stat_frame.columnconfigure(0, weight=1)
         stat_frame.columnconfigure(1, weight=1)
-        deviation_disp_label = ttk.Label(stat_frame, text="DF deviation:")
-        deviation_disp_label.grid(column=0, row=3, sticky=tkinter.W, padx=5, pady=5)
-
-        self.peak_chart = tkinter.Canvas(stat_frame)
-        self.peak_chart.grid(column=0, row=4, sticky=tkinter.W, padx=5, pady=5)
-        self.peak_bars = [
-            self.peak_chart.create_rectangle(0, 0, 100, 20, fill="yellow"),
-            self.peak_chart.create_rectangle(0, 25, 100, 45, fill="blue"),
-            self.peak_chart.create_rectangle(0, 50, 100, 70, fill="green"),
-            self.peak_chart.create_rectangle(0, 75, 100, 95, fill="red"),
-        ]
-        self.peak_texts = [
-            self.peak_chart.create_text(
-                30, 10, text="32555", fill="black", font=("Helvetica 13 bold")
-            ),
-            self.peak_chart.create_text(
-                30, 35, text="32555", fill="black", font=("Helvetica 13 bold")
-            ),
-            self.peak_chart.create_text(
-                30, 60, text="32555", fill="black", font=("Helvetica 13 bold")
-            ),
-            self.peak_chart.create_text(
-                30, 85, text="32555", fill="black", font=("Helvetica 13 bold")
-            ),
-        ]
 
         disp_font = tkinter.font.Font(family="serif", size=16)
+
+        mean_disp_label = ttk.Label(stat_frame, text="DF mean:")
+        mean_disp_label.grid(column=0, row=0, sticky=tkinter.W, padx=5, pady=5)
+        mean_disp = ttk.Label(
+            stat_frame,
+            textvariable=self.df_value_mean_string,
+            font=disp_font,
+            foreground="red",
+            background="yellow",
+        )
+        mean_disp.grid(column=1, row=0, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
+
+        deviation_disp_label = ttk.Label(stat_frame, text="DF deviation:")
+        deviation_disp_label.grid(column=0, row=1, sticky=tkinter.W, padx=5, pady=5)
         deviation_disp = ttk.Label(
             stat_frame,
-            text="0.05 °",
+            textvariable=self.df_value_deviation_string,
             font=disp_font,
             foreground="red",
             background="yellow",
         )
         deviation_disp.grid(
-            column=1, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+            column=1, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=5
         )
+
+        rms_disp_label = ttk.Label(stat_frame, text="DF RMS error:")
+        rms_disp_label.grid(column=0, row=2, sticky=tkinter.W, padx=5, pady=5)
+        rms_disp = ttk.Label(
+            stat_frame,
+            textvariable=self.df_value_rms_string,
+            font=disp_font,
+            foreground="red",
+            background="yellow",
+        )
+        rms_disp.grid(column=1, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
+
+        self.peak_chart = tkinter.Canvas(
+            stat_frame,
+            bg="white",
+            bd=0,
+            highlightthickness=2,
+            highlightbackground="black",
+            height=109,
+        )
+        self.peak_chart.grid(
+            column=0, row=4, columnspan=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+        )
+        self.peak_bars = [
+            self.peak_chart.create_rectangle(2, 7, 100, 27, fill="yellow"),
+            self.peak_chart.create_rectangle(2, 32, 100, 52, fill="dodger blue"),
+            self.peak_chart.create_rectangle(2, 57, 100, 77, fill="green"),
+            self.peak_chart.create_rectangle(2, 82, 100, 102, fill="red"),
+        ]
+        self.peak_texts = [
+            self.peak_chart.create_text(
+                30, 17, text="32555", fill="black", font=("Helvetica 13 bold")
+            ),
+            self.peak_chart.create_text(
+                30, 42, text="32555", fill="black", font=("Helvetica 13 bold")
+            ),
+            self.peak_chart.create_text(
+                30, 67, text="32555", fill="black", font=("Helvetica 13 bold")
+            ),
+            self.peak_chart.create_text(
+                30, 92, text="32555", fill="black", font=("Helvetica 13 bold")
+            ),
+        ]
+
         stat_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.RIGHT)
 
         self.stream_packets_lb = tkinter.Listbox(bottom_frame, height=4)
@@ -997,16 +1060,22 @@ class ClientWindow(tkinter.Frame):
         """
         max_width = self.peak_chart.winfo_width()
         adc_resolution = 2**15
+
+        peaks_dbfs = [20 * math.log10(int(peak) / adc_resolution) for peak in peaks]
+        min_dbfs_level = 20 * math.log10(
+            400 / adc_resolution
+        )  # min value of the scale (aprox. noise level)
         bar_widths = [
-            int(peak) / adc_resolution * max_width for peak in peaks
-        ]  # dbFS scaling might be more practical
-        self.peak_chart.coords(self.peak_bars[0], 0, 0, bar_widths[0], 20)
-        self.peak_chart.coords(self.peak_bars[1], 0, 25, bar_widths[1], 45)
-        self.peak_chart.coords(self.peak_bars[2], 0, 50, bar_widths[2], 70)
-        self.peak_chart.coords(self.peak_bars[3], 0, 75, bar_widths[3], 95)
+            2 + (1 - peak / min_dbfs_level) * (max_width - 4) for peak in peaks_dbfs
+        ]  # logarithmic scaling
+
+        self.peak_chart.coords(self.peak_bars[0], 2, 7, bar_widths[0], 27)
+        self.peak_chart.coords(self.peak_bars[1], 2, 32, bar_widths[1], 52)
+        self.peak_chart.coords(self.peak_bars[2], 2, 57, bar_widths[2], 77)
+        self.peak_chart.coords(self.peak_bars[3], 2, 82, bar_widths[3], 102)
 
         for i in range(4):
-            self.peak_chart.itemconfig(self.peak_texts[i], text=str(peaks[i]))
+            self.peak_chart.itemconfig(self.peak_texts[i], text=f"{peaks_dbfs[i]:.0f}")
 
     def status_watcher(self) -> None:
         """
