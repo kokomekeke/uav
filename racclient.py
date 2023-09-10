@@ -123,6 +123,32 @@ class CommandsConnectionThread(BaseConnection, threading.Thread):
         self.run_socket()
 
 
+class EncoderThread(threading.Thread):  ###
+    def __init__(self, port: str):
+        super().__init__()
+        self.port = port
+        self.angle = None
+        self.connection = None
+
+    def run(self):
+        try:
+            self.connection = serial.Serial(self.port, baudrate=9600, timeout=0.5)
+        except:
+            print(f"Could not connect to encoder on port {self.port}")
+        while True:
+            try:
+                msg = self.connection.readline()
+                ctr = re.findall(r"\d+\.\d+", str(msg))
+                if len(ctr):
+                    self.angle = float(ctr[0])
+            except:
+                if self.angle is not None:
+                    self.angle = None
+                    print("Could not read line from encoder")
+                break
+        print("Press connect to try to reconnect to the encoder.")
+
+
 """
 This thread is responsible for handling the multiprocessing stream process and for displaying the stream contents
 on the matplotlib plots
@@ -138,8 +164,13 @@ class TestStreamDisplayThread(threading.Thread):
         self.client_window = client_window
 
         stats_rolling_window_size = 20
-        self.df_value_history: collections.deque = collections.deque(maxlen=stats_rolling_window_size)
+        self.df_value_history: collections.deque = collections.deque(
+            maxlen=stats_rolling_window_size
+        )
         self.compass_heading_history: collections.deque = collections.deque(
+            maxlen=stats_rolling_window_size
+        )
+        self.df_error_history: collections.deque = collections.deque(
             maxlen=stats_rolling_window_size
         )
 
@@ -189,6 +220,8 @@ class TestStreamDisplayThread(threading.Thread):
         """
         Matplotlib image object for the compass sensor waterfall
         """
+
+        self.encoder_graph: Optional[CompassGraph] = None
 
         self.df_graph: Optional[CompassGraph] = None
         """
@@ -380,8 +413,14 @@ class TestStreamDisplayThread(threading.Thread):
         self.df_graph.add_point(df_value)
 
         # Stats:  #maybe export to separate function?
-        if df_value is not None and compass_heading:
+        if df_value is not None:  ### and compass_heading is not none??
             self.df_value_history.append(df_value)
+            df_corrected = compass_heading + df_value
+            correct_heading = (
+                -1.3
+            )  ##can be calculted for tests from known transmitter and reciever locations
+            df_error = correct_heading - df_corrected
+            self.df_error_history.append(df_error)
         if len(self.df_value_history):
             self.compass_heading_history.append(compass_heading)
             df_value_mean = scipy.stats.circmean(
@@ -397,6 +436,15 @@ class TestStreamDisplayThread(threading.Thread):
             self.client_window.df_value_deviation_string.set(
                 f"{(df_value_deviation * 180 / np.pi):.2f}°"
             )
+            rms_error = math.sqrt(
+                np.mean([error**2 for error in self.df_error_history])
+            )
+            self.client_window.df_value_rms_string.set(
+                f"{(rms_error* 180 / np.pi):.2f}°"  #####
+            )
+
+            assert self.encoder_graph is not None
+            self.encoder_graph.add_point(self.client_window.encoder_thread.angle)
 
     def handle_spectrum_packet(self, packet: CoreServicePacket) -> None:
         if packet.bin_count == 0:
@@ -612,6 +660,10 @@ class TestStreamDisplayThread(threading.Thread):
             .make_plot()
         )
 
+        self.encoder_graph = CompassGraph(self.compass_plot, self.params).initialize(
+            "green", "Encoder Heading"
+        )
+
         self.graph_list = [
             graph
             for graph in [
@@ -620,6 +672,7 @@ class TestStreamDisplayThread(threading.Thread):
                 self.df_graph,
                 self.compass_graph,
                 self.compass_df_graph,
+                self.encoder_graph,
             ]
             if graph is not None
         ]
@@ -640,6 +693,7 @@ class ClientWindow(tkinter.Frame):
 
         self.command_thread: Optional[CommandsConnectionThread] = None
         self.stream_thread: Optional[TestStreamDisplayThread] = None
+        self.encoder_thread: Optional[EncoderThread] = None
 
         self.fig: Optional[pyplot.Figure] = None
         self.canvas: Optional[FigureCanvasTkAgg] = None
@@ -965,13 +1019,15 @@ class ClientWindow(tkinter.Frame):
         roi_span = pysagax.si_to_float(self.roi_span_string.get())
         roi_threshold = self.roi_threshold_string.get()
         self.send_commands(
-            f"SOURCE:Path! {connect_string};"
-            f"SOURCE:CenterFrequency! {freq:.0f};"
-            f"SOURCE:IqRate! {bw:.0f};"
-            f"SOURCE:ChannelGain! 0 {gain};"
-            f"SOURCE:ChannelGain! 1 {gain};"
-            f"SOURCE:ChannelGain! 2 {gain};"
-            f"SOURCE:ChannelGain! 3 {gain};"
+            ##f"SOURCE:Path! {connect_string};"
+            f'SOURCE:Path! SigMF "/home/sagax/Recordings/04-371M/20230830_Wed_125210/recording.sigmf-collection";'  ##location of recording
+            f"SOURCE:Position! 0;"  ##for DEBUG puurposes only, restarts the recording
+            # f"SOURCE:CenterFrequency! {freq:.0f};"
+            # f"SOURCE:IqRate! {bw:.0f};"
+            # f"SOURCE:ChannelGain! 0 {gain};"
+            # f"SOURCE:ChannelGain! 1 {gain};"
+            # f"SOURCE:ChannelGain! 2 {gain};"
+            # f"SOURCE:ChannelGain! 3 {gain};"
             f"AOA:BinCount! {bin_count};"
             f"SOURCE:BurstStride! {burst_stride};"
             f"SOURCE:Configure!;"
@@ -1148,6 +1204,10 @@ class ClientWindow(tkinter.Frame):
         self.stream_thread.status_label_ref = self.status_stream_label
         self.stream_thread.packets_lb_ref = self.stream_packets_lb
         self.stream_thread.start()
+
+        self.encoder_thread = EncoderThread("COM6")  ##TODO: set from gui
+        self.encoder_thread.start()
+
         global compass
         compass = CompassSensor(pysagax.AaroniaParser())
         try:
