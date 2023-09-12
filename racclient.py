@@ -24,6 +24,7 @@ from typing import Any, Callable, Optional
 import matplotlib.cm
 import numpy as np
 import numpy.typing as npt
+import pandas as pd
 import scipy
 import serial
 from matplotlib import pyplot
@@ -82,6 +83,8 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
+run_threads: bool = True
+
 roi_data = np.empty([0, 2])
 compass_data = np.empty([0, 1])
 
@@ -89,6 +92,9 @@ compass: Optional[CompassSensor] = None
 compass_heading: float = 0
 df_value: Optional[float] = 2
 octave_recording = False
+
+compass_offset = 0
+encoder_offset = 0
 
 recording_sample_callback: Optional[Callable[[], None]]
 
@@ -127,26 +133,26 @@ class EncoderThread(threading.Thread):  ###
     def __init__(self, port: str):
         super().__init__()
         self.port = port
-        self.angle = None
+        self.angle = float("NaN")
         self.connection = None
 
     def run(self):
+        global run_threads
         try:
             self.connection = serial.Serial(self.port, baudrate=9600, timeout=0.5)
         except:
             print(f"Could not connect to encoder on port {self.port}")
-        while True:
+            return
+        while run_threads:
             try:
                 msg = self.connection.readline()
                 ctr = re.findall(r"\d+\.\d+", str(msg))
                 if len(ctr):
-                    self.angle = float(ctr[0])
+                    self.angle = pysagax.normalize_angle(float(ctr[0]))
             except:
-                if self.angle is not None:
-                    self.angle = None
-                    print("Could not read line from encoder")
+                self.angle = float("NaN")
+                print("Encoder disconnected.")
                 break
-        print("Press connect to try to reconnect to the encoder.")
 
 
 """
@@ -173,6 +179,11 @@ class TestStreamDisplayThread(threading.Thread):
         self.df_error_history: collections.deque = collections.deque(
             maxlen=stats_rolling_window_size
         )
+
+        self.df_value_recording: Optional[list] = []
+        self.df_corrected_recording: Optional[list] = []
+        self.compass_heading_recording: Optional[list] = []
+        self.encoder_heading_recording: Optional[list] = []
 
         self.params.waterfall_size = args.wf
         """
@@ -308,9 +319,10 @@ class TestStreamDisplayThread(threading.Thread):
         """
         Entry point of the watcher thread
         """
+        global run_threads
         assert self.status_label_ref is not None
         assert self.packets_lb_ref is not None
-        while True:
+        while run_threads:
             try:
                 terminate = False
                 self.disconnect_value.value = self.disconnect
@@ -355,6 +367,7 @@ class TestStreamDisplayThread(threading.Thread):
         global recording_sample_callback
         global roi_data
         global compass_data
+        global compass_offset
         roi_data = np.append(
             roi_data,
             np.array(
@@ -368,7 +381,7 @@ class TestStreamDisplayThread(threading.Thread):
         )
         compass_data = np.append(
             compass_data,
-            np.array([[compass.angle] if compass is not None else ["NaN"]]),  # type: ignore
+            np.array([[compass.angle - compass_offset] if compass is not None else ["NaN"]]),  # type: ignore
             axis=0,
         )
         if recording_sample_callback is not None:
@@ -379,7 +392,12 @@ class TestStreamDisplayThread(threading.Thread):
         global compass_heading
         global df_value
         global dfg_map_server
+        global compass_offset
+        global encoder_offset
         dfg_map_server.update_timestamp()
+        compass_heading = float("NaN")
+        encoder_heading = float("NaN")
+        df_corrected = float("NaN")
         if compass is not None and compass.magnetometer_values is not None:
             assert self.compass_graph is not None
             assert self.compass_df_graph is not None
@@ -390,14 +408,10 @@ class TestStreamDisplayThread(threading.Thread):
             #     )
             #     + np.pi
             # )
-            angle = compass.angle
-            compass_heading = angle if angle < np.pi else angle - 2 * np.pi
+            compass_heading = pysagax.normalize_angle(compass.angle - compass_offset)
             self.compass_graph.add_point(compass_heading)
             if df_value is not None:
-                df_corrected = compass_heading + df_value
-                df_corrected = (
-                    df_corrected if df_corrected < np.pi else df_corrected - 2 * np.pi
-                )
+                df_corrected = pysagax.normalize_angle(compass_heading + df_value)
                 self.compass_df_graph.add_point(df_corrected)
                 dfg_map_server.update_angle(df_corrected, 1e6)
             else:
@@ -412,13 +426,16 @@ class TestStreamDisplayThread(threading.Thread):
         assert self.df_graph is not None
         self.df_graph.add_point(df_value)
 
+        if self.client_window.encoder_thread is not None:
+            assert self.encoder_graph is not None
+            encoder_heading = pysagax.normalize_angle(self.client_window.encoder_thread.angle - encoder_offset)
+            self.encoder_graph.add_point(encoder_heading)
+
         # Stats:  #maybe export to separate function?
         if df_value is not None:  ### and compass_heading is not none??
             self.df_value_history.append(df_value)
-            df_corrected = compass_heading + df_value
-            correct_heading = (
-                -1.3
-            )  ##can be calculted for tests from known transmitter and reciever locations
+            # df_corrected = compass_heading + df_value
+            correct_heading = 0  ##current method: offsets are set so that correct heading is 0 
             df_error = correct_heading - df_corrected
             self.df_error_history.append(df_error)
         if len(self.df_value_history):
@@ -443,8 +460,52 @@ class TestStreamDisplayThread(threading.Thread):
                 f"{(rms_error* 180 / np.pi):.2f}°"  #####
             )
 
-            assert self.encoder_graph is not None
-            self.encoder_graph.add_point(self.client_window.encoder_thread.angle)
+        
+        if self.client_window.recording_started:
+            self.df_value_recording.append(df_value)
+            self.df_corrected_recording.append(df_corrected)
+            self.compass_heading_recording.append(compass_heading)
+            self.encoder_heading_recording.append(encoder_heading)
+
+    def save_recording(self):
+            df_value_recording_deg = [d * 180 / np.pi if d is not None else None for d in self.df_value_recording]
+            df_corrected_recording_deg = [d * 180 / np.pi if d is not None else None for d in self.df_corrected_recording]
+            compass_heading_recording_deg = [d * 180 / np.pi if d is not None else None for d in self.compass_heading_recording]
+            encoder_heading_recording_deg = [d * 180 / np.pi if d is not None else None for d in self.encoder_heading_recording]
+            fig, (ax1, ax2) = pyplot.subplots(1, 2)
+            ax1.plot(compass_heading_recording_deg, df_value_recording_deg, color="red", label="compass-DF")
+            ax1.plot(encoder_heading_recording_deg, df_value_recording_deg, color="green", label="encoder-DF")
+            ax1.legend()
+            
+            ax2.plot(df_value_recording_deg, color="blue", label="DF angle")
+            ax2.plot(df_corrected_recording_deg, color="cyan", label="DF corrected")
+            ax2.plot(compass_heading_recording_deg, color="red", label="compass")
+            ax2.plot(encoder_heading_recording_deg, color="green", label="encoder")
+            ax2.legend()
+            
+            ax1.grid(visible=True)
+            ax1.set_ylabel("DF angle")
+            ax1.set_xlabel("Compass and encoder angle")
+            ax2.grid(visible=True)
+            ax2.set_ylabel("Angle")
+            ax2.set_xlabel("Sample")
+            ax1.set_xlim(-180, 180)
+            ax1.set_ylim(-180, 180)
+            ax2.set_ylim(-180, 180)
+            pyplot.show()
+
+            dataframe = pd.DataFrame(data={"df_angle": self.df_value_recording,
+                                           "df_corrected": self.df_corrected_recording,
+                                           "compass_angle": self.compass_heading_recording,
+                                           "encoder_angle": self.encoder_heading_recording})
+            
+            filename = f"racclient_recording_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            dataframe.to_csv(filename)
+            
+            self.df_value_recording = []
+            self.df_corrected_recording = []
+            self.compass_heading_recording = []
+            self.encoder_heading_recording = []
 
     def handle_spectrum_packet(self, packet: CoreServicePacket) -> None:
         if packet.bin_count == 0:
@@ -522,7 +583,7 @@ class TestStreamDisplayThread(threading.Thread):
         """
         Entry point of the data handling thread
         """
-
+        global run_threads
         global args
         status_queue: multiprocessing.Queue[str] = multiprocessing.Queue()
         """
@@ -556,7 +617,7 @@ class TestStreamDisplayThread(threading.Thread):
 
         # The code below will handle the preprocessed packets from the stream process
         assert self.status_label_ref
-        while True:
+        while run_threads:
             if self.disconnect:
                 break
             try:
@@ -633,11 +694,9 @@ class TestStreamDisplayThread(threading.Thread):
         self.magnitude_waterfall_graph.make_plot()
 
         self.magnitude_spectrum_plot = self.fig_ref.add_subplot(grid_spec[0, 0])
-        self.magnitude_spectrum_graph = (
-            MagnitudeSpectrumGraph(self.magnitude_spectrum_plot, self.params)
-            .initialize(color="blue")
-            .make_plot()
-        )
+        self.magnitude_spectrum_graph = MagnitudeSpectrumGraph(self.magnitude_spectrum_plot, self.params)
+        self.magnitude_spectrum_graph.vmin = -80
+        self.magnitude_spectrum_graph.initialize(color="blue").make_plot()
 
         self.fig_ref.canvas.callbacks.connect("button_press_event", self.click_handler)  # type: ignore
 
@@ -702,6 +761,7 @@ class ClientWindow(tkinter.Frame):
         self.pack(fill=tkinter.BOTH, expand=1)
 
         self.host_address = tkinter.StringVar(value="10.1.1.113")
+        self.encoder_port_string = tkinter.StringVar(value="COM6")
 
         self.freq_string = tkinter.StringVar(value="371.5M")
         self.bw_string = tkinter.StringVar(value="0.5M")
@@ -783,13 +843,39 @@ class ClientWindow(tkinter.Frame):
         )
         self.save_octave_button.pack(side=tkinter.LEFT)
 
+        self.status_command_label = tkinter.Label(
+            status_frame, text="Not connected", font=tkinter.font.Font(size=10)
+        )
+
+        offset_frame = tkinter.Frame(connect_frame, )        
+        offset_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.LEFT, pady=0, padx=(20, 0))
+        compass_offset_label_label = tkinter.Label(offset_frame, text="Compass offset: ", font=tkinter.font.Font(size=8))
+        compass_offset_label_label.grid(column=0, row=0, pady=0)
+        self.compass_offset_label = tkinter.Label(offset_frame, text=f"{(compass_offset * 180 / np.pi):.2f}°", font=tkinter.font.Font(size=8))
+        self.compass_offset_label.grid(column=1, row=0, pady=0)
+        encoder_offset_label_label = tkinter.Label(offset_frame, text="Encoder offset: ", font=tkinter.font.Font(size=8))
+        encoder_offset_label_label.grid(column=0, row=1, pady=0)
+        self.encoder_offset_label = tkinter.Label(offset_frame, text=f"{(encoder_offset * 180 / np.pi):.2f}°", font=tkinter.font.Font(size=8))
+        self.encoder_offset_label.grid(column=1, row=1, pady=0)
+
+        self.set_offset_button = tkinter.Button(connect_frame, text="Set offsets", command=self.set_offsets)
+        self.set_offset_button.pack(side=tkinter.LEFT)
+
         host_label = tkinter.Label(connect_frame, text="Host:")
         host_label.pack(
-            side=tkinter.LEFT, fill=tkinter.BOTH, padx=5, pady=10, expand=True
+            side=tkinter.LEFT, fill=tkinter.NONE, padx=(60, 5), pady=10, expand=False
         )
 
         self.host_entry = tkinter.Entry(connect_frame, textvariable=self.host_address)
-        self.host_entry.pack(side=tkinter.LEFT, padx=5, expand=True)
+        self.host_entry.pack(side=tkinter.LEFT, padx=5, expand=False)
+
+        encoder_port_label = tkinter.Label(connect_frame, text="Encoder port:")
+        encoder_port_label.pack(
+            side=tkinter.LEFT, fill=tkinter.BOTH, padx=(60, 5), pady=10, expand=False
+        )
+
+        self.encoder_port_entry = tkinter.Entry(connect_frame, textvariable=self.encoder_port_string)
+        self.encoder_port_entry.pack(side=tkinter.LEFT, padx=5, expand=False)
 
         self.disconnect_button = tkinter.Button(
             connect_frame, text="Disconnect", command=self.disconnect_commands
@@ -807,6 +893,8 @@ class ClientWindow(tkinter.Frame):
 
         bottom_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
         bottom_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
+        
+        self.plot_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
         control_frame = tkinter.Frame(
             bottom_frame, relief=tkinter.RAISED, borderwidth=1
         )
@@ -819,19 +907,19 @@ class ClientWindow(tkinter.Frame):
         freq_entry_label = ttk.Label(control_frame, text="Frequency:")
         freq_entry_label.grid(column=0, row=0, sticky=tkinter.W, padx=5, pady=5)
 
-        freq_entry = ttk.Entry(control_frame, textvariable=self.freq_string)
+        freq_entry = ttk.Entry(control_frame, textvariable=self.freq_string, width=11)
         freq_entry.grid(column=1, row=0, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
 
         bw_entry_label = ttk.Label(control_frame, text="Bandwidth:")
         bw_entry_label.grid(column=0, row=1, sticky=tkinter.W, padx=5, pady=5)
 
-        bw_entry = ttk.Entry(control_frame, textvariable=self.bw_string)
+        bw_entry = ttk.Entry(control_frame, textvariable=self.bw_string, width=11)
         bw_entry.grid(column=1, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
 
         gain_entry_label = ttk.Label(control_frame, text="USRP Gain:")
         gain_entry_label.grid(column=0, row=2, sticky=tkinter.W, padx=5, pady=5)
 
-        gain_entry = ttk.Entry(control_frame, textvariable=self.gain_string)
+        gain_entry = ttk.Entry(control_frame, textvariable=self.gain_string, width=11)
         gain_entry.grid(column=1, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
 
         bin_count_entry_label = ttk.Label(
@@ -839,7 +927,7 @@ class ClientWindow(tkinter.Frame):
         )  # TODO:separate bin count and burst stride setting?
         bin_count_entry_label.grid(column=0, row=3, sticky=tkinter.W, padx=5, pady=5)
 
-        bin_count_entry = ttk.Entry(control_frame, textvariable=self.bin_count_string)
+        bin_count_entry = ttk.Entry(control_frame, textvariable=self.bin_count_string, width=11)
         bin_count_entry.grid(
             column=1, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=5
         )
@@ -847,7 +935,7 @@ class ClientWindow(tkinter.Frame):
         roi_center_entry_label = ttk.Label(control_frame, text="ROI center freq:")
         roi_center_entry_label.grid(column=2, row=0, sticky=tkinter.W, padx=5, pady=5)
 
-        roi_center_entry = ttk.Entry(control_frame, textvariable=self.roi_center_string)
+        roi_center_entry = ttk.Entry(control_frame, textvariable=self.roi_center_string, width=11)
         roi_center_entry.grid(
             column=3, row=0, sticky=tkinter.E + tkinter.W, padx=5, pady=5
         )
@@ -855,7 +943,7 @@ class ClientWindow(tkinter.Frame):
         roi_span_entry_label = ttk.Label(control_frame, text="ROI span:")
         roi_span_entry_label.grid(column=2, row=1, sticky=tkinter.W, padx=5, pady=5)
 
-        roi_span_entry = ttk.Entry(control_frame, textvariable=self.roi_span_string)
+        roi_span_entry = ttk.Entry(control_frame, textvariable=self.roi_span_string, width=11)
         roi_span_entry.grid(
             column=3, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=5
         )
@@ -866,7 +954,7 @@ class ClientWindow(tkinter.Frame):
         )
 
         roi_threshold_entry = ttk.Entry(
-            control_frame, textvariable=self.roi_threshold_string
+            control_frame, textvariable=self.roi_threshold_string, width=11
         )
         roi_threshold_entry.grid(
             column=3, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5
@@ -876,7 +964,7 @@ class ClientWindow(tkinter.Frame):
         burst_stride_entry_label.grid(column=2, row=3, sticky=tkinter.W, padx=5, pady=5)
 
         burst_stride_entry = ttk.Entry(
-            control_frame, textvariable=self.burst_stride_string
+            control_frame, textvariable=self.burst_stride_string, width=11
         )
         burst_stride_entry.grid(
             column=3, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=5
@@ -886,23 +974,30 @@ class ClientWindow(tkinter.Frame):
             control_frame, text="Start", command=self.start_commands
         )
         self.start_button.grid(
-            column=1, row=4, padx=10, pady=20, sticky=tkinter.E + tkinter.W
+            column=3, row=4, padx=10, pady=5, sticky=tkinter.E + tkinter.W
         )
         self.rec_button = tkinter.Button(
             control_frame, text="Rec", command=self.rec_commands
         )
         self.rec_button.grid(
-            column=0, row=4, padx=10, pady=20, sticky=tkinter.E + tkinter.W
+            column=2, row=4, padx=10, pady=5, sticky=tkinter.E + tkinter.W
         )
 
         control_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.LEFT)
 
-        stat_frame = tkinter.Frame(bottom_frame, relief=tkinter.RAISED, borderwidth=1)
+        
+        self.stream_packets_lb = tkinter.Listbox(bottom_frame, height=4, width=75)
+
+        self.stream_packets_lb.pack(
+            side=tkinter.LEFT, fill=tkinter.BOTH, padx=6, expand=True
+        )
+
+        stat_frame = tkinter.Frame(bottom_frame, relief=tkinter.RAISED, borderwidth=1, width=600)
 
         stat_frame.columnconfigure(0, weight=1)
         stat_frame.columnconfigure(1, weight=1)
 
-        disp_font = tkinter.font.Font(family="serif", size=16)
+        disp_font = tkinter.font.Font(family="serif", size=14)
 
         mean_disp_label = ttk.Label(stat_frame, text="DF mean:")
         mean_disp_label.grid(column=0, row=0, sticky=tkinter.W, padx=5, pady=5)
@@ -913,10 +1008,10 @@ class ClientWindow(tkinter.Frame):
             foreground="red",
             background="yellow",
         )
-        mean_disp.grid(column=1, row=0, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
+        mean_disp.grid(column=1, row=0, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
 
         deviation_disp_label = ttk.Label(stat_frame, text="DF deviation:")
-        deviation_disp_label.grid(column=0, row=1, sticky=tkinter.W, padx=5, pady=5)
+        deviation_disp_label.grid(column=0, row=1, sticky=tkinter.W, padx=5, pady=3)
         deviation_disp = ttk.Label(
             stat_frame,
             textvariable=self.df_value_deviation_string,
@@ -925,11 +1020,11 @@ class ClientWindow(tkinter.Frame):
             background="yellow",
         )
         deviation_disp.grid(
-            column=1, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+            column=1, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=3
         )
 
         rms_disp_label = ttk.Label(stat_frame, text="DF RMS error:")
-        rms_disp_label.grid(column=0, row=2, sticky=tkinter.W, padx=5, pady=5)
+        rms_disp_label.grid(column=0, row=2, sticky=tkinter.W, padx=5, pady=3)
         rms_disp = ttk.Label(
             stat_frame,
             textvariable=self.df_value_rms_string,
@@ -937,7 +1032,7 @@ class ClientWindow(tkinter.Frame):
             foreground="red",
             background="yellow",
         )
-        rms_disp.grid(column=1, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
+        rms_disp.grid(column=1, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
 
         self.peak_chart = tkinter.Canvas(
             stat_frame,
@@ -971,13 +1066,7 @@ class ClientWindow(tkinter.Frame):
             ),
         ]
 
-        stat_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.RIGHT)
-
-        self.stream_packets_lb = tkinter.Listbox(bottom_frame, height=4)
-
-        self.stream_packets_lb.pack(
-            side=tkinter.BOTTOM, fill=tkinter.BOTH, padx=6, expand=True
-        )
+        stat_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.RIGHT)
 
         global recording_sample_callback
         recording_sample_callback = self.recording_sample_callback
@@ -1006,10 +1095,8 @@ class ClientWindow(tkinter.Frame):
         )
 
     def start_commands(self) -> None:
-        # connect_string = 'UHD "serial=8001680,serial=8001820" "A:A A:B"'      # for 10.1.1.113 (RAC setup)
-        connect_string = (
-            'UHD "serial=8002051,serial=8002065" "A:A A:B"'  # for 10.1.1.139 (aron)
-        )
+        connect_string = 'UHD "serial=8001680,serial=8001820" "A:A A:B"'      # for 10.1.1.113 (RAC setup)
+        # connect_string = 'UHD "serial=8002051,serial=8002065" "A:A A:B"'  # for 10.1.1.139 (aron)
         freq = pysagax.si_to_float(self.freq_string.get())
         bw = pysagax.si_to_float(self.bw_string.get())
         gain = self.gain_string.get()
@@ -1046,6 +1133,7 @@ class ClientWindow(tkinter.Frame):
             self.send_commands("RECORDING:Stop!;")
             self.rec_button.config(text="Start recording", relief="raised")
             self.recording_started = False
+            self.stream_thread.save_recording()
         else:
             self.send_commands("RECORDING:Start!;")
             self.rec_button.config(text="Stop recording", relief="sunken")
@@ -1137,10 +1225,11 @@ class ClientWindow(tkinter.Frame):
         """
         This runs in a separate thread and keeps the status bar updated
         """
+        global run_threads
         global dfg_map_server
         global compass
         try:
-            while True:
+            while run_threads:
                 if self.command_thread is not None:
                     self.status_command_label.config(
                         text=self.command_thread.status_text
@@ -1205,7 +1294,7 @@ class ClientWindow(tkinter.Frame):
         self.stream_thread.packets_lb_ref = self.stream_packets_lb
         self.stream_thread.start()
 
-        self.encoder_thread = EncoderThread("COM6")  ##TODO: set from gui
+        self.encoder_thread = EncoderThread(self.encoder_port_string.get())
         self.encoder_thread.start()
 
         global compass
@@ -1242,7 +1331,7 @@ class ClientWindow(tkinter.Frame):
             compass.do_stop = True
             compass = None
         global dfg_map_server
-        dfg_map_server.server.server_close()
+        dfg_map_server.run_thread = False
         dfg_map_server.join()
 
     def save_octave_commands(self) -> None:
@@ -1285,6 +1374,28 @@ class ClientWindow(tkinter.Frame):
         else:
             self.save_octave_button.config(text=f"Rec {roi_data.shape[0]}")
 
+    def set_offsets(self) -> None:
+        global compass_offset
+        global encoder_offset
+        try:
+            compass_offset = compass.angle
+        except:
+            pass
+        try:
+            encoder_offset = self.encoder_thread.angle
+        except:
+            pass
+        self.compass_offset_label.config(text=f"{(compass_offset * 180 / np.pi):.2f}°")
+        self.encoder_offset_label.config(text=f"{(encoder_offset * 180 / np.pi):.2f}°")
+
+
+def on_close():
+    global run_threads
+    dfg_map_server.run_thread = False
+    ex.disconnect_commands()
+    run_threads = False
+    root.destroy()
+
 
 if __name__ == "__main__":
     multiprocessing.set_start_method("spawn")
@@ -1292,5 +1403,6 @@ if __name__ == "__main__":
     ex = ClientWindow()
     root.geometry("1024x768")
     root.wm_title("RAC Test Client")
+    root.protocol("WM_DELETE_WINDOW", on_close)
     root.mainloop()
     ex.disconnect_commands()

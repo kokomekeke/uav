@@ -47,6 +47,7 @@ class DFGMapServer(threading.Thread):
     def __init__(self) -> None:
         super().__init__()
         self.daemon = True
+        self.run_thread = True
         self.total_packets: int = 0
         self.host = "0.0.0.0"
         self.port = 20000
@@ -68,7 +69,10 @@ class DFGMapServer(threading.Thread):
             # interrupt the program with Ctrl-C
             self.server = server
             server.allow_reuse_port = True
-            server.serve_forever()
+            server.timeout = 1
+            while self.run_thread:
+                server.handle_request()
+            self.server.server_close()
 
     def count_clients(self) -> int:
         global dfgmapserver_queues

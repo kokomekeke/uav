@@ -1,3 +1,4 @@
+import numpy as np
 from pysagax.lena_core_service import (
     CoreServicePacket,
     BaseConnection,
@@ -56,6 +57,13 @@ def si_to_float(si: str) -> float:
         return float(si[:-1]) * prefix[si[-1]]
     else:
         return float(si)
+    
+def normalize_angle(angle: float) -> float:
+    while angle > np.pi:
+        angle = angle - 2 * np.pi
+    while angle <= -np.pi:
+        angle = angle + 2 * np.pi
+    return angle
 
 
 __all__ = [
