@@ -104,6 +104,7 @@ dfg_map_server = DFGMapServer()
 class CommandsConnectionThread(BaseConnection, threading.Thread):
     def __init__(self) -> None:
         super(CommandsConnectionThread, self).__init__()
+        self.daemon = True
         self.incoming_buffer: bytearray = bytearray()
         self.status_text: str = ""
         self.incoming_messages_queue: queue.Queue[str] = queue.Queue()
@@ -132,6 +133,7 @@ class CommandsConnectionThread(BaseConnection, threading.Thread):
 class EncoderThread(threading.Thread):  ###
     def __init__(self, port: str):
         super().__init__()
+        self.daemon = True
         self.port = port
         self.angle = float("NaN")
         self.connection = None
@@ -153,6 +155,9 @@ class EncoderThread(threading.Thread):  ###
                 self.angle = float("NaN")
                 print("Encoder disconnected.")
                 break
+    def close(self):
+        if self.connection is not None:
+            self.connection.close()
 
 
 """
@@ -166,7 +171,7 @@ class TestStreamDisplayThread(threading.Thread):
         super().__init__()
         global args
         self.params = GraphParameters()
-
+        self.daemon = True
         self.client_window = client_window
 
         stats_rolling_window_size = 20
@@ -861,20 +866,31 @@ class ClientWindow(tkinter.Frame):
         self.set_offset_button = tkinter.Button(connect_frame, text="Set offsets", command=self.set_offsets)
         self.set_offset_button.pack(side=tkinter.LEFT)
 
+        host_label = tkinter.Label(connect_frame, text="Show spectrum for channel:")
+        host_label.pack(
+        side=tkinter.LEFT, fill=tkinter.NONE, padx=(20, 5), pady=10, expand=False
+        )
+
+        # self.channel_spectrum_combo_string = 
+        self.channel_spectrum_combo = ttk.Combobox(connect_frame, width=1)
+        self.channel_spectrum_combo["values"] = [0, 1, 2, 3]
+        self.channel_spectrum_combo.pack(side=tkinter.LEFT)
+        self.channel_spectrum_combo.bind("<<ComboboxSelected>>", self.choose_spectrum_commands)
+
         host_label = tkinter.Label(connect_frame, text="Host:")
         host_label.pack(
             side=tkinter.LEFT, fill=tkinter.NONE, padx=(60, 5), pady=10, expand=False
         )
 
-        self.host_entry = tkinter.Entry(connect_frame, textvariable=self.host_address)
+        self.host_entry = tkinter.Entry(connect_frame, textvariable=self.host_address, width=15)
         self.host_entry.pack(side=tkinter.LEFT, padx=5, expand=False)
 
         encoder_port_label = tkinter.Label(connect_frame, text="Encoder port:")
         encoder_port_label.pack(
-            side=tkinter.LEFT, fill=tkinter.BOTH, padx=(60, 5), pady=10, expand=False
+            side=tkinter.LEFT, fill=tkinter.BOTH, padx=(10, 5), pady=10, expand=False
         )
 
-        self.encoder_port_entry = tkinter.Entry(connect_frame, textvariable=self.encoder_port_string)
+        self.encoder_port_entry = tkinter.Entry(connect_frame, textvariable=self.encoder_port_string, width=8)
         self.encoder_port_entry.pack(side=tkinter.LEFT, padx=5, expand=False)
 
         self.disconnect_button = tkinter.Button(
@@ -1106,15 +1122,13 @@ class ClientWindow(tkinter.Frame):
         roi_span = pysagax.si_to_float(self.roi_span_string.get())
         roi_threshold = self.roi_threshold_string.get()
         self.send_commands(
-            ##f"SOURCE:Path! {connect_string};"
-            f'SOURCE:Path! SigMF "/home/sagax/Recordings/04-371M/20230830_Wed_125210/recording.sigmf-collection";'  ##location of recording
-            f"SOURCE:Position! 0;"  ##for DEBUG puurposes only, restarts the recording
-            # f"SOURCE:CenterFrequency! {freq:.0f};"
-            # f"SOURCE:IqRate! {bw:.0f};"
-            # f"SOURCE:ChannelGain! 0 {gain};"
-            # f"SOURCE:ChannelGain! 1 {gain};"
-            # f"SOURCE:ChannelGain! 2 {gain};"
-            # f"SOURCE:ChannelGain! 3 {gain};"
+            f"SOURCE:Path! {connect_string};"
+            f"SOURCE:CenterFrequency! {freq:.0f};"
+            f"SOURCE:IqRate! {bw:.0f};"
+            f"SOURCE:ChannelGain! 0 {gain};"
+            f"SOURCE:ChannelGain! 1 {gain};"
+            f"SOURCE:ChannelGain! 2 {gain};"
+            f"SOURCE:ChannelGain! 3 {gain};"
             f"AOA:BinCount! {bin_count};"
             f"SOURCE:BurstStride! {burst_stride};"
             f"SOURCE:Configure!;"
@@ -1326,6 +1340,8 @@ class ClientWindow(tkinter.Frame):
             self.stream_thread.disconnect = True
             if self.stream_thread.disconnect_value is not None:
                 self.stream_thread.disconnect_value.value = True
+        if self.encoder_thread is not None:
+            self.encoder_thread.close()
         global compass
         if compass is not None:
             compass.do_stop = True
@@ -1362,6 +1378,9 @@ class ClientWindow(tkinter.Frame):
         else:
             octave_recording = True
             self.save_octave_button.config(relief="sunken")
+
+    def choose_spectrum_commands(self, event):
+        self.send_commands(f"DEBUG:SpectrumChannel! {self.channel_spectrum_combo.current()};")
 
     def recording_sample_callback(self) -> None:
         if args.rec_count:
@@ -1406,3 +1425,8 @@ if __name__ == "__main__":
     root.protocol("WM_DELETE_WINDOW", on_close)
     root.mainloop()
     ex.disconnect_commands()
+    print(ex.stream_thread.is_alive())
+    print(ex.command_thread.is_alive())
+    print(ex.encoder_thread.is_alive())
+    print(ex.status_watcher_thread.is_alive())
+    print(dfg_map_server.is_alive())
