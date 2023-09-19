@@ -8,6 +8,7 @@ import socketserver
 import socket
 import threading
 from queue import Queue
+from typing import Optional
 
 import numpy as np
 

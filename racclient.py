@@ -43,7 +43,8 @@ from pysagax import (
     WaterfallAngleGraph,
     WaterfallMagnitudeGraph,
     CompassGraph,
-    MagnitudeSpectrumGraph,
+    MagnitudeSpectrumGraph, CoreServiceSpectrumPacket, CoreServiceEOFPacket, CoreServiceROIResultPacket,
+    CoreServiceROILackOfSignalPacket, CoreServiceDebugPacket,
 )
 from pysagax.sgx_dfg_map_server import DFGMapServer
 
@@ -94,7 +95,8 @@ dfg_map_server = DFGMapServer()
 
 class CommandsConnectionThread(BaseConnection, threading.Thread):
     def __init__(self) -> None:
-        super(CommandsConnectionThread, self).__init__()
+        BaseConnection.__init__(self)
+        threading.Thread.__init__(self)
         self.incoming_buffer: bytearray = bytearray()
         self.status_text: str = ""
         self.incoming_messages_queue: queue.Queue[str] = queue.Queue()
@@ -213,7 +215,7 @@ class TestStreamDisplayThread(threading.Thread):
         Action that recreates plot canvas
         """
 
-        self.roi_packet: Optional[CoreServicePacket] = None
+        self.roi_packet: Optional[CoreServiceROIResultPacket] = None
         """
         Latest ROI packet
         """
@@ -245,14 +247,16 @@ class TestStreamDisplayThread(threading.Thread):
         next iteration.
         """
 
-        self.packet_handlers: dict[int, Callable[[CoreServicePacket], None]] = {
-            1: self.handle_spectrum_packet,
-            2: self.handle_eof_packet,
-            3: self.handle_roi_result_packet,
-            4: self.handle_roi_lack_of_signal_packet,
-            6: self.handle_debug_packet,
+        self.packet_handlers: dict[
+            typing.Type[CoreServicePacket], Callable[[Any], None]
+        ] = {
+            CoreServiceSpectrumPacket: self.handle_spectrum_packet,
+            CoreServiceEOFPacket: self.handle_eof_packet,
+            CoreServiceROIResultPacket: self.handle_roi_result_packet,
+            CoreServiceROILackOfSignalPacket: self.handle_roi_lack_of_signal_packet,
+            CoreServiceDebugPacket: self.handle_debug_packet,
         }
-        self.debug_handlers: dict[str, Callable[[CoreServicePacket], None]] = {
+        self.debug_handlers: dict[str, Callable[[CoreServiceDebugPacket], None]] = {
             "error": self.handle_debug_error_message,
             "warning": self.handle_debug_warning_message,
             "notification": self.handle_debug_notification_message,
@@ -369,7 +373,7 @@ class TestStreamDisplayThread(threading.Thread):
         assert self.df_graph is not None
         self.df_graph.add_point(df_value)
 
-    def handle_spectrum_packet(self, packet: CoreServicePacket) -> None:
+    def handle_spectrum_packet(self, packet: CoreServiceSpectrumPacket) -> None:
         if packet.bin_count == 0:
             return
         if (
@@ -397,10 +401,10 @@ class TestStreamDisplayThread(threading.Thread):
         global df_value
         df_value = self.roi_packet.roi_azimuth if self.roi_packet else None
 
-    def handle_eof_packet(self, packet: CoreServicePacket) -> None:
+    def handle_eof_packet(self, packet: CoreServiceEOFPacket) -> None:
         pass
 
-    def handle_roi_result_packet(self, packet: CoreServicePacket) -> None:
+    def handle_roi_result_packet(self, packet: CoreServiceROIResultPacket) -> None:
         if self.params.iq_rate == 0:
             self.roi_bin = 0
         else:
@@ -411,25 +415,25 @@ class TestStreamDisplayThread(threading.Thread):
             )
             self.roi_packet = packet
 
-    def handle_roi_lack_of_signal_packet(self, packet: CoreServicePacket) -> None:
+    def handle_roi_lack_of_signal_packet(self, packet: CoreServiceROILackOfSignalPacket) -> None:
         self.roi_packet = None
 
-    def handle_debug_packet(self, packet: CoreServicePacket) -> None:
+    def handle_debug_packet(self, packet: CoreServiceDebugPacket) -> None:
         if packet.title not in self.debug_handlers.keys():
             # print(f"Unknown debug packet \"{packet.title}\"")
             return
         self.debug_handlers[packet.title](packet)
 
-    def handle_debug_notification_message(self, packet: CoreServicePacket) -> None:
+    def handle_debug_notification_message(self, packet: CoreServiceDebugPacket) -> None:
         self.notification_message = packet.contents.decode()
 
-    def handle_debug_warning_message(self, packet: CoreServicePacket) -> None:
+    def handle_debug_warning_message(self, packet: CoreServiceDebugPacket) -> None:
         messagebox.showwarning(packet.title.capitalize(), packet.contents.decode())
 
-    def handle_debug_error_message(self, packet: CoreServicePacket) -> None:
+    def handle_debug_error_message(self, packet: CoreServiceDebugPacket) -> None:
         messagebox.showerror(packet.title.capitalize(), packet.contents.decode())
     
-    def hande_debug_phase_diffs(self, packet: CoreServicePacket) -> None:
+    def hande_debug_phase_diffs(self, packet: CoreServiceDebugPacket) -> None:
         pass    #TODO
 
     def run(self) -> None:
@@ -484,7 +488,11 @@ class TestStreamDisplayThread(threading.Thread):
                 f"[{packet.stream_id}] {ts.strftime('%H:%M:%S')}.{int((packet.time_ns % 1e9) / 1e6):03d} - "
                 f"{str(packet)}",
             )  # handle UI in a separate thread, because UI calls are slow
-            self.packet_handlers[packet.packet_type](packet)
+            next(
+                handler
+                for packet_class, handler in self.packet_handlers.items()
+                if isinstance(packet, packet_class)
+            )(packet)
 
         self.animation_started = False
         stream_process.join()
