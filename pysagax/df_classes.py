@@ -7,8 +7,18 @@ from typing import Callable, Optional
 
 import numpy as np
 import pyvisa
+import typing
 
-from pysagax import CoreServicePacket, StreamConnectionProcess, BaseConnection
+from pysagax import (
+    CoreServicePacket,
+    StreamConnectionProcess,
+    BaseConnection,
+    CoreServiceSpectrumPacket,
+    CoreServiceEOFPacket,
+    CoreServiceROIResultPacket,
+    CoreServiceROILackOfSignalPacket,
+    CoreServiceDebugPacket,
+)
 
 
 class DfResult:
@@ -157,7 +167,8 @@ class DDF260(DfModule):
 
 class LenaCommandThread(BaseConnection, threading.Thread):
     def __init__(self) -> None:
-        super(LenaCommandThread, self).__init__()
+        BaseConnection.__init__(self)
+        threading.Thread.__init__(self)
 
     def receive_on_socket(self, data: bytes) -> None:
         """
@@ -194,12 +205,14 @@ class LenaDf(DfModule):
             CoreServicePacket
         ] = multiprocessing.Queue()
 
-        self.packet_handlers: dict[int, Callable[[CoreServicePacket], None]] = {
-            1: self.handle_main,
-            2: self.handle_dummy,
-            3: self.handle_roi_result_packet,
-            4: self.handle_roi_lost_packet,
-            6: self.handle_dummy,
+        self.packet_handlers: dict[
+            typing.Type[CoreServicePacket], Callable[[typing.Any], None]
+        ] = {
+            CoreServiceSpectrumPacket: self.handle_main,
+            CoreServiceEOFPacket: self.handle_dummy,
+            CoreServiceROIResultPacket: self.handle_roi_result_packet,
+            CoreServiceROILackOfSignalPacket: self.handle_roi_lost_packet,
+            CoreServiceDebugPacket: self.handle_dummy,
         }
         self.command_thread = LenaCommandThread()
         self.freq: float = 0
@@ -207,7 +220,7 @@ class LenaDf(DfModule):
         self.bw: float = 0
 
         self.gain: int = 40
-        self.connect_string: str = 'UHD "serial=8001680,serial=8001820" "A:A A:B"'
+        self.connect_string: str = 'UHD "serial=8002051,serial=8002065" "A:A A:B"'
 
         self.burst_stride: int = 4096
         self.bin_count: int = 4096
@@ -288,14 +301,14 @@ class LenaDf(DfModule):
     def handle_dummy(self, packet: CoreServicePacket) -> None:
         pass
 
-    def handle_main(self, packet: CoreServicePacket) -> None:
+    def handle_main(self, packet: CoreServiceSpectrumPacket) -> None:
         self.df_callback(self.result_buffer)
 
-    def handle_roi_result_packet(self, packet: CoreServicePacket) -> None:
+    def handle_roi_result_packet(self, packet: CoreServiceROIResultPacket) -> None:
         self.result_buffer = DfResult()
         self.result_buffer.azimuth = packet.roi_azimuth
 
-    def handle_roi_lost_packet(self, packet: CoreServicePacket) -> None:
+    def handle_roi_lost_packet(self, packet: CoreServiceROIResultPacket) -> None:
         self.result_buffer = DfResult()
         self.result_buffer.no_signal = True
 
@@ -337,7 +350,11 @@ class LenaDf(DfModule):
             packet: CoreServicePacket = self.packets_queue.get(
                 timeout=0.5
             )  # get a packet from the stream process
-            self.packet_handlers[packet.packet_type](packet)
+            next(
+                handler
+                for packet_class, handler in self.packet_handlers.items()
+                if isinstance(packet, packet_class)
+            )(packet)
         except queue.Empty:
             time.sleep(0.1)
             return

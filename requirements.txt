@@ -8,3 +8,4 @@ future~=0.18.3
 PyVISA~=1.13.0
 Pillow~=9.5.0
 pyquaternion~=0.9.9
+pandas~=1.5.3
