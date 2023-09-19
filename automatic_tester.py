@@ -9,6 +9,7 @@ import math
 import multiprocessing
 import os
 import queue
+import random
 import struct
 import threading
 import time
@@ -22,6 +23,7 @@ from typing import Any, Callable, Optional
 import matplotlib.cm
 import numpy as np
 import numpy.typing as npt
+import scipy
 import serial
 from matplotlib import pyplot
 from matplotlib.animation import FuncAnimation  # type: ignore
@@ -30,6 +32,7 @@ from matplotlib.backends.backend_tkagg import (  # type: ignore
     FigureCanvasTkAgg,
     NavigationToolbar2Tk,
 )
+import pandas as pd
 
 import pysagax
 from pysagax import (
@@ -48,6 +51,13 @@ from pysagax import (
     CompassGraph,
 )
 
+auto_test_params = {
+    "gains": range(35, 61, 5),  # list of USPR gain levels to test
+    "freqs": [],  # TODO
+    "antenna_radii": [],  # TODO
+    "angles": [],  # TODO
+    "burst_time": 1.0,  # length of collecting samples in seconds for each setting
+}  # TODO: create auto_test_param class
 parser = argparse.ArgumentParser(description="CS Test client parameters")
 parser.add_argument(
     "--wf",
@@ -90,6 +100,11 @@ class DisplayThread(threading.Thread):
         """
 
         self.waterfall_df: Optional[WaterfallAngleGraph] = None
+        """
+        Matplotlib image object for the compass sensor waterfall
+        """
+
+        self.waterfall_error: Optional[WaterfallAngleGraph] = None 
         """
         Matplotlib image object for the compass sensor waterfall
         """
@@ -198,6 +213,9 @@ class DisplayThread(threading.Thread):
         self.waterfall_df = WaterfallAngleGraph(
             self.waterfall_plot, self.params
         ).initialize("blue", "DF Heading")
+        self.waterfall_error = WaterfallAngleGraph(
+            self.waterfall_plot, self.params
+        ).initialize("green", "Heading Error")
         self.waterfall_compass = (
             WaterfallAngleGraph(self.waterfall_plot, self.params)
             .initialize("red", "Expected Heading")
@@ -221,6 +239,7 @@ class DisplayThread(threading.Thread):
             for graph in [
                 self.waterfall_compass,
                 self.waterfall_df,
+                self.waterfall_error,
                 self.compass_graph,
                 self.compass_heading_graph,
                 self.df_graph,
@@ -260,11 +279,11 @@ class ClientWindow(tkinter.Frame):
         self.started: bool = False
 
         self.gen_host_string = tkinter.StringVar(value="10.1.1.221")
-        self.host_string = tkinter.StringVar(value="localhost")
+        self.host_string = tkinter.StringVar(value="10.1.1.113")
         self.host_type = tkinter.StringVar(value="LENA")
         self.freq_string = tkinter.StringVar(value="300M")
         self.bw_string = tkinter.StringVar(value="300k")
-        self.gain_string = tkinter.StringVar(value="43")
+        self.gain_string = tkinter.StringVar(value="8")
         self.ant_radius_string = tkinter.StringVar(value="0")
         self.angle_string = tkinter.StringVar(value="45")
 
@@ -348,27 +367,27 @@ class ClientWindow(tkinter.Frame):
 
         self.freq_combo = ttk.Combobox(control_frame, textvariable=self.freq_string)
         self.freq_combo["values"] = [
-            "32M",
-            "40M",
-            "48M",
-            "50M",
-            "60M",
-            "75M",
-            "80M",
-            "96M",
-            "100M",
-            "120M",
+            # "32M",  #could not set gen freq error
+            # "40M",
+            # "48M",
+            # "50M",
+            # "60M",
+            # "75M",
+            # "80M",
+            # "96M",
+            # "100M",
+            # "120M",
             "150M",
             "160M",
             "200M",
             "240M",
             "300M",
             "400M",
-            "480M",
+            # "480M",    #could not set gen freq error
             "600M",
-            "800M",
-            "1200M",
-            "2400M",
+            # "800M", #no packets received
+            # "1200M", #no packets received
+            # "2400M", #no packets received
         ]
         self.freq_combo["state"] = "readonly"
         self.freq_combo.grid(
@@ -414,17 +433,21 @@ class ClientWindow(tkinter.Frame):
         self.ant_radius_combo = ttk.Combobox(
             control_frame, textvariable=self.ant_radius_string
         )
-        self.ant_radius_combo["values"] = list(
+        self.ant_radius_list = list(
             chain.from_iterable(
                 [
                     (
-                        f"{i * 0.062356831264 * math.sqrt(2) * 0.5 * 100:.2f} cm",
-                        f"{i * 0.062356831264 * 2 * 100:.2f} cm",
+                        i * 0.062356831264 * math.sqrt(2) * 0.5,
+                        i * 0.062356831264 * 2,
                     )
                     for i in range(12)
                 ]
             )
         )
+        self.ant_radius_combo["values"] = [
+            f"{(ar*100):.2f} cm" for ar in self.ant_radius_list
+        ]
+
         self.ant_radius_combo["state"] = "readonly"
         self.ant_radius_combo.grid(
             column=1, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5
@@ -448,6 +471,18 @@ class ClientWindow(tkinter.Frame):
             column=1, row=6, padx=5, pady=5, sticky=tkinter.E + tkinter.W
         )
 
+        self.auto_test_button = tkinter.Button(
+            control_frame, text="Run Test Sweep", command=self.auto_test_commands
+        )
+        self.auto_test_button.grid(
+            columnspan=2, row=8, padx=5, pady=25, sticky=tkinter.E + tkinter.W
+        )
+
+        self.recording_led = tkinter.Label(control_frame, text="   ", bg="red")
+        self.recording_led.grid(
+            column=1, row=9, padx=5, pady=5, sticky=tkinter.E + tkinter.W
+        )
+
         control_frame.pack(fill=tkinter.BOTH, side=tkinter.LEFT, expand=True)
 
         self.heading_df_history = np.empty([0, 1])
@@ -457,6 +492,10 @@ class ClientWindow(tkinter.Frame):
         self.display_thread.recreate_canvas_action = self.create_canvas
         self.display_thread.status_label_ref = self.status_label
         self.display_thread.start()
+
+        self.auto_test_thread: Optional[threading.Thread] = None
+        self.auto_test_recording = False
+        self.heading_angle_history
 
     def update_angles_list(self, *kwargs: Any) -> None:
         if self.ant_radius_combo.current() % 2 == 0:
@@ -472,6 +511,7 @@ class ClientWindow(tkinter.Frame):
         assert self.display_thread.waterfall_compass is not None
         assert self.display_thread.compass_graph is not None
         assert self.display_thread.waterfall_df is not None
+        assert self.display_thread.waterfall_error is not None
         assert self.display_thread.df_graph is not None
 
         expected_angle = self.angle_string.get()
@@ -481,7 +521,7 @@ class ClientWindow(tkinter.Frame):
                 numeric_expected_angle -= 2 * np.pi
             self.display_thread.waterfall_compass.add_point(numeric_expected_angle)
             self.display_thread.compass_graph.add_point(numeric_expected_angle)
-            if octave_recording:
+            if octave_recording or self.auto_test_recording:
                 self.heading_angle_history = np.append(
                     self.heading_angle_history,
                     np.array([[numeric_expected_angle]]),
@@ -490,16 +530,22 @@ class ClientWindow(tkinter.Frame):
         else:
             self.display_thread.waterfall_compass.add_point(None)
             self.display_thread.compass_graph.add_point(None)
-            if octave_recording:
+            if octave_recording or self.auto_test_recording:
                 self.heading_angle_history = np.append(
                     self.heading_angle_history,
                     np.array([["NaN"]]),
                     axis=0,
                 )
         if not result.no_signal:
+            angle_error = result.azimuth - numeric_expected_angle
+            if angle_error > np.pi:
+                angle_error -= 2 * np.pi
+            if angle_error < -np.pi:
+                angle_error += 2 * np.pi
             self.display_thread.waterfall_df.add_point(result.azimuth)
+            self.display_thread.waterfall_error.add_point(angle_error)
             self.display_thread.df_graph.add_point(result.azimuth)
-            if octave_recording:
+            if octave_recording or self.auto_test_recording:
                 self.heading_df_history = np.append(
                     self.heading_df_history,
                     np.array([[result.azimuth]]),
@@ -507,8 +553,9 @@ class ClientWindow(tkinter.Frame):
                 )
         else:
             self.display_thread.waterfall_df.add_point(None)
+            self.display_thread.waterfall_error.add_point(None)
             self.display_thread.df_graph.add_point(None)
-            if octave_recording:
+            if octave_recording or self.auto_test_recording:
                 self.heading_df_history = np.append(
                     self.heading_df_history,
                     np.array([["NaN"]]),
@@ -555,9 +602,9 @@ class ClientWindow(tkinter.Frame):
 
     def set_gen_commands(self) -> None:
         antenna_distance = self.ant_radius_combo.current() // 2
-        delays = (0, 0, 0, 0)
+        default_delays = (0, 0, 0, 0)
         if self.ant_radius_combo.current() % 2 == 0:
-            delays = [
+            default_delays = [
                 #    N  S  E  W
                 (0, 1, 0, 1),
                 (1, 0, 0, 1),
@@ -565,13 +612,14 @@ class ClientWindow(tkinter.Frame):
                 (0, 1, 1, 0),
             ][self.angle_combo.current()]
         else:
-            delays = [
+            default_delays = [
                 #    N  S  E  W
                 (0, 2, 1, 1),
                 (1, 1, 0, 2),
                 (2, 0, 1, 1),
                 (1, 1, 2, 0),
             ][self.angle_combo.current()]
+        delays = [i * antenna_distance for i in default_delays]
         freq = pysagax.si_to_float(self.freq_string.get())
         import requests
 
@@ -703,10 +751,132 @@ class ClientWindow(tkinter.Frame):
 
         # check status code for response received
         # success code - 200
-        print(r)
-
+        if r.status_code != 200:
+            messagebox.showerror("Error", "Could not set generator frequency")
+        errno_str = json.loads(r.content)["errno_str"]
         # print content of request
-        print(r.content)
+        if errno_str != "":
+            messagebox.showerror("Error", errno_str)
+
+    def auto_test_commands(self) -> None:
+        # TODO: button config (disable GUI while test is running)
+        self.auto_test_thread = threading.Thread(target=self.auto_test_controller)
+        self.auto_test_thread.start()
+
+    def auto_test_controller(self) -> None:
+        # def index_of_best_radius(rad_list, freq) -> tuple[int, int]:       #Calculate the largest antenna radius that can be used for the given frequency
+        #     max_radius = 3e8 / 4 / freq     #Max diameter = lambda/2
+        #     best_even = 0
+        #     best_odd = 1
+        #     for i, r in enumerate(rad_list):
+        #         if i % 2:
+        #             if r < max_radius * 1 and r > rad_list[best_odd]:   ###100% of lambda/4
+        #                 best_odd = i
+        #         else:
+        #             if r < max_radius * 1 and r > rad_list[best_even]:
+        #                 best_even = i
+        #     return best_even, best_odd
+
+        print("TEST Started")
+        self.recording_led["bg"] = "orange"
+        self.result_pd = pd.DataFrame(
+            columns=[
+                "Freq",
+                "USRP gain",
+                "Ant radius",
+                "Sample count",
+                "Expected angle",
+                "Measured mean",
+                "Measured std dev",
+                "RMS error",
+            ]
+        )
+
+        runtime_backup_dir = "pandas_backup"    #The script will periodically save the data collected so far to this directory
+        if not os.path.exists(runtime_backup_dir):
+            os.makedirs(runtime_backup_dir)
+
+        for gain in auto_test_params["gains"]:
+            self.gain_string.set(str(gain))
+
+            for freq in range(len(self.freq_combo["values"])):
+                self.freq_combo.current(freq)
+                self.reconf_commands()
+                time.sleep(10)
+
+                # radii_to_test = index_of_best_radius(self.ant_radius_list, pysagax.si_to_float(self.freq_string.get()))
+                radii_to_test = [3]  # 12.47cm radius for every freq
+
+                for ant_radius in radii_to_test:
+                    self.ant_radius_combo.current(ant_radius)
+
+                    for angle in range(len(self.angle_combo["values"])):
+                        self.angle_combo.current(angle)
+                        self.set_gen_commands()
+                        time.sleep(1)
+
+                        self.run_test()
+
+                        # Save results to disk after every 100 tests
+                        if not len(self.result_pd.index) % 100:
+                            filename = f"{runtime_backup_dir}/time_{datetime.now().strftime('%Y%m%d_%H%M%S')}_rows0-{len(self.result_pd.index)-1}_.csv"
+                            self.result_pd.to_csv(filename)
+
+        filename = f"auto_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        self.result_pd.to_csv(filename)
+        print("AUTO TEST FINISHED")
+        self.recording_led["bg"] = "red"
+
+    def run_test(self) -> None:
+        self.recording_led["bg"] = "green"
+        self.auto_test_recording = True
+        time.sleep(auto_test_params["burst_time"])
+        self.auto_test_recording = False
+        self.recording_led["bg"] = "orange"
+        self.record_results()
+
+    def record_results(self) -> None:
+        def normalize_angle(angle: float) -> float:
+            if angle > np.pi:
+                angle -= 2 * np.pi
+            if angle < -np.pi:
+                angle += 2 * np.pi
+            return angle
+
+        history_pd = pd.DataFrame(
+            data={
+                "df_history": np.squeeze(self.heading_df_history),
+                "angle_history": np.squeeze(self.heading_angle_history),
+            }
+        )
+        # heading_angle_pd = pd.DataFrame(self.heading_angle_history)
+
+        history_pd["angle_error"] = (
+            history_pd["df_history"] - history_pd["angle_history"]
+        )
+        history_pd["angle_error"] = history_pd["angle_error"].apply(
+            func=normalize_angle
+        )
+
+        new_row = pd.DataFrame(
+            {
+                "Freq": pysagax.si_to_float(self.freq_string.get()),  # self.connection.freq,
+                "USRP gain": self.gain_string.get(),
+                "Ant radius": self.ant_radius_list[self.ant_radius_combo.current()],
+                "Sample count": len(np.squeeze(self.heading_df_history)),
+                "Expected angle": self.heading_angle_history[0, 0] * 180 / np.pi,
+                "Measured mean": scipy.stats.circmean(history_pd["df_history"], high=np.pi, low=-np.pi) * 180 / np.pi,
+                "Measured std dev": scipy.stats.circstd(history_pd["angle_error"], high=np.pi, low=-np.pi) * 180 / np.pi,
+                "RMS error": ((history_pd["angle_error"] * 180 / np.pi) ** 2).mean()
+                ** 0.5,
+            },
+            index=[0],
+        )  # type: ignore
+        self.result_pd = pd.concat([self.result_pd, new_row], ignore_index=True)
+        print(self.result_pd)
+
+        self.heading_df_history = np.empty([0, 1])
+        self.heading_angle_history = np.empty([0, 1])
 
     def start_commands(self) -> None:
         self.set_params()
@@ -727,9 +897,11 @@ class ClientWindow(tkinter.Frame):
             f"SOURCE:Configure!;"
             f"AOA:Configure!;"
             f"ROI:Enable! 1;"
+            f"ROI:Span! 50000;"
+            f"ROI:Threshold! -60;"
             f"ROI:CenterFrequency! {self.connection.roi_freq:.0f};"
             f"ROI:Configure!;"
-        )
+        )  
 
     def start_stop_commands(self) -> None:
         if self.started:

@@ -8,7 +8,7 @@ import socket
 import struct
 import threading
 import time
-from typing import Callable, Optional
+from typing import Callable, Optional, Iterable
 
 import numpy as np
 import numpy.typing as npt
@@ -19,39 +19,72 @@ class CoreServicePacket:
     Represents one packet received from the Core Service.
     """
 
-    def __init__(self) -> None:
-        self.stream_id: int = 0
-        self.packet_type: int = 0
-        self.end_of_file: bool = False
+    def __init__(self, stream_id: int, packet_index: int) -> None:
+        self.stream_id: int = stream_id
+        self.packet_index: int = packet_index
+        self.time_ns: int = time.time_ns()
+
+    def __str__(self) -> str:
+        return f"#{self.packet_index} Unknown"
+
+
+class CoreServiceSpectrumPacket(CoreServicePacket):
+    def __init__(self, stream_id: int, packet_index: int) -> None:
+        super().__init__(stream_id, packet_index)
         self.center_frequency: float = 0
-        self.span: float = 0.0
         self.iq_rate: float = 0.0
         self.sample_index: int = 0
-        self.packet_index: int = 0
         self.bin_count: int = 0
         self.magnitude_spectrum: npt.NDArray[np.float64] = np.zeros([1])
         self.azimuth_spectrum: npt.NDArray[np.float64] = np.zeros([1])
         self.elevation_spectrum: npt.NDArray[np.float64] = np.zeros([1])
-        self.time_ns: int = 0
+
+    def __str__(self) -> str:
+        return f"#{self.packet_index} Spectrum (C: {self.center_frequency/1e6:.3f}M, IQ: {self.iq_rate/1e6:.2f}M, {self.bin_count} bins)"
+
+
+class CoreServiceEOFPacket(CoreServicePacket):
+    def __init__(self, stream_id: int, packet_index: int) -> None:
+        super().__init__(stream_id, packet_index)
+
+    def __str__(self) -> str:
+        return f"#{self.packet_index} EOF"
+
+
+class CoreServiceROIResultPacket(CoreServicePacket):
+    def __init__(self, stream_id: int, packet_index: int) -> None:
+        super().__init__(stream_id, packet_index)
+
+        self.center_frequency: float = 0
+        self.span: float = 0.0
         self.roi_level: float = 0.0
         self.roi_azimuth: float = 0.0
         self.roi_elevation: float = 0.0
+
+    def __str__(self) -> str:
+        return (
+            f"#{self.packet_index} ROI peak {self.center_frequency/1e6:.3f}M, {self.roi_level:.1f}dB "
+            f"Az: {self.roi_azimuth:.2f} ({self.roi_azimuth / np.pi * 180:.2f}deg), "
+            f"El: {self.roi_elevation:.2f} ({self.roi_elevation / np.pi * 180:.2f}deg) "
+        )
+
+
+class CoreServiceROILackOfSignalPacket(CoreServicePacket):
+    def __init__(self, stream_id: int, packet_index: int) -> None:
+        super().__init__(stream_id, packet_index)
+
+    def __str__(self) -> str:
+        return f"#{self.packet_index} ROI lack of signal"
+
+
+class CoreServiceDebugPacket(CoreServicePacket):
+    def __init__(self, stream_id: int, packet_index: int) -> None:
+        super().__init__(stream_id, packet_index)
         self.title: str = ""
         self.contents: bytes = b""
 
     def __str__(self) -> str:
-        return {
-            0: f"#{self.packet_index} Unknown",
-            1: f"#{self.packet_index} Spectrum (C: {self.center_frequency/1e6:.3f}M, IQ: {self.iq_rate/1e6:.2f}M, {self.bin_count} bins)",
-            2: f"#{self.packet_index} EOF",
-            3: (
-                f"#{self.packet_index} ROI peak {self.center_frequency/1e6:.3f}M, {self.roi_level:.1f}dB "
-                f"Az: {self.roi_azimuth:.2f} ({self.roi_azimuth / np.pi * 180:.2f}deg), "
-                f"El: {self.roi_elevation:.2f} ({self.roi_elevation / np.pi * 180:.2f}deg) "
-            ),
-            4: f"#{self.packet_index} ROI lack of signal",
-            6: f"#{self.packet_index} Debug {self.title} {'' if len(self.contents)>128 else self.contents.decode()}",
-        }[self.packet_type]
+        return f"#{self.packet_index} Debug {self.title} {'' if len(self.contents)>128 else self.contents.decode()}"
 
 
 class BaseConnection:
@@ -60,10 +93,6 @@ class BaseConnection:
     """
 
     def __init__(self) -> None:
-        super().__init__()
-        # Thread is daemon, it will quit on closing the program.
-        self.daemon = True
-
         self.host_port = ""
         """
         Host and port in <address>:<tcp port> format.
@@ -162,7 +191,126 @@ class BaseConnection:
         pass
 
 
-class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
+class CoreServiceParser:
+    def __init__(self) -> None:
+        self.buffer = bytearray()
+        """
+        Binary packet data buffer
+        """
+
+        self.packet_count = 0
+        """
+        Overall packet count
+        """
+
+    def extract_packets(self, data: bytes) -> Iterable[CoreServicePacket]:
+        self.buffer += bytearray(data)
+        while len(self.buffer) >= 8:  # packet header is 28 bytes
+            stream_id = int.from_bytes(self.buffer[0:4], "little")
+            packet_type = int.from_bytes(self.buffer[4:8], "little")
+
+            if len(self.buffer) >= 28 and packet_type == 1:
+                self.packet_count += 1
+                cs_spectrum_packet = CoreServiceSpectrumPacket(
+                    stream_id, self.packet_count
+                )
+                cs_spectrum_packet.center_frequency = struct.unpack(
+                    "f", self.buffer[8:12]
+                )[0]
+                cs_spectrum_packet.iq_rate = struct.unpack("f", self.buffer[12:16])[0]
+                cs_spectrum_packet.sample_index = int.from_bytes(
+                    self.buffer[16:24], "little"
+                )
+                cs_spectrum_packet.bin_count = int.from_bytes(
+                    self.buffer[24:28], "little"
+                )
+                packet_size = 3 * 4 * cs_spectrum_packet.bin_count + 28
+                if (
+                    len(self.buffer) >= packet_size
+                ):  # we got the entire packet in buffer
+                    cs_spectrum_packet.magnitude_spectrum = np.asarray(
+                        struct.unpack(
+                            f"{cs_spectrum_packet.bin_count}f",
+                            self.buffer[28 : 28 + cs_spectrum_packet.bin_count * 4],
+                        )
+                    )  # type: ignore
+                    cs_spectrum_packet.azimuth_spectrum = np.asarray(
+                        struct.unpack(
+                            f"{cs_spectrum_packet.bin_count}f",
+                            self.buffer[
+                                (28 + cs_spectrum_packet.bin_count * 4) : (
+                                    28 + cs_spectrum_packet.bin_count * 4 * 2
+                                )
+                            ],
+                        )
+                    )  # type: ignore
+                    cs_spectrum_packet.elevation_spectrum = np.asarray(
+                        struct.unpack(
+                            f"{cs_spectrum_packet.bin_count}f",
+                            self.buffer[
+                                (28 + cs_spectrum_packet.bin_count * 4 * 2) : (
+                                    28 + cs_spectrum_packet.bin_count * 4 * 3
+                                )
+                            ],
+                        )
+                    )  # type: ignore
+                    yield cs_spectrum_packet
+                    self.buffer = self.buffer[packet_size:]  # drop packet from buffer
+                else:
+                    break  # wait until next tcp read
+            elif packet_type == 2:  # end of file
+                self.packet_count += 1
+                cs_eof_packet = CoreServiceEOFPacket(stream_id, self.packet_count)
+                yield cs_eof_packet
+                self.buffer = self.buffer[8:]
+            elif len(self.buffer) >= 28 and packet_type == 3:  # roi result
+                self.packet_count += 1
+                cs_roi_packet = CoreServiceROIResultPacket(stream_id, self.packet_count)
+                cs_roi_packet.center_frequency = struct.unpack("f", self.buffer[8:12])[
+                    0
+                ]
+                cs_roi_packet.span = struct.unpack("f", self.buffer[12:16])[0]
+                cs_roi_packet.roi_level = struct.unpack("f", self.buffer[16:20])[0]
+                cs_roi_packet.roi_azimuth = struct.unpack("f", self.buffer[20:24])[0]
+                cs_roi_packet.roi_elevation = struct.unpack("f", self.buffer[24:28])[0]
+                yield cs_roi_packet
+                self.buffer = self.buffer[28:]  # drop packet from buffer
+            elif packet_type == 4:  # roi lack of signal
+                self.packet_count += 1
+                cs_roi_lack_packet = CoreServiceROILackOfSignalPacket(
+                    stream_id, self.packet_count
+                )
+                yield cs_roi_lack_packet
+                self.buffer = self.buffer[8:]
+            elif len(self.buffer) >= 24 and packet_type == 6:  # debug
+                self.packet_count += 1
+                cs_roi_debug_packet = CoreServiceDebugPacket(
+                    stream_id, self.packet_count
+                )
+                category_size = int.from_bytes(self.buffer[12:16], "little")
+                data_size = int.from_bytes(self.buffer[16:24], "little")
+                if len(self.buffer) >= 24 + category_size + data_size:
+                    cs_roi_debug_packet.title = self.buffer[
+                        24 : 24 + category_size
+                    ].decode()
+                    cs_roi_debug_packet.contents = self.buffer[
+                        (24 + category_size) : (24 + category_size + data_size)
+                    ]
+                    yield cs_roi_debug_packet
+                    self.buffer = self.buffer[(24 + category_size + data_size) :]
+                else:
+                    break
+            elif packet_type > 6:
+                self.buffer = self.buffer[4:]
+                print(f"Stream {stream_id}, " f"Unsupported packet type {packet_type}")
+                return
+            else:
+                break  # no whole packet in the buffer, or unsupported data
+
+
+class StreamConnectionProcess(
+    multiprocessing.Process, BaseConnection, CoreServiceParser
+):
     """
     This thread (process) will handle the stream socket and place the incoming samples in a numpy structure.
     The purpose of moving the stream TCP/IP connection and preprocessing of the packets to a separate
@@ -175,7 +323,9 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
         disconnect_value: multiprocessing.managers.ValueProxy[int],
         status_value: multiprocessing.Queue[str],
     ):
-        super(StreamConnectionProcess, self).__init__()
+        multiprocessing.Process.__init__(self)
+        BaseConnection.__init__(self)
+        CoreServiceParser.__init__(self)
 
         self.counter_packet_ratio: float = 0
         """
@@ -213,16 +363,6 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
         CS packet queue for multiprocessing process
         """
 
-        self.buffer = bytearray()
-        """
-        Binary packet data buffer
-        """
-
-        self.packet_count = 0
-        """
-        Overall packet count
-        """
-
         self.buf_size = 131072  # 65536
         """
         This buffer size will be read at once from the TCP socket.
@@ -250,8 +390,6 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
         self.mp_status.put(message)
 
     def insert_packet(self, cs_packet: CoreServicePacket) -> None:
-        self.packet_count += 1
-        cs_packet.packet_index = self.packet_count
         self.mp_queue.put(cs_packet)
         while self.counter_ns + self.counter_block_size_parameter <= time.time_ns():
             self.counter_packet_ratio = self.counter_packet_index * (
@@ -263,15 +401,16 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
         try:
             self.display_status(
                 f"P#{cs_packet.packet_index} - S{cs_packet.stream_id}"
-                f"i{cs_packet.sample_index} , sp: {self.counter_packet_ratio} p/s, "
-                f"queue: {self.mp_queue.qsize()}"
+                f"i{cs_packet.sample_index if isinstance(cs_packet, CoreServiceSpectrumPacket) else '-'} , "
+                f"sp: {self.counter_packet_ratio} p/s, "
+                f"Q: {self.mp_queue.qsize()}"
             )
         except (
             NotImplementedError
         ):  # multiprocessing.Queue.qsize() not implemented on Mac OS X
             self.display_status(
                 f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
-                f"index {cs_packet.sample_index}"
+                f"index {cs_packet.sample_index if isinstance(cs_packet, CoreServiceSpectrumPacket) else '-'}"
             )
 
     def receive_on_socket(self, data: bytes) -> None:
@@ -279,94 +418,5 @@ class StreamConnectionProcess(BaseConnection, multiprocessing.Process):
         When data is received on the socket, this function will construct a packet object from the binary data.
         """
         assert self.mp_queue
-        self.buffer += bytearray(data)
-        while len(self.buffer) >= 8:  # packet header is 28 bytes
-            cs_packet = CoreServicePacket()
-            cs_packet.stream_id = int.from_bytes(self.buffer[0:4], "little")
-            cs_packet.packet_type = int.from_bytes(self.buffer[4:8], "little")
-            cs_packet.time_ns = time.time_ns()
-
-            if len(self.buffer) >= 28 and cs_packet.packet_type == 1:
-                cs_packet.center_frequency = struct.unpack("f", self.buffer[8:12])[0]
-                cs_packet.iq_rate = struct.unpack("f", self.buffer[12:16])[0]
-                cs_packet.sample_index = int.from_bytes(self.buffer[16:24], "little")
-                cs_packet.bin_count = int.from_bytes(self.buffer[24:28], "little")
-                packet_size = 3 * 4 * cs_packet.bin_count + 28
-                if (
-                    len(self.buffer) >= packet_size
-                ):  # we got the entire packet in buffer
-                    cs_packet.magnitude_spectrum = np.asarray(
-                        struct.unpack(
-                            f"{cs_packet.bin_count}f",
-                            self.buffer[28 : 28 + cs_packet.bin_count * 4],
-                        )
-                    )  # type: ignore
-                    cs_packet.azimuth_spectrum = np.asarray(
-                        struct.unpack(
-                            f"{cs_packet.bin_count}f",
-                            self.buffer[
-                                (28 + cs_packet.bin_count * 4) : (
-                                    28 + cs_packet.bin_count * 4 * 2
-                                )
-                            ],
-                        )
-                    )  # type: ignore
-                    cs_packet.elevation_spectrum = np.asarray(
-                        struct.unpack(
-                            f"{cs_packet.bin_count}f",
-                            self.buffer[
-                                (28 + cs_packet.bin_count * 4 * 2) : (
-                                    28 + cs_packet.bin_count * 4 * 3
-                                )
-                            ],
-                        )
-                    )  # type: ignore
-                    self.insert_packet(cs_packet)
-                    self.buffer = self.buffer[packet_size:]  # drop packet from buffer
-                else:
-                    break  # wait until next tcp read
-            elif cs_packet.packet_type == 2:  # end of file
-                cs_packet.end_of_file = True
-                self.insert_packet(cs_packet)
-                self.buffer = self.buffer[8:]
-            elif len(self.buffer) >= 28 and cs_packet.packet_type == 3:  # roi result
-                cs_packet.center_frequency = struct.unpack("f", self.buffer[8:12])[0]
-                cs_packet.span = struct.unpack("f", self.buffer[12:16])[0]
-                cs_packet.roi_level = struct.unpack("f", self.buffer[16:20])[0]
-                cs_packet.roi_azimuth = struct.unpack("f", self.buffer[20:24])[0]
-                cs_packet.roi_elevation = struct.unpack("f", self.buffer[24:28])[0]
-                self.insert_packet(cs_packet)
-                self.buffer = self.buffer[28:]  # drop packet from buffer
-            elif cs_packet.packet_type == 4:  # roi lack of signal
-                self.insert_packet(cs_packet)
-                self.buffer = self.buffer[8:]
-            elif len(self.buffer) >= 24 and cs_packet.packet_type == 6:  # debug
-                category_size = int.from_bytes(self.buffer[12:16], "little")
-                data_size = int.from_bytes(self.buffer[16:24], "little")
-                if len(self.buffer) >= 24 + category_size + data_size:
-                    cs_packet.title = self.buffer[24 : 24 + category_size].decode()
-                    cs_packet.contents = self.buffer[
-                        (24 + category_size) : (24 + category_size + data_size)
-                    ]
-                    self.insert_packet(cs_packet)
-                    self.buffer = self.buffer[(24 + category_size + data_size) :]
-                else:
-                    break
-            elif cs_packet.packet_type > 6:
-                self.buffer = self.buffer[4:]
-                self.display_status(
-                    f"Stream {cs_packet.stream_id}, "
-                    f"Unsupported packet type {cs_packet.packet_type}"
-                )
-            else:
-                break  # no whole packet in the buffer, or unsupported data
-
-
-class StreamProcessingThread(threading.Thread):
-    """
-    This thread is responsible for handling the multiprocessing stream process and for displaying the stream contents
-    on the matplotlib plots
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
+        for cs_packet in self.extract_packets(data):
+            self.insert_packet(cs_packet)
