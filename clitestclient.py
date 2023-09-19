@@ -5,21 +5,14 @@
 from __future__ import annotations
 
 import argparse
-import math
 import multiprocessing
-import os
 import queue
-import struct
 import threading
-import time
-import typing
 from datetime import datetime
 from time import sleep
-from typing import Any, Callable, Optional
+from typing import Optional
 
-import numpy as np
-import numpy.typing as npt
-
+from pysagax import StreamAndCompassProcess
 from pysagax.lena_core_service import (
     BaseConnection,
     CoreServicePacket,
@@ -33,7 +26,8 @@ args = parser.parse_args()
 
 class CommandsConnectionThread(BaseConnection, threading.Thread):
     def __init__(self) -> None:
-        super(CommandsConnectionThread, self).__init__()
+        BaseConnection.__init__(self)
+        threading.Thread.__init__(self)
 
     def receive_on_socket(self, data: bytes) -> None:
         """
@@ -93,9 +87,7 @@ class TestStreamDisplayThread(threading.Thread):
         next iteration.
         """
 
-    def status_watcher_thread(
-        self, status_queue: queue.Queue[str], packet_string_queue: queue.Queue[str]
-    ) -> None:
+    def status_watcher_thread(self, status_queue: queue.Queue[str]) -> None:
         """
         Entry point of the watcher thread
         """
@@ -108,10 +100,9 @@ class TestStreamDisplayThread(threading.Thread):
                     )  # get status message from stream process
                     if message == "END":
                         terminate = True
-                    print(message)
+                    else:
+                        print(f"[Stream] {message}")
                 self.disconnect_value.value = self.disconnect
-                while not packet_string_queue.empty():
-                    print(packet_string_queue.get())
                 if terminate:
                     return
             except queue.Empty:
@@ -132,26 +123,24 @@ class TestStreamDisplayThread(threading.Thread):
         The string elements of the status queue are the messages to be displayed on the GUI status bar
         """
 
-        packet_string_queue: queue.Queue[str] = queue.Queue()
-
         # The purpose of the watcher thread is to take the status messages from the multiprocessing process and display
         # them on the GUI, and to forward the disconnect signal to the process if the "Disconnect" button is clicked.
         watcher_thread = threading.Thread(
             target=self.status_watcher_thread,
-            args=(status_queue, packet_string_queue),
+            args=[status_queue],
             daemon=True,
         )
         watcher_thread.start()
 
         packets_queue: multiprocessing.Queue[
-            CoreServicePacket
+            tuple[float, CoreServicePacket]
         ] = multiprocessing.Queue()
         """
         This queue will transfer the processed packets from the stream process to the main (GUI) process
         """
 
-        stream_process = StreamConnectionProcess(
-            packets_queue, self.disconnect_value, status_queue
+        stream_process = StreamAndCompassProcess(
+            [packets_queue], self.disconnect_value, status_queue
         )
 
         stream_process.host_port = self.host_port
@@ -159,25 +148,37 @@ class TestStreamDisplayThread(threading.Thread):
 
         # The code below will handle the preprocessed packets from the stream process
         while True:
-            if self.disconnect:
+            if self.disconnect or not watcher_thread.is_alive():
                 break
             try:
-                packet: CoreServicePacket = packets_queue.get(
+                angle, packet = packets_queue.get(
                     timeout=0.5
                 )  # get a packet from the stream process
             except queue.Empty:
                 continue
             ts = datetime.fromtimestamp(packet.time_ns / 1e9, tz=None)
-            packet_string_queue.put(
+            print(
                 f"[{packet.stream_id}] {ts.strftime('%H:%M:%S')}.{int((packet.time_ns % 1e9) / 1e6):03d} - "
-                f"{str(packet)}",
-            )  # handle UI in a separate thread, because UI calls are slow
-
+                f"{str(packet)} - {angle}",
+            )
+        self.disconnect_value.value = True
         stream_process.join()
         stream_process.terminate()
 
 
 class CsClient:
+    def __init__(self) -> None:
+        global args
+        self.command_thread = CommandsConnectionThread()
+        self.stream_thread = TestStreamDisplayThread()
+
+        self.command_thread.connect_action = self.command_connect_action
+        self.command_thread.disconnect_action = self.command_disconnect_action
+        self.command_thread.host_port = f"{args.address}:12936"
+        self.command_thread.start()
+        self.stream_thread.host_port = f"{args.address}:12937"
+        self.stream_thread.start()
+
     def send_command(self, cmd: str) -> None:
         """
         Send the command from the command entry box to the client. Called on pressing the Return key in the autocomplete box.
@@ -193,45 +194,27 @@ class CsClient:
             self.command_thread.client_socket.send(cmd_line.encode())
             sleep(0.1)
 
-    def connect_commands(self) -> None:
-        """
-        Action of the "Connect" button
-        """
-        global args
-        self.command_thread = CommandsConnectionThread()
-        self.command_thread.connect_action = self.connect_action
-        self.command_thread.disconnect_action = self.disconnect_action
-        self.command_thread.host_port = f"{args.address}:12936"
-        self.command_thread.start()
-        self.stream_thread = TestStreamDisplayThread()
-        self.stream_thread.host_port = f"{args.address}:12937"
-        self.stream_thread.start()
-
-    def disconnect_commands(self) -> None:
+    def disconnect_all(self) -> None:
         """
         Action of the "Disconnect" button
         """
-        if self.command_thread is not None:
-            self.command_thread.disconnect = True
-        if self.stream_thread is not None:
-            self.stream_thread.disconnect = True
-            if self.stream_thread.disconnect_value is not None:
-                self.stream_thread.disconnect_value.value = True
+        self.command_thread.disconnect = True
+        self.stream_thread.disconnect = True
 
-    def connect_action(self) -> None:
+    def command_connect_action(self) -> None:
         print("## Command Connected")
 
-    def disconnect_action(self) -> None:
+    def command_disconnect_action(self) -> None:
         print("## Command Disconnected")
+        self.disconnect_all()
 
 
 if __name__ == "__main__":
     multiprocessing.set_start_method("spawn")
-    ex = CsClient()
-    ex.connect_commands()
-    while True:
+    client = CsClient()
+    while client.command_thread.is_alive() and client.stream_thread.is_alive():
         inp = input()
         if not inp:
             break
-        ex.send_command(inp)
-    ex.disconnect_commands()
+        client.send_command(inp)
+    client.disconnect_all()

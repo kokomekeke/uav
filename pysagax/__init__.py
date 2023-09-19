@@ -1,8 +1,13 @@
 from pysagax.lena_core_service import (
     CoreServicePacket,
+    CoreServiceSpectrumPacket,
+    CoreServiceEOFPacket,
+    CoreServiceDebugPacket,
+    CoreServiceROIResultPacket,
+    CoreServiceROILackOfSignalPacket,
     BaseConnection,
     StreamConnectionProcess,
-    StreamProcessingThread,
+    CoreServiceParser,
 )
 from pysagax.lena_matplotlib_graphs import (
     GraphParameters,
@@ -27,6 +32,7 @@ from pysagax.compass_sensors import (
 )
 from pysagax.df_classes import DfModule, DfResult, DDF260, LenaDf
 from pysagax.octave_data import save_octave
+from pysagax.lena_with_compass import StreamAndCompassProcess
 
 
 def si_to_float(si: str) -> float:
@@ -59,9 +65,14 @@ def si_to_float(si: str) -> float:
 
 __all__ = [
     "CoreServicePacket",
+    "CoreServiceSpectrumPacket",
+    "CoreServiceEOFPacket",
+    "CoreServiceDebugPacket",
+    "CoreServiceROIResultPacket",
+    "CoreServiceROILackOfSignalPacket",
     "BaseConnection",
     "StreamConnectionProcess",
-    "StreamProcessingThread",
+    "CoreServiceParser",
     "GraphParameters",
     "GraphImage",
     "AngleSpectrumGraph",
@@ -84,4 +95,5 @@ __all__ = [
     "DDF260",
     "LenaDf",
     "si_to_float",
+    "StreamAndCompassProcess",
 ]

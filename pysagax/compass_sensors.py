@@ -295,9 +295,8 @@ class GyroCalibration(Calibration):
 
 class AccelCalibration(Calibration, threading.Thread):
     def __init__(self) -> None:
-        threading.Thread.__init__(self)
-        self.daemon = True
-        super().__init__(self.do_sample, self.do_calibrate)
+        threading.Thread.__init__(self, daemon=True)
+        Calibration.__init__(self, self.do_sample, self.do_calibrate)
         self.gyro_offsets = np.zeros([3])
         self.gyro_max_variance = np.zeros([3])
         self.gyro_beta = 0.0
