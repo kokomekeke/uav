@@ -232,6 +232,7 @@ class ControlFrame(tkinter.Frame):
         self.roi_center_string = tkinter.StringVar(value="371.6M")
         self.roi_span_string = tkinter.StringVar(value="50k")
         self.roi_threshold_string = tkinter.StringVar(value="-40")
+        self.source_file_path_string = tkinter.StringVar(value="")
 
 
         self.columnconfigure(0, weight=2)
@@ -305,20 +306,42 @@ class ControlFrame(tkinter.Frame):
             column=3, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=5
         )
 
+        self.source_combo = ttk.Combobox(self, width=12)
+        self.source_combo["values"] = ["USRP", "Deafault path", "Custom path"]
+        self.source_combo.current(0)
+        self.source_combo.grid(column=0, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
+        self.source_combo.bind("<<ComboboxSelected>>", self.source_combo_update)
+        
+        
+        self.source_file_path_entry = ttk.Entry(
+            self, textvariable=self.source_file_path_string, width=11, state='disabled'
+        )
+        self.source_file_path_entry.grid(
+            column=1, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5, columnspan=3
+        )
+
+        
+
         self.start_button = tkinter.Button(
             self, text="Start", command=self.start_commands
         )
         self.start_button.grid(
-            column=3, row=4, padx=10, pady=5, sticky=tkinter.E + tkinter.W
+            column=3, row=5, padx=10, pady=5, sticky=tkinter.E + tkinter.W
         )
         self.rec_button = tkinter.Button(
             self, text="Rec", command=self.rec_commands
         )
         self.rec_button.grid(
-            column=2, row=4, padx=10, pady=5, sticky=tkinter.E + tkinter.W
+            column=2, row=5, padx=10, pady=5, sticky=tkinter.E + tkinter.W
         )
 
     def start_commands(self):
+        default_source_file_path = "/home/sagax/Generator/"
+        if self.source_combo.current() == 1:
+            source_file_path = default_source_file_path
+        else:
+            source_file_path = self.source_file_path_string.get()
+        
         kwargs = {"freq": pysagax.si_to_float(self.freq_string.get()),
                 "bw": pysagax.si_to_float(self.bw_string.get()),
                 "gain": self.gain_string.get(),
@@ -327,11 +350,20 @@ class ControlFrame(tkinter.Frame):
                 "roi_center": pysagax.si_to_float(self.roi_center_string.get()),
                 "roi_span": pysagax.si_to_float(self.roi_span_string.get()),
                 "roi_threshold": self.roi_threshold_string.get(),
+                "from_file": self.source_combo.current() != 0,
+                "source_file_path": source_file_path,
         }
         self.client.start_commands(**kwargs)
 
     def rec_commands():
         pass
+
+    def source_combo_update(self, event):
+        if self.source_combo.current() == 2:
+            self.source_file_path_entry.config(state="enabled")
+        else:
+            self.source_file_path_entry.config(state="disabled")
+
 
 class StatFrame(tkinter.Frame):
     def __init__(self, master, *args, **kwargs):
@@ -949,30 +981,49 @@ class Client:
         compass.start()
         """
 
-    def start_commands(self, freq, bw, gain, bin_count, burst_stride, roi_center, roi_span, roi_threshold) -> None:
+    def start_commands(self, freq, bw, gain, bin_count, burst_stride, roi_center, roi_span, roi_threshold, from_file, source_file_path) -> None:
         connect_string = 'UHD "serial=8001680,serial=8001820" "A:A A:B"'      # for 10.1.1.113 (RAC setup)
         # connect_string = 'UHD "serial=8002051,serial=8002065" "A:A A:B"'  # for 10.1.1.139 (aron)
 
-        self.send_commands(
-            f"SOURCE:Path! {connect_string};"
-            f"SOURCE:CenterFrequency! {freq:.0f};"
-            f"SOURCE:IqRate! {bw:.0f};"
-            f"SOURCE:ChannelGain! 0 {gain};"
-            f"SOURCE:ChannelGain! 1 {gain};"
-            f"SOURCE:ChannelGain! 2 {gain};"
-            f"SOURCE:ChannelGain! 3 {gain};"
-            f"AOA:BinCount! {bin_count};"
-            f"SOURCE:BurstStride! {burst_stride};"
-            f"SOURCE:Configure!;"
-            f"AOA:Configure!;"
-            f"SOURCE:Start!;"
-            f"ROI:Enable! 1;"
-            f"ROI:CenterFrequency! {roi_center:.0f};"
-            f"ROI:Span! {roi_span:.0f};"
-            f"ROI:Threshold! {roi_threshold};"
-            f"ROI:Configure!;"
-            f"DEBUG:Enable! exportPhaseDiffs;"
-        )
+        if from_file:
+            if source_file_path[-1] != "/":
+                source_file_path = source_file_path + "/"
+            self.send_commands(
+                f'SOURCE:Path! SigMF "{source_file_path}recording.sigmf-collection";' 
+                f"SOURCE:Position! 0;"  
+                f"AOA:BinCount! {bin_count};"
+                f"SOURCE:BurstStride! {burst_stride};"
+                f"SOURCE:Configure!;"
+                f"AOA:Configure!;"
+                f"SOURCE:Start!;"
+                f"ROI:Enable! 1;"            
+                f"ROI:CenterFrequency! {roi_center:.0f};"
+                f"ROI:Span! {roi_span:.0f};"
+                f"ROI:Threshold! {roi_threshold};"
+                f"ROI:Configure!;"
+                f"DEBUG:Enable! exportPhaseDiffs;"
+            )
+        else:
+            self.send_commands(
+                f"SOURCE:Path! {connect_string};"
+                f"SOURCE:CenterFrequency! {freq:.0f};"
+                f"SOURCE:IqRate! {bw:.0f};"
+                f"SOURCE:ChannelGain! 0 {gain};"
+                f"SOURCE:ChannelGain! 1 {gain};"
+                f"SOURCE:ChannelGain! 2 {gain};"
+                f"SOURCE:ChannelGain! 3 {gain};"
+                f"AOA:BinCount! {bin_count};"
+                f"SOURCE:BurstStride! {burst_stride};"
+                f"SOURCE:Configure!;"
+                f"AOA:Configure!;"
+                f"SOURCE:Start!;"
+                f"ROI:Enable! 1;"
+                f"ROI:CenterFrequency! {roi_center:.0f};"
+                f"ROI:Span! {roi_span:.0f};"
+                f"ROI:Threshold! {roi_threshold};"
+                f"ROI:Configure!;"
+                f"DEBUG:Enable! exportPhaseDiffs;"
+            )
 
     def disconnect_commands(self) -> None:
         """
