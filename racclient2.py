@@ -128,8 +128,9 @@ class ConnectFrame(tkinter.Frame):
     def set_offsets(self):
         pass #TODO
        
-    def choose_spectrum_commands(self):
-        pass #TODO
+    def choose_spectrum_commands(self, event):
+        self.client.send_commands(f"DEBUG:SpectrumChannel! {self.channel_spectrum_combo.current()};")
+
            
     def connect_commands(self):
         connect_action = self.connect_action
@@ -559,29 +560,29 @@ class PlotFrame(tkinter.Frame):
 
 
     def click_handler(self, event: Any) -> None:
+        control_frame_ref = self.client.client_window.control_frame ##Could be better?
+        ##TODO: set roi span from graph
+        ##TODO: show roi on spectrum graph even if it was set or modified in control frame
         if self.magnitude_spectrum_graph is None:
             return
         if event.inaxes == self.magnitude_spectrum_graph.plot:
-            roi_span = pysagax.si_to_float(self.client_window.roi_span_string.get())
+            roi_span = pysagax.si_to_float(control_frame_ref.roi_span_string.get())
             roi_freq = self.magnitude_spectrum_graph.coord_to_freq(event.xdata)
-            # roi_threshold = self.magnitude_spectrum_graph.coord_to_freq(event.ydata)
             roi_threshold = event.ydata
-            # send_cs_commands(
-            #     f"ROI:CenterFrequency! {roi_freq:.0f};"
-            #     f"ROI:Span! {roi_span:.0f};"
-            #     f"ROI:Threshold! {math.floor(roi_threshold):.0f};"
-            #     f"ROI:Configure!;"
-            # )
-            self.client_window.update_roi_settings(
-                roi_freq, roi_span, math.floor(roi_threshold)
-            )
+
+            self.client.update_roi_settings(roi_freq, roi_span, math.floor(roi_threshold))
+
             self.magnitude_spectrum_graph.roi_center = event.xdata
             self.magnitude_spectrum_graph.roi_width = int(
                 roi_span * (self.params.bin_count / self.params.iq_rate)
             )
             self.magnitude_spectrum_graph.roi_threshold = int(math.floor(event.ydata))
 
-        # print(vars(event))
+
+            control_frame_ref.roi_center_string.set(f"{roi_freq:.0f}")
+            control_frame_ref.roi_threshold_string.set(f"{roi_threshold:.0f}")
+            control_frame_ref.roi_span_string.set(f"{roi_span:.0f}")
+
 
 
 
@@ -980,11 +981,12 @@ class Client:
         if self.command_thread is not None:
             self.command_thread.disconnect = True
 
-        ###TODO
-        """ if self.stream_thread is not None:
+        if self.stream_thread is not None:
             self.stream_thread.disconnect = True
             if self.stream_thread.disconnect_value is not None:
                 self.stream_thread.disconnect_value.value = True
+        ###TODO
+        """
         if self.encoder_thread is not None:
             self.encoder_thread.close()
         global compass
@@ -994,6 +996,14 @@ class Client:
         global dfg_map_server
         dfg_map_server.run_thread = False
         dfg_map_server.join() """
+
+    def update_roi_settings(self, roi_center, roi_span, roi_threshold):
+        self.send_commands(
+            f"ROI:CenterFrequency! {roi_center:.0f};"
+            f"ROI:Span! {roi_span:.0f};"
+            f"ROI:Threshold! {roi_threshold:.0f};"
+            f"ROI:Configure!;"
+        )    
 
 if __name__ == "__main__":
     multiprocessing.set_start_method("spawn")
