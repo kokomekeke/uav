@@ -64,3 +64,4 @@ class StreamAndCompassProcess(
         """
         assert self.mp_status
         print(f"[StreamAndCompassProcess] {message}")
+        self.mp_status.put(message)
