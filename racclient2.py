@@ -112,13 +112,13 @@ class ConnectFrame(tkinter.Frame):
         self.encoder_port_entry.pack(side=tkinter.LEFT, padx=5, expand=False)
 
         self.disconnect_button = tkinter.Button(
-            self, text="Disconnect", command=self.disconnect_commands
+            self, text="Disconnect", command=self.master.disconnect_commands
         )
         self.disconnect_button.pack(side=tkinter.RIGHT, padx=5, pady=5)
         self.disconnect_button.configure(state="disabled")
 
         self.connect_button = tkinter.Button(
-            self, text="Connect", command=self.connect_commands
+            self, text="Connect", command=self.master.connect_commands
         )
         self.connect_button.pack(side=tkinter.RIGHT)
     
@@ -130,40 +130,7 @@ class ConnectFrame(tkinter.Frame):
        
     def choose_spectrum_commands(self, event):
         self.client.send_commands(f"DEBUG:SpectrumChannel! {self.channel_spectrum_combo.current()};")
-
-
            
-      
-           
-    def connect_commands(self):
-        connect_action = self.connect_action
-        disconnect_action = self.disconnect_action
-        host_address = self.host_address.get()
-        self.client.connect_commands(connect_action, disconnect_action, host_address)
-        
-    def disconnect_commands(self):
-        self.client.disconnect_commands()
-
-    def connect_action(self) -> None:
-        """
-        Events triggered by successful connection
-        """
-        self.connect_button.configure(state="disabled")
-        self.host_entry.configure(state="disabled")
-        self.disconnect_button.configure(state="normal")
-
-    def disconnect_action(self) -> None:
-        """
-        Events triggered by client disconnect
-        """
-        try:
-            self.disconnect_button.configure(state="disabled")
-            self.host_entry.configure(state="normal")
-            self.connect_button.configure(state="normal")
-            self.disconnect_commands()  # to disconnect the other thread
-        except RuntimeError:
-            pass  # it might happen when closing the window
-
 class StatusFrame(tkinter.Frame):
     def __init__(self, master, *args, **kwargs):
         tkinter.Frame.__init__(self, master, *args, **kwargs)
@@ -314,12 +281,15 @@ class ControlFrame(tkinter.Frame):
         self.start_button.grid(
             column=3, row=4, padx=10, pady=5, sticky=tkinter.E + tkinter.W
         )
+        self.start_button.configure(state="disabled")
+
         self.rec_button = tkinter.Button(
             self, text="Rec", command=self.rec_commands
         )
         self.rec_button.grid(
             column=2, row=4, padx=10, pady=5, sticky=tkinter.E + tkinter.W
         )
+        self.rec_button.configure(state="disabled")
 
     def start_commands(self):
         kwargs = {"freq": pysagax.si_to_float(self.freq_string.get()),
@@ -566,6 +536,7 @@ class PlotFrame(tkinter.Frame):
         control_frame_ref = self.client.client_window.control_frame ##Could be better?
         ##TODO: set roi span from graph
         ##TODO: show roi on spectrum graph even if it was set or modified in control frame
+        ##TODO: don't excecute this code when not connected to CS
         if self.magnitude_spectrum_graph is None:
             return
         if event.inaxes == self.magnitude_spectrum_graph.plot:
@@ -587,10 +558,7 @@ class PlotFrame(tkinter.Frame):
             control_frame_ref.roi_span_string.set(f"{roi_span:.0f}")
 
     def update_sensors_and_graphs(self) -> None:
-        global compass
-        global compass_heading
         global df_value
-        global dfg_map_server
         global compass_offset
         global encoder_offset
 
@@ -661,7 +629,6 @@ class PlotFrame(tkinter.Frame):
         self.magnitude_spectrum_graph.add_data(packet.magnitude_spectrum)
         ###self.log_octave_data()
 
-
 class ClientWindow(tkinter.Frame):
     def __init__(self, client, root):
         tkinter.Frame.__init__(self, root)
@@ -699,11 +666,15 @@ class ClientWindow(tkinter.Frame):
         while True: ###TODO: create stop condition
             try:
                 while not self.client.stream_to_gui_queue.empty():
-                    angle, packet = self.client.stream_to_gui_queue.get()
+                    data = self.client.stream_to_gui_queue.get()
+
+                    packet = data["cs_packet"]
+                    compass_angle = data["compass_angle"]
+                    encoder_angle = data["encoder_angle"]
 
                     ts = datetime.fromtimestamp(packet.time_ns / 1e9, tz=None)
                     packet_string = (f"[{packet.stream_id}] {ts.strftime('%H:%M:%S')}.{int((packet.time_ns % 1e9) / 1e6):03d} - "
-                                    f"{str(packet)} - {angle}")
+                                    f"{str(packet)} - c_angle={compass_angle}; e_angle={encoder_angle}")
                     self.stream_packets_lb.insert(tkinter.END, packet_string)
                     self.stream_packets_lb.delete(0, self.stream_packets_lb.size() - 1000)
                     self.stream_packets_lb.see(tkinter.END)
@@ -718,10 +689,53 @@ class ClientWindow(tkinter.Frame):
                 return
 
     def set_stream_status(self, message: str) -> None:
-        self.status_frame.status_stream_label.config(text=message)
+        try:
+            self.status_frame.status_stream_label.config(text=message)
+        except:
+            pass ##TODO: when exiting, this gets called after the window no longer exists
     
     def set_command_status(self, message: str) -> None:
-        self.status_frame.status_command_label.config(text=message)
+        try:
+            self.status_frame.status_command_label.config(text=message)
+        except:
+            pass ##TODO: when exiting, this gets called after the window no longer exists
+
+    def connect_commands(self):
+        connect_action = self.connect_action
+        disconnect_action = self.disconnect_action
+        host_address = self.connect_frame.host_address.get()
+        encoder_port = self.connect_frame.encoder_port_string.get()
+        self.client.connect_commands(connect_action, disconnect_action, host_address, encoder_port)
+        
+    def disconnect_commands(self):
+        self.client.disconnect_commands()
+
+    def connect_action(self) -> None:
+        """
+        Events triggered by successful connection
+        """
+        self.connect_frame.connect_button.configure(state="disabled")
+        self.connect_frame.host_entry.configure(state="disabled")
+        self.connect_frame.disconnect_button.configure(state="normal")
+
+        self.control_frame.start_button.configure(state="normal")
+        self.control_frame.rec_button.configure(state="normal")
+
+    def disconnect_action(self) -> None:
+        """
+        Events triggered by client disconnect
+        """
+        try:
+            self.connect_frame.disconnect_button.configure(state="disabled")
+            self.connect_frame.host_entry.configure(state="normal")
+            self.connect_frame.connect_button.configure(state="normal")
+
+            self.control_frame.start_button.configure(state="disabled")
+            self.control_frame.rec_button.configure(state="disabled")
+
+            self.disconnect_commands()  # to disconnect the other thread
+        except RuntimeError:
+            pass  # it might happen when closing the window
 
 class CommandsConnectionThread(BaseConnection, threading.Thread):
     def __init__(self, client) -> None:
@@ -782,10 +796,6 @@ class CommandsConnectionThread(BaseConnection, threading.Thread):
             sleep(0.1)
 
 
-
-
-
-
 class TestStreamDisplayThread(threading.Thread):
     def __init__(self, client) -> None:
         super().__init__()
@@ -824,6 +834,9 @@ class TestStreamDisplayThread(threading.Thread):
         next iteration.
         """
 
+        self.compass_host_port = ""
+        self.encoder_port = ""
+
     def status_watcher_thread(self, status_queue: queue.Queue[str]) -> None:
         """
         Entry point of the watcher thread
@@ -841,6 +854,7 @@ class TestStreamDisplayThread(threading.Thread):
                         self.client.stream_status_msg_handler(message)
                 self.disconnect_value.value = self.disconnect
                 if terminate:
+                    print("[StreamAndCompassProcess]", message)
                     return
             except queue.Empty:
                 pass
@@ -881,6 +895,8 @@ class TestStreamDisplayThread(threading.Thread):
         )
 
         stream_process.host_port = self.host_port
+        stream_process.compass_host_port = self.compass_host_port
+        stream_process.encoder_port = self.encoder_port
         stream_process.start()
 
         # The code below will handle the preprocessed packets from the stream process
@@ -888,9 +904,11 @@ class TestStreamDisplayThread(threading.Thread):
             if self.disconnect or not watcher_thread.is_alive():
                 break
             try:
-                angle, packet = packets_queue.get(
-                    timeout=0.5
-                )  # get a packet from the stream process
+                data = packets_queue.get(timeout=0.5)  # get a packet from the stream process
+                
+                packet = data["cs_packet"]
+                compass_angle = data["compass_angle"]
+                encoder_angle = data["encoder_angle"]
             except queue.Empty:
                 continue
             
@@ -912,22 +930,11 @@ class TestStreamDisplayThread(threading.Thread):
         stream_process.terminate()
 
 
-
-
-
-
-
-
-
-
 #Owner class for the client
 class Client:
     def __init__(self, root):
 
-        self.some_data = 123456 #######
-        self.stream_to_gui_queue: multiprocessing.Queue[
-            tuple[float, CoreServicePacket]
-        ] = multiprocessing.Queue()
+        self.stream_to_gui_queue: multiprocessing.Queue[dict] = multiprocessing.Queue()
 
         self.client_window = ClientWindow(self,  root)
         self.command_thread = None
@@ -947,8 +954,7 @@ class Client:
         thread = threading.Thread(target=self.command_thread.send_commands, args=(cmd,), daemon=True)
         thread.start()
 
-    
-    def connect_commands(self, connect_action, disconnect_action, host_address) -> None:
+    def connect_commands(self, connect_action, disconnect_action, host_address, encoder_port: str = "") -> None:
         """
         Action of the "Connect" button
         """
@@ -962,33 +968,12 @@ class Client:
 
         self.stream_thread = TestStreamDisplayThread(self)
         self.stream_thread.host_port = f"{host_address}:12937"
+        self.stream_thread.compass_host_port = f"{host_address}:12938"
+        self.stream_thread.encoder_port = encoder_port
         self.stream_thread.start()
 
 
-        ###TODO
-        """
-        self.encoder_thread = EncoderThread(self.encoder_port_string.get())
-        self.encoder_thread.start()
-
-        global compass
-        compass = CompassSensor(pysagax.AaroniaParser())
-        try:
-            compass.load_calibration()
-        except FileNotFoundError:
-            messagebox.showerror(
-                "Startup error",
-                "Calibration file calibration.npz not found. Make sure sgx-pc is your workdir.",
-            )
-
-        try:
-            compass.set_serial_device(
-                pysagax.open_aaronia_socket_dev(f"{self.host_address.get()}:12938")
-            )
-        except serial.SerialException:
-            self.status_compass_label.config(text="Compass sensor not connected")
-
-        compass.start()
-        """
+        
 
     def start_commands(self, freq, bw, gain, bin_count, burst_stride, roi_center, roi_span, roi_threshold) -> None:
         connect_string = 'UHD "serial=8001680,serial=8001820" "A:A A:B"'      # for 10.1.1.113 (RAC setup)
@@ -1042,8 +1027,6 @@ class Client:
         """ self.command_thread.join()
         self.stream_thread.join() """
 
-        
-
     def update_roi_settings(self, roi_center, roi_span, roi_threshold):
         self.send_commands(
             f"ROI:CenterFrequency! {roi_center:.0f};"
@@ -1058,14 +1041,18 @@ class Client:
     def command_status_msg_handler(self, message):
         threading.Thread(target=self.client_window.set_command_status, args=(message,), daemon=True).start()
 
+def on_close():
+    global run_threads
+    # dfg_map_server.run_thread = False
+    ex.disconnect_commands()
+    run_threads = False
+    root.destroy()
+
 if __name__ == "__main__":
     multiprocessing.set_start_method("spawn")
     root = tkinter.Tk()
     ex = Client(root)
     root.geometry("1024x768")
     root.wm_title("Client")
+    root.protocol("WM_DELETE_WINDOW", on_close)
     root.mainloop()
-    ex.disconnect_commands()
-    
-    print(ex.stream_thread.is_alive())
-    print(ex.command_thread.is_alive())
