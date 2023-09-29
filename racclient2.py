@@ -4,6 +4,8 @@ from datetime import datetime
 import math
 import multiprocessing
 import queue
+import re
+import socket
 import threading
 from time import sleep
 import tkinter
@@ -57,16 +59,6 @@ class ConnectFrame(tkinter.Frame):
         self.host_address = tkinter.StringVar(value="10.1.1.113")   ##TODO: should be here or in ClientWindow??
         self.encoder_port_string = tkinter.StringVar(value="COM6")  ##TODO: should be here or in ClientWindow??
 
-
-        self.save_octave_button = tkinter.Button(
-            self,
-            # text=f"Rec {args.rec_count}" if args.rec_count else "Rec Octave",   ##TODO: 
-            text="Rec OctaveTODO",
-            command=self.save_octave_commands,
-        )
-        self.save_octave_button.pack(side=tkinter.LEFT)
-
-
         offset_frame = tkinter.Frame(self, )        
         offset_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.LEFT, pady=0, padx=(20, 0))
         compass_offset_label_label = tkinter.Label(offset_frame, text="Compass offset: ", font=tkinter.font.Font(size=8))
@@ -119,9 +111,7 @@ class ConnectFrame(tkinter.Frame):
             self, text="Connect", command=self.master.connect_commands
         )
         self.connect_button.pack(side=tkinter.RIGHT)
-    
-    def save_octave_commands(self):
-        pass #TODO   
+     
 
     def set_offsets(self):
         pass #TODO
@@ -281,10 +271,10 @@ class ControlFrame(tkinter.Frame):
         self.source_combo.bind("<<ComboboxSelected>>", self.source_combo_update)
         
         
-        self.source_file_path_entry = ttk.Entry(
+        self.source_file_path_combo = ttk.Combobox(
             self, textvariable=self.source_file_path_string, width=11, state='disabled'
         )
-        self.source_file_path_entry.grid(
+        self.source_file_path_combo.grid(
             column=1, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5, columnspan=3
         )
 
@@ -331,9 +321,9 @@ class ControlFrame(tkinter.Frame):
 
     def source_combo_update(self, event):
         if self.source_combo.current() == 2:
-            self.source_file_path_entry.config(state="enabled")
+            self.source_file_path_combo.config(state="enabled")
         else:
-            self.source_file_path_entry.config(state="disabled")
+            self.source_file_path_combo.config(state="disabled")
 
 
 class StatFrame(tkinter.Frame):
@@ -353,7 +343,8 @@ class StatFrame(tkinter.Frame):
 
         disp_font = tkinter.font.Font(family="serif", size=14)
 
-        mean_disp_label = ttk.Label(self, text="DF mean:")
+        ##TODO: stats
+        """ mean_disp_label = ttk.Label(self, text="DF mean:")
         mean_disp_label.grid(column=0, row=0, sticky=tkinter.W, padx=5, pady=5)
         mean_disp = ttk.Label(
             self,
@@ -387,7 +378,7 @@ class StatFrame(tkinter.Frame):
             background="yellow",
         )
         rms_disp.grid(column=1, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
-
+         """
         self.peak_chart = tkinter.Canvas(
             self,
             bg="white",
@@ -419,6 +410,29 @@ class StatFrame(tkinter.Frame):
                 30, 92, text="32555", fill="black", font=("Helvetica 13 bold")
             ),
         ]
+
+    def update_peak_plot(self, peaks: list) -> None:
+        """
+        Updates the bar plots for peak values.
+        """
+        max_width = self.peak_chart.winfo_width()
+        adc_resolution = 2**15
+
+        peaks_dbfs = [20 * math.log10(int(peak) / adc_resolution) for peak in peaks]
+        min_dbfs_level = 20 * math.log10(
+            400 / adc_resolution
+        )  # min value of the scale (aprox. noise level)
+        bar_widths = [
+            2 + (1 - peak / min_dbfs_level) * (max_width - 4) for peak in peaks_dbfs
+        ]  # logarithmic scaling
+
+        self.peak_chart.coords(self.peak_bars[0], 2, 7, bar_widths[0], 27)
+        self.peak_chart.coords(self.peak_bars[1], 2, 32, bar_widths[1], 52)
+        self.peak_chart.coords(self.peak_bars[2], 2, 57, bar_widths[2], 77)
+        self.peak_chart.coords(self.peak_bars[3], 2, 82, bar_widths[3], 102)
+
+        for i in range(4):
+            self.peak_chart.itemconfig(self.peak_texts[i], text=f"{peaks_dbfs[i]:.0f}")
 
 class PlotFrame(tkinter.Frame):
     def __init__(self, master, *args, **kwargs):
@@ -466,6 +480,8 @@ class PlotFrame(tkinter.Frame):
 
         self.canvas_toolbar = NavigationToolbar2Tk(self.canvas, self)
         self.canvas_toolbar.update()
+        
+        root.update()   #this solves matplotlib artifacts?
 
         def on_canvas_key_press(event: KeyEvent) -> None:
             key_press_handler(event, self.canvas, self.canvas_toolbar)
@@ -713,6 +729,14 @@ class ClientWindow(tkinter.Frame):
                     
                     if isinstance(packet, CoreServiceSpectrumPacket):
                         self.plot_frame.plot_spectrum_packet(packet)
+                    if isinstance(packet, CoreServiceDebugPacket):
+                        if packet.title == "peaks":
+                            regex = r"peak(\d+)=(\d+)"
+                            matches = re.findall(
+                            regex, str(packet)
+                            )  # creating a list of (ChannelID, PeakValue) tuples from the debug message
+                            peaks = [peak[1] for peak in matches]
+                            self.stat_frame.update_peak_plot(peaks)
                 except Exception as e:
                     print("[GUI packet handler]", e)
             except queue.Empty:
@@ -753,7 +777,23 @@ class ClientWindow(tkinter.Frame):
         self.connect_frame.channel_spectrum_combo.configure(state="normal")
 
         self.control_frame.start_button.configure(state="normal")
-        self.control_frame.rec_button.configure(state="normal")
+        # self.control_frame.rec_button.configure(state="normal")
+
+        try:
+            path_list = b""
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.connect((self.connect_frame.host_address.get(), 12939))   ##TODO port no. to args
+                s.sendall(b"nc")
+                while True:
+                    data = s.recv(1024)
+                    if not data:
+                        break
+                    path_list += data
+            path_list = path_list.decode().split()
+            path_list = sorted([path.strip() for path in path_list])
+            self.control_frame.source_file_path_combo["values"] = path_list
+        except Exception as e:
+            print("[Updating recording paths]", e)
 
     def disconnect_action(self) -> None:
         """
