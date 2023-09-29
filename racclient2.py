@@ -278,7 +278,7 @@ class ControlFrame(tkinter.Frame):
         )
 
         self.source_combo = ttk.Combobox(self, width=12)
-        self.source_combo["values"] = ["USRP", "Deafault path", "Custom path"]
+        self.source_combo["values"] = ["USRP", "Default path", "Custom path"]
         self.source_combo.current(0)
         self.source_combo.grid(column=0, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
         self.source_combo.bind("<<ComboboxSelected>>", self.source_combo_update)
