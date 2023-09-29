@@ -201,20 +201,20 @@ class ControlFrame(tkinter.Frame):
         freq_entry_label = ttk.Label(self, text="Frequency:")
         freq_entry_label.grid(column=0, row=0, sticky=tkinter.W, padx=5, pady=5)
 
-        freq_entry = ttk.Entry(self, textvariable=self.freq_string, width=11)
-        freq_entry.grid(column=1, row=0, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
+        self.freq_entry = ttk.Entry(self, textvariable=self.freq_string, width=11)
+        self.freq_entry.grid(column=1, row=0, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
 
         bw_entry_label = ttk.Label(self, text="Bandwidth:")
         bw_entry_label.grid(column=0, row=1, sticky=tkinter.W, padx=5, pady=5)
 
-        bw_entry = ttk.Entry(self, textvariable=self.bw_string, width=11)
-        bw_entry.grid(column=1, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
+        self.bw_entry = ttk.Entry(self, textvariable=self.bw_string, width=11)
+        self.bw_entry.grid(column=1, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
 
         gain_entry_label = ttk.Label(self, text="USRP Gain:")
         gain_entry_label.grid(column=0, row=2, sticky=tkinter.W, padx=5, pady=5)
 
-        gain_entry = ttk.Entry(self, textvariable=self.gain_string, width=11)
-        gain_entry.grid(column=1, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
+        self.gain_entry = ttk.Entry(self, textvariable=self.gain_string, width=11)
+        self.gain_entry.grid(column=1, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
 
         bin_count_entry_label = ttk.Label(
             self, text="Bin count:"
@@ -320,6 +320,15 @@ class ControlFrame(tkinter.Frame):
         pass
 
     def source_combo_update(self, event):
+        if self.source_combo.current() == 0:
+            self.freq_entry.config(state="enabled")
+            self.bw_entry.config(state="enabled")
+            self.gain_entry.config(state="enabled")
+        else:
+            self.freq_entry.config(state="disabled")
+            self.bw_entry.config(state="disabled")
+            self.gain_entry.config(state="disabled")
+
         if self.source_combo.current() == 2:
             self.source_file_path_combo.config(state="enabled")
         else:
@@ -333,6 +342,7 @@ class StatFrame(tkinter.Frame):
         self.client = self.master.master.client ##???
 
         ##TODO
+        self.df_value_string = tkinter.StringVar(value="NaN")
         self.df_value_mean_string = tkinter.StringVar(value="NaN")
         self.df_value_deviation_string = tkinter.StringVar(value="NaN")
         self.df_value_rms_string = tkinter.StringVar(value="NaN")
@@ -342,6 +352,18 @@ class StatFrame(tkinter.Frame):
         self.columnconfigure(1, weight=1)
 
         disp_font = tkinter.font.Font(family="serif", size=14)
+
+        df_value_label = ttk.Label(self, text="DF angle:")
+        df_value_label.grid(column=0, row=0, sticky=tkinter.W, padx=5, pady=5)
+        df_value_disp = ttk.Label(
+            self,
+            textvariable=self.df_value_string,
+            font=disp_font,
+            foreground="red",
+            background="yellow",
+        )
+        df_value_disp.grid(column=1, row=0, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
+
 
         ##TODO: stats
         """ mean_disp_label = ttk.Label(self, text="DF mean:")
@@ -526,6 +548,7 @@ class PlotFrame(tkinter.Frame):
             grid_spec[1, 1], projection="polar"
         )
         self.df_plot = self.fig_ref.add_subplot(grid_spec[0, 1], projection="polar")
+
         self.df_graph = (
             CompassGraph(self.df_plot, self.params)
             .initialize("blue", "DF Angle")
@@ -544,6 +567,9 @@ class PlotFrame(tkinter.Frame):
         self.encoder_graph = CompassGraph(self.compass_plot, self.params).initialize(
             "green", "Encoder Heading"
         )
+
+        self.compass_plot.legend(loc='upper left', bbox_to_anchor=(1,1.1))
+        self.df_plot.legend(loc='upper left', bbox_to_anchor=(1,1))
 
         self.graph_list = [
             graph
@@ -727,9 +753,10 @@ class ClientWindow(tkinter.Frame):
                     self.stream_packets_lb.delete(0, self.stream_packets_lb.size() - 1000)
                     self.stream_packets_lb.see(tkinter.END)
                     
-                    if isinstance(packet, CoreServiceSpectrumPacket):
+                    if isinstance(packet, CoreServiceSpectrumPacket):  
                         self.plot_frame.plot_spectrum_packet(packet)
-                    if isinstance(packet, CoreServiceDebugPacket):
+
+                    if isinstance(packet, CoreServiceDebugPacket):  #updating peak plots
                         if packet.title == "peaks":
                             regex = r"peak(\d+)=(\d+)"
                             matches = re.findall(
@@ -737,6 +764,11 @@ class ClientWindow(tkinter.Frame):
                             )  # creating a list of (ChannelID, PeakValue) tuples from the debug message
                             peaks = [peak[1] for peak in matches]
                             self.stat_frame.update_peak_plot(peaks)
+                    if isinstance(packet, CoreServiceROIResultPacket):
+                        df_value_deg = packet.roi_azimuth  * 180/np.pi
+                        if df_value_deg < 0:
+                            df_value_deg += 360
+                        self.stat_frame.df_value_string.set(f"{df_value_deg:.2f}")
                 except Exception as e:
                     print("[GUI packet handler]", e)
             except queue.Empty:
@@ -1147,7 +1179,7 @@ if __name__ == "__main__":
     multiprocessing.set_start_method("spawn")
     root = tkinter.Tk()
     ex = Client(root)
-    root.geometry("1200x800")
+    root.geometry("1200x850")
     root.wm_title("Client")
     root.protocol("WM_DELETE_WINDOW", on_close)
     root.mainloop()
