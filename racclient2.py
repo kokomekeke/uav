@@ -94,6 +94,7 @@ class ConnectFrame(tkinter.Frame):
         self.channel_spectrum_combo["values"] = [0, 1, 2, 3]
         self.channel_spectrum_combo.pack(side=tkinter.LEFT)
         self.channel_spectrum_combo.bind("<<ComboboxSelected>>", self.choose_spectrum_commands)
+        self.channel_spectrum_combo.configure(state="disabled")
 
         host_label = tkinter.Label(self, text="Host:")
         host_label.pack(
@@ -749,6 +750,7 @@ class ClientWindow(tkinter.Frame):
         self.connect_frame.connect_button.configure(state="disabled")
         self.connect_frame.host_entry.configure(state="disabled")
         self.connect_frame.disconnect_button.configure(state="normal")
+        self.connect_frame.channel_spectrum_combo.configure(state="normal")
 
         self.control_frame.start_button.configure(state="normal")
         self.control_frame.rec_button.configure(state="normal")
@@ -761,6 +763,7 @@ class ClientWindow(tkinter.Frame):
             self.connect_frame.disconnect_button.configure(state="disabled")
             self.connect_frame.host_entry.configure(state="normal")
             self.connect_frame.connect_button.configure(state="normal")
+            self.connect_frame.channel_spectrum_combo.configure(state="disabled")
 
             self.control_frame.start_button.configure(state="disabled")
             self.control_frame.rec_button.configure(state="disabled")
