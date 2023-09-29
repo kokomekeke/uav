@@ -695,22 +695,21 @@ class ClientWindow(tkinter.Frame):
     def gui_packet_handler(self):
         while True: ###TODO: create stop condition
             try:
-                while not self.client.stream_to_gui_queue.empty():
-                    data = self.client.stream_to_gui_queue.get()
+                data = self.client.stream_to_gui_queue.get(timeout=0.2)
 
-                    packet = data["cs_packet"]
-                    compass_angle = data["compass_angle"]
-                    encoder_angle = data["encoder_angle"]
+                packet = data["cs_packet"]
+                compass_angle = data["compass_angle"]
+                encoder_angle = data["encoder_angle"]
 
-                    ts = datetime.fromtimestamp(packet.time_ns / 1e9, tz=None)
-                    packet_string = (f"[{packet.stream_id}] {ts.strftime('%H:%M:%S')}.{int((packet.time_ns % 1e9) / 1e6):03d} - "
-                                    f"{str(packet)} - c_angle={compass_angle}; e_angle={encoder_angle}")
-                    self.stream_packets_lb.insert(tkinter.END, packet_string)
-                    self.stream_packets_lb.delete(0, self.stream_packets_lb.size() - 1000)
-                    self.stream_packets_lb.see(tkinter.END)
-                    
-                    if isinstance(packet, CoreServiceSpectrumPacket):
-                        self.plot_frame.plot_spectrum_packet(packet)
+                ts = datetime.fromtimestamp(packet.time_ns / 1e9, tz=None)
+                packet_string = (f"[{packet.stream_id}] {ts.strftime('%H:%M:%S')}.{int((packet.time_ns % 1e9) / 1e6):03d} - "
+                                f"{str(packet)} - c_angle={compass_angle}; e_angle={encoder_angle}")
+                self.stream_packets_lb.insert(tkinter.END, packet_string)
+                self.stream_packets_lb.delete(0, self.stream_packets_lb.size() - 1000)
+                self.stream_packets_lb.see(tkinter.END)
+                
+                if isinstance(packet, CoreServiceSpectrumPacket):
+                    self.plot_frame.plot_spectrum_packet(packet)
 
             except queue.Empty:
                 pass
