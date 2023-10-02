@@ -163,7 +163,7 @@ class WaterfallMagnitudeGraph(GraphImage):
         return f"{((x - self.params.bin_count / 2) * (self.params.iq_rate / self.params.bin_count) + self.params.center_frequency) / 1e6:.3f}M"
 
     def sample_id_formatter(self, x: float, pos: Any = None) -> str:
-        return f"{x - self.params.waterfall_size:.0f}"
+        return f"{-x:.0f}"
 
     def magnitude_format_coord(self, x: float, y: float) -> str:
         return f"Frequency: {self.bin_freq_formatter(x)} (bin {int(x)}), Packet: {self.sample_id_formatter(y)}"
@@ -214,14 +214,14 @@ class WaterfallMagnitudeGraph(GraphImage):
     def add_data(self, data: npt.NDArray[np.float64]) -> None:
         super().add_data(data)
         self.waterfall = np.append(
-            self.waterfall[-self.params.waterfall_size + 1 :, :],
             np.array([data]),
+            self.waterfall[:-1, :],
             axis=0,
         )
         try:
             self.decimated_waterfall = np.append(
-                self.decimated_waterfall[-self.params.waterfall_size + 1 :, :],
                 np.array([data[:: self.decimate]]),
+                self.decimated_waterfall[:-1, :],
                 axis=0,
             )
         except ValueError:

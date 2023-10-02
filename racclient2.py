@@ -73,7 +73,7 @@ class ConnectFrame(tkinter.Frame):
         self.set_offset_button = tkinter.Button(self, text="Set offsets", command=self.set_offsets)
         self.set_offset_button.pack(side=tkinter.LEFT)
 
-        host_label = tkinter.Label(self, text="Show spectrum for channel:")
+        host_label = tkinter.Label(self, text="Spectrum channel:")
         host_label.pack(
         side=tkinter.LEFT, fill=tkinter.NONE, padx=(20, 5), pady=10, expand=False
         )
@@ -221,8 +221,30 @@ class ControlFrame(tkinter.Frame):
         )  # TODO:separate bin count and burst stride setting?
         bin_count_entry_label.grid(column=0, row=3, sticky=tkinter.W, padx=5, pady=5)
 
-        bin_count_entry = ttk.Entry(self, textvariable=self.bin_count_string, width=11)
-        bin_count_entry.grid(
+        bin_count_combo = ttk.Combobox(self, textvariable=self.bin_count_string, width=11)
+        bin_count_combo["values"] = [
+                                    # Virgin monetary scale values.
+                                    200,
+                                    500,
+                                    1000,
+                                    2000,
+                                    5000,
+                                    10000,
+                                    #Chad power of 2 values.
+                                    0x80,
+                                    0x100,
+                                    0x200,
+                                    0x400,
+                                    0x800,
+                                    0x1000,
+                                    0x2000,
+                                    0x4000,
+                                    0x8000,
+                                    0x10000,
+                                    0x20000,
+                                    0x40000,
+                                    0x80000,]
+        bin_count_combo.grid(
             column=1, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=5
         )
 
@@ -265,7 +287,7 @@ class ControlFrame(tkinter.Frame):
         )
 
         self.source_combo = ttk.Combobox(self, width=12)
-        self.source_combo["values"] = ["USRP", "Default path", "Custom path"]
+        self.source_combo["values"] = ["USRP", "Generator", "Recording"]
         self.source_combo.current(0)
         self.source_combo.grid(column=0, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5)
         self.source_combo.bind("<<ComboboxSelected>>", self.source_combo_update)
@@ -333,7 +355,6 @@ class ControlFrame(tkinter.Frame):
             self.source_file_path_combo.config(state="enabled")
         else:
             self.source_file_path_combo.config(state="disabled")
-
 
 class StatFrame(tkinter.Frame):
     def __init__(self, master, *args, **kwargs):
@@ -438,7 +459,7 @@ class StatFrame(tkinter.Frame):
         Updates the bar plots for peak values.
         """
         max_width = self.peak_chart.winfo_width()
-        adc_resolution = 2**15
+        adc_resolution = 2**15 - 1
 
         peaks_dbfs = [20 * math.log10(int(peak) / adc_resolution) for peak in peaks]
         min_dbfs_level = 20 * math.log10(
@@ -454,7 +475,8 @@ class StatFrame(tkinter.Frame):
         self.peak_chart.coords(self.peak_bars[3], 2, 82, bar_widths[3], 102)
 
         for i in range(4):
-            self.peak_chart.itemconfig(self.peak_texts[i], text=f"{peaks_dbfs[i]:.0f}")
+            text = re.sub (r"^-(0\.?0*)$", r"\1", f"{peaks_dbfs[i]:.0f}")   #formatting numbers rounded to -0 to +0
+            self.peak_chart.itemconfig(self.peak_texts[i], text=text)
 
 class PlotFrame(tkinter.Frame):
     def __init__(self, master, *args, **kwargs):
@@ -844,6 +866,7 @@ class ClientWindow(tkinter.Frame):
         except RuntimeError:
             pass  # it might happen when closing the window
 
+
 class CommandsConnectionThread(BaseConnection, threading.Thread):
     def __init__(self, client) -> None:
         BaseConnection.__init__(self)
@@ -1180,6 +1203,6 @@ if __name__ == "__main__":
     root = tkinter.Tk()
     ex = Client(root)
     root.geometry("1200x850")
-    root.wm_title("Client")
+    root.wm_title("Sagax Direction Finder Clinet Application")
     root.protocol("WM_DELETE_WINDOW", on_close)
     root.mainloop()
