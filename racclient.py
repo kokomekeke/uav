@@ -37,7 +37,6 @@ from pysagax import (
 )
 import pysagax
 
-df_value = 2    ##TODO: shouldn't it be an argument of Client or something??
 
 ###TODO:REMOVE
 class ExapmleFrame(tkinter.Frame):
@@ -503,7 +502,6 @@ class PlotFrame(tkinter.Frame):
         Indicates whether the animation and plot objects have been created
         """
 
-
     def create_canvas(self) -> None:
         """
         Creates matplotlib canvas for graph plots. Called when connecting to the client.
@@ -625,7 +623,6 @@ class PlotFrame(tkinter.Frame):
             image_list.extend(graph.collect_images())
         return image_list
 
-
     def click_handler(self, event: Any) -> None:
         control_frame_ref = self.client.client_window.control_frame ##Could be better?
         ##TODO: set roi span from graph
@@ -652,30 +649,9 @@ class PlotFrame(tkinter.Frame):
             control_frame_ref.roi_span_string.set(f"{roi_span:.0f}")
 
     def update_sensors_and_graphs(self) -> None:
-        global df_value
-        global compass_offset
-        global encoder_offset
 
         ##TODO
         """ dfg_map_server.update_timestamp()
-        compass_heading = float("NaN")
-        encoder_heading = float("NaN")
-        df_corrected = float("NaN")
-        if compass is not None and compass.magnetometer_values is not None:
-            assert self.compass_graph is not None
-            assert self.compass_df_graph is not None
-            # angle = (
-            #     math.atan2(
-            #         compass.magnetometer_values[1],
-            #         compass.magnetometer_values[0],
-            #     )
-            #     + np.pi
-            # )
-            compass_heading = pysagax.normalize_angle(compass.angle - compass_offset)
-            self.compass_graph.add_point(compass_heading)
-            if df_value is not None:
-                df_corrected = pysagax.normalize_angle(compass_heading + df_value)
-                self.compass_df_graph.add_point(df_corrected)
                 dfg_map_server.update_angle(df_corrected, 1e6)
             else:
                 self.compass_df_graph.add_point(None)
@@ -689,14 +665,17 @@ class PlotFrame(tkinter.Frame):
         
 
 
-        assert self.df_graph is not None
-        self.df_graph.add_point(df_value)
+        assert self.df_graph is not None    ##TODO: assert for all or no compass graphs?
+        self.df_graph.add_point(self.master.df_value)
 
-        ##TODO
-        """ if self.client_window.encoder_thread is not None:
-            assert self.encoder_graph is not None
-            encoder_heading = pysagax.normalize_angle(self.client_window.encoder_thread.angle - encoder_offset)
-            self.encoder_graph.add_point(encoder_heading) """
+        self.compass_graph.add_point(self.master.compass_heading)
+        if self.master.compass_heading is not None:
+            df_corrected = pysagax.normalize_angle(self.master.compass_heading + self.master.df_value)  
+            self.compass_df_graph.add_point(df_corrected)
+        else:   #Can we do it without the if-else?
+            self.compass_df_graph.add_point(None)
+        
+        self.encoder_graph.add_point(self.master.encoder_heading)
 
     def plot_spectrum_packet(self, packet: CoreServiceSpectrumPacket) -> None:
         if packet.bin_count == 0:
@@ -726,6 +705,13 @@ class PlotFrame(tkinter.Frame):
 class ClientWindow(tkinter.Frame):
     def __init__(self, client, root):
         self.do_stop = False
+
+        #Last measured angles for the matplotlib animation in plot_frame:
+        self.df_value = None
+        self.compass_angle = None
+        self.compass_heading = None     #compass angle corrected with offset
+        self.encoder_angle = None
+        self.encoder_heading = None     #encoder angle corrected with offset
 
         tkinter.Frame.__init__(self, root)
         self.pack(side="top", fill=tkinter.BOTH, expand=True)
@@ -764,13 +750,15 @@ class ClientWindow(tkinter.Frame):
                 data = self.client.stream_to_gui_queue.get(timeout=0.2)
 
                 packet = data["cs_packet"]
-                compass_angle = data["compass_angle"]
-                encoder_angle = data["encoder_angle"]
+                self.compass_angle = data["compass_angle"]
+                self.compass_heading = data["compass_heading"]
+                self.encoder_angle = data["encoder_angle"]
+                self.encoder_heading = data["encoder_heading"]
 
                 try:
                     ts = datetime.fromtimestamp(packet.time_ns / 1e9, tz=None)
                     packet_string = (f"[{packet.stream_id}] {ts.strftime('%H:%M:%S')}.{int((packet.time_ns % 1e9) / 1e6):03d} - "
-                                    f"{str(packet)} - c_angle={compass_angle}; e_angle={encoder_angle}")
+                                    f"{str(packet)} - c_angle={self.compass_angle}; e_angle={self.encoder_angle}")
                     self.stream_packets_lb.insert(tkinter.END, packet_string)
                     self.stream_packets_lb.delete(0, self.stream_packets_lb.size() - 1000)
                     self.stream_packets_lb.see(tkinter.END)
@@ -786,11 +774,13 @@ class ClientWindow(tkinter.Frame):
                             )  # creating a list of (ChannelID, PeakValue) tuples from the debug message
                             peaks = [peak[1] for peak in matches]
                             self.stat_frame.update_peak_plot(peaks)
+
                     if isinstance(packet, CoreServiceROIResultPacket):
-                        df_value_deg = packet.roi_azimuth  * 180/np.pi
+                        self.df_value = packet.roi_azimuth
+                        df_value_deg = self.df_value  * 180/np.pi
                         if df_value_deg < 0:
                             df_value_deg += 360
-                        self.stat_frame.df_value_string.set(f"{df_value_deg:.2f}")
+                        self.stat_frame.df_value_string.set(f"{df_value_deg:.2f}°")
                 except Exception as e:
                     print("[GUI packet handler]", e)
             except queue.Empty:
@@ -833,7 +823,7 @@ class ClientWindow(tkinter.Frame):
         self.control_frame.start_button.configure(state="normal")
         # self.control_frame.rec_button.configure(state="normal")
 
-        try:
+        try:    ##TODO: move this from GUI thread
             path_list = b""
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.connect((self.connect_frame.host_address.get(), 12939))   ##TODO port no. to args
@@ -985,13 +975,16 @@ class TestStreamDisplayThread(threading.Thread):
                 self.disconnect_value.value = self.disconnect
                 if terminate:
                     print("[StreamAndCompassProcess]", message)
-                    return
+                    break
             except queue.Empty:
                 pass
             except BrokenPipeError:
                 return
             except RuntimeError:
                 return  # it might happen on the UI when closing the window
+            sleep(0.2)
+        
+        print("@@CommandConnectionThread ended")
 
     def run(self) -> None:
         """
@@ -1043,11 +1036,6 @@ class TestStreamDisplayThread(threading.Thread):
                 continue
             
             ##TODO: proper packet handling
-
-            if isinstance(packet, CoreServiceROIResultPacket):
-                global df_value
-                df_value = packet.roi_azimuth
-            
             ##TODO: handlers
             """ next(
                 handler

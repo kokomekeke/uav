@@ -84,6 +84,10 @@ class StreamAndCompassProcess(
 
         self.encoder = None
 
+        self.compass_offset = 0.0
+
+        self.encoder_offset = 0.0
+
     def receive_on_socket(self, data: bytes) -> None:
         """
         When data is received on the socket, this function will construct a packet object from the binary data.
@@ -92,9 +96,15 @@ class StreamAndCompassProcess(
             cs_packet.packet_index = self.packet_count
             self.packet_count += 1
 
+            compass_heading = pysagax.normalize_angle(self.compass.angle - self.compass_offset) if self.compass is not None else None
+            encoder_heading = pysagax.normalize_angle(self.encoder.angle - self.encoder_offset) if self.encoder is not None else None
+
             data = {"cs_packet": cs_packet,
                     "compass_angle": self.compass.angle if self.compass is not None else None,
-                    "encoder_angle": self.encoder.angle if self.encoder is not None else None}
+                    "compass_heading": compass_heading,
+                    "encoder_angle": self.encoder.angle if self.encoder is not None else None,
+                    "encoder_heading": encoder_heading,
+                    }
             for queue in self.queues:
                 queue.put(data)
 
