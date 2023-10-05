@@ -838,6 +838,11 @@ class ClientWindow(tkinter.Frame):
             self.control_frame.source_file_path_combo["values"] = path_list
         except Exception as e:
             print("[Updating recording paths]", e)
+        if self.plot_frame.animation is not None:
+            try:
+                self.plot_frame.animation.event_source.start()
+            except Exception as e:
+                print("[Connect action - MPL animation]", e)
 
     def disconnect_action(self) -> None:
         """
@@ -855,6 +860,10 @@ class ClientWindow(tkinter.Frame):
             self.disconnect_commands()  # to disconnect the other thread
         except RuntimeError:
             pass  # it might happen when closing the window
+        try:
+            self.plot_frame.animation.event_source.stop()
+        except Exception as e:
+            print("[Disconnect action - MPL animation]", e)
 
 
 class CommandsConnectionThread(BaseConnection, threading.Thread):
@@ -984,7 +993,6 @@ class TestStreamDisplayThread(threading.Thread):
                 return  # it might happen on the UI when closing the window
             sleep(0.2)
         
-        print("@@CommandConnectionThread ended")
 
     def run(self) -> None:
         """
