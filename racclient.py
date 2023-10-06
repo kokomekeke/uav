@@ -11,6 +11,7 @@ from time import sleep
 import tkinter
 from tkinter import font  ##why this it needed?
 from tkinter import ttk
+import traceback
 import matplotlib 
 import numpy as np
 from typing import Any, Callable, Optional
@@ -460,12 +461,13 @@ class StatFrame(tkinter.Frame):
         max_width = self.peak_chart.winfo_width()
         adc_resolution = 2**15 - 1
 
-        peaks_dbfs = [20 * math.log10(int(peak) / adc_resolution) for peak in peaks]
+        peaks = [int(peak) for peak in peaks]
+        peaks_dbfs = [20 * math.log10(peak / adc_resolution) if peak > 0 else float("-inf") for peak in peaks]
         min_dbfs_level = 20 * math.log10(
             400 / adc_resolution
         )  # min value of the scale (aprox. noise level)
         bar_widths = [
-            2 + (1 - peak / min_dbfs_level) * (max_width - 4) for peak in peaks_dbfs
+            2 + (1 - peak / min_dbfs_level) * (max_width - 4) if peak != float("-inf") else 0 for peak in peaks_dbfs
         ]  # logarithmic scaling
 
         self.peak_chart.coords(self.peak_bars[0], 2, 7, bar_widths[0], 27)
@@ -796,6 +798,7 @@ class ClientWindow(tkinter.Frame):
                         self.update_status_info("End of filed reached for Sigmf recording", source="GUI packet handler")
                 except Exception as e:
                     print("[GUI packet handler]", e)
+                    traceback.print_tb(e.__traceback__)
             except queue.Empty:
                 pass
             except Exception as e:
@@ -941,7 +944,8 @@ class CommandsConnectionThread(BaseConnection, threading.Thread):
                 if error_code:
                     error_msg.append(f"Error with command \"{cmd_line}\": {response}")
             except queue.Empty:
-                print("Timeout", f"Command {cmd_line} timed out.")
+                error_msg.append(f"Command {cmd_line} timed out.")
+                break
             sleep(0.1)
         if error_msg:
             self.client.status_update_handler(error_msg, source="Command thread")
