@@ -12,12 +12,11 @@ from datetime import datetime
 from time import sleep
 from typing import Optional
 
-from pysagax import StreamAndCompassProcess
-from pysagax.lena_core_service import (
+from pysagax import (
     BaseConnection,
     CoreServicePacket,
-    StreamConnectionProcess,
 )
+from pysagax import StreamAndCompassProcess
 
 parser = argparse.ArgumentParser(description="CLI Test client parameters")
 parser.add_argument("address")
@@ -209,7 +208,7 @@ class CsClient:
         self.disconnect_all()
 
 
-if __name__ == "__main__":
+def main() -> None:
     multiprocessing.set_start_method("spawn")
     client = CsClient()
     while client.command_thread.is_alive() and client.stream_thread.is_alive():
@@ -218,3 +217,7 @@ if __name__ == "__main__":
             break
         client.send_command(inp)
     client.disconnect_all()
+
+
+if __name__ == "__main__":
+    main()

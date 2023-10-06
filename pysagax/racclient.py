@@ -525,7 +525,7 @@ class PlotFrame(tkinter.Frame):
         self.canvas_toolbar = NavigationToolbar2Tk(self.canvas, self)
         self.canvas_toolbar.update()
         
-        root.update()   #this solves matplotlib artifacts?
+        # root.update()   #this solves matplotlib artifacts?
 
         def on_canvas_key_press(event: KeyEvent) -> None:
             key_press_handler(event, self.canvas, self.canvas_toolbar)
@@ -1222,7 +1222,10 @@ def on_close():
     run_threads = False
     root.destroy()
 
-if __name__ == "__main__":
+
+def main() -> None:
+    global ex
+    global root
     multiprocessing.set_start_method("spawn")
     root = tkinter.Tk()
     ex = Client(root)
@@ -1230,3 +1233,6 @@ if __name__ == "__main__":
     root.wm_title(f"Sagax Direction Finder Client Application {pysagax.__version__}")
     root.protocol("WM_DELETE_WINDOW", on_close)
     root.mainloop()
+
+if __name__ == "__main__":
+    main()

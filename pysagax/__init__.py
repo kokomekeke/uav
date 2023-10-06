@@ -1,40 +1,30 @@
 import numpy as np
-from pysagax.lena_core_service import (
-    CoreServicePacket,
-    CoreServiceSpectrumPacket,
-    CoreServiceEOFPacket,
-    CoreServiceDebugPacket,
-    CoreServiceROIResultPacket,
-    CoreServiceROILackOfSignalPacket,
-    BaseConnection,
-    StreamConnectionProcess,
-    CoreServiceParser,
-)
-from pysagax.lena_matplotlib_graphs import (
-    GraphParameters,
-    GraphImage,
-    AngleSpectrumGraph,
-    WaterfallAngleGraph,
-    WaterfallMagnitudeGraph,
-    MagnitudeSpectrumGraph,
-    ThreeDimensionGraph,
-    ThreeDimensionObject,
-    CompassGraph,
-)
-from pysagax.autocomplete_command_box import AutocompleteCommandBox
-from pysagax.compass_sensors import (
-    CompassParser,
-    AaroniaParser,
-    SimpleParser,
-    CompassSensor,
-    open_aaronia_serial_dev,
-    open_arduino_serial_dev,
-    open_aaronia_socket_dev,
-    CalibrationStatus,
-)
-from pysagax.df_classes import DfModule, DfResult, DDF260, LenaDf
-from pysagax.octave_data import save_octave
-from pysagax.lena_with_compass import StreamAndCompassProcess
+
+from pysagax.df.compass_sensors import (AaroniaParser, CalibrationStatus,
+                                        CompassParser, CompassSensor,
+                                        SimpleParser, open_aaronia_serial_dev,
+                                        open_aaronia_socket_dev,
+                                        open_arduino_serial_dev)
+from pysagax.df.df_classes import DDF260, DfModule, DfResult, LenaDf
+from pysagax.df.lena_core_service import (BaseConnection,
+                                          CoreServiceDebugPacket,
+                                          CoreServiceEOFPacket,
+                                          CoreServicePacket, CoreServiceParser,
+                                          CoreServiceROILackOfSignalPacket,
+                                          CoreServiceROIResultPacket,
+                                          CoreServiceSpectrumPacket,
+                                          StreamConnectionProcess)
+from pysagax.df.lena_with_compass import StreamAndCompassProcess
+from pysagax.ui.autocomplete_command_box import AutocompleteCommandBox
+from pysagax.ui.lena_matplotlib_graphs import (AngleSpectrumGraph,
+                                               CompassGraph, GraphImage,
+                                               GraphParameters,
+                                               MagnitudeSpectrumGraph,
+                                               ThreeDimensionGraph,
+                                               ThreeDimensionObject,
+                                               WaterfallAngleGraph,
+                                               WaterfallMagnitudeGraph)
+from pysagax.ui.octave_data import save_octave
 
 
 def si_to_float(si: str) -> float:
@@ -107,6 +97,10 @@ __all__ = [
     "si_to_float",
     "StreamAndCompassProcess",
 ]
+
+from . import _version
+
+__version__ = _version.get_versions()['version']
 
 from . import _version
 __version__ = _version.get_versions()['version']

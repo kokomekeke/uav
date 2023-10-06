@@ -9,7 +9,7 @@ import numpy as np
 import pyvisa
 import typing
 
-from pysagax import (
+from pysagax.df.lena_core_service import (
     CoreServicePacket,
     StreamConnectionProcess,
     BaseConnection,

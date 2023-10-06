@@ -24,7 +24,7 @@ import numpy as np
 import numpy.typing as npt
 import serial
 from matplotlib import pyplot
-from matplotlib.animation import FuncAnimation  # type: ignore
+from matplotlib.animation import FuncAnimation
 from matplotlib.backend_bases import KeyEvent, key_press_handler  # type: ignore
 from matplotlib.backends.backend_tkagg import (  # type: ignore
     FigureCanvasTkAgg,
@@ -698,8 +698,8 @@ class ClientWindow(tkinter.Frame):
         """
 
         # Load host settings into the address boxes
-        if os.path.exists("hosts.txt"):
-            with open("hosts.txt") as f:
+        if os.path.exists("../hosts.txt"):
+            with open("../hosts.txt") as f:
                 self.host_command.set(f.readline().strip())
                 self.host_stream.set(f.readline().strip())
 
@@ -790,8 +790,8 @@ class ClientWindow(tkinter.Frame):
         self.autocomplete_command_frame.initialize()
 
         # Load command suggestions from file
-        if os.path.exists("commands.txt"):
-            with open("commands.txt") as f:
+        if os.path.exists("../commands.txt"):
+            with open("../commands.txt") as f:
                 for line in f:
                     self.autocomplete_command_frame.command_suggestions.add(
                         line.strip()
@@ -845,7 +845,7 @@ class ClientWindow(tkinter.Frame):
         Save command to suggestions. Called when sending a command to the server.
         """
         self.autocomplete_command_frame.add_to_suggestions(command)
-        with open("commands.txt", "w") as f1:
+        with open("../commands.txt", "w") as f1:
             f1.writelines(
                 h + "\n" for h in self.autocomplete_command_frame.get_sorted_commands()
             )
@@ -953,7 +953,7 @@ class ClientWindow(tkinter.Frame):
         self.stream_thread.status_label_ref = self.status_stream_label
         self.stream_thread.packets_lb_ref = self.stream_packets_lb
         self.stream_thread.start()
-        with open("hosts.txt", "w") as f1:
+        with open("../hosts.txt", "w") as f1:
             f1.write(self.host_command.get() + "\n")
             f1.write(self.host_stream.get() + "\n")
 
@@ -1012,7 +1012,7 @@ class ClientWindow(tkinter.Frame):
                 self.stream_thread.disconnect_value.value = True
 
 
-if __name__ == "__main__":
+def main() -> None:
     multiprocessing.set_start_method("spawn")
     root = tkinter.Tk()
     ex = ClientWindow()
@@ -1020,3 +1020,7 @@ if __name__ == "__main__":
     root.wm_title("CS Test Client")
     root.mainloop()
     ex.disconnect_commands()
+
+
+if __name__ == "__main__":
+    main()

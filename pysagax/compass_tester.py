@@ -641,7 +641,7 @@ class ClientWindow(tkinter.Frame):
             self.display_thread.disconnect = True
 
 
-if __name__ == "__main__":
+def main() -> None:
     multiprocessing.set_start_method("spawn")
     root = tkinter.Tk()
     ex = ClientWindow()
@@ -649,3 +649,7 @@ if __name__ == "__main__":
     root.wm_title("Sagax Compass Tester")
     root.mainloop()
     ex.disconnect_commands()
+
+
+if __name__ == "__main__":
+    main()

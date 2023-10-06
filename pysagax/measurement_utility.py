@@ -116,7 +116,7 @@ def generate_diagrams(octave_data_fn: str, tmp_dir_name: str) -> None:
     octave_commands = ""
     with open(
         os.path.join(
-            os.path.dirname(os.path.realpath(__file__)), "cstestclient_octave_graphs.m"
+            os.path.dirname(os.path.realpath(__file__)), "../cstestclient_octave_graphs.m"
         )
     ) as octave_file:
         octave_commands = octave_file.read()
@@ -308,16 +308,16 @@ class ClientWindow(tkinter.Frame):
 
         left_frame.pack(fill=tkinter.BOTH, side=tkinter.LEFT, expand=True)
 
-        if os.path.exists("example_cs_commands.txt"):
-            with open("example_cs_commands.txt") as f:
+        if os.path.exists("../example_cs_commands.txt"):
+            with open("../example_cs_commands.txt") as f:
                 self.console_textarea.delete(1.0, tkinter.END)
                 self.console_textarea.insert(
                     1.0, "\n".join([li.strip() for li in f.readlines()])
                 )
-        if os.path.exists("example_measurement_comments.md"):
+        if os.path.exists("../example_measurement_comments.md"):
             self.comments_textarea.delete(1.0, tkinter.END)
             self.comments_textarea.insert(
-                1.0, Path("example_measurement_comments.md").read_text()
+                1.0, Path("../example_measurement_comments.md").read_text()
             )
         self.comments_textarea.bind("<KeyRelease>", self.refresh_markdown_editor)
         self.refresh_markdown_editor()
@@ -407,7 +407,7 @@ class ClientWindow(tkinter.Frame):
         os.makedirs(save_path)
         print(f"Saving to {save_path}...")
         print("\tcommands.txt")
-        Path(os.path.join(save_path, "commands.txt")).write_text(
+        Path(os.path.join(save_path, "../commands.txt")).write_text(
             self.console_textarea.get("1.0", tkinter.END)
         )
         print("\tcomments.md")
@@ -453,9 +453,9 @@ class ClientWindow(tkinter.Frame):
         for folder in folders:
             folder_path = os.path.join(m_dir, folder)
             doc += f"\n\n\n## {os.path.basename(folder)}"
-            if os.path.exists(os.path.join(folder_path, "commands.txt")):
+            if os.path.exists(os.path.join(folder_path, "../commands.txt")):
                 commands_txt = Path(
-                    os.path.join(folder_path, "commands.txt")
+                    os.path.join(folder_path, "../commands.txt")
                 ).read_text()
                 iq_rate = find_num_with_re(r"SOURCE:BurstStride! (\d+)", commands_txt)
                 center_freq = find_num_with_re(
@@ -560,10 +560,14 @@ class ClientWindow(tkinter.Frame):
             self.comments_textarea.tag_config(name, font=font, foreground=color)  # type: ignore
 
 
-if __name__ == "__main__":
+def main() -> None:
     multiprocessing.set_start_method("spawn")
     root = tkinter.Tk()
     ex = ClientWindow()
     root.geometry("1024x768")
     root.wm_title("Measurement Helper Utility")
     root.mainloop()
+
+
+if __name__ == "__main__":
+    main()

@@ -24,7 +24,7 @@ class ClickerRobot(threading.Thread):
             time.sleep(2)
 
 
-if __name__ == "__main__":
+def main() -> None:
     multiprocessing.set_start_method("spawn")
     root = tkinter.Tk()
     ex = Client(root)
@@ -34,3 +34,7 @@ if __name__ == "__main__":
     clicker = ClickerRobot(ex)
     clicker.start()
     root.mainloop()
+
+
+if __name__ == "__main__":
+    main()

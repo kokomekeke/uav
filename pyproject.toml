@@ -13,7 +13,6 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "versioneer",
     "numpy",
     "AHRS",
     "scipy",
@@ -33,5 +32,12 @@ versionfile_source = "pysagax/_version.py"
 tag_prefix = "sgx-pc-"
 
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools", "wheel", "versioneer"]
 build-backend = "setuptools.build_meta"
+
+[project.scripts]
+aaronia-tcp-server = "pysagax.aaronia_tcp_server:main"
+clitestclient = "pysagax.clitestclient:main"
+cstestclient = "pysagax.cstestclient:main"
+dfclient = "pysagax.dfclient:main"
+racclient = "pysagax.racclient:main"

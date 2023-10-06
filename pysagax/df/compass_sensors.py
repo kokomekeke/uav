@@ -13,7 +13,7 @@ import numpy as np
 import numpy.typing as npt
 import scipy  # type: ignore
 import serial
-from pysagax.magnetometer_calibration import MagnetometerCalibration
+from pysagax.df.magnetometer_calibration import MagnetometerCalibration
 from tkinter import messagebox
 
 

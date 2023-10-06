@@ -67,7 +67,7 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
             queues.remove(my_q)
 
 
-if __name__ == "__main__":
+def main() -> None:
     HOST, PORT = "0.0.0.0", 12938
 
     serial_thread = SerialHandlerThread(ser=open_aaronia_serial_dev())
@@ -77,3 +77,7 @@ if __name__ == "__main__":
         # Activate the server; this will keep running until you
         # interrupt the program with Ctrl-C
         server.serve_forever()
+
+
+if __name__ == "__main__":
+    main()
