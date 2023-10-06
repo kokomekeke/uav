@@ -1,6 +1,6 @@
 [project]
 name = "pysagax"
-version = "0.0.1"
+version = "0.1.0"
 authors = [
   { name="Peter Rigo", email="peter.rigo@sagaxcommunications.com" },
   { name="Aron Szabo", email="aron.szabo@sagaxcommunications.com" },
@@ -29,7 +29,7 @@ dependencies = [
 VCS = "git"
 style = "pep440"
 versionfile_source = "pysagax/_version.py"
-tag_prefix = "sgx-pc-"
+tag_prefix = "v"
 
 [build-system]
 requires = ["setuptools", "wheel", "versioneer"]
