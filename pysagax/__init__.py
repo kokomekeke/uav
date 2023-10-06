@@ -107,3 +107,6 @@ __all__ = [
     "si_to_float",
     "StreamAndCompassProcess",
 ]
+
+from . import _version
+__version__ = _version.get_versions()['version']

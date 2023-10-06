@@ -1,0 +1,37 @@
+[project]
+name = "pysagax"
+version = "0.0.1"
+authors = [
+  { name="Peter Rigo", email="peter.rigo@sagaxcommunications.com" },
+  { name="Aron Szabo", email="aron.szabo@sagaxcommunications.com" },
+]
+description = "Python helper libraries for Sagax DF products"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "versioneer",
+    "numpy",
+    "AHRS",
+    "scipy",
+    "pyserial",
+    "pyftdi",
+    "matplotlib",
+    "PyVISA",
+    "Pillow",
+    "pyquaternion",
+    "pandas",
+]
+
+[tool.versioneer]
+VCS = "git"
+style = "pep440"
+versionfile_source = "pysagax/_version.py"
+tag_prefix = "sgx-pc-"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

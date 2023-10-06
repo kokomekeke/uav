@@ -1199,6 +1199,6 @@ if __name__ == "__main__":
     root = tkinter.Tk()
     ex = Client(root)
     root.geometry("1200x850")
-    root.wm_title("Sagax Direction Finder Clinet Application")
+    root.wm_title(f"Sagax Direction Finder Client Application {pysagax.__version__}")
     root.protocol("WM_DELETE_WINDOW", on_close)
     root.mainloop()
