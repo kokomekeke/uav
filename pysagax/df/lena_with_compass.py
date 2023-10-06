@@ -2,6 +2,7 @@ import multiprocessing
 import queue
 import re
 import threading
+import traceback
 import typing
 from typing import Optional
 
@@ -16,20 +17,21 @@ from pysagax import (
 )
 
 class EncoderThread(threading.Thread):  ###
-    def __init__(self, port: str):
+    def __init__(self, port: str, status_queue: queue.Queue[str]):
         super().__init__()
         self.daemon = True
         self.port = port
         self.angle = float("NaN")
         self.connection = None
+        self.status_queue = status_queue
 
     def run(self):
         global run_threads
         try:
             self.connection = serial.Serial(self.port, baudrate=9600, timeout=0.5)
-            print("[Encoder]: Connected") ##TODO: status queue
+            self.status_queue.put("[Encoder]: Connected")
         except:
-            print(f"[Encoder]: Could not connect to encoder on port {self.port}")
+            self.status_queue.put(f"[Encoder]: Could not connect to encoder on port {self.port}")
             return
         while True: ##TODO: stop condition and connection closing
             try:
@@ -39,7 +41,7 @@ class EncoderThread(threading.Thread):  ###
                     self.angle = pysagax.normalize_angle(float(ctr[0]))
             except:
                 self.angle = float("NaN")
-                print("Encoder disconnected.")
+                self.status_queue("[Encoder]: disconnected.")
                 break
         self.close()
     def close(self):
@@ -131,16 +133,16 @@ class StreamAndCompassProcess(
         Display a status message (on the GUI status bar)
         """
         assert self.mp_status
-        print(f"[StreamAndCompassProcess] {message}")
         self.mp_status.put(message)
 
     def init_compass_thread(self):
                 
         self.compass = CompassSensor(pysagax.AaroniaParser())
+        #TODO: put CompassSensor errors in status queue instead of messagebox and print
         try:
             self.compass.load_calibration()
         except FileNotFoundError:
-            print("Startup error, Calibration file calibration.npz not found. Make sure sgx-pc is your workdir")
+            self.mp_status.put("[Compass]: Startup error, Calibration file calibration.npz not found. Make sure sgx-pc is your workdir")
             # messagebox.showerror( ##TODO
             #     "Startup error",
             #     "Calibration file calibration.npz not found. Make sure sgx-pc is your workdir.",
@@ -151,15 +153,16 @@ class StreamAndCompassProcess(
                 pysagax.open_aaronia_socket_dev(self.compass_host_port)
             )
         except serial.SerialException:
-            # self.status_compass_label.config(text="Compass sensor not connected")
-            print("Compass sensor not connected")
-        except Exception as e:
-            print("[CompassThread]:", e)
+            self.mp_status("[Compass]: Compass sensor not connected")
+        except ConnectionError as e:
+            self.mp_status.put(f"[Compass]: {e}")
             self.compass = None
             return
+        else:
+            self.mp_status.put(f"[Compass]: Connected")
         self.compass.start()
 
     def init_encoder_thread(self):        
-        self.encoder = EncoderThread(self.encoder_port)
+        self.encoder = EncoderThread(self.encoder_port, self.mp_status)
         self.encoder.start()
 

@@ -665,19 +665,18 @@ class PlotFrame(tkinter.Frame):
         ):
             dfg_map_server.update_lat_lon(compass.parser.lat, compass.parser.lon) """
         
-
-
         assert self.df_graph is not None    ##TODO: assert for all or no compass graphs?
-        self.df_graph.add_point(self.master.df_value)
 
+        self.df_graph.add_point(self.master.df_value)
         self.compass_graph.add_point(self.master.compass_heading)
-        if self.master.compass_heading is not None:
+        self.encoder_graph.add_point(self.master.encoder_heading)
+
+        if self.master.compass_heading is not None and self.master.df_value is not None:
             df_corrected = pysagax.normalize_angle(self.master.compass_heading + self.master.df_value)  
             self.compass_df_graph.add_point(df_corrected)
         else:   #Can we do it without the if-else?
             self.compass_df_graph.add_point(None)
         
-        self.encoder_graph.add_point(self.master.encoder_heading)
 
     def plot_spectrum_packet(self, packet: CoreServiceSpectrumPacket) -> None:
         if packet.bin_count == 0:
@@ -746,9 +745,15 @@ class ClientWindow(tkinter.Frame):
         self.center_notebook.pack(side=tkinter.LEFT, fill=tkinter.BOTH, padx=6, expand=True)
 
         self.status_info_lb = tkinter.Listbox(self.tab1, height=4, width=75)
+        status_info_lb_sb = tkinter.Scrollbar(self.tab1, orient="horizontal")
+        status_info_lb_sb.config(command=self.status_info_lb.xview)
+        status_info_lb_sb.pack(side="bottom", fill=tkinter.X)
         self.status_info_lb.pack(side=tkinter.LEFT, fill=tkinter.BOTH, padx=6, expand=True)
 
         self.stream_packets_lb = tkinter.Listbox(self.stream_packets_tab, height=4, width=75)
+        stream_packets_lb_sb = tkinter.Scrollbar(self.stream_packets_tab, orient="horizontal")
+        stream_packets_lb_sb.config(command=self.stream_packets_lb.xview)
+        stream_packets_lb_sb.pack(side="bottom", fill=tkinter.X)
         self.stream_packets_lb.pack(side=tkinter.LEFT, fill=tkinter.BOTH, padx=6, expand=True)
 
         self.stat_frame = StatFrame(self.bottom_frame, relief=tkinter.RAISED, borderwidth=1, width=600)
@@ -803,6 +808,7 @@ class ClientWindow(tkinter.Frame):
                 pass
             except Exception as e:
                 print("[GUI packet handler]", e)
+                traceback.print_tb(e.__traceback__)
                 return
 
     def set_stream_status(self, message: str) -> None:
@@ -859,6 +865,7 @@ class ClientWindow(tkinter.Frame):
                 self.plot_frame.animation.event_source.start()
             except Exception as e:
                 print("[Connect action - MPL animation]", e)
+                traceback.print_tb(e.__traceback__)
 
     def disconnect_action(self) -> None:
         """
@@ -880,6 +887,7 @@ class ClientWindow(tkinter.Frame):
             self.plot_frame.animation.event_source.stop()
         except Exception as e:
             print("[Disconnect action - MPL animation]", e)
+            traceback.print_tb(e.__traceback__)
 
     def update_status_info(self, update_string: str|list[str], source: str=None):
         if not isinstance(update_string, list):
@@ -1009,9 +1017,9 @@ class TestStreamDisplayThread(threading.Thread):
                         terminate = True
                     else:
                         self.client.stream_status_msg_handler(message)
+                    self.client.status_update_handler(message, source="StreamAndCompassProcess")
                 self.disconnect_value.value = self.disconnect
                 if terminate:
-                    print("[StreamAndCompassProcess]", message)
                     break
             except queue.Empty:
                 pass
@@ -1132,7 +1140,7 @@ class Client:
 
         if from_file:
             if source_file_path[-1] != "/":
-                source_file_path = source_file_path + "/"
+                source_file_path = source_file_path + "\\"
             self.send_commands(
                 f'SOURCE:Path! SigMF "{source_file_path}recording.sigmf-collection";' 
                 f"SOURCE:Position! 0;"  
