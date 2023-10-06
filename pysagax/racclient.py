@@ -1140,7 +1140,7 @@ class Client:
 
         if from_file:
             if source_file_path[-1] != "/":
-                source_file_path = source_file_path + "\\"
+                source_file_path = source_file_path + "/"
             self.send_commands(
                 f'SOURCE:Path! SigMF "{source_file_path}recording.sigmf-collection";' 
                 f"SOURCE:Position! 0;"  
