@@ -736,7 +736,17 @@ class ClientWindow(tkinter.Frame):
         self.control_frame = ControlFrame(self.bottom_frame, relief=tkinter.RAISED, borderwidth=1)        
         self.control_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.LEFT)
 
-        self.stream_packets_lb = tkinter.Listbox(self.bottom_frame, height=4, width=75)
+        self.center_notebook = ttk.Notebook(self.bottom_frame)
+        self.tab1 = ttk.Frame(self.center_notebook) 
+        self.stream_packets_tab = ttk.Frame(self.center_notebook)
+        self.center_notebook.add(self.tab1, text="Status info")
+        self.center_notebook.add(self.stream_packets_tab, text="Stream packets")
+        self.center_notebook.pack(side=tkinter.LEFT, fill=tkinter.BOTH, padx=6, expand=True)
+
+        self.status_info_lb = tkinter.Listbox(self.tab1, height=4, width=75)
+        self.status_info_lb.pack(side=tkinter.LEFT, fill=tkinter.BOTH, padx=6, expand=True)
+
+        self.stream_packets_lb = tkinter.Listbox(self.stream_packets_tab, height=4, width=75)
         self.stream_packets_lb.pack(side=tkinter.LEFT, fill=tkinter.BOTH, padx=6, expand=True)
 
         self.stat_frame = StatFrame(self.bottom_frame, relief=tkinter.RAISED, borderwidth=1, width=600)
@@ -781,6 +791,9 @@ class ClientWindow(tkinter.Frame):
                         if df_value_deg < 0:
                             df_value_deg += 360
                         self.stat_frame.df_value_string.set(f"{df_value_deg:.2f}°")
+                    
+                    if isinstance(packet, CoreServiceEOFPacket):
+                        self.update_status_info("End of filed reached for Sigmf recording", source="GUI packet handler")
                 except Exception as e:
                     print("[GUI packet handler]", e)
             except queue.Empty:
@@ -865,6 +878,15 @@ class ClientWindow(tkinter.Frame):
         except Exception as e:
             print("[Disconnect action - MPL animation]", e)
 
+    def update_status_info(self, update_string: str|list[str], source: str=None):
+        if not isinstance(update_string, list):
+            update_string = [update_string]
+        for line in update_string:
+            if source is not None:
+                line = f"[{source}]: {line}"
+            self.status_info_lb.insert(tkinter.END, line)
+            self.status_info_lb.delete(0, self.stream_packets_lb.size() - 1000)
+            self.status_info_lb.see(tkinter.END)
 
 class CommandsConnectionThread(BaseConnection, threading.Thread):
     def __init__(self, client) -> None:
@@ -902,6 +924,7 @@ class CommandsConnectionThread(BaseConnection, threading.Thread):
         Send the command from the command entry box to the client. Called on pressing the Return key in the autocomplete box.
         """
         cmd = cmd.replace("\n", "").replace("\r", "")
+        error_msg = []
         for cmd_line in cmd.split(";"):  # One command per line
             if not cmd_line:
                 continue
@@ -913,16 +936,17 @@ class CommandsConnectionThread(BaseConnection, threading.Thread):
                 response = self.incoming_messages_queue.get(
                     block=True, timeout=30
                 )
-                print(response)
                 response_parts = response.split(" ")
                 error_code = int(response_parts[0])
                 if error_code:
-                    print("Command error", f"{cmd_line}\n{response}")
-                else:
-                    print(f"RESPONSE:{response}")
+                    error_msg.append(f"Error with command \"{cmd_line}\": {response}")
             except queue.Empty:
                 print("Timeout", f"Command {cmd_line} timed out.")
             sleep(0.1)
+        if error_msg:
+            self.client.status_update_handler(error_msg, source="Command thread")
+        else:
+            self.client.status_update_handler("Core Service configured", source="Command thread")
 
 
 class TestStreamDisplayThread(threading.Thread):
@@ -1098,9 +1122,6 @@ class Client:
         self.stream_thread.encoder_port = encoder_port
         self.stream_thread.start()
 
-
-        
-
     def start_commands(self, freq, bw, gain, bin_count, burst_stride, roi_center, roi_span, roi_threshold, from_file, source_file_path) -> None:
         connect_string = 'UHD "serial=8001680,serial=8001820" "A:A A:B"'      # for 10.1.1.113 (RAC setup)
         # connect_string = 'UHD "serial=8002051,serial=8002065" "A:A A:B"'  # for 10.1.1.139 (aron)
@@ -1185,6 +1206,9 @@ class Client:
 
     def command_status_msg_handler(self, message):
         threading.Thread(target=self.client_window.set_command_status, args=(message,), daemon=True).start()
+    
+    def status_update_handler(self, update_string: str|list[str], source: str=None):
+        threading.Thread(target=self.client_window.update_status_info, args=(update_string, source), daemon=True).start()
 
 def on_close():
     global run_threads
