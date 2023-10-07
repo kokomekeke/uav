@@ -16,6 +16,53 @@ from pysagax import (
     CompassSensor,
 )
 
+"""
+Class for handling multiple multiprocessing.Queue objects together.
+It could be modified to take queue.Queue objects as well. 
+"""
+class MultiQueue():
+    def __init__(self, queues: list[multiprocessing.Queue] = []):
+        self.queues = []
+        for queue in queues:
+            self.add_queue(queue)
+
+    def add_queue(self, queue: multiprocessing.Queue):
+        """
+        Add a queue
+        """
+        if not isinstance(queue, multiprocessing.queues.Queue):
+            raise ValueError("Input must be a multiprocessing.Queue object")
+        self.queues.append(queue)
+
+    def remove_queue(self, queue):
+        """
+        Remove a queue by reference
+        """
+        if queue in self.queues:
+            self.queues.remove(queue)
+        else:
+            raise ValueError("Queue not found in MultiQueue")
+
+    def put(self, item, block=True, timeout=None):
+        """
+        Put an item into all queues
+        """
+        ##TODO: properly handle if one of the queues is full
+        for q in self.queues:
+            try:
+                q.put(item, block=False)
+            except multiprocessing.queues.Full:
+                pass #we ignore full queues for now, since multiprocessing queues can't be used similarly to collections.Deque objects or be cleared easily.
+
+    def empty(self):
+        """
+        Check if the every queue in MultiQueue is empty.
+        """
+        if not self.queues:
+            raise ValueError("No queues added to MultiQueue")
+        return all(queue.empty() for queue in self.queues)
+    
+
 class EncoderThread(threading.Thread):  ###
     def __init__(self, port: str, status_queue: queue.Queue[str]):
         super().__init__()
@@ -53,7 +100,7 @@ class StreamAndCompassProcess(
 ):
     def __init__(
         self,
-        queues: typing.Iterable[queue.Queue[tuple[float, CoreServicePacket]]],
+        queues: MultiQueue,
         disconnect_value: multiprocessing.managers.ValueProxy[int],
         status_value: queue.Queue[str],
     ):
@@ -107,8 +154,8 @@ class StreamAndCompassProcess(
                     "encoder_angle": self.encoder.angle if self.encoder is not None else None,
                     "encoder_heading": encoder_heading,
                     }
-            for queue in self.queues:
-                queue.put(data)
+            
+            self.queues.put(data)
 
     def run(self) -> None:
         """

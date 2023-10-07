@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from __future__ import annotations
 from datetime import datetime
 import math
 import multiprocessing
@@ -28,6 +29,7 @@ from matplotlib.backends.backend_tkagg import (  # type: ignore
 from pysagax import (
     BaseConnection,
     StreamAndCompassProcess,
+    MultiQueue,
     WaterfallAngleGraph,
     WaterfallMagnitudeGraph,
     MagnitudeSpectrumGraph,
@@ -525,7 +527,7 @@ class PlotFrame(tkinter.Frame):
         self.canvas_toolbar = NavigationToolbar2Tk(self.canvas, self)
         self.canvas_toolbar.update()
         
-        # root.update()   #this solves matplotlib artifacts?
+        root.update()   #this solves matplotlib artifacts?
 
         def on_canvas_key_press(event: KeyEvent) -> None:
             key_press_handler(event, self.canvas, self.canvas_toolbar)
@@ -1057,8 +1059,9 @@ class TestStreamDisplayThread(threading.Thread):
         This queue will transfer the processed packets from the stream process to the main (GUI) process
         """
 
+        cs_packet_queues = MultiQueue([packets_queue, self.client.stream_to_gui_queue])
         stream_process = StreamAndCompassProcess(
-            [packets_queue, self.client.stream_to_gui_queue], self.disconnect_value, status_queue
+            cs_packet_queues, self.disconnect_value, status_queue
         )
 
         stream_process.host_port = self.host_port

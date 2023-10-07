@@ -14,7 +14,8 @@ from pysagax.df.lena_core_service import (BaseConnection,
                                           CoreServiceROIResultPacket,
                                           CoreServiceSpectrumPacket,
                                           StreamConnectionProcess)
-from pysagax.df.lena_with_compass import StreamAndCompassProcess
+from pysagax.df.lena_with_compass import (StreamAndCompassProcess,
+                                          MultiQueue)
 from pysagax.ui.autocomplete_command_box import AutocompleteCommandBox
 from pysagax.ui.lena_matplotlib_graphs import (AngleSpectrumGraph,
                                                CompassGraph, GraphImage,
