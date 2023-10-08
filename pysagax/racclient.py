@@ -9,6 +9,7 @@ import re
 import socket
 import threading
 from time import sleep
+import time
 import tkinter
 from tkinter import font  ##why this it needed?
 from tkinter import ttk
@@ -962,37 +963,20 @@ class CommandsConnectionThread(BaseConnection, threading.Thread):
         else:
             self.client.status_update_handler("Core Service configured", source="Command thread")
 
+#Owner class for the client
+class Client:
+    def __init__(self, root):
 
-class TestStreamDisplayThread(threading.Thread):
-    def __init__(self, client) -> None:
-        super().__init__()
+        self.stream_to_gui_queue: multiprocessing.Queue[dict] = multiprocessing.Queue(maxsize=100)
 
-        self.client = client
+        self.client_window = ClientWindow(self,  root)
+        self.command_thread = None
+        self.stream_process = None
+        self.logger_process = None
+        self.dfg_map_server = None
+        self.encoder_thread = None
 
-        self.roi_packet: Optional[CoreServicePacket] = None
-        """
-        Latest ROI packet
-        """
-
-        self.roi_bin: int = 0
-        """
-        FFT bin position of ROI result
-        """
-
-        self.disconnect: bool = False
-        """
-        When the disconnect flag is set, the thread loop will quit on the next iteration.
-        """
-
-        self.host_port = ""
-        """
-        Host and port in <address>:<tcp port> format.
-        """
-
-        self.notification_message = ""
-        """
-        Last notification message from the stream port
-        """
+        self.stream_process_watcher_queue: multiprocessing.Queue[str] = multiprocessing.Queue()
 
         manager = multiprocessing.get_context("spawn").Manager()
         self.disconnect_value = manager.Value("i", 0)
@@ -1001,112 +985,25 @@ class TestStreamDisplayThread(threading.Thread):
         next iteration.
         """
 
-        self.compass_host_port = ""
-        self.encoder_port = ""
-
-    def status_watcher_thread(self, status_queue: queue.Queue[str]) -> None:
-        """
-        Entry point of the watcher thread
-        """
-        while True:
-            try:
-                terminate = False
-                while not status_queue.empty():
-                    message = status_queue.get(
-                        timeout=0.2
-                    )  # get status message from stream process
-                    if message == "END":
-                        terminate = True
-                    else:
-                        self.client.stream_status_msg_handler(message)
-                    self.client.status_update_handler(message, source="StreamAndCompassProcess")
-                self.disconnect_value.value = self.disconnect
-                if terminate:
-                    break
-            except queue.Empty:
-                pass
-            except BrokenPipeError:
-                return
-            except RuntimeError:
-                return  # it might happen on the UI when closing the window
-            sleep(0.2)
-        
-
-    def run(self) -> None:
-        """
-        Entry point of the data handling thread
-        """
-
-        global args
-        status_queue: multiprocessing.Queue[str] = multiprocessing.Queue()
-        """
-        The string elements of the status queue are the messages to be displayed on the GUI status bar
-        """
-
-        # The purpose of the watcher thread is to take the status messages from the multiprocessing process and display
-        # them on the GUI, and to forward the disconnect signal to the process if the "Disconnect" button is clicked.
-        watcher_thread = threading.Thread(
-            target=self.status_watcher_thread,
-            args=[status_queue],
-            daemon=True,
-        )
-        watcher_thread.start()
-
-        packets_queue: multiprocessing.Queue[
-            tuple[float, CoreServicePacket]
-        ] = multiprocessing.Queue()
-        """
-        This queue will transfer the processed packets from the stream process to the main (GUI) process
-        """
-
-        cs_packet_queues = MultiQueue([packets_queue, self.client.stream_to_gui_queue])
-        stream_process = StreamAndCompassProcess(
-            cs_packet_queues, self.disconnect_value, status_queue
-        )
-
-        stream_process.host_port = self.host_port
-        stream_process.compass_host_port = self.compass_host_port
-        stream_process.encoder_port = self.encoder_port
-        stream_process.start()
-
-        # The code below will handle the preprocessed packets from the stream process
-        while True:
-            if self.disconnect or not watcher_thread.is_alive():
-                break
-            try:
-                data = packets_queue.get(timeout=0.5)  # get a packet from the stream process
-                
-                packet = data["cs_packet"]
-                compass_angle = data["compass_angle"]
-                encoder_angle = data["encoder_angle"]
-            except queue.Empty:
-                continue
-            
-            ##TODO: proper packet handling
-            ##TODO: handlers
-            """ next(
-                handler
-                for packet_class, handler in self.packet_handlers.items()
-                if isinstance(packet, packet_class)
-            )(packet) """
-
-        self.disconnect_value.value = True
-        stream_process.join()
-        stream_process.terminate()
-
-
-#Owner class for the client
-class Client:
-    def __init__(self, root):
-
-        self.stream_to_gui_queue: multiprocessing.Queue[dict] = multiprocessing.Queue()
-
-        self.client_window = ClientWindow(self,  root)
-        self.command_thread = None
-        self.stream_thread = None
-        self.logger_process = None
-        self.dfg_map_server = None
-        self.encoder_thread = None
+        self.do_stop = False
+        self.watcher_thread = threading.Thread(target=self.watcher_thread)
+        self.watcher_thread.start()
+    
+    def watcher_thread(self):
+        while not self.do_stop:
+            do_sleep = True #if every queue is empty -> sleep
+            if self.stream_process is not None:
+                try:
+                    msg = self.stream_process_watcher_queue.get_nowait()
+                    self.stream_status_msg_handler(msg)
+                    do_sleep = False
+                except queue.Empty:
+                    pass
+            ##TODO: for command thread 
+            ##TODO: msg_handler functions might not need separate threads
+            if do_sleep:
+                sleep(0.1)
+        ##TODO: empty and join watcher queues before terminating thread
 
     def send_commands(self, cmd: str) -> None:        
         """
@@ -1129,13 +1026,16 @@ class Client:
         self.command_thread.host_port = f"{host_address}:12936"
         self.command_thread.start()
 
-        
 
-        self.stream_thread = TestStreamDisplayThread(self)
-        self.stream_thread.host_port = f"{host_address}:12937"
-        self.stream_thread.compass_host_port = f"{host_address}:12938"
-        self.stream_thread.encoder_port = encoder_port
-        self.stream_thread.start()
+        cs_packet_queues = MultiQueue([self.stream_to_gui_queue])
+        self.stream_process = StreamAndCompassProcess(
+            cs_packet_queues, self.disconnect_value, self.stream_process_watcher_queue
+        )
+
+        self.stream_process.host_port = f"{host_address}:12937"
+        self.stream_process.compass_host_port = f"{host_address}:12938"
+        self.stream_process.encoder_port = encoder_port
+        self.stream_process.start()
 
     def start_commands(self, freq, bw, gain, bin_count, burst_stride, roi_center, roi_span, roi_threshold, from_file, source_file_path) -> None:
         connect_string = 'UHD "serial=8001680,serial=8001820" "A:A A:B"'      # for 10.1.1.113 (RAC setup)
@@ -1188,10 +1088,9 @@ class Client:
         if self.command_thread is not None:
             self.command_thread.disconnect = True
 
-        if self.stream_thread is not None:
-            self.stream_thread.disconnect = True
-            if self.stream_thread.disconnect_value is not None:
-                self.stream_thread.disconnect_value.value = True
+        if self.stream_process is not None:
+            if self.disconnect_value is not None:
+                self.disconnect_value.value = True
         ###TODO
         """
         if self.encoder_thread is not None:
@@ -1218,6 +1117,9 @@ class Client:
 
     def stream_status_msg_handler(self, message):
         threading.Thread(target=self.client_window.set_stream_status, args=(message,), daemon=True).start()
+        
+        self.status_update_handler(message, source="StreamAndCompassProcess")
+        #TODO: make (action, data) status messages, where action = update/status/encoder/etc.
 
     def command_status_msg_handler(self, message):
         threading.Thread(target=self.client_window.set_command_status, args=(message,), daemon=True).start()
@@ -1229,6 +1131,8 @@ def on_close():
     global run_threads
     # dfg_map_server.run_thread = False
     ex.client_window.do_stop = True
+    ex.do_stop = False  
+    ex.watcher_thread.join()
     ex.disconnect_commands()
     run_threads = False
     root.destroy()
