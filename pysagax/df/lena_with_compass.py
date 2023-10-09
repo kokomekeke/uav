@@ -76,9 +76,9 @@ class EncoderThread(threading.Thread):  ###
         global run_threads
         try:
             self.connection = serial.Serial(self.port, baudrate=9600, timeout=0.5)
-            self.status_queue.put("[Encoder]: Connected")
+            self.status_queue.put("#encoder" + "Connected")
         except:
-            self.status_queue.put(f"[Encoder]: Could not connect to encoder on port {self.port}")
+            self.status_queue.put("#encoder" + f"Could not connect to encoder on port {self.port}")
             return
         while True: ##TODO: stop condition and connection closing
             try:
@@ -88,7 +88,7 @@ class EncoderThread(threading.Thread):  ###
                     self.angle = pysagax.normalize_angle(float(ctr[0]))
             except:
                 self.angle = float("NaN")
-                self.status_queue("[Encoder]: disconnected.")
+                self.status_queue("#encoder" + "Disconnected.")
                 break
         self.close()
     def close(self):
@@ -189,7 +189,7 @@ class StreamAndCompassProcess(
         try:
             self.compass.load_calibration()
         except FileNotFoundError:
-            self.mp_status.put("[Compass]: Startup error, Calibration file calibration.npz not found. Make sure sgx-pc is your workdir")
+            self.mp_status.put("#compass" + "Startup error, Calibration file calibration.npz not found. Make sure sgx-pc is your workdir")
             # messagebox.showerror( ##TODO
             #     "Startup error",
             #     "Calibration file calibration.npz not found. Make sure sgx-pc is your workdir.",
@@ -200,13 +200,13 @@ class StreamAndCompassProcess(
                 pysagax.open_aaronia_socket_dev(self.compass_host_port)
             )
         except serial.SerialException:
-            self.mp_status("[Compass]: Compass sensor not connected")
+            self.mp_status("#compass" + "Compass sensor not connected")
         except ConnectionError as e:
-            self.mp_status.put(f"[Compass]: {e}")
+            self.mp_status.put("#compass" + str(e))
             self.compass = None
             return
         else:
-            self.mp_status.put(f"[Compass]: Connected")
+            self.mp_status.put("#compass" + "Connected")
         self.compass.start()
 
     def init_encoder_thread(self):        

@@ -126,6 +126,11 @@ class StatusFrame(tkinter.Frame):
     def __init__(self, master, *args, **kwargs):
         tkinter.Frame.__init__(self, master, *args, **kwargs)
 
+        self.status_command_string = tkinter.StringVar(value="Not connected")
+        self.status_stream_string = tkinter.StringVar(value="Not connected")
+        self.status_compass_string = tkinter.StringVar(value="Not connected")
+        self.status_map_server_string = tkinter.StringVar(value="Down")
+
         status_command_label_label = tkinter.Label(
             self,
             text="Command:",
@@ -134,7 +139,7 @@ class StatusFrame(tkinter.Frame):
         status_command_label_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
 
         self.status_command_label = tkinter.Label(
-            self, text="Not connected", font=tkinter.font.Font(size=10)
+            self, textvariable=self.status_command_string, font=tkinter.font.Font(size=10)
         )
         self.status_command_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
 
@@ -146,7 +151,7 @@ class StatusFrame(tkinter.Frame):
         status_stream_label_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
 
         self.status_stream_label = tkinter.Label(
-            self, text="Not connected", font=tkinter.font.Font(size=10)
+            self, textvariable=self.status_stream_string, font=tkinter.font.Font(size=10)
         )
         self.status_stream_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
 
@@ -158,7 +163,7 @@ class StatusFrame(tkinter.Frame):
         status_compass_label_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
 
         self.status_compass_label = tkinter.Label(
-            self, text="Not connected", font=tkinter.font.Font(size=10)
+            self, textvariable=self.status_compass_string, font=tkinter.font.Font(size=10)
         )
         self.status_compass_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
 
@@ -172,7 +177,7 @@ class StatusFrame(tkinter.Frame):
         )
 
         self.status_map_server_label = tkinter.Label(
-            self, text="Down", font=tkinter.font.Font(size=10)
+            self, textvariable=self.status_map_server_string, font=tkinter.font.Font(size=10)
         )
         self.status_map_server_label.pack(
             side=tkinter.LEFT, padx=5, pady=10, anchor="w"
@@ -339,6 +344,7 @@ class ControlFrame(tkinter.Frame):
                 "from_file": self.source_combo.current() != 0,
                 "source_file_path": source_file_path,
         }
+        self.master.master.increase_unfinished_send_commands()
         self.client.start_commands(**kwargs)
 
     def rec_commands():
@@ -486,7 +492,7 @@ class PlotFrame(tkinter.Frame):
     def __init__(self, master, *args, **kwargs):
         tkinter.Frame.__init__(self, master, *args, **kwargs)
 
-        self.client = self.master.client ##???
+        self.client: Client = self.master.client ##???
 
         self.fig: Optional[pyplot.Figure] = None
         self.canvas: Optional[FigureCanvasTkAgg] = None
@@ -629,7 +635,9 @@ class PlotFrame(tkinter.Frame):
         return image_list
 
     def click_handler(self, event: Any) -> None:
-        control_frame_ref = self.client.client_window.control_frame ##Could be better?
+        if self.master.status_frame.status_command_string.get() != "Connected":
+            return
+        control_frame_ref = self.master.control_frame ##Could be better?
         ##TODO: set roi span from graph
         ##TODO: show roi on spectrum graph even if it was set or modified in control frame
         ##TODO: don't excecute this code when not connected to CS
@@ -640,6 +648,8 @@ class PlotFrame(tkinter.Frame):
             roi_freq = self.magnitude_spectrum_graph.coord_to_freq(event.xdata)
             roi_threshold = event.ydata
 
+
+            self.master.increase_unfinished_send_commands()
             self.client.update_roi_settings(roi_freq, roi_span, math.floor(roi_threshold))
 
             self.magnitude_spectrum_graph.roi_center = event.xdata
@@ -679,8 +689,7 @@ class PlotFrame(tkinter.Frame):
             self.compass_df_graph.add_point(df_corrected)
         else:   #Can we do it without the if-else?
             self.compass_df_graph.add_point(None)
-        
-
+  
     def plot_spectrum_packet(self, packet: CoreServiceSpectrumPacket) -> None:
         if packet.bin_count == 0:
             return
@@ -716,6 +725,8 @@ class ClientWindow(tkinter.Frame):
         self.compass_heading = None     #compass angle corrected with offset
         self.encoder_angle = None
         self.encoder_heading = None     #encoder angle corrected with offset
+
+        self.unfinished_send_commands: int = 0 #Only enable the start button if this is 0
 
         tkinter.Frame.__init__(self, root)
         self.pack(side="top", fill=tkinter.BOTH, expand=True)
@@ -814,15 +825,39 @@ class ClientWindow(tkinter.Frame):
                 traceback.print_tb(e.__traceback__)
                 return
 
+    def command_status_msg_handler(self, message: str):
+        if message.startswith("#info"):
+            message = message[len("#info"):]
+        elif message.startswith("#action"):
+            message = message[len("#action"):]
+            if message == "send_commands_finished":
+                self.decrease_unfinished_send_commands()
+                return
+        else: #status updates have no prefix, these should also be shown on status_frame
+            self.set_command_status(message)
+        self.info_update_handler(message, "Command Thread")
+
+    def stream_status_msg_handler(self, message: str):
+        if message.startswith("#encoder"):
+            message = message[len("#encoder"):]
+            self.info_update_handler(message, source="Encoder")
+        elif message.startswith("#compass"):
+            message = message[len("#compass"):]
+            self.info_update_handler(message, source="Compass")
+        else: #status updates have no prefix, these should also be shown on status_frame
+            self.set_stream_status(message)
+            self.info_update_handler(message, source="Stream Process")
+        #TODO: update compass end map server in status_frame
+
     def set_stream_status(self, message: str) -> None:
         try:
-            self.status_frame.status_stream_label.config(text=message)
+            self.status_frame.status_stream_string.set(message)
         except:
             pass ##TODO: when exiting, this gets called after the window no longer exists
     
     def set_command_status(self, message: str) -> None:
         try:
-            self.status_frame.status_command_label.config(text=message)
+            self.status_frame.status_command_string.set(message)
         except:
             pass ##TODO: when exiting, this gets called after the window no longer exists
 
@@ -867,8 +902,7 @@ class ClientWindow(tkinter.Frame):
             try:
                 self.plot_frame.animation.event_source.start()
             except Exception as e:
-                print("[Connect action - MPL animation]", e)
-                traceback.print_tb(e.__traceback__)
+                pass
 
     def disconnect_action(self) -> None:
         """
@@ -889,10 +923,9 @@ class ClientWindow(tkinter.Frame):
         try:
             self.plot_frame.animation.event_source.stop()
         except Exception as e:
-            print("[Disconnect action - MPL animation]", e)
-            traceback.print_tb(e.__traceback__)
+            pass
 
-    def update_status_info(self, update_string: str|list[str], source: str=None):
+    def info_update_handler(self, update_string: str|list[str], source: str=None):
         if not isinstance(update_string, list):
             update_string = [update_string]
         for line in update_string:
@@ -902,15 +935,24 @@ class ClientWindow(tkinter.Frame):
             self.status_info_lb.delete(0, self.stream_packets_lb.size() - 1000)
             self.status_info_lb.see(tkinter.END)
 
+    def increase_unfinished_send_commands(self):
+        self.unfinished_send_commands += 1
+        self.control_frame.start_button.config(state="disabled")
+    
+    def decrease_unfinished_send_commands(self):
+        self.unfinished_send_commands -= 1
+        if self.unfinished_send_commands == 0:  #enable 
+            self.control_frame.start_button.config(state="normal")
+
 class CommandsConnectionThread(BaseConnection, threading.Thread):
-    def __init__(self, client) -> None:
+    def __init__(self, status_queue: queue.Queue[str]) -> None:
         BaseConnection.__init__(self)
         threading.Thread.__init__(self, daemon=True)
         self.incoming_buffer: bytearray = bytearray()
         self.status_text: str = ""
         self.incoming_messages_queue: queue.Queue[str] = queue.Queue()
 
-        self.client = client
+        self.status_queue = status_queue
 
     def receive_on_socket(self, data: bytes) -> None:
         """
@@ -924,7 +966,7 @@ class CommandsConnectionThread(BaseConnection, threading.Thread):
 
     def display_status(self, message: str) -> None:
         self.status_text = message
-        self.client.command_status_msg_handler(message)
+        self.status_queue.put(message)
 
     def run(self) -> None:
         """
@@ -959,9 +1001,11 @@ class CommandsConnectionThread(BaseConnection, threading.Thread):
                 break
             sleep(0.1)
         if error_msg:
-            self.client.status_update_handler(error_msg, source="Command thread")
+            for msg in error_msg:
+                self.status_queue.put("#info" + msg)
         else:
-            self.client.status_update_handler("Core Service configured", source="Command thread")
+            self.status_queue.put("#info" + "Core Service configured")
+        self.status_queue.put("#action" + "send_commands_finished")
 
 #Owner class for the client
 class Client:
@@ -977,6 +1021,7 @@ class Client:
         self.encoder_thread = None
 
         self.stream_process_watcher_queue: multiprocessing.Queue[str] = multiprocessing.Queue()
+        self.command_thread_watcher_queue: multiprocessing.Queue[str] = multiprocessing.Queue()
 
         manager = multiprocessing.get_context("spawn").Manager()
         self.disconnect_value = manager.Value("i", 0)
@@ -995,7 +1040,15 @@ class Client:
             if self.stream_process is not None:
                 try:
                     msg = self.stream_process_watcher_queue.get_nowait()
-                    self.stream_status_msg_handler(msg)
+                    threading.Thread(target=self.client_window.stream_status_msg_handler, args=(msg,), daemon=True).start()
+                    do_sleep = False
+                except queue.Empty:
+                    pass
+            
+            if self.command_thread is not None:
+                try:
+                    msg = self.command_thread_watcher_queue.get_nowait()
+                    threading.Thread(target=self.client_window.command_status_msg_handler, args=(msg,), daemon=True).start()
                     do_sleep = False
                 except queue.Empty:
                     pass
@@ -1020,13 +1073,14 @@ class Client:
         """
         Action of the "Connect" button
         """
-        self.command_thread = CommandsConnectionThread(self)
+        self.command_thread = CommandsConnectionThread(self.command_thread_watcher_queue)
         self.command_thread.connect_action = connect_action
         self.command_thread.disconnect_action = disconnect_action
         self.command_thread.host_port = f"{host_address}:12936"
         self.command_thread.start()
 
 
+        self.disconnect_value.value = False
         cs_packet_queues = MultiQueue([self.stream_to_gui_queue])
         self.stream_process = StreamAndCompassProcess(
             cs_packet_queues, self.disconnect_value, self.stream_process_watcher_queue
@@ -1057,7 +1111,6 @@ class Client:
                 f"ROI:Span! {roi_span:.0f};"
                 f"ROI:Threshold! {roi_threshold};"
                 f"ROI:Configure!;"
-                f"DEBUG:Enable! exportPhaseDiffs;"
             )
         else:
             self.send_commands(
@@ -1078,7 +1131,6 @@ class Client:
                 f"ROI:Span! {roi_span:.0f};"
                 f"ROI:Threshold! {roi_threshold};"
                 f"ROI:Configure!;"
-                f"DEBUG:Enable! exportPhaseDiffs;"
             )
 
     def disconnect_commands(self) -> None:
@@ -1114,18 +1166,6 @@ class Client:
             f"ROI:Threshold! {roi_threshold:.0f};"
             f"ROI:Configure!;"
         )    
-
-    def stream_status_msg_handler(self, message):
-        threading.Thread(target=self.client_window.set_stream_status, args=(message,), daemon=True).start()
-        
-        self.status_update_handler(message, source="StreamAndCompassProcess")
-        #TODO: make (action, data) status messages, where action = update/status/encoder/etc.
-
-    def command_status_msg_handler(self, message):
-        threading.Thread(target=self.client_window.set_command_status, args=(message,), daemon=True).start()
-    
-    def status_update_handler(self, update_string: str|list[str], source: str=None):
-        threading.Thread(target=self.client_window.update_status_info, args=(update_string, source), daemon=True).start()
 
 def on_close():
     global run_threads
