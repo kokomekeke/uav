@@ -25,6 +25,7 @@ class ClickerRobot(threading.Thread):
 
 
 def main() -> None:
+    global root
     multiprocessing.set_start_method("spawn")
     root = tkinter.Tk()
     ex = Client(root)
