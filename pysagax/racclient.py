@@ -553,6 +553,8 @@ class PlotFrame(tkinter.Frame):
 
         self.client: Client = self.master.client  ##???
 
+        self.root: Any = None
+        
         self.fig: Optional[pyplot.Figure] = None
         self.canvas: Optional[FigureCanvasTkAgg] = None
         self.canvas_toolbar: Optional[NavigationToolbar2Tk] = None
@@ -592,8 +594,7 @@ class PlotFrame(tkinter.Frame):
         self.canvas_toolbar = NavigationToolbar2Tk(self.canvas, self)
         self.canvas_toolbar.update()
 
-        global root
-        root.update()  # this solves matplotlib artifacts?
+        self.root.update()  # this solves matplotlib artifacts?
 
         def on_canvas_key_press(event: KeyEvent) -> None:
             key_press_handler(event, self.canvas, self.canvas_toolbar)
@@ -805,6 +806,7 @@ class ClientWindow(tkinter.Frame):
         self.connect_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
 
         self.plot_frame = PlotFrame(self)
+        self.plot_frame.root = root
         self.plot_frame.create_canvas()
         self.plot_frame.pack(
             fill=tkinter.BOTH, expand=True, side=tkinter.TOP
@@ -1032,6 +1034,7 @@ class ClientWindow(tkinter.Frame):
             self.status_info_lb.insert(tkinter.END, line)
             self.status_info_lb.delete(0, self.stream_packets_lb.size() - 1000)
             self.status_info_lb.see(tkinter.END)
+            print(datetime.now().strftime('%m.%d. %H:%M:%S'), line)
 
     def increase_unfinished_send_commands(self):
         self.unfinished_send_commands += 1
@@ -1093,8 +1096,8 @@ class CommandsConnectionThread(BaseConnection, threading.Thread):
                 error_code = int(response_parts[0])
                 if "CORE:Version?" in cmd_line:
                     self.status_queue.put(
-                        f"#info CS Version {response[1]}.{response[2]}.{response[3]}"
-                        f"-{response[4]}+{response[5]} VCS:{response[6]}"
+                        f"#info CS Version {response_parts[1]}.{response_parts[2]}.{response_parts[3]}"
+                        f"-{response_parts[4]}+{response_parts[5]} VCS:{response_parts[6]}"
                     )
                 if error_code:
                     error_msg.append(f'Error with command "{cmd_line}": {response}')
@@ -1307,6 +1310,7 @@ class Client:
 
 def on_close():
     global run_threads
+    global root
     # dfg_map_server.run_thread = False
     ex.client_window.do_stop = True
     ex.do_stop = False

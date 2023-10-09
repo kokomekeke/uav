@@ -4,8 +4,9 @@ import time
 import tkinter
 
 import pysagax
-from racclient import Client, on_close
+from pysagax.racclient import Client, on_close
 
+root = None
 
 class ClickerRobot(threading.Thread):
     def __init__(self, client: Client) -> None:
@@ -19,6 +20,10 @@ class ClickerRobot(threading.Thread):
             print("Clicked Connect")
             time.sleep(2)
 
+            self.client.client_window.control_frame.start_commands()
+            print("Clicked Start")
+            time.sleep(25)
+            
             self.client.client_window.disconnect_commands()
             print("Clicked Disconnect")
             time.sleep(2)
