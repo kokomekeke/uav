@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import multiprocessing
 import threading
 import time
@@ -9,6 +10,9 @@ from pysagax.racclient import Client, on_close
 
 root = None
 
+parser = argparse.ArgumentParser(description="RacClient AutoClicker")
+parser.add_argument("address")
+args = parser.parse_args()
 
 
 class ClickerRobot(threading.Thread):
@@ -18,7 +22,8 @@ class ClickerRobot(threading.Thread):
         self.stop: bool = False
 
     def run(self) -> None:
-        
+        global args
+        self.client.client_window.connect_frame.host_address.set(args.address)
         freq_values = ["300M", "350M", "399.7M", "446M"]
         roif_values = ["300.1M", "350.1M", "399.8M", "446.05M"]
         db_values = ["20", "60", "100"]
