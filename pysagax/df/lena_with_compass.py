@@ -21,8 +21,9 @@ Class for handling multiple multiprocessing.Queue objects together.
 It could be modified to take queue.Queue objects as well. 
 """
 class MultiQueue():
-    def __init__(self, queues: list[multiprocessing.Queue] = []):
-        self.queues = []
+    def __init__(self, queues = []):
+        manager = multiprocessing.get_context("spawn").Manager()
+        self.queues = manager.dict()
         for queue in queues:
             self.add_queue(queue)
 
@@ -30,17 +31,15 @@ class MultiQueue():
         """
         Add a queue
         """
-        if not isinstance(queue, multiprocessing.queues.Queue):
-            raise ValueError("Input must be a multiprocessing.Queue object")
-        self.queues.append(queue)
+        if not isinstance(queue, multiprocessing.managers.BaseProxy):
+            raise ValueError("Input must be a multiprocessing.managers.Queue object")
+        self.queues[id(queue)] = queue
 
     def remove_queue(self, queue):
         """
         Remove a queue by reference
         """
-        if queue in self.queues:
-            self.queues.remove(queue)
-        else:
+        if self.queues.pop(id(queue), None) is None:
             raise ValueError("Queue not found in MultiQueue")
 
     def put(self, item, block=True, timeout=None):
@@ -48,7 +47,7 @@ class MultiQueue():
         Put an item into all queues
         """
         ##TODO: properly handle if one of the queues is full
-        for q in self.queues:
+        for q in self.queues.values():
             try:
                 q.put(item, block=False)
             except multiprocessing.queues.Full:

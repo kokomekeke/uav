@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
 from __future__ import annotations
+from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
 import math
 import multiprocessing
+import os
 import queue
 import re
 import socket
@@ -26,6 +28,7 @@ from matplotlib.backends.backend_tkagg import (  # type: ignore
     FigureCanvasTkAgg,
     NavigationToolbar2Tk,
 )
+import pandas as pd
 
 from pysagax import (
     BaseConnection,
@@ -45,6 +48,15 @@ from pysagax import (
 )
 import pysagax
 
+def calculate_df_corrected(df_value, compass_heading, encoder_heading):
+    df_corrected_from_compass = True ##TODO: move to config file
+    df_corrected = None
+    if df_value is not None:
+        if df_corrected_from_compass and compass_heading is not None:
+            df_corrected = pysagax.normalize_angle(compass_heading + df_value) 
+        if not df_corrected_from_compass and encoder_heading is not None:
+            df_corrected = pysagax.normalize_angle(encoder_heading + df_value) 
+    return df_corrected
 
 ###TODO:REMOVE
 class ExapmleFrame(tkinter.Frame):
@@ -228,7 +240,7 @@ class ControlFrame(tkinter.Frame):
     def __init__(self, master, *args, **kwargs):
         tkinter.Frame.__init__(self, master, *args, **kwargs)
 
-        self.client = self.master.master.client  ##???
+        self.client: Client = self.master.master.client  ##???
 
         ###TODO here or in ClientWindow???
         self.freq_string = tkinter.StringVar(value="371.5M")
@@ -372,8 +384,7 @@ class ControlFrame(tkinter.Frame):
         self.rec_button.grid(
             column=2, row=5, padx=10, pady=5, sticky=tkinter.E + tkinter.W
         )
-        self.rec_button.configure(state="disabled")
-
+        
     def start_commands(self):
         default_source_file_path = "/home/sagax/Generator/"
         if self.source_combo.current() == 1:
@@ -396,8 +407,14 @@ class ControlFrame(tkinter.Frame):
         self.master.master.increase_unfinished_send_commands()
         self.client.start_commands(**kwargs)
 
-    def rec_commands():
-        pass
+    def rec_commands(self):
+        self.master.master.increase_unfinished_send_commands()
+        if self.client.recording_started:
+            self.client.stop_recording()
+            self.rec_button.config(text="Start recording", relief="raised")
+        else:
+            self.client.start_recording()
+            self.rec_button.config(text="Stop recording", relief="sunken")
 
     def source_combo_update(self, event):
         if self.source_combo.current() == 0:
@@ -424,8 +441,12 @@ class StatFrame(tkinter.Frame):
         ##TODO
         self.df_value_string = tkinter.StringVar(value="NaN")
         self.df_value_mean_string = tkinter.StringVar(value="NaN")
-        self.df_value_deviation_string = tkinter.StringVar(value="NaN")
-        self.df_value_rms_string = tkinter.StringVar(value="NaN")
+        # self.df_value_deviation_string = tkinter.StringVar(value="NaN")
+        # self.df_value_rms_string = tkinter.StringVar(value="NaN")
+        self.df_elev_string = tkinter.StringVar(value="NaN")
+        self.df_elev_mean_string = tkinter.StringVar(value="NaN")
+
+        self.quality_value_string = tkinter.StringVar(value="NaN")
 
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=1)
@@ -443,6 +464,33 @@ class StatFrame(tkinter.Frame):
         )
         df_value_disp.grid(
             column=1, row=0, sticky=tkinter.E + tkinter.W, padx=5, pady=3
+        )        
+        
+        df_elev_label = ttk.Label(self, text="DF elevation:")
+        df_elev_label.grid(column=0, row=1, sticky=tkinter.W, padx=5, pady=5)
+        df_elev_disp = ttk.Label(
+            self,
+            textvariable=self.df_elev_string,
+            font=disp_font,
+            foreground="red",
+            background="yellow",
+        )
+        df_elev_disp.grid(
+            column=1, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=3
+        )
+
+        
+        quality_value_label = ttk.Label(self, text="Signal quality:")
+        quality_value_label.grid(column=0, row=2, sticky=tkinter.W, padx=5, pady=5)
+        quality_value_disp = ttk.Label(
+            self,
+            textvariable=self.quality_value_string,
+            font=disp_font,
+            foreground="red",
+            background="yellow",
+        )
+        quality_value_disp.grid(
+            column=1, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=3
         )
 
         ##TODO: stats
@@ -487,29 +535,29 @@ class StatFrame(tkinter.Frame):
             bd=0,
             highlightthickness=2,
             highlightbackground="black",
-            height=109,
+            height=59,
         )
         self.peak_chart.grid(
             column=0, row=4, columnspan=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5
         )
         self.peak_bars = [
-            self.peak_chart.create_rectangle(2, 7, 100, 27, fill="yellow"),
-            self.peak_chart.create_rectangle(2, 32, 100, 52, fill="dodger blue"),
-            self.peak_chart.create_rectangle(2, 57, 100, 77, fill="green"),
-            self.peak_chart.create_rectangle(2, 82, 100, 102, fill="red"),
+            self.peak_chart.create_rectangle(2, 2, 100, 14, fill="yellow"),
+            self.peak_chart.create_rectangle(2, 17, 100, 29, fill="dodger blue"),
+            self.peak_chart.create_rectangle(2, 32, 100, 44, fill="green"),
+            self.peak_chart.create_rectangle(2, 47, 100, 59, fill="red"),
         ]
         self.peak_texts = [
             self.peak_chart.create_text(
-                30, 17, text="32555", fill="black", font=("Helvetica 13 bold")
+                30, 8, text="32555", fill="black", font=("Helvetica 7 bold")
             ),
             self.peak_chart.create_text(
-                30, 42, text="32555", fill="black", font=("Helvetica 13 bold")
+                30, 23, text="32555", fill="black", font=("Helvetica 7 bold")
             ),
             self.peak_chart.create_text(
-                30, 67, text="32555", fill="black", font=("Helvetica 13 bold")
+                30, 38, text="32555", fill="black", font=("Helvetica 7 bold")
             ),
             self.peak_chart.create_text(
-                30, 92, text="32555", fill="black", font=("Helvetica 13 bold")
+                30, 53, text="32555", fill="black", font=("Helvetica 7 bold")
             ),
         ]
 
@@ -535,10 +583,10 @@ class StatFrame(tkinter.Frame):
             for peak in peaks_dbfs
         ]  # logarithmic scaling
 
-        self.peak_chart.coords(self.peak_bars[0], 2, 7, bar_widths[0], 27)
-        self.peak_chart.coords(self.peak_bars[1], 2, 32, bar_widths[1], 52)
-        self.peak_chart.coords(self.peak_bars[2], 2, 57, bar_widths[2], 77)
-        self.peak_chart.coords(self.peak_bars[3], 2, 82, bar_widths[3], 102)
+        self.peak_chart.coords(self.peak_bars[0], 2, 2, bar_widths[0], 14)
+        self.peak_chart.coords(self.peak_bars[1], 2, 17, bar_widths[1], 29)
+        self.peak_chart.coords(self.peak_bars[2], 2, 32, bar_widths[2], 44)
+        self.peak_chart.coords(self.peak_bars[3], 2, 47, bar_widths[3], 59)
 
         for i in range(4):
             text = re.sub(
@@ -745,14 +793,12 @@ class PlotFrame(tkinter.Frame):
         self.compass_graph.add_point(self.master.compass_heading)
         self.encoder_graph.add_point(self.master.encoder_heading)
 
-        if self.master.compass_heading is not None and self.master.df_value is not None:
-            df_corrected = pysagax.normalize_angle(
-                self.master.compass_heading + self.master.df_value
-            )
-            self.compass_df_graph.add_point(df_corrected)
-        else:  # Can we do it without the if-else?
-            self.compass_df_graph.add_point(None)
+        df_corrected = calculate_df_corrected(df_value=self.master.df_value,
+                                              compass_heading=self.master.compass_heading,
+                                              encoder_heading=self.master.encoder_heading)
 
+        self.compass_df_graph.add_point(df_corrected)
+        
     def plot_spectrum_packet(self, packet: CoreServiceSpectrumPacket) -> None:
         if packet.bin_count == 0:
             return
@@ -785,14 +831,15 @@ class ClientWindow(tkinter.Frame):
 
         # Last measured angles for the matplotlib animation in plot_frame:
         self.df_value = None
+        self.df_elev = None
         self.compass_angle = None
         self.compass_heading = None  # compass angle corrected with offset
         self.encoder_angle = None
         self.encoder_heading = None  # encoder angle corrected with offset
 
-        self.unfinished_send_commands: int = (
-            0  # Only enable the start button if this is 0
-        )
+        # Only enable the start button if this is 0
+        self.unfinished_send_commands: int = 0
+        
 
         tkinter.Frame.__init__(self, root)
         self.pack(side="top", fill=tkinter.BOTH, expand=True)
@@ -898,6 +945,9 @@ class ClientWindow(tkinter.Frame):
                             )  # creating a list of (ChannelID, PeakValue) tuples from the debug message
                             peaks = [peak[1] for peak in matches]
                             self.stat_frame.update_peak_plot(peaks)
+                        elif packet.title == "q":
+                            quality = float(packet.contents.decode().strip())
+                            self.stat_frame.quality_value_string.set(f"{quality:.2f}")
 
                     if isinstance(packet, CoreServiceROIResultPacket):
                         self.df_value = packet.roi_azimuth
@@ -905,6 +955,11 @@ class ClientWindow(tkinter.Frame):
                         if df_value_deg < 0:
                             df_value_deg += 360
                         self.stat_frame.df_value_string.set(f"{df_value_deg:.2f}°")
+                        
+                        self.df_elev = packet.roi_elevation
+                        df_elev_deg = self.df_elev * 180 / np.pi
+                        self.stat_frame.df_elev_string.set(f"{df_elev_deg:.2f}°")
+                        
 
                     if isinstance(packet, CoreServiceEOFPacket):
                         self.update_status_info(
@@ -944,6 +999,16 @@ class ClientWindow(tkinter.Frame):
             self.set_stream_status(message)
             self.info_update_handler(message, source="Stream Process")
         # TODO: update compass end map server in status_frame
+
+    def recording_status_msg_handler(self, message: str):
+        # if message.startswith("#info"):
+        #     message = message[len("#info") :]
+        # elif message.startswith("#action"):
+        #     message = message[len("#action") :]
+        #     if message == "send_commands_finished":
+        #         self.decrease_unfinished_send_commands()
+        #         return
+        self.info_update_handler(message, "Recording Thread") 
 
     def set_stream_status(self, message: str) -> None:
         try:
@@ -1042,8 +1107,132 @@ class ClientWindow(tkinter.Frame):
 
     def decrease_unfinished_send_commands(self):
         self.unfinished_send_commands -= 1
-        if self.unfinished_send_commands == 0:  # enable
+        if self.unfinished_send_commands <= 0:  # enable
             self.control_frame.start_button.config(state="normal")
+            if self.unfinished_send_commands < 0:
+                print("ERROR: unfinished send commands shouldn't be negative") ##TODO: why does this happen?
+
+
+class RecordingThread(threading.Thread):
+    def __init__(self, cs_packet_queue: queue.Queue, status_queue: queue.Queue[str]) -> None:
+        super().__init__(daemon=True)
+        self.cs_packet_queue = cs_packet_queue
+        self.status_queue = status_queue
+
+        self.do_stop = False
+
+        self.latest_peaks = [0, 0, 0, 0]
+
+        self.buffer = {"time_ns": [],
+                       "df_angle": [],
+                       "df_corrected": [],
+                       "compass_angle": [],
+                       "compass_heading": [],
+                       "encoder_angle": [],
+                       "encoder_heading": [],
+                       "df_elevation": [],
+                       "peak0": [],
+                       "peak1": [],
+                       "peak2": [],
+                       "peak3": [],
+                       }
+    
+    def run(self) -> None:
+        self.status_queue.put("Recording started")
+        while not self.do_stop:
+            try:
+                data = self.cs_packet_queue.get(timeout=0.2)
+                self.handle_packet(data=data)
+            except queue.Empty:
+                pass
+            except Exception as e:
+                print("[Recording thread]", e)
+                traceback.print_tb(e.__traceback__)
+                return
+        self.status_queue.put("saving recording...")
+        try:
+            self.save_recording()
+        except Exception as e:
+            self.status_queue.put(f"Error while saving recording: {e}")
+        
+    def handle_packet(self, data) -> None:
+        ##TODO: many similarities with client window packet handler. Maybe export those to a single function?
+        packet = data["cs_packet"]
+        compass_angle = data["compass_angle"]
+        compass_heading = data["compass_heading"]
+        encoder_angle = data["encoder_angle"]
+        encoder_heading = data["encoder_heading"]
+        try:
+            time_ns = packet.time_ns
+            if isinstance(packet, CoreServiceDebugPacket):  
+                # save the peaks to later match with the next ROI results
+                if packet.title == "peaks":
+                    regex = r"peak(\d+)=(\d+)"
+                    matches = re.findall(
+                        regex, str(packet)
+                    )  # creating a list of (ChannelID, PeakValue) tuples from the debug message
+                    peaks = [peak[1] for peak in matches]
+                    self.latest_peaks = peaks
+
+            if isinstance(packet, CoreServiceROIResultPacket):
+                df_angle = packet.roi_azimuth
+                df_elevation = packet.roi_elevation
+                df_corrected = calculate_df_corrected(df_value=df_angle,
+                                                      compass_heading=compass_heading,
+                                                      encoder_heading=encoder_heading)
+
+                self.buffer["time_ns"].append(time_ns)
+                self.buffer["df_angle"].append(df_angle)
+                self.buffer["df_corrected"].append(df_corrected)
+                self.buffer["compass_angle"].append(compass_angle)
+                self.buffer["compass_heading"].append(compass_heading)
+                self.buffer["encoder_angle"].append(encoder_angle)
+                self.buffer["encoder_heading"].append(encoder_heading)
+                self.buffer["df_elevation"].append(df_elevation)
+                self.buffer["peak0"].append(self.latest_peaks[0])
+                self.buffer["peak1"].append(self.latest_peaks[1])
+                self.buffer["peak2"].append(self.latest_peaks[2])
+                self.buffer["peak3"].append(self.latest_peaks[3])
+
+        except Exception as e:
+            print("[Recording packet handler]", e)
+            traceback.print_tb(e.__traceback__)
+    
+    def save_recording(self):
+
+        dataframe = pd.DataFrame(data=self.buffer)
+        
+        os.makedirs('racclient_recordings', exist_ok=True)
+        filepath = f"racclient_recordings/{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        dataframe.to_csv(filepath)        
+        self.status_queue.put(f"Recording saved at {filepath}")    
+
+        ##TODO: plot results of recording
+        """ df_value_recording_deg = [d * 180 / np.pi if d is not None else None for d in self.buffer["df_angle"]]
+        df_corrected_recording_deg = [d * 180 / np.pi if d is not None else None for d in self.buffer["df_corrected"]]
+        compass_heading_recording_deg = [d * 180 / np.pi if d is not None else None for d in self.buffer["compass_heading"]]
+        encoder_heading_recording_deg = [d * 180 / np.pi if d is not None else None for d in self.buffer["encoder_heading"]]
+        fig, (ax1, ax2) = pyplot.subplots(1, 2)
+        ax1.plot(compass_heading_recording_deg, df_value_recording_deg, color="red", label="compass-DF")
+        ax1.plot(encoder_heading_recording_deg, df_value_recording_deg, color="green", label="encoder-DF")
+        ax1.legend()
+        
+        ax2.plot(df_value_recording_deg, color="blue", label="DF angle")
+        ax2.plot(df_corrected_recording_deg, color="cyan", label="DF corrected")
+        ax2.plot(compass_heading_recording_deg, color="red", label="compass")
+        ax2.plot(encoder_heading_recording_deg, color="green", label="encoder")
+        ax2.legend()
+        
+        ax1.grid(visible=True)
+        ax1.set_ylabel("DF angle")
+        ax1.set_xlabel("Compass and encoder angle")
+        ax2.grid(visible=True)
+        ax2.set_ylabel("Angle")
+        ax2.set_xlabel("Sample")
+        ax1.set_xlim(-180, 180)
+        ax1.set_ylim(-180, 180)
+        ax2.set_ylim(-180, 180)
+        pyplot.show(block=False) """
 
 
 class CommandsConnectionThread(BaseConnection, threading.Thread):
@@ -1116,16 +1305,20 @@ class CommandsConnectionThread(BaseConnection, threading.Thread):
 # Owner class for the client
 class Client:
     def __init__(self, root):
-        self.stream_to_gui_queue: multiprocessing.Queue[dict] = multiprocessing.Queue(
-            maxsize=100
-        )
+        self.manager = multiprocessing.get_context("spawn").Manager()
+
+        self.stream_to_gui_queue = self.manager.Queue(maxsize=100)
+        self.stream_to_rec_queue = None
+
+        self.stream_process_multiqueue = MultiQueue([self.stream_to_gui_queue])
 
         self.client_window = ClientWindow(self, root)
         self.command_thread = None
         self.stream_process = None
-        self.logger_process = None
+        self.recording_thread = None
         self.dfg_map_server = None
         self.encoder_thread = None
+
 
         self.stream_process_watcher_queue: multiprocessing.Queue[
             str
@@ -1133,13 +1326,17 @@ class Client:
         self.command_thread_watcher_queue: multiprocessing.Queue[
             str
         ] = multiprocessing.Queue()
+        self.recording_thread_watcher_queue: multiprocessing.Queue[
+            str
+        ] = multiprocessing.Queue()
 
-        manager = multiprocessing.get_context("spawn").Manager()
-        self.disconnect_value = manager.Value("i", 0)
+        self.disconnect_value = self.manager.Value("i", 0)
         """
         Setting the '1' value of the disconnect_value multiprocessing variable will end the multiprocessing task on the
         next iteration.
         """
+
+        self.recording_started = False
 
         self.do_stop = False
         self.watcher_thread = threading.Thread(target=self.watcher_thread)
@@ -1171,7 +1368,18 @@ class Client:
                     do_sleep = False
                 except queue.Empty:
                     pass
-            ##TODO: for command thread
+
+            if self.recording_thread is not None:
+                try:
+                    msg = self.recording_thread_watcher_queue.get_nowait()
+                    threading.Thread(
+                        target=self.client_window.recording_status_msg_handler,
+                        args=(msg,),
+                        daemon=True,
+                    ).start()
+                    do_sleep = False
+                except queue.Empty:
+                    pass
             ##TODO: msg_handler functions might not need separate threads
             if do_sleep:
                 sleep(0.1)
@@ -1207,9 +1415,8 @@ class Client:
         self.command_thread.start()
 
         self.disconnect_value.value = False
-        cs_packet_queues = MultiQueue([self.stream_to_gui_queue])
         self.stream_process = StreamAndCompassProcess(
-            cs_packet_queues, self.disconnect_value, self.stream_process_watcher_queue
+            self.stream_process_multiqueue, self.disconnect_value, self.stream_process_watcher_queue
         )
 
         self.stream_process.host_port = f"{host_address}:12937"
@@ -1230,8 +1437,7 @@ class Client:
         from_file,
         source_file_path,
     ) -> None:
-        connect_string = 'UHD "serial=8001680,serial=8001820" "A:A A:B"'  # for 10.1.1.113 (RAC setup)
-        # connect_string = 'UHD "serial=8002051,serial=8002065" "A:A A:B"'  # for 10.1.1.139 (aron)
+        connect_string = 'UHD'
 
         if from_file:
             if source_file_path[-1] != "/":
@@ -1306,6 +1512,28 @@ class Client:
             f"ROI:Threshold! {roi_threshold:.0f};"
             f"ROI:Configure!;"
         )
+
+    def start_recording(self):
+        self.start_local_recording()
+        self.send_commands("RECORDING:Start!;")
+        self.recording_started = True
+        ##TODO: start local recording if CS is also recording when connecting to it
+    
+    def stop_recording(self):
+        self.stop_local_recording()
+        self.send_commands("RECORDING:Stop!;")
+        self.recording_started = False
+
+    def start_local_recording(self):
+        self.stream_to_rec_queue = self.manager.Queue() #TODO: set some large maxsize
+        self.stream_process_multiqueue.add_queue(self.stream_to_rec_queue)
+        self.recording_thread = RecordingThread(cs_packet_queue=self.stream_to_rec_queue, status_queue=self.recording_thread_watcher_queue)
+        self.recording_thread.start()
+    
+    def stop_local_recording(self):
+        self.recording_thread.do_stop = True
+        self.stream_process_multiqueue.remove_queue(self.stream_to_rec_queue)
+        self.stream_to_rec_queue = None
 
 
 def on_close():
