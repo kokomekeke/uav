@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import math
 import multiprocessing
 import os
@@ -11,6 +12,7 @@ import socket
 import threading
 import time
 import tkinter
+import tomllib
 import traceback
 from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
@@ -24,30 +26,44 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot
 from matplotlib.animation import FuncAnimation  # type: ignore
-from matplotlib.backend_bases import (KeyEvent,  # type: ignore
-                                      key_press_handler)
+from matplotlib.backend_bases import KeyEvent  # type: ignore
+from matplotlib.backend_bases import key_press_handler
 from matplotlib.backends.backend_tkagg import (  # type: ignore
-    FigureCanvasTkAgg, NavigationToolbar2Tk)
+    FigureCanvasTkAgg,
+    NavigationToolbar2Tk,
+)
 
 import pysagax
-from pysagax import (BaseConnection, CompassGraph, CoreServiceDebugPacket,
-                     CoreServiceEOFPacket, CoreServicePacket,
-                     CoreServiceROILackOfSignalPacket,
-                     CoreServiceROIResultPacket, CoreServiceSpectrumPacket,
-                     GraphParameters, MagnitudeSpectrumGraph, MultiQueue,
-                     StreamAndCompassProcess, WaterfallAngleGraph,
-                     WaterfallMagnitudeGraph)
+from pysagax import (
+    BaseConnection,
+    CompassGraph,
+    CoreServiceDebugPacket,
+    CoreServiceEOFPacket,
+    CoreServicePacket,
+    CoreServiceROILackOfSignalPacket,
+    CoreServiceROIResultPacket,
+    CoreServiceSpectrumPacket,
+    GraphParameters,
+    MagnitudeSpectrumGraph,
+    MultiQueue,
+    StreamAndCompassProcess,
+    WaterfallAngleGraph,
+    WaterfallMagnitudeGraph,
+)
+
+conf = None
 
 
 def calculate_df_corrected(df_value, compass_heading, encoder_heading):
-    df_corrected_from_compass = True ##TODO: move to config file
+    df_corrected_from_compass = True  ##TODO: move to config file
     df_corrected = None
     if df_value is not None:
         if df_corrected_from_compass and compass_heading is not None:
-            df_corrected = pysagax.normalize_angle(compass_heading + df_value) 
+            df_corrected = pysagax.normalize_angle(compass_heading + df_value)
         if not df_corrected_from_compass and encoder_heading is not None:
-            df_corrected = pysagax.normalize_angle(encoder_heading + df_value) 
+            df_corrected = pysagax.normalize_angle(encoder_heading + df_value)
     return df_corrected
+
 
 ###TODO:REMOVE
 class ExapmleFrame(tkinter.Frame):
@@ -67,7 +83,7 @@ class ConnectFrame(tkinter.Frame):
         encoder_offset = np.pi  ##TODO: should be an argument of master.client?
 
         self.host_address = tkinter.StringVar(
-            value="10.1.1.113"
+            value=(conf["defaults"]["host"] if conf else "")
         )  ##TODO: should be here or in ClientWindow??
         self.encoder_port_string = tkinter.StringVar(
             value="COM6"
@@ -375,7 +391,7 @@ class ControlFrame(tkinter.Frame):
         self.rec_button.grid(
             column=2, row=5, padx=10, pady=5, sticky=tkinter.E + tkinter.W
         )
-        
+
     def start_commands(self):
         default_source_file_path = "/home/sagax/Generator/"
         if self.source_combo.current() == 1:
@@ -455,8 +471,8 @@ class StatFrame(tkinter.Frame):
         )
         df_value_disp.grid(
             column=1, row=0, sticky=tkinter.E + tkinter.W, padx=5, pady=3
-        )        
-        
+        )
+
         df_elev_label = ttk.Label(self, text="DF elevation:")
         df_elev_label.grid(column=0, row=1, sticky=tkinter.W, padx=5, pady=5)
         df_elev_disp = ttk.Label(
@@ -466,11 +482,8 @@ class StatFrame(tkinter.Frame):
             foreground="red",
             background="yellow",
         )
-        df_elev_disp.grid(
-            column=1, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=3
-        )
+        df_elev_disp.grid(column=1, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
 
-        
         quality_value_label = ttk.Label(self, text="Signal quality:")
         quality_value_label.grid(column=0, row=2, sticky=tkinter.W, padx=5, pady=5)
         quality_value_disp = ttk.Label(
@@ -593,7 +606,7 @@ class PlotFrame(tkinter.Frame):
         self.client: Client = self.master.client  ##???
 
         self.root: Any = None
-        
+
         self.fig: Optional[pyplot.Figure] = None
         self.canvas: Optional[FigureCanvasTkAgg] = None
         self.canvas_toolbar: Optional[NavigationToolbar2Tk] = None
@@ -784,12 +797,14 @@ class PlotFrame(tkinter.Frame):
         self.compass_graph.add_point(self.master.compass_heading)
         self.encoder_graph.add_point(self.master.encoder_heading)
 
-        df_corrected = calculate_df_corrected(df_value=self.master.df_value,
-                                              compass_heading=self.master.compass_heading,
-                                              encoder_heading=self.master.encoder_heading)
+        df_corrected = calculate_df_corrected(
+            df_value=self.master.df_value,
+            compass_heading=self.master.compass_heading,
+            encoder_heading=self.master.encoder_heading,
+        )
 
         self.compass_df_graph.add_point(df_corrected)
-        
+
     def plot_spectrum_packet(self, packet: CoreServiceSpectrumPacket) -> None:
         if packet.bin_count == 0:
             return
@@ -830,7 +845,6 @@ class ClientWindow(tkinter.Frame):
 
         # Only enable the start button if this is 0
         self.unfinished_send_commands: int = 0
-        
 
         tkinter.Frame.__init__(self, root)
         self.pack(side="top", fill=tkinter.BOTH, expand=True)
@@ -946,11 +960,10 @@ class ClientWindow(tkinter.Frame):
                         if df_value_deg < 0:
                             df_value_deg += 360
                         self.stat_frame.df_value_string.set(f"{df_value_deg:.2f}°")
-                        
+
                         self.df_elev = packet.roi_elevation
                         df_elev_deg = self.df_elev * 180 / np.pi
                         self.stat_frame.df_elev_string.set(f"{df_elev_deg:.2f}°")
-                        
 
                     if isinstance(packet, CoreServiceEOFPacket):
                         self.update_status_info(
@@ -999,7 +1012,7 @@ class ClientWindow(tkinter.Frame):
         #     if message == "send_commands_finished":
         #         self.decrease_unfinished_send_commands()
         #         return
-        self.info_update_handler(message, "Recording Thread") 
+        self.info_update_handler(message, "Recording Thread")
 
     def set_stream_status(self, message: str) -> None:
         try:
@@ -1090,7 +1103,7 @@ class ClientWindow(tkinter.Frame):
             self.status_info_lb.insert(tkinter.END, line)
             self.status_info_lb.delete(0, self.stream_packets_lb.size() - 1000)
             self.status_info_lb.see(tkinter.END)
-            print(datetime.now().strftime('%m.%d. %H:%M:%S'), line)
+            print(datetime.now().strftime("%m.%d. %H:%M:%S"), line)
 
     def increase_unfinished_send_commands(self):
         self.unfinished_send_commands += 1
@@ -1101,11 +1114,15 @@ class ClientWindow(tkinter.Frame):
         if self.unfinished_send_commands <= 0:  # enable
             self.control_frame.start_button.config(state="normal")
             if self.unfinished_send_commands < 0:
-                print("ERROR: unfinished send commands shouldn't be negative") ##TODO: why does this happen?
+                print(
+                    "ERROR: unfinished send commands shouldn't be negative"
+                )  ##TODO: why does this happen?
 
 
 class RecordingThread(threading.Thread):
-    def __init__(self, cs_packet_queue: queue.Queue, status_queue: queue.Queue[str]) -> None:
+    def __init__(
+        self, cs_packet_queue: queue.Queue, status_queue: queue.Queue[str]
+    ) -> None:
         super().__init__(daemon=True)
         self.cs_packet_queue = cs_packet_queue
         self.status_queue = status_queue
@@ -1114,20 +1131,21 @@ class RecordingThread(threading.Thread):
 
         self.latest_peaks = [0, 0, 0, 0]
 
-        self.buffer = {"time_ns": [],
-                       "df_angle": [],
-                       "df_corrected": [],
-                       "compass_angle": [],
-                       "compass_heading": [],
-                       "encoder_angle": [],
-                       "encoder_heading": [],
-                       "df_elevation": [],
-                       "peak0": [],
-                       "peak1": [],
-                       "peak2": [],
-                       "peak3": [],
-                       }
-    
+        self.buffer = {
+            "time_ns": [],
+            "df_angle": [],
+            "df_corrected": [],
+            "compass_angle": [],
+            "compass_heading": [],
+            "encoder_angle": [],
+            "encoder_heading": [],
+            "df_elevation": [],
+            "peak0": [],
+            "peak1": [],
+            "peak2": [],
+            "peak3": [],
+        }
+
     def run(self) -> None:
         self.status_queue.put("Recording started")
         while not self.do_stop:
@@ -1145,7 +1163,7 @@ class RecordingThread(threading.Thread):
             self.save_recording()
         except Exception as e:
             self.status_queue.put(f"Error while saving recording: {e}")
-        
+
     def handle_packet(self, data) -> None:
         ##TODO: many similarities with client window packet handler. Maybe export those to a single function?
         packet = data["cs_packet"]
@@ -1155,7 +1173,7 @@ class RecordingThread(threading.Thread):
         encoder_heading = data["encoder_heading"]
         try:
             time_ns = packet.time_ns
-            if isinstance(packet, CoreServiceDebugPacket):  
+            if isinstance(packet, CoreServiceDebugPacket):
                 # save the peaks to later match with the next ROI results
                 if packet.title == "peaks":
                     regex = r"peak(\d+)=(\d+)"
@@ -1168,9 +1186,11 @@ class RecordingThread(threading.Thread):
             if isinstance(packet, CoreServiceROIResultPacket):
                 df_angle = packet.roi_azimuth
                 df_elevation = packet.roi_elevation
-                df_corrected = calculate_df_corrected(df_value=df_angle,
-                                                      compass_heading=compass_heading,
-                                                      encoder_heading=encoder_heading)
+                df_corrected = calculate_df_corrected(
+                    df_value=df_angle,
+                    compass_heading=compass_heading,
+                    encoder_heading=encoder_heading,
+                )
 
                 self.buffer["time_ns"].append(time_ns)
                 self.buffer["df_angle"].append(df_angle)
@@ -1188,15 +1208,16 @@ class RecordingThread(threading.Thread):
         except Exception as e:
             print("[Recording packet handler]", e)
             traceback.print_tb(e.__traceback__)
-    
-    def save_recording(self):
 
+    def save_recording(self):
         dataframe = pd.DataFrame(data=self.buffer)
-        
-        os.makedirs('racclient_recordings', exist_ok=True)
-        filepath = f"racclient_recordings/{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        dataframe.to_csv(filepath)        
-        self.status_queue.put(f"Recording saved at {filepath}")    
+
+        os.makedirs("racclient_recordings", exist_ok=True)
+        filepath = (
+            f"racclient_recordings/{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        )
+        dataframe.to_csv(filepath)
+        self.status_queue.put(f"Recording saved at {filepath}")
 
         ##TODO: plot results of recording
         """ df_value_recording_deg = [d * 180 / np.pi if d is not None else None for d in self.buffer["df_angle"]]
@@ -1310,7 +1331,6 @@ class Client:
         self.dfg_map_server = None
         self.encoder_thread = None
 
-
         self.stream_process_watcher_queue: multiprocessing.Queue[
             str
         ] = multiprocessing.Queue()
@@ -1407,7 +1427,9 @@ class Client:
 
         self.disconnect_value.value = False
         self.stream_process = StreamAndCompassProcess(
-            self.stream_process_multiqueue, self.disconnect_value, self.stream_process_watcher_queue
+            self.stream_process_multiqueue,
+            self.disconnect_value,
+            self.stream_process_watcher_queue,
         )
 
         self.stream_process.host_port = f"{host_address}:12937"
@@ -1428,7 +1450,7 @@ class Client:
         from_file,
         source_file_path,
     ) -> None:
-        connect_string = 'UHD'
+        connect_string = "UHD"
 
         if from_file:
             if source_file_path[-1] != "/":
@@ -1509,18 +1531,21 @@ class Client:
         self.send_commands("RECORDING:Start!;")
         self.recording_started = True
         ##TODO: start local recording if CS is also recording when connecting to it
-    
+
     def stop_recording(self):
         self.stop_local_recording()
         self.send_commands("RECORDING:Stop!;")
         self.recording_started = False
 
     def start_local_recording(self):
-        self.stream_to_rec_queue = self.manager.Queue() #TODO: set some large maxsize
+        self.stream_to_rec_queue = self.manager.Queue()  # TODO: set some large maxsize
         self.stream_process_multiqueue.add_queue(self.stream_to_rec_queue)
-        self.recording_thread = RecordingThread(cs_packet_queue=self.stream_to_rec_queue, status_queue=self.recording_thread_watcher_queue)
+        self.recording_thread = RecordingThread(
+            cs_packet_queue=self.stream_to_rec_queue,
+            status_queue=self.recording_thread_watcher_queue,
+        )
         self.recording_thread.start()
-    
+
     def stop_local_recording(self):
         self.recording_thread.do_stop = True
         self.stream_process_multiqueue.remove_queue(self.stream_to_rec_queue)
@@ -1542,7 +1567,19 @@ def on_close():
 def main() -> None:
     global ex
     global root
-    multiprocessing.set_start_method("spawn")
+    global conf
+    parser = argparse.ArgumentParser(description="RacClient")
+    parser.add_argument("config", nargs="?", default="racclient.toml")
+    args = parser.parse_args()
+    conf = None
+    if os.path.isfile(args.config):
+        print("Config file found")
+        with open(args.config, "rb") as f:
+            conf = tomllib.load(f)
+        print(f"Config file loaded: {repr(conf)}")
+    else:
+        print("Config file not found")
+        multiprocessing.set_start_method("spawn")
     root = tkinter.Tk()
     ex = Client(root)
     root.geometry("1200x850")
