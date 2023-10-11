@@ -1,5 +1,5 @@
 [defaults]
-host = '10.1.1.114'
+host = '10.1.1.113'
 encoder_port = 'COM6'
 center_freq = '446M'
 bandwith = '1M'
@@ -13,6 +13,7 @@ roi_threshold = '-40'
 [display]
 fps = 25
 max_bin_count = 1024
+spectrum_graph_min_db = -80
 
 [stats]
 avg_window_size_bursts = 20

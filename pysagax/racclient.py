@@ -84,10 +84,10 @@ class ConnectFrame(tkinter.Frame):
 
         self.host_address = tkinter.StringVar(
             value=(conf["defaults"]["host"] if conf else "")
-        )  ##TODO: should be here or in ClientWindow??
+        )
         self.encoder_port_string = tkinter.StringVar(
-            value="COM6"
-        )  ##TODO: should be here or in ClientWindow??
+            value=(conf["defaults"]["encoder_port"] if conf else "")
+        ) 
 
         offset_frame = tkinter.Frame(
             self,
@@ -250,14 +250,14 @@ class ControlFrame(tkinter.Frame):
         self.client: Client = self.master.master.client  ##???
 
         ###TODO here or in ClientWindow???
-        self.freq_string = tkinter.StringVar(value="371.5M")
-        self.bw_string = tkinter.StringVar(value="0.5M")
-        self.gain_string = tkinter.StringVar(value="80")  ##TODO: int instead of str
-        self.bin_count_string = tkinter.StringVar(value="128")
-        self.burst_stride_string = tkinter.StringVar(value="50000")
-        self.roi_center_string = tkinter.StringVar(value="371.6M")
-        self.roi_span_string = tkinter.StringVar(value="50k")
-        self.roi_threshold_string = tkinter.StringVar(value="-40")
+        self.freq_string = tkinter.StringVar(value=(conf["defaults"]["center_freq"] if conf else ""))
+        self.bw_string = tkinter.StringVar(value=(conf["defaults"]["bandwith"] if conf else ""))
+        self.gain_string = tkinter.StringVar(value=(conf["defaults"]["gain"] if conf else ""))
+        self.bin_count_string = tkinter.StringVar(value=(conf["defaults"]["bin_count"] if conf else ""))
+        self.burst_stride_string = tkinter.StringVar(value=(conf["defaults"]["burst_stride"] if conf else ""))
+        self.roi_center_string = tkinter.StringVar(value=(conf["defaults"]["roi_center"] if conf else ""))
+        self.roi_span_string = tkinter.StringVar(value=(conf["defaults"]["roi_span"] if conf else ""))
+        self.roi_threshold_string = tkinter.StringVar(value=(conf["defaults"]["roi_threshold"] if conf else ""))
         self.source_file_path_string = tkinter.StringVar(value="")
 
         self.columnconfigure(0, weight=2)
@@ -674,17 +674,20 @@ class PlotFrame(tkinter.Frame):
         self.magnitude_waterfall_plot = self.fig_ref.add_subplot(grid_spec[1, 0])
         self.magnitude_waterfall_graph = WaterfallMagnitudeGraph(
             self.magnitude_waterfall_plot, self.params
-        ).initialize()
+        )
+        self.magnitude_waterfall_graph.max_points = (conf["display"]["max_bin_count"] if conf else 1024)
+        self.magnitude_waterfall_graph.initialize()
+
         # colorbar = self.fig_ref.colorbar(  # type: ignore
         #     self.magnitude_waterfall_graph.image, format=lambda x, _: f"{x:.0f}dB"
-        # )
+        # )     #TODO:show colorbar but keep waterfall and spectrum graphs the same width
         self.magnitude_waterfall_graph.make_plot()
 
         self.magnitude_spectrum_plot = self.fig_ref.add_subplot(grid_spec[0, 0])
         self.magnitude_spectrum_graph = MagnitudeSpectrumGraph(
             self.magnitude_spectrum_plot, self.params
         )
-        self.magnitude_spectrum_graph.vmin = -80
+        self.magnitude_spectrum_graph.vmin = (conf["display"]["spectrum_graph_min_db"] if conf else -120)
         self.magnitude_spectrum_graph.initialize(color="blue").make_plot()
 
         self.fig_ref.canvas.callbacks.connect("button_press_event", self.click_handler)  # type: ignore
@@ -729,11 +732,9 @@ class PlotFrame(tkinter.Frame):
             if graph is not None
         ]
 
-        # self.animation = FuncAnimation(
-        #     self.fig_ref, self.update_imag, interval=int(1000 / args.fps), blit=True
-        # )     ###TODO: args
+        fps = (conf["display"]["fps"] if conf else 25)
         self.animation = FuncAnimation(
-            self.fig_ref, self.update_imag, interval=int(1000 / 30), blit=True
+            self.fig_ref, self.update_imag, interval=int(1000 / fps), blit=True
         )
 
         grid_spec.tight_layout(figure=self.fig_ref)
@@ -910,9 +911,14 @@ class ClientWindow(tkinter.Frame):
         )
         self.stat_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.RIGHT)
 
-        self.packet_handler_thread = threading.Thread(
-            target=self.gui_packet_handler, daemon=True
-        ).start()
+        self.packet_handler_thread = threading.Thread(target=self.gui_packet_handler, daemon=True)
+        self.packet_handler_thread.start()
+
+    def stop(self):
+        print("stop")
+        self.do_stop = True
+        # self.packet_handler_thread.join()
+        print("join")
 
     def gui_packet_handler(self):
         while not self.do_stop:
@@ -971,8 +977,9 @@ class ClientWindow(tkinter.Frame):
                             source="GUI packet handler",
                         )
                 except Exception as e:
-                    print("[GUI packet handler]", e)
-                    traceback.print_tb(e.__traceback__)
+                    if not self.do_stop:
+                        print("[GUI packet handler]", e)
+                        traceback.print_tb(e.__traceback__)
             except queue.Empty:
                 pass
             except Exception as e:
@@ -1087,7 +1094,7 @@ class ClientWindow(tkinter.Frame):
             self.control_frame.rec_button.configure(state="disabled")
 
             self.disconnect_commands()  # to disconnect the other thread
-        except RuntimeError:
+        except:
             pass  # it might happen when closing the window
         try:
             self.plot_frame.animation.event_source.stop()
@@ -1095,6 +1102,8 @@ class ClientWindow(tkinter.Frame):
             pass
 
     def info_update_handler(self, update_string: str | list[str], source: str = None):
+        if not self.do_stop:    #this might happen when closing the window
+            return
         if not isinstance(update_string, list):
             update_string = [update_string]
         for line in update_string:
@@ -1355,45 +1364,37 @@ class Client:
 
     def watcher_thread(self):
         while not self.do_stop:
-            do_sleep = True  # if every queue is empty -> sleep
-            if self.stream_process is not None:
-                try:
-                    msg = self.stream_process_watcher_queue.get_nowait()
-                    threading.Thread(
-                        target=self.client_window.stream_status_msg_handler,
-                        args=(msg,),
-                        daemon=True,
-                    ).start()
-                    do_sleep = False
-                except queue.Empty:
-                    pass
+            try:
+                do_sleep = True  # if every queue is empty -> sleep
+                if self.stream_process is not None:
+                    try:
+                        msg = self.stream_process_watcher_queue.get_nowait()
+                        self.client_window.stream_status_msg_handler(msg)
+                        do_sleep = False
+                    except queue.Empty:
+                        pass
 
-            if self.command_thread is not None:
-                try:
-                    msg = self.command_thread_watcher_queue.get_nowait()
-                    threading.Thread(
-                        target=self.client_window.command_status_msg_handler,
-                        args=(msg,),
-                        daemon=True,
-                    ).start()
-                    do_sleep = False
-                except queue.Empty:
-                    pass
+                if self.command_thread is not None:
+                    try:
+                        msg = self.command_thread_watcher_queue.get_nowait()
+                        self.client_window.command_status_msg_handler(msg)
+                        do_sleep = False
+                    except queue.Empty:
+                        pass
 
-            if self.recording_thread is not None:
-                try:
-                    msg = self.recording_thread_watcher_queue.get_nowait()
-                    threading.Thread(
-                        target=self.client_window.recording_status_msg_handler,
-                        args=(msg,),
-                        daemon=True,
-                    ).start()
-                    do_sleep = False
-                except queue.Empty:
-                    pass
-            ##TODO: msg_handler functions might not need separate threads
-            if do_sleep:
-                sleep(0.1)
+                if self.recording_thread is not None:
+                    try:
+                        msg = self.recording_thread_watcher_queue.get_nowait()
+                        self.client_window.recording_status_msg_handler(msg)
+                        do_sleep = False
+                    except queue.Empty:
+                        pass
+                ##TODO: msg_handler functions might not need separate threads
+                if do_sleep:
+                    sleep(0.1)
+            except Exception as e:
+                if not self.do_stop:
+                    raise e
         ##TODO: empty and join watcher queues before terminating thread
 
     def send_commands(self, cmd: str) -> None:
@@ -1553,14 +1554,13 @@ class Client:
 
 
 def on_close():
-    global run_threads
     global root
     # dfg_map_server.run_thread = False
-    ex.client_window.do_stop = True
-    ex.do_stop = False
-    ex.watcher_thread.join()
     ex.disconnect_commands()
-    run_threads = False
+    sleep(0.5)
+    ex.do_stop = True
+    ex.client_window.do_stop = True    
+    ex.client_window.quit()
     root.destroy()
 
 
