@@ -13,7 +13,10 @@ import socket
 import threading
 import time
 import tkinter
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 import traceback
 from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
