@@ -46,7 +46,7 @@ class ClickerRobot(threading.Thread):
             self.client.client_window.control_frame.bin_count_string.set(bin_count[0])
 
 
-            self.client.client_window.control_frame.start_commands()
+            self.client.client_window.control_frame.configure_commands()
             print("Clicked Start")
             time.sleep(25)
 
