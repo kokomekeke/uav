@@ -1106,7 +1106,8 @@ class ClientWindow(tkinter.Frame):
             side=tkinter.LEFT, fill=tkinter.BOTH, padx=6, expand=True
         )
 
-        self.status_info_lb = tkinter.Listbox(self.tab1, height=4, width=75)
+        center_box_width = (conf["display"]["center_box_width"] if conf else 60)
+        self.status_info_lb = tkinter.Listbox(self.tab1, height=4, width=center_box_width)
         status_info_lb_sb = tkinter.Scrollbar(self.tab1, orient="horizontal")
         status_info_lb_sb.config(command=self.status_info_lb.xview)
         status_info_lb_sb.pack(side="bottom", fill=tkinter.X)
@@ -1115,7 +1116,7 @@ class ClientWindow(tkinter.Frame):
         )
 
         self.stream_packets_lb = tkinter.Listbox(
-            self.stream_packets_tab, height=4, width=75
+            self.stream_packets_tab, height=4, width=center_box_width
         )
         stream_packets_lb_sb = tkinter.Scrollbar(
             self.stream_packets_tab, orient="horizontal"
