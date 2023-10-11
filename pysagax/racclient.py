@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 
 from __future__ import annotations
-from collections.abc import Callable, Iterable, Mapping
-from datetime import datetime
+
 import math
 import multiprocessing
 import os
@@ -10,43 +9,35 @@ import queue
 import re
 import socket
 import threading
-from time import sleep
 import time
 import tkinter
-from tkinter import font  ##why this it needed?
-from tkinter import ttk
 import traceback
-import matplotlib
-import numpy as np
+from collections.abc import Callable, Iterable, Mapping
+from datetime import datetime
+from time import sleep
+from tkinter import font  # #why this it needed?
+from tkinter import ttk
 from typing import Any, Callable, Optional
 
-
+import matplotlib
+import numpy as np
+import pandas as pd
 from matplotlib import pyplot
 from matplotlib.animation import FuncAnimation  # type: ignore
-from matplotlib.backend_bases import KeyEvent, key_press_handler  # type: ignore
+from matplotlib.backend_bases import (KeyEvent,  # type: ignore
+                                      key_press_handler)
 from matplotlib.backends.backend_tkagg import (  # type: ignore
-    FigureCanvasTkAgg,
-    NavigationToolbar2Tk,
-)
-import pandas as pd
+    FigureCanvasTkAgg, NavigationToolbar2Tk)
 
-from pysagax import (
-    BaseConnection,
-    StreamAndCompassProcess,
-    MultiQueue,
-    WaterfallAngleGraph,
-    WaterfallMagnitudeGraph,
-    MagnitudeSpectrumGraph,
-    CompassGraph,
-    GraphParameters,
-    CoreServicePacket,
-    CoreServiceSpectrumPacket,
-    CoreServiceEOFPacket,
-    CoreServiceROIResultPacket,
-    CoreServiceROILackOfSignalPacket,
-    CoreServiceDebugPacket,
-)
 import pysagax
+from pysagax import (BaseConnection, CompassGraph, CoreServiceDebugPacket,
+                     CoreServiceEOFPacket, CoreServicePacket,
+                     CoreServiceROILackOfSignalPacket,
+                     CoreServiceROIResultPacket, CoreServiceSpectrumPacket,
+                     GraphParameters, MagnitudeSpectrumGraph, MultiQueue,
+                     StreamAndCompassProcess, WaterfallAngleGraph,
+                     WaterfallMagnitudeGraph)
+
 
 def calculate_df_corrected(df_value, compass_heading, encoder_heading):
     df_corrected_from_compass = True ##TODO: move to config file
