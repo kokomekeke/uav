@@ -55,7 +55,7 @@ conf = None
 
 
 def calculate_df_corrected(df_value, compass_heading, encoder_heading):
-    df_corrected_from_compass = True  ##TODO: move to config file
+    df_corrected_from_compass = (conf["defaults"]["df_corrected_from_compass"] if conf else True)  ##TODO: move to config file
     df_corrected = None
     if df_value is not None:
         if df_corrected_from_compass and compass_heading is not None:
@@ -1055,7 +1055,7 @@ class ClientWindow(tkinter.Frame):
         self.connect_frame.channel_spectrum_combo.configure(state="normal")
 
         self.control_frame.start_button.configure(state="normal")
-        # self.control_frame.rec_button.configure(state="normal")
+        self.control_frame.rec_button.configure(state="normal")
 
         try:  ##TODO: move this from GUI thread
             path_list = b""
@@ -1102,7 +1102,7 @@ class ClientWindow(tkinter.Frame):
             pass
 
     def info_update_handler(self, update_string: str | list[str], source: str = None):
-        if not self.do_stop:    #this might happen when closing the window
+        if self.do_stop:    #this might happen when closing the window
             return
         if not isinstance(update_string, list):
             update_string = [update_string]
@@ -1157,6 +1157,7 @@ class RecordingThread(threading.Thread):
 
     def run(self) -> None:
         self.status_queue.put("Recording started")
+        start_time_string = datetime.now().strftime('%Y%m%d_%H%M%S')
         while not self.do_stop:
             try:
                 data = self.cs_packet_queue.get(timeout=0.2)
@@ -1169,7 +1170,7 @@ class RecordingThread(threading.Thread):
                 return
         self.status_queue.put("saving recording...")
         try:
-            self.save_recording()
+            self.save_recording(start_time_string)
         except Exception as e:
             self.status_queue.put(f"Error while saving recording: {e}")
 
@@ -1218,15 +1219,15 @@ class RecordingThread(threading.Thread):
             print("[Recording packet handler]", e)
             traceback.print_tb(e.__traceback__)
 
-    def save_recording(self):
+    def save_recording(self, start_time_string):
         dataframe = pd.DataFrame(data=self.buffer)
 
         os.makedirs("racclient_recordings", exist_ok=True)
         filepath = (
-            f"racclient_recordings/{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            f"racclient_recordings/{start_time_string}.csv"
         )
         dataframe.to_csv(filepath)
-        self.status_queue.put(f"Recording saved at {filepath}")
+        self.status_queue.put(f"{len(dataframe.index)} lines saved at {filepath}")
 
         ##TODO: plot results of recording
         """ df_value_recording_deg = [d * 180 / np.pi if d is not None else None for d in self.buffer["df_angle"]]

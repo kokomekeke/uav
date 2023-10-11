@@ -52,6 +52,9 @@ class MultiQueue():
                 q.put(item, block=False)
             except multiprocessing.queues.Full:
                 pass #we ignore full queues for now, since multiprocessing queues can't be used similarly to collections.Deque objects or be cleared easily.
+            except TypeError as e: #TODO: what causes this to happen?
+                print("[MultiQueue]:", e)
+                #Maybe setting a maxsize to all queues would solve this?
 
     def empty(self):
         """
