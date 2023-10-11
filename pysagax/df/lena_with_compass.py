@@ -175,7 +175,12 @@ class StreamAndCompassProcess(
         Returns: if the socket should manually disconnect
         """
         assert self.mp_disconnect is not None
-        return bool(self.mp_disconnect.value)
+        try:
+            return bool(self.mp_disconnect.value)
+        except TypeError as e: #TODO: what causes this to happen?
+            print("[MultiprocessingError]:", e)
+            return True
+
 
     def display_status(self, message: str) -> None:
         """

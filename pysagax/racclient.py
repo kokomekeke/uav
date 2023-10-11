@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import collections
 import math
 import multiprocessing
 import os
@@ -32,6 +33,7 @@ from matplotlib.backends.backend_tkagg import (  # type: ignore
     FigureCanvasTkAgg,
     NavigationToolbar2Tk,
 )
+import scipy
 
 import pysagax
 from pysagax import (
@@ -437,23 +439,37 @@ class StatFrame(tkinter.Frame):
 
         self.client = self.master.master.client  ##???
 
+        avg_window_size_bursts = (conf["stats"]["avg_window_size_bursts"] if conf else 20)
+        self.df_value_history: collections.deque = collections.deque(maxlen=avg_window_size_bursts)
+        self.df_elev_history: collections.deque = collections.deque(maxlen=avg_window_size_bursts)
+
         ##TODO
         self.df_value_string = tkinter.StringVar(value="NaN")
         self.df_value_mean_string = tkinter.StringVar(value="NaN")
-        # self.df_value_deviation_string = tkinter.StringVar(value="NaN")
+        self.df_value_deviation_string = tkinter.StringVar(value="NaN")
         # self.df_value_rms_string = tkinter.StringVar(value="NaN")
         self.df_elev_string = tkinter.StringVar(value="NaN")
         self.df_elev_mean_string = tkinter.StringVar(value="NaN")
+        self.df_elev_deviation_string = tkinter.StringVar(value="NaN")
 
         self.quality_value_string = tkinter.StringVar(value="NaN")
 
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=1)
+        self.columnconfigure(2, weight=1)
+        self.columnconfigure(3, weight=1)
 
         disp_font = tkinter.font.Font(family="serif", size=14)
 
+        angle_label = ttk.Label(self, text="angle:")
+        angle_label.grid(column=1, row=0, sticky=tkinter.W, padx=5, pady=5)
+        mean_label = ttk.Label(self, text="mean:")
+        mean_label.grid(column=2, row=0, sticky=tkinter.W, padx=5, pady=5)
+        deviation_label = ttk.Label(self, text="deviation:")
+        deviation_label.grid(column=3, row=0, sticky=tkinter.W, padx=5, pady=5)
+
         df_value_label = ttk.Label(self, text="DF angle:")
-        df_value_label.grid(column=0, row=0, sticky=tkinter.W, padx=5, pady=5)
+        df_value_label.grid(column=0, row=1, sticky=tkinter.W, padx=5, pady=5)
         df_value_disp = ttk.Label(
             self,
             textvariable=self.df_value_string,
@@ -462,11 +478,31 @@ class StatFrame(tkinter.Frame):
             background="yellow",
         )
         df_value_disp.grid(
-            column=1, row=0, sticky=tkinter.E + tkinter.W, padx=5, pady=3
+            column=1, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=3
+        )
+        df_value_mean_disp = ttk.Label(
+            self,
+            textvariable=self.df_value_mean_string,
+            font=disp_font,
+            foreground="red",
+            background="yellow",
+        )
+        df_value_mean_disp.grid(
+            column=2, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=3
+        )
+        df_value_deviation_disp = ttk.Label(
+            self,
+            textvariable=self.df_value_deviation_string,
+            font=disp_font,
+            foreground="red",
+            background="yellow",
+        )
+        df_value_deviation_disp.grid(
+            column=3, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=3
         )
 
         df_elev_label = ttk.Label(self, text="DF elevation:")
-        df_elev_label.grid(column=0, row=1, sticky=tkinter.W, padx=5, pady=5)
+        df_elev_label.grid(column=0, row=2, sticky=tkinter.W, padx=5, pady=5)
         df_elev_disp = ttk.Label(
             self,
             textvariable=self.df_elev_string,
@@ -474,10 +510,30 @@ class StatFrame(tkinter.Frame):
             foreground="red",
             background="yellow",
         )
-        df_elev_disp.grid(column=1, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
+        df_elev_disp.grid(column=1, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
+        df_elev_mean_disp = ttk.Label(
+            self,
+            textvariable=self.df_elev_mean_string,
+            font=disp_font,
+            foreground="red",
+            background="yellow",
+        )
+        df_elev_mean_disp.grid(
+            column=2, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=3
+        )
+        df_elev_deviation_disp = ttk.Label(
+            self,
+            textvariable=self.df_elev_deviation_string,
+            font=disp_font,
+            foreground="red",
+            background="yellow",
+        )
+        df_elev_deviation_disp.grid(
+            column=3, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=3
+        )
 
         quality_value_label = ttk.Label(self, text="Signal quality:")
-        quality_value_label.grid(column=0, row=2, sticky=tkinter.W, padx=5, pady=5)
+        quality_value_label.grid(column=0, row=3, sticky=tkinter.W, padx=5, pady=5)
         quality_value_disp = ttk.Label(
             self,
             textvariable=self.quality_value_string,
@@ -486,7 +542,7 @@ class StatFrame(tkinter.Frame):
             background="yellow",
         )
         quality_value_disp.grid(
-            column=1, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=3
+            column=1, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=3
         )
 
         ##TODO: stats
@@ -534,7 +590,7 @@ class StatFrame(tkinter.Frame):
             height=59,
         )
         self.peak_chart.grid(
-            column=0, row=4, columnspan=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+            column=0, row=4, columnspan=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5
         )
         self.peak_bars = [
             self.peak_chart.create_rectangle(2, 2, 100, 14, fill="yellow"),
@@ -590,6 +646,48 @@ class StatFrame(tkinter.Frame):
             )  # formatting numbers rounded to -0 to +0
             self.peak_chart.itemconfig(self.peak_texts[i], text=text)
 
+    def update_stats(self, df_value, df_elev):
+        self.df_value_history.append(df_value)
+        self.df_elev_history.append(df_elev)
+
+        df_value_deg = df_value * 180 / np.pi
+        if df_value_deg < 0:
+            df_value_deg += 360
+        self.df_value_string.set(f"{df_value_deg:.2f}°")
+
+        df_elev_deg = df_elev * 180 / np.pi
+        self.df_elev_string.set(f"{df_elev_deg:.2f}°")
+
+        
+        if len(self.df_value_history):
+            df_value_mean = scipy.stats.circmean(
+                list(self.df_value_history), high=np.pi, low=-np.pi
+            )
+            df_value_deviation = scipy.stats.circstd(
+                list(self.df_value_history), high=np.pi, low=-np.pi
+            )   
+            self.df_value_mean_string.set(
+                f"{(df_value_mean * 180 / np.pi):.2f}°"
+            )
+            self.df_value_deviation_string.set(
+                f"{(df_value_deviation * 180 / np.pi):.2f}°"
+            )
+
+        if len(self.df_elev_history):
+            df_value_mean = scipy.stats.circmean(
+                list(self.df_elev_history), high=np.pi, low=-np.pi
+            )
+            df_value_deviation = scipy.stats.circstd(
+                list(self.df_elev_history), high=np.pi, low=-np.pi
+            )   
+            self.df_elev_mean_string.set(
+                f"{(df_value_mean * 180 / np.pi):.2f}°"
+            )
+            self.df_elev_deviation_string.set(
+                f"{(df_value_deviation * 180 / np.pi):.2f}°"
+            )
+
+        
 
 class PlotFrame(tkinter.Frame):
     def __init__(self, master, *args, **kwargs):
@@ -1033,12 +1131,6 @@ class ClientWindow(tkinter.Frame):
         self.packet_handler_thread = threading.Thread(target=self.gui_packet_handler, daemon=True)
         self.packet_handler_thread.start()
 
-    def stop(self):
-        print("stop")
-        self.do_stop = True
-        # self.packet_handler_thread.join()
-        print("join")
-
     def gui_packet_handler(self):
         while not self.do_stop:
             try:
@@ -1081,14 +1173,9 @@ class ClientWindow(tkinter.Frame):
 
                     if isinstance(packet, CoreServiceROIResultPacket):
                         self.df_value = packet.roi_azimuth
-                        df_value_deg = self.df_value * 180 / np.pi
-                        if df_value_deg < 0:
-                            df_value_deg += 360
-                        self.stat_frame.df_value_string.set(f"{df_value_deg:.2f}°")
-
                         self.df_elev = packet.roi_elevation
-                        df_elev_deg = self.df_elev * 180 / np.pi
-                        self.stat_frame.df_elev_string.set(f"{df_elev_deg:.2f}°")
+
+                        self.stat_frame.update_stats(self.df_value, self.df_elev)
 
                     if isinstance(packet, CoreServiceEOFPacket):
                         self.update_status_info(
@@ -1608,6 +1695,14 @@ class Client:
                 "#infoCore Service configured"
                 if int(resp[0]) == 0
                 else "#infoCore Service conf failed"
+            ),
+        )
+        self.command_thread.set_response_handler(
+            "ROI:Configure!",
+            lambda cmd, resp: self.command_thread_watcher_queue.put(
+                "#infoCore Service ROI configured"
+                if int(resp[0]) == 0
+                else "#infoCore Service ROI failed"
             ),
         )
         self.command_thread.set_response_handler(
