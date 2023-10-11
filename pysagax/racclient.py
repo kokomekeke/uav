@@ -19,7 +19,7 @@ from datetime import datetime
 from time import sleep
 from tkinter import font  # #why this it needed?
 from tkinter import ttk
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Literal, Optional
 
 import matplotlib
 import numpy as np
@@ -52,6 +52,13 @@ from pysagax import (
 )
 
 conf = None
+
+
+def en_if(cond: bool) -> Literal["normal", "active", "disabled"]:
+    if cond:
+        return "normal"
+    else:
+        return "disabled"
 
 
 def calculate_df_corrected(df_value, compass_heading, encoder_heading):
@@ -379,20 +386,15 @@ class ControlFrame(tkinter.Frame):
             column=1, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5, columnspan=3
         )
 
-        self.start_button = tkinter.Button(
-            self, text="Start", command=self.start_commands
+        self.configure_button = tkinter.Button(
+            self, text="Configure", command=self.configure_commands
         )
-        self.start_button.grid(
+        self.configure_button.grid(
             column=3, row=5, padx=10, pady=5, sticky=tkinter.E + tkinter.W
         )
-        self.start_button.configure(state="disabled")
+        self.configure_button.configure(state="disabled")
 
-        self.rec_button = tkinter.Button(self, text="Rec", command=self.rec_commands)
-        self.rec_button.grid(
-            column=2, row=5, padx=10, pady=5, sticky=tkinter.E + tkinter.W
-        )
-
-    def start_commands(self):
+    def configure_commands(self):
         default_source_file_path = "/home/sagax/Generator/"
         if self.source_combo.current() == 1:
             source_file_path = default_source_file_path
@@ -411,17 +413,7 @@ class ControlFrame(tkinter.Frame):
             "from_file": self.source_combo.current() != 0,
             "source_file_path": source_file_path,
         }
-        self.master.master.increase_unfinished_send_commands()
-        self.client.start_commands(**kwargs)
-
-    def rec_commands(self):
-        self.master.master.increase_unfinished_send_commands()
-        if self.client.recording_started:
-            self.client.stop_recording()
-            self.rec_button.config(text="Start recording", relief="raised")
-        else:
-            self.client.start_recording()
-            self.rec_button.config(text="Stop recording", relief="sunken")
+        self.client.do_configuration(**kwargs)
 
     def source_combo_update(self, event):
         if self.source_combo.current() == 0:
@@ -763,7 +755,6 @@ class PlotFrame(tkinter.Frame):
             roi_freq = self.magnitude_spectrum_graph.coord_to_freq(event.xdata)
             roi_threshold = event.ydata
 
-            self.master.increase_unfinished_send_commands()
             self.client.update_roi_settings(
                 roi_freq, roi_span, math.floor(roi_threshold)
             )
@@ -832,6 +823,135 @@ class PlotFrame(tkinter.Frame):
         ###self.log_octave_data()
 
 
+class StatusQueryThread(threading.Thread):
+    def source_status_handler(self, cmd: str, resp: list[str]) -> None:
+        self.pb_tab.source_configured = True if int(resp[1]) else False
+        self.pb_tab.source_running = True if int(resp[2]) else False
+        self.pb_tab.set_buttons_enabled()
+
+    def recording_status_handler(self, cmd: str, resp: list[str]) -> None:
+        rec_activated = True if int(resp[1]) else False
+        rec_running = True if int(resp[2]) else False
+        self.pb_tab.rec_status_string.set(
+            "🟣"
+            if (not rec_activated) and (not rec_running)
+            else "🟢"
+            if rec_activated and (not rec_running)
+            else "🟠"
+            if rec_activated and rec_running
+            else "❓"
+        )
+        self.pb_tab.rec_status_label.configure(
+            fg=(
+                "Aqua"
+                if (not rec_activated) and (not rec_running)
+                else "LimeGreen"
+                if rec_activated and (not rec_running)
+                else "Red"
+                if rec_activated and rec_running
+                else "Red"
+            )
+        )
+
+    def __init__(self, comm: CommandsHandlerThread, pb_tab: PlaybackTab):
+        super().__init__(daemon=True)
+        self.comm = comm
+        self.pb_tab = pb_tab
+        self.comm.set_response_handler("SOURCE:Status?", self.source_status_handler)
+        self.comm.set_response_handler(
+            "RECORDING:Status?", self.recording_status_handler
+        )
+
+    def run(self) -> None:
+        while self.comm.is_alive():
+            if not self.pb_tab.working:
+                self.comm.enqueue_commands("SOURCE:Status?;RECORDING:Status?;")
+            time.sleep(0.2)
+
+
+class PlaybackTab(ttk.Frame):
+    def set_buttons_enabled(self) -> None:
+        self.start_button.configure(
+            state=en_if(
+                self.connected
+                and (not self.working)
+                and self.source_configured
+                and (not self.source_running)
+            )
+        )
+        self.rec_button.configure(
+            state=en_if(
+                self.connected and (not self.working) and self.source_configured
+            )
+        )
+        self.stop_button.configure(
+            state=en_if(self.connected and (not self.working) and self.source_running)
+        )
+        self.abort_button.configure(state=en_if(self.connected and self.working))
+
+    def __init__(self, master: tkinter.Misc, client: Client) -> None:
+        super().__init__(master)
+        self.status_string = tkinter.StringVar(value="Idle")
+        self.rec_status_string = tkinter.StringVar(value="🟣️")
+
+        self.client = client
+        self.connected: bool = False
+        self.working: bool = False
+        self.source_configured: bool = False
+        self.source_running: bool = False
+        self.start_button = tkinter.Button(self, text="▶️", command=self.start_commands)
+        self.start_button.pack(side=tkinter.LEFT)
+        self.rec_button = tkinter.Button(self, text="⏺️️", command=self.rec_commands)
+        self.rec_button.pack(side=tkinter.LEFT)
+        self.rec_status_label = tkinter.Label(
+            self,
+            textvariable=self.rec_status_string,
+            font=tkinter.font.Font(size=16),
+            fg="#ccc",
+        )
+        self.rec_status_label.pack(side=tkinter.LEFT, expand=False)
+        self.stop_button = tkinter.Button(self, text="⏹️", command=self.stop_commands)
+        self.stop_button.pack(side=tkinter.LEFT)
+        self.status_label = tkinter.Label(
+            self,
+            textvariable=self.status_string,
+            font=tkinter.font.Font(size=8),
+        )
+        self.status_label.pack(side=tkinter.LEFT)
+        self.abort_button = tkinter.Button(self, text="⛔", command=self.abort_commands)
+        self.abort_button.pack(side=tkinter.RIGHT)
+
+        self.start_button.configure(state="disabled")
+        self.rec_button.configure(state="disabled")
+        self.stop_button.configure(state="disabled")
+        self.abort_button.configure(state="disabled")
+
+    def command_status_callback(self, working: bool, current_cmd: str):
+        if "Status?" in current_cmd:
+            self.working = False
+        else:
+            self.working = working
+        self.set_buttons_enabled()
+        self.status_string.set(current_cmd)
+
+    def start_commands(self):
+        self.client.command_thread.enqueue_commands("SOURCE:Start!")
+
+    def rec_commands(self):
+        if self.client.recording_started:
+            self.client.stop_recording()
+            self.rec_button.config(relief="raised")
+        else:
+            self.client.start_recording()
+            self.rec_button.config(relief="sunken")
+
+    def stop_commands(self):
+        self.client.command_thread.enqueue_commands("SOURCE:Stop!")
+
+    def abort_commands(self):
+        self.client.command_thread.abort_commands()
+
+
 class ClientWindow(tkinter.Frame):
     def __init__(self, client, root):
         self.do_stop = False
@@ -843,9 +963,6 @@ class ClientWindow(tkinter.Frame):
         self.compass_heading = None  # compass angle corrected with offset
         self.encoder_angle = None
         self.encoder_heading = None  # encoder angle corrected with offset
-
-        # Only enable the start button if this is 0
-        self.unfinished_send_commands: int = 0
 
         tkinter.Frame.__init__(self, root)
         self.pack(side="top", fill=tkinter.BOTH, expand=True)
@@ -878,8 +995,10 @@ class ClientWindow(tkinter.Frame):
         self.control_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.LEFT)
 
         self.center_notebook = ttk.Notebook(self.bottom_frame)
+        self.playback_tab = PlaybackTab(self.center_notebook, client)
         self.tab1 = ttk.Frame(self.center_notebook)
         self.stream_packets_tab = ttk.Frame(self.center_notebook)
+        self.center_notebook.add(self.playback_tab, text="Playback")
         self.center_notebook.add(self.tab1, text="Status info")
         self.center_notebook.add(self.stream_packets_tab, text="Stream packets")
         self.center_notebook.pack(
@@ -993,7 +1112,7 @@ class ClientWindow(tkinter.Frame):
         elif message.startswith("#action"):
             message = message[len("#action") :]
             if message == "send_commands_finished":
-                self.decrease_unfinished_send_commands()
+                # self.decrease_unfinished_send_commands()
                 return
         else:  # status updates have no prefix, these should also be shown on status_frame
             self.set_command_status(message)
@@ -1054,8 +1173,11 @@ class ClientWindow(tkinter.Frame):
         self.connect_frame.disconnect_button.configure(state="normal")
         self.connect_frame.channel_spectrum_combo.configure(state="normal")
 
-        self.control_frame.start_button.configure(state="normal")
-        self.control_frame.rec_button.configure(state="normal")
+        self.control_frame.configure_button.configure(state="normal")
+
+        self.playback_tab.connected = True
+        self.playback_tab.set_buttons_enabled()
+        # self.control_frame.rec_button.configure(state="normal")
 
         try:  ##TODO: move this from GUI thread
             path_list = b""
@@ -1090,9 +1212,10 @@ class ClientWindow(tkinter.Frame):
             self.connect_frame.connect_button.configure(state="normal")
             self.connect_frame.channel_spectrum_combo.configure(state="disabled")
 
-            self.control_frame.start_button.configure(state="disabled")
-            self.control_frame.rec_button.configure(state="disabled")
+            self.control_frame.configure_button.configure(state="disabled")
 
+            self.playback_tab.connected = False
+            self.playback_tab.set_buttons_enabled()
             self.disconnect_commands()  # to disconnect the other thread
         except:
             pass  # it might happen when closing the window
@@ -1113,19 +1236,6 @@ class ClientWindow(tkinter.Frame):
             self.status_info_lb.delete(0, self.stream_packets_lb.size() - 1000)
             self.status_info_lb.see(tkinter.END)
             print(datetime.now().strftime("%m.%d. %H:%M:%S"), line)
-
-    def increase_unfinished_send_commands(self):
-        self.unfinished_send_commands += 1
-        self.control_frame.start_button.config(state="disabled")
-
-    def decrease_unfinished_send_commands(self):
-        self.unfinished_send_commands -= 1
-        if self.unfinished_send_commands <= 0:  # enable
-            self.control_frame.start_button.config(state="normal")
-            if self.unfinished_send_commands < 0:
-                print(
-                    "ERROR: unfinished send commands shouldn't be negative"
-                )  ##TODO: why does this happen?
 
 
 class RecordingThread(threading.Thread):
@@ -1288,40 +1398,89 @@ class CommandsConnectionThread(BaseConnection, threading.Thread):
         self.disconnect = False
         self.run_socket()
 
-    def send_commands(self, cmd: str) -> None:
+    def send_command(self, cmd: str) -> Optional[str]:
+        self.send_on_socket(cmd.encode())
+        try:
+            return self.incoming_messages_queue.get(block=True, timeout=30)
+        except queue.Empty:
+            return None
+
+
+class CommandsHandlerThread(threading.Thread):
+    def __init__(
+        self,
+        conn: CommandsConnectionThread,
+        status_callback: Callable[[bool, str], None],
+        status_queue: queue.Queue[str],
+    ):
+        super().__init__(daemon=True)
+        self.conn = conn
+        self.command_queue: queue.Queue[str] = queue.Queue()
+        self.do_abort: bool = False
+        self.status_callback = status_callback
         """
-        Send the command from the command entry box to the client. Called on pressing the Return key in the autocomplete box.
+        Callback to display status of commands
+        bool: is working on a command
+        str: the command it is working on
         """
-        cmd = cmd.replace("\n", "").replace("\r", "")
-        error_msg = []
+        self.status_queue = status_queue
+        self.response_handlers: dict[str, Callable[[str, list[str]], None]] = {}
+
+    def set_response_handler(
+        self, command: str, handler: Callable[[str, list[str]], None]
+    ):
+        self.response_handlers[command] = handler
+
+    def run(self) -> None:
+        while not self.conn.connected:
+            sleep(0.1)
+            if self.conn.disconnect:
+                return
+        while self.conn.connected:
+            if not self.command_queue.empty():
+                while (
+                    (not self.command_queue.empty())
+                    and not self.do_abort
+                    and self.conn.connected
+                ):
+                    command = self.command_queue.get(block=True, timeout=1)
+                    self.status_callback(True, command)
+                    response = self.conn.send_command(command)
+                    if response is None:
+                        self.timeout_handler(command)
+                    else:
+                        self.response_handler(command, response)
+                self.status_queue.put("#action" + "send_commands_finished")
+                self.status_callback(False, "")
+            sleep(0.1)
+
+    def timeout_handler(self, command: str) -> None:
+        self.status_queue.put(f"Command {command} timed out.")
+
+    def response_handler(self, command: str, response: str) -> None:
+        response_parts = response.split(" ")
+        error_code = int(response_parts[0])
+        for key, handler in self.response_handlers.items():
+            if key in command:
+                handler(command, response_parts)
+        if error_code:
+            self.status_queue.put(f'#infoError with command "{command}": {response}')
+
+    def enqueue_commands(self, commands: str):
+        self.do_abort = False
+        cmd = commands.replace("\n", "").replace("\r", "")
         for cmd_line in cmd.split(";"):  # One command per line
             if not cmd_line:
                 continue
             cmd_line = cmd_line.strip()
             cmd_line += ";"
-            self.client_socket.send(cmd_line.encode())
+            self.command_queue.put(cmd_line)
 
-            try:
-                response = self.incoming_messages_queue.get(block=True, timeout=30)
-                response_parts = response.split(" ")
-                error_code = int(response_parts[0])
-                if "CORE:Version?" in cmd_line:
-                    self.status_queue.put(
-                        f"#info CS Version {response_parts[1]}.{response_parts[2]}.{response_parts[3]}"
-                        f"-{response_parts[4]}+{response_parts[5]} VCS:{response_parts[6]}"
-                    )
-                if error_code:
-                    error_msg.append(f'Error with command "{cmd_line}": {response}')
-            except queue.Empty:
-                error_msg.append(f"Command {cmd_line} timed out.")
-                break
-            sleep(0.1)
-        if error_msg:
-            for msg in error_msg:
-                self.status_queue.put("#info" + msg)
-        else:
-            self.status_queue.put("#info" + "Core Service configured")
-        self.status_queue.put("#action" + "send_commands_finished")
+    def abort_commands(self):
+        self.do_abort = True
+        while not self.command_queue.empty():
+            self.command_queue.get()  # clear queue
+        self.status_callback(False, "")
 
 
 # Owner class for the client
@@ -1335,7 +1494,9 @@ class Client:
         self.stream_process_multiqueue = MultiQueue([self.stream_to_gui_queue])
 
         self.client_window = ClientWindow(self, root)
-        self.command_thread = None
+        self.command_connection_thread: Optional[CommandsConnectionThread] = None
+        self.command_thread: Optional[CommandsHandlerThread] = None
+        self.status_query_thread: Optional[StatusQueryThread] = None
         self.stream_process = None
         self.recording_thread = None
         self.dfg_map_server = None
@@ -1402,16 +1563,16 @@ class Client:
         """
         Send the command from the command entry box to the client. Called on pressing the Return key in the autocomplete box.
         """
-        assert self.command_thread
-        assert self.command_thread.client_socket
+        assert self.command_thread is not None
         if (
-            self.command_thread is None
+            self.command_connection_thread is None
         ):  ##TODO: After disconnecting command_thread should be None
             return
-        thread = threading.Thread(
-            target=self.command_thread.send_commands, args=(cmd,), daemon=True
-        )
-        thread.start()
+        self.command_thread.enqueue_commands(cmd)
+
+    def command_status_callback(self, working: bool, current_cmd: str):
+        self.command_thread_watcher_queue.put("#action" + "send_commands_finished")
+        self.client_window.playback_tab.command_status_callback(working, current_cmd)
 
     def connect_commands(
         self, connect_action, disconnect_action, host_address, encoder_port: str = ""
@@ -1419,13 +1580,46 @@ class Client:
         """
         Action of the "Connect" button
         """
-        self.command_thread = CommandsConnectionThread(
+        self.command_connection_thread = CommandsConnectionThread(
             self.command_thread_watcher_queue
         )
-        self.command_thread.connect_action = connect_action
-        self.command_thread.disconnect_action = disconnect_action
-        self.command_thread.host_port = f"{host_address}:12936"
+        self.command_connection_thread.connect_action = connect_action
+        self.command_connection_thread.disconnect_action = disconnect_action
+        self.command_connection_thread.host_port = f"{host_address}:12936"
+        self.command_connection_thread.start()
+
+        self.command_thread = CommandsHandlerThread(
+            conn=self.command_connection_thread,
+            status_callback=self.command_status_callback,
+            status_queue=self.command_thread_watcher_queue,
+        )
+
         self.command_thread.start()
+        self.command_thread.set_response_handler(
+            "CORE:Version?",
+            lambda cmd, resp: self.command_thread_watcher_queue.put(
+                f"#infoCS Version {resp[1]}.{resp[2]}.{resp[3]}"
+                f"-{resp[4]}+{resp[5]} VCS:{resp[6]}"
+            ),
+        )
+        self.command_thread.set_response_handler(
+            "SOURCE:Configure!",
+            lambda cmd, resp: self.command_thread_watcher_queue.put(
+                "#infoCore Service configured"
+                if int(resp[0]) == 0
+                else "#infoCore Service conf failed"
+            ),
+        )
+        self.command_thread.set_response_handler(
+            "RECORDING:Stop!",
+            lambda cmd, resp: self.command_thread_watcher_queue.put(
+                f"#infoCS Recordings done: {', '.join(resp)}"
+            ),
+        )
+        self.status_query_thread = StatusQueryThread(
+            self.command_thread, self.client_window.playback_tab
+        )
+        self.status_query_thread.start()
 
         self.disconnect_value.value = False
         self.stream_process = StreamAndCompassProcess(
@@ -1439,7 +1633,7 @@ class Client:
         self.stream_process.encoder_port = encoder_port
         self.stream_process.start()
 
-    def start_commands(
+    def do_configuration(
         self,
         freq,
         bw,
@@ -1465,7 +1659,6 @@ class Client:
                 f"SOURCE:BurstStride! {burst_stride};"
                 f"SOURCE:Configure!;"
                 f"AOA:Configure!;"
-                f"SOURCE:Start!;"
                 f"ROI:Enable! 1;"
                 f"ROI:CenterFrequency! {roi_center:.0f};"
                 f"ROI:Span! {roi_span:.0f};"
@@ -1486,7 +1679,6 @@ class Client:
                 f"SOURCE:BurstStride! {burst_stride};"
                 f"SOURCE:Configure!;"
                 f"AOA:Configure!;"
-                f"SOURCE:Start!;"
                 f"ROI:Enable! 1;"
                 f"ROI:CenterFrequency! {roi_center:.0f};"
                 f"ROI:Span! {roi_span:.0f};"
@@ -1498,8 +1690,8 @@ class Client:
         """
         Action of the "Disconnect" button
         """
-        if self.command_thread is not None:
-            self.command_thread.disconnect = True
+        if self.command_connection_thread is not None:
+            self.command_connection_thread.disconnect = True
 
         if self.stream_process is not None:
             if self.disconnect_value is not None:
