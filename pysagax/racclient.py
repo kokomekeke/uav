@@ -925,6 +925,15 @@ class PlotFrame(tkinter.Frame):
 
 
 class StatusQueryThread(threading.Thread):
+    def source_length_handler(self, cmd: str, resp: list[str]) -> None:
+        if resp[0] == "0":
+            source_length = int(resp[1])
+            self.pb_tab.position_slider.configure(to=source_length)
+
+    def source_position_handler(self, cmd: str, resp: list[str]) -> None:
+        if resp[0] == "0":
+            self.pb_tab.position_variable.set(int(resp[1]))
+
     def source_status_handler(self, cmd: str, resp: list[str]) -> None:
         self.pb_tab.source_configured = True if int(resp[1]) else False
         self.pb_tab.source_running = True if int(resp[2]) else False
@@ -954,7 +963,7 @@ class StatusQueryThread(threading.Thread):
             )
         )
 
-    def __init__(self, comm: CommandsHandlerThread, pb_tab: PlaybackTab):
+    def __init__(self, comm: CommandsHandlerThread, pb_tab: PlaybackTab) -> None:
         super().__init__(daemon=True)
         self.comm = comm
         self.pb_tab = pb_tab
@@ -962,11 +971,15 @@ class StatusQueryThread(threading.Thread):
         self.comm.set_response_handler(
             "RECORDING:Status?", self.recording_status_handler
         )
+        self.comm.set_response_handler("SOURCE:Length?", self.source_length_handler)
+        self.comm.set_response_handler("SOURCE:Position?", self.source_position_handler)
 
     def run(self) -> None:
         while self.comm.is_alive():
             if not self.pb_tab.working:
-                self.comm.enqueue_commands("SOURCE:Status?;RECORDING:Status?;")
+                self.comm.enqueue_commands(
+                    "SOURCE:Status?;RECORDING:Status?;SOURCE:Length?;SOURCE:Position?;"
+                )
             time.sleep(0.2)
 
 
@@ -992,6 +1005,7 @@ class PlaybackTab(ttk.Frame):
 
     def __init__(self, master: tkinter.Misc, client: Client) -> None:
         super().__init__(master)
+        self.position_variable = tkinter.DoubleVar()
         self.status_string = tkinter.StringVar(value="Idle")
         self.rec_status_string = tkinter.StringVar(value="🟣️")
 
@@ -1000,6 +1014,16 @@ class PlaybackTab(ttk.Frame):
         self.working: bool = False
         self.source_configured: bool = False
         self.source_running: bool = False
+
+        self.position_slider = tkinter.Scale(
+            self,
+            from_=0,
+            to=1,
+            variable=self.position_variable,
+            orient=tkinter.HORIZONTAL,
+            command=self.position_commands,
+        )
+        self.position_slider.pack(side=tkinter.TOP, expand=True, fill=tkinter.X)
         self.start_button = tkinter.Button(self, text="▶️", command=self.start_commands)
         self.start_button.pack(side=tkinter.LEFT)
         self.rec_button = tkinter.Button(self, text="⏺️️", command=self.rec_commands)
@@ -1027,18 +1051,27 @@ class PlaybackTab(ttk.Frame):
         self.stop_button.configure(state="disabled")
         self.abort_button.configure(state="disabled")
 
-    def command_status_callback(self, working: bool, current_cmd: str):
-        if "Status?" in current_cmd:
+    def command_status_callback(self, working: bool, current_cmd: str) -> None:
+        if (
+            "Status?" in current_cmd
+            or "Position?" in current_cmd
+            or "Length?" in current_cmd
+        ):
             self.working = False
         else:
             self.working = working
         self.set_buttons_enabled()
         self.status_string.set(current_cmd)
 
-    def start_commands(self):
+    def position_commands(self, event: typing.Any) -> None:
+        self.client.command_thread.enqueue_commands(
+            f"SOURCE:Position! {self.position_variable.get()}"
+        )
+
+    def start_commands(self) -> None:
         self.client.command_thread.enqueue_commands("SOURCE:Start!")
 
-    def rec_commands(self):
+    def rec_commands(self) -> None:
         if self.client.recording_started:
             self.client.stop_recording()
             self.rec_button.config(relief="raised")
@@ -1046,10 +1079,10 @@ class PlaybackTab(ttk.Frame):
             self.client.start_recording()
             self.rec_button.config(relief="sunken")
 
-    def stop_commands(self):
+    def stop_commands(self) -> None:
         self.client.command_thread.enqueue_commands("SOURCE:Stop!")
 
-    def abort_commands(self):
+    def abort_commands(self) -> None:
         self.client.command_thread.abort_commands()
 
 
