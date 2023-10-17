@@ -2,7 +2,7 @@
 #
 # Created by aron.szabo@sagaxcommunications.com on 21/08/2023.
 #
-import sys
+import os
 import queue
 import socketserver
 import socket
@@ -36,7 +36,7 @@ class SerialHandlerThread(threading.Thread):
                     f"Please reconnect the sensor and then restart the python program. \n"
                     f"{str(e)}",
                 )
-                sys.exit(1)
+                os._exit(1)
 
 
 class MyTCPHandler(socketserver.BaseRequestHandler):
