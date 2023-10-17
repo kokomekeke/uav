@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 import argparse
 import multiprocessing
+import os
 import threading
 import time
 import tkinter
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 
 import pysagax
 from pysagax.racclient import Client, on_close
@@ -11,7 +16,7 @@ from pysagax.racclient import Client, on_close
 root = None
 
 parser = argparse.ArgumentParser(description="RacClient AutoClicker")
-parser.add_argument("address")
+# parser.add_argument("address")
 args = parser.parse_args()
 
 
@@ -23,12 +28,18 @@ class ClickerRobot(threading.Thread):
 
     def run(self) -> None:
         global args
-        self.client.client_window.connect_frame.host_address.set(args.address)
+        # self.client.client_window.connect_frame.host_address.set(args.address)
         freq_values = ["300M", "350M", "399.7M", "446M"]
         roif_values = ["300.1M", "350.1M", "399.8M", "446.05M"]
         db_values = ["20", "60", "100"]
         bin_count = ["128", "512", "1024", "4096", "32768"]
         
+        self.client.client_window.connect_frame.host_address.set("10.1.1.114")
+        self.client.client_window.control_frame.bw_string.set("1M")
+        self.client.client_window.control_frame.roi_span_string.set("50k")
+        self.client.client_window.control_frame.roi_threshold_string.set("-40")
+        self.client.client_window.control_frame.burst_stride_string.set("50k")
+        time.sleep(20)
         while not self.stop:
             self.client.client_window.connect_commands()
             print("Clicked Connect")
@@ -50,12 +61,12 @@ class ClickerRobot(threading.Thread):
             print("Clicked Start")
             time.sleep(25)
 
-            self.client.client_window.control_frame.rec_commands()
+            self.client.client_window.playback_tab.rec_commands()
             print("Clicked Recording Start")
             time.sleep(15)
 
             
-            self.client.client_window.control_frame.rec_commands()
+            self.client.client_window.playback_tab.rec_commands()
             print("Clicked Recording Stop")
             time.sleep(15)
 
@@ -68,6 +79,18 @@ class ClickerRobot(threading.Thread):
 def main() -> None:
     global root
     multiprocessing.set_start_method("spawn")
+    global conf
+    parser = argparse.ArgumentParser(description="RacClient")
+    parser.add_argument("config", nargs="?", default="racclient.toml")
+    args = parser.parse_args()
+    conf = None
+    if os.path.isfile(args.config):
+        print("Config file found")
+        with open(args.config, "rb") as f:
+            conf = tomllib.load(f)
+        print(f"Config file loaded: {repr(conf)}")
+    else:
+        print("Config file not found")
     root = tkinter.Tk()
     ex = Client(root)
     root.geometry("1200x850")

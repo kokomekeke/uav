@@ -1215,11 +1215,10 @@ class ClientWindow(tkinter.Frame):
                         self.stat_frame.update_stats(self.df_value, self.df_elev)
 
                     if isinstance(packet, CoreServiceEOFPacket):
-                        pass  # TODO this caused an error
-                        # self.update_status_info(
-                        #     "End of filed reached for Sigmf recording",
-                        #     source="GUI packet handler",
-                        # )
+                        self.info_update_handler(
+                            "End of filed reached for Sigmf recording",
+                            source="GUI packet handler",
+                        )
                 except Exception as e:
                     if not self.do_stop:
                         print("[GUI packet handler]", e)
@@ -1374,6 +1373,7 @@ class RecordingThread(threading.Thread):
         self.do_stop = False
 
         self.latest_peaks = [0, 0, 0, 0]
+        self.latest_quality = 0
 
         self.buffer = {
             "time_ns": [],
@@ -1384,6 +1384,7 @@ class RecordingThread(threading.Thread):
             "encoder_angle": [],
             "encoder_heading": [],
             "df_elevation": [],
+            "quality": [],
             "peak0": [],
             "peak1": [],
             "peak2": [],
@@ -1427,6 +1428,9 @@ class RecordingThread(threading.Thread):
                     )  # creating a list of (ChannelID, PeakValue) tuples from the debug message
                     peaks = [peak[1] for peak in matches]
                     self.latest_peaks = peaks
+                elif packet.title == "q":
+                    quality = float(packet.contents.decode().strip())
+                    self.latest_quality = quality
 
             if isinstance(packet, CoreServiceROIResultPacket):
                 df_angle = packet.roi_azimuth
@@ -1445,6 +1449,7 @@ class RecordingThread(threading.Thread):
                 self.buffer["encoder_angle"].append(encoder_angle)
                 self.buffer["encoder_heading"].append(encoder_heading)
                 self.buffer["df_elevation"].append(df_elevation)
+                self.buffer["quality"].append(self.latest_quality)
                 self.buffer["peak0"].append(self.latest_peaks[0])
                 self.buffer["peak1"].append(self.latest_peaks[1])
                 self.buffer["peak2"].append(self.latest_peaks[2])
@@ -1905,7 +1910,7 @@ def main() -> None:
         print(f"Config file loaded: {repr(conf)}")
     else:
         print("Config file not found")
-        multiprocessing.set_start_method("spawn")
+    multiprocessing.set_start_method("spawn")
     root = tkinter.Tk()
     ex = Client(root)
     root.geometry("1200x850")

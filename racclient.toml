@@ -14,9 +14,9 @@ df_corrected_from_compass = false    #true: compass, false: encoder
 [display]
 fps = 25
 max_bin_count = 1024
-spectrum_graph_min_db = -120
+spectrum_graph_min_db = -80
 center_box_width = 60
 
 [stats]
-avg_window_size_bursts = 20
+avg_window_size_bursts = 60
 
