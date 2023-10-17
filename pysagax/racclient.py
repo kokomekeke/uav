@@ -921,7 +921,6 @@ class PlotFrame(tkinter.Frame):
         assert self.magnitude_spectrum_graph is not None
         self.magnitude_waterfall_graph.add_data(packet.magnitude_spectrum)
         self.magnitude_spectrum_graph.add_data(packet.magnitude_spectrum)
-        ###self.log_octave_data()
 
 
 class StatusQueryThread(threading.Thread):
@@ -1216,7 +1215,7 @@ class ClientWindow(tkinter.Frame):
 
                     if isinstance(packet, CoreServiceEOFPacket):
                         self.info_update_handler(
-                            "End of filed reached for Sigmf recording",
+                            "End of file reached for Sigmf recording",
                             source="GUI packet handler",
                         )
                 except Exception as e:
