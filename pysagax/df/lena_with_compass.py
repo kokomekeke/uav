@@ -20,8 +20,10 @@ from pysagax import (
 Class for handling multiple multiprocessing.Queue objects together.
 It could be modified to take queue.Queue objects as well. 
 """
-class MultiQueue():
-    def __init__(self, queues = []):
+
+
+class MultiQueue:
+    def __init__(self, queues=[]):
         manager = multiprocessing.get_context("spawn").Manager()
         self.queues = manager.dict()
         for queue in queues:
@@ -51,10 +53,10 @@ class MultiQueue():
             try:
                 q.put(item, block=False)
             except multiprocessing.queues.Full:
-                pass #we ignore full queues for now, since multiprocessing queues can't be used similarly to collections.Deque objects or be cleared easily.
-            except TypeError as e: #TODO: what causes this to happen?
+                pass  # we ignore full queues for now, since multiprocessing queues can't be used similarly to collections.Deque objects or be cleared easily.
+            except TypeError as e:  # TODO: what causes this to happen?
                 print("[MultiQueue]:", e)
-                #Maybe setting a maxsize to all queues would solve this?
+                # Maybe setting a maxsize to all queues would solve this?
 
     def empty(self):
         """
@@ -63,7 +65,7 @@ class MultiQueue():
         if not self.queues:
             raise ValueError("No queues added to MultiQueue")
         return all(queue.empty() for queue in self.queues)
-    
+
 
 class EncoderThread(threading.Thread):  ###
     def __init__(self, port: str, status_queue: queue.Queue[str]):
@@ -80,9 +82,11 @@ class EncoderThread(threading.Thread):  ###
             self.connection = serial.Serial(self.port, baudrate=9600, timeout=0.5)
             self.status_queue.put("#encoder" + "Connected")
         except:
-            self.status_queue.put("#encoder" + f"Could not connect to encoder on port {self.port}")
+            self.status_queue.put(
+                "#encoder" + f"Could not connect to encoder on port {self.port}"
+            )
             return
-        while True: ##TODO: stop condition and connection closing
+        while True:  ##TODO: stop condition and connection closing
             try:
                 msg = self.connection.readline()
                 ctr = re.findall(r"\d+\.\d+", str(msg))
@@ -93,9 +97,11 @@ class EncoderThread(threading.Thread):  ###
                 self.status_queue("#encoder" + "Disconnected.")
                 break
         self.close()
+
     def close(self):
         if self.connection is not None:
             self.connection.close()
+
 
 class StreamAndCompassProcess(
     CoreServiceParser, BaseConnection, multiprocessing.Process
@@ -110,7 +116,6 @@ class StreamAndCompassProcess(
         BaseConnection.__init__(self)
         multiprocessing.Process.__init__(self)
         self.queues = queues
-
 
         self.packet_count = 0
         """
@@ -139,6 +144,8 @@ class StreamAndCompassProcess(
 
         self.encoder_offset = 0.0
 
+        self.use_sensor_fusion: bool = False
+
     def receive_on_socket(self, data: bytes) -> None:
         """
         When data is received on the socket, this function will construct a packet object from the binary data.
@@ -146,25 +153,44 @@ class StreamAndCompassProcess(
         for cs_packet in self.extract_packets(data):
             cs_packet.packet_index = self.packet_count
             self.packet_count += 1
+            if self.compass is not None:
+                compass_angle = (
+                    self.compass.angle
+                    if self.use_sensor_fusion
+                    else self.compass.magnetometer_angle
+                )
+            else:
+                compass_angle = None
 
-            compass_heading = pysagax.normalize_angle(self.compass.angle - self.compass_offset) if self.compass is not None else None
-            encoder_heading = pysagax.normalize_angle(self.encoder.angle - self.encoder_offset) if self.encoder is not None else None
+            compass_heading = (
+                pysagax.normalize_angle(compass_angle - self.compass_offset)
+                if self.compass is not None
+                else None
+            )
+            encoder_heading = (
+                pysagax.normalize_angle(self.encoder.angle - self.encoder_offset)
+                if self.encoder is not None
+                else None
+            )
 
-            data = {"cs_packet": cs_packet,
-                    "compass_angle": self.compass.angle if self.compass is not None else None,
-                    "compass_heading": compass_heading,
-                    "encoder_angle": self.encoder.angle if self.encoder is not None else None,
-                    "encoder_heading": encoder_heading,
-                    }
-            
+            data = {
+                "cs_packet": cs_packet,
+                "compass_angle": compass_angle if self.compass is not None else None,
+                "compass_heading": compass_heading,
+                "encoder_angle": self.encoder.angle
+                if self.encoder is not None
+                else None,
+                "encoder_heading": encoder_heading,
+            }
+
             self.queues.put(data)
 
     def run(self) -> None:
         """
         Entry point of the stream collecting process.
-        """        
+        """
         self.init_compass_thread()
-        
+
         self.init_encoder_thread()
 
         self.run_socket()
@@ -177,10 +203,9 @@ class StreamAndCompassProcess(
         assert self.mp_disconnect is not None
         try:
             return bool(self.mp_disconnect.value)
-        except TypeError as e: #TODO: what causes this to happen?
+        except TypeError as e:  # TODO: what causes this to happen?
             print("[MultiprocessingError]:", e)
             return True
-
 
     def display_status(self, message: str) -> None:
         """
@@ -190,13 +215,15 @@ class StreamAndCompassProcess(
         self.mp_status.put(message)
 
     def init_compass_thread(self):
-                
         self.compass = CompassSensor(pysagax.AaroniaParser())
-        #TODO: put CompassSensor errors in status queue instead of messagebox and print
+        # TODO: put CompassSensor errors in status queue instead of messagebox and print
         try:
             self.compass.load_calibration()
         except FileNotFoundError:
-            self.mp_status.put("#compass" + "Startup error, Calibration file calibration.npz not found. Make sure sgx-pc is your workdir")
+            self.mp_status.put(
+                "#compass"
+                + "Startup error, Calibration file calibration.npz not found. Make sure sgx-pc is your workdir"
+            )
             # messagebox.showerror( ##TODO
             #     "Startup error",
             #     "Calibration file calibration.npz not found. Make sure sgx-pc is your workdir.",
@@ -216,7 +243,6 @@ class StreamAndCompassProcess(
             self.mp_status.put("#compass" + "Connected")
         self.compass.start()
 
-    def init_encoder_thread(self):        
+    def init_encoder_thread(self):
         self.encoder = EncoderThread(self.encoder_port, self.mp_status)
         self.encoder.start()
-

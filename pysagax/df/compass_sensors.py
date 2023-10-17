@@ -352,7 +352,11 @@ class AccelCalibration(Calibration, threading.Thread):
         """
         self.calibration_instructions = "Hold the sensor still on a horizontal surface"
 
-        self.mpu_offsets: list[list[float]] = [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]]  # offset array to be printed
+        self.mpu_offsets: list[list[float]] = [
+            [0.0, 0.0],
+            [0.0, 0.0],
+            [0.0, 0.0],
+        ]  # offset array to be printed
 
     def accel_fit(self, x_input: float, m_x: float, b: float) -> float:
         return (m_x * x_input) + b  # fit equation for accel calibration
@@ -441,6 +445,7 @@ class CompassSensor(threading.Thread):
         self.daemon = True
         self.ser: Optional[io.RawIOBase] = None  # serial.Serial()
 
+        self.magnetometer_angle: float = 0.0
         self.angle: float = 0.0
         self.yaw: float = 0.0
         self.pitch: float = 0.0
@@ -544,6 +549,11 @@ class CompassSensor(threading.Thread):
                 self.heading = self.quaternion[1:4]
                 self.calculate_angle()
                 self.angle = self.yaw
+                self.magnetometer_angle = -math.atan2(
+                    self.magnetometer_values[1],
+                    self.magnetometer_values[0],
+                )
+
         self.ser.close()
 
     def calculate_angle(self) -> None:
