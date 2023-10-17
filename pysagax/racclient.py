@@ -1215,10 +1215,11 @@ class ClientWindow(tkinter.Frame):
                         self.stat_frame.update_stats(self.df_value, self.df_elev)
 
                     if isinstance(packet, CoreServiceEOFPacket):
-                        self.update_status_info(
-                            "End of filed reached for Sigmf recording",
-                            source="GUI packet handler",
-                        )
+                        pass  # TODO this caused an error
+                        # self.update_status_info(
+                        #     "End of filed reached for Sigmf recording",
+                        #     source="GUI packet handler",
+                        # )
                 except Exception as e:
                     if not self.do_stop:
                         print("[GUI packet handler]", e)
