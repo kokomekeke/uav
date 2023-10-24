@@ -1,6 +1,6 @@
 [project]
 name = "pysagax"
-version = "0.1.11"
+version = "0.1.12"
 authors = [
   { name="Peter Rigo", email="peter.rigo@sagaxcommunications.com" },
   { name="Aron Szabo", email="aron.szabo@sagaxcommunications.com" },
@@ -42,3 +42,4 @@ cstestclient = "pysagax.cstestclient:main"
 dfclient = "pysagax.dfclient:main"
 racclient = "pysagax.racclient:main"
 racclient_autoclicker = "pysagax.racclient_auto_clicker:main"
+sigmfdisp = "pysagax.sigmfdisp:main"
