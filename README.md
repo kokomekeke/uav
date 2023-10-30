@@ -6,23 +6,31 @@ Simple test client for CoreService written in Python.
 
  * Python3 with tkinter
 
+```bash
+# On Ubuntu
+apt install python3 python-is-python3 python3-pip python3-tk python3-pil python3-pil.imagetk 
+```
+
+### Installing from wheel file
+
+```bash
+cd Downloads
+pip install pysagax-0.x.xx-py3-none-any.whl
+# After installing, the tools are in the user PATH (~/.local/bin)
+cstestclient
+```
+
 ### Required pip packages
 
- * Numpy
- * Matplotlib
-
-### Additional required pip packages for compass sensors
-
- * scipy
- * pyusb
- * pyftdi
- * ahrs
- * pyquaternion
-
+See `requirements.txt` or install from wheel file.
 
 ```bash
 pip install -r requirements.txt
 ```
+
+# RAC Client
+
+Confluence page: https://sagaxcommunications.atlassian.net/wiki/spaces/ALTS/pages/128909313/RAC+demo+kliens
 
 # CS Test Client
 
