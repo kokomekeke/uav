@@ -13,6 +13,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
+    "tk",
     "numpy",
     "AHRS",
     "scipy",
@@ -23,6 +24,7 @@ dependencies = [
     "Pillow",
     "pyquaternion",
     "pandas",
+    "tomli",
 ]
 
 [tool.versioneer]
