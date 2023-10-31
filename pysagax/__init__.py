@@ -1,30 +1,40 @@
 import numpy as np
 
-from pysagax.df.compass_sensors import (AaroniaParser, CalibrationStatus,
-                                        CompassParser, CompassSensor,
-                                        SimpleParser, open_aaronia_serial_dev,
-                                        open_aaronia_socket_dev,
-                                        open_arduino_serial_dev)
+from pysagax.df.compass_sensors import (
+    AaroniaParser,
+    CalibrationStatus,
+    CompassParser,
+    CompassSensor,
+    SimpleParser,
+    open_aaronia_serial_dev,
+    open_aaronia_socket_dev,
+    open_arduino_serial_dev,
+)
 from pysagax.df.df_classes import DDF260, DfModule, DfResult, LenaDf
-from pysagax.df.lena_core_service import (BaseConnection,
-                                          CoreServiceDebugPacket,
-                                          CoreServiceEOFPacket,
-                                          CoreServicePacket, CoreServiceParser,
-                                          CoreServiceROILackOfSignalPacket,
-                                          CoreServiceROIResultPacket,
-                                          CoreServiceSpectrumPacket,
-                                          StreamConnectionProcess)
-from pysagax.df.lena_with_compass import (StreamAndCompassProcess,
-                                          MultiQueue)
+from pysagax.df.lena_core_service import (
+    BaseConnection,
+    CoreServiceDebugPacket,
+    CoreServiceEOFPacket,
+    CoreServicePacket,
+    CoreServiceParser,
+    CoreServiceROILackOfSignalPacket,
+    CoreServiceROIResultPacket,
+    CoreServiceSpectrumPacket,
+    StreamConnectionProcess,
+)
+from pysagax.df.lena_with_compass import StreamAndCompassProcess, MultiQueue
 from pysagax.ui.autocomplete_command_box import AutocompleteCommandBox
-from pysagax.ui.lena_matplotlib_graphs import (AngleSpectrumGraph,
-                                               CompassGraph, GraphImage,
-                                               GraphParameters,
-                                               MagnitudeSpectrumGraph,
-                                               ThreeDimensionGraph,
-                                               ThreeDimensionObject,
-                                               WaterfallAngleGraph,
-                                               WaterfallMagnitudeGraph)
+from pysagax.ui.lena_matplotlib_graphs import (
+    AngleSpectrumGraph,
+    CompassGraph,
+    GraphImage,
+    GraphParameters,
+    MagnitudeSpectrumGraph,
+    ThreeDimensionGraph,
+    ThreeDimensionObject,
+    WaterfallAngleGraph,
+    WaterfallMagnitudeGraph,
+)
 from pysagax.ui.octave_data import save_octave
 
 
@@ -54,12 +64,14 @@ def si_to_float(si: str) -> float:
         return float(si[:-1]) * prefix[si[-1]]
     else:
         return float(si)
-    
-def normalize_angle(angle: float) -> float:
-    while angle > np.pi:
-        angle = angle - 2 * np.pi
-    while angle <= -np.pi:
-        angle = angle + 2 * np.pi
+
+
+def normalize_angle(angle: float, high: float = np.pi, low: float = -np.pi) -> float:
+    span = high - low
+    while angle >= high:
+        angle = angle - span
+    while angle < low:
+        angle = angle + span
     return angle
 
 
@@ -101,7 +113,8 @@ __all__ = [
 
 from . import _version
 
-__version__ = _version.get_versions()['version']
+__version__ = _version.get_versions()["version"]
 
 from . import _version
-__version__ = _version.get_versions()['version']
+
+__version__ = _version.get_versions()["version"]

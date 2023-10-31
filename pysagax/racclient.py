@@ -13,6 +13,7 @@ import socket
 import threading
 import time
 import tkinter
+
 try:
     import tomllib
 except ModuleNotFoundError:
@@ -67,7 +68,9 @@ def en_if(cond: bool) -> Literal["normal", "active", "disabled"]:
 
 
 def calculate_df_corrected(df_value, compass_heading, encoder_heading):
-    df_corrected_from_compass = (conf["defaults"]["df_corrected_from_compass"] if conf else True)  ##TODO: move to config file
+    df_corrected_from_compass = (
+        conf["defaults"]["df_corrected_from_compass"] if conf else True
+    )
     df_corrected = None
     if df_value is not None:
         if df_corrected_from_compass and compass_heading is not None:
@@ -99,7 +102,7 @@ class ConnectFrame(tkinter.Frame):
         )
         self.encoder_port_string = tkinter.StringVar(
             value=(conf["defaults"]["encoder_port"] if conf else "")
-        ) 
+        )
 
         offset_frame = tkinter.Frame(
             self,
@@ -262,15 +265,35 @@ class ControlFrame(tkinter.Frame):
         self.client: Client = self.master.master.client  ##???
 
         ###TODO here or in ClientWindow???
-        self.freq_string = tkinter.StringVar(value=(conf["defaults"]["center_freq"] if conf else ""))
-        self.bw_string = tkinter.StringVar(value=(conf["defaults"]["bandwith"] if conf else ""))
-        self.gain_string = tkinter.StringVar(value=(conf["defaults"]["gain"] if conf else ""))
-        self.bin_count_string = tkinter.StringVar(value=(conf["defaults"]["bin_count"] if conf else ""))
-        self.burst_stride_string = tkinter.StringVar(value=(conf["defaults"]["burst_stride"] if conf else ""))
-        self.roi_center_string = tkinter.StringVar(value=(conf["defaults"]["roi_center"] if conf else ""))
-        self.roi_span_string = tkinter.StringVar(value=(conf["defaults"]["roi_span"] if conf else ""))
-        self.roi_threshold_string = tkinter.StringVar(value=(conf["defaults"]["roi_threshold"] if conf else ""))
+        self.freq_string = tkinter.StringVar(
+            value=(conf["defaults"]["center_freq"] if conf else "")
+        )
+        self.bw_string = tkinter.StringVar(
+            value=(conf["defaults"]["bandwith"] if conf else "")
+        )
+        self.gain_string = tkinter.StringVar(
+            value=(conf["defaults"]["gain"] if conf else "")
+        )
+        self.bin_count_string = tkinter.StringVar(
+            value=(conf["defaults"]["bin_count"] if conf else "")
+        )
+        self.burst_stride_string = tkinter.StringVar(
+            value=(conf["defaults"]["burst_stride"] if conf else "")
+        )
+        self.roi_center_string = tkinter.StringVar(
+            value=(conf["defaults"]["roi_center"] if conf else "")
+        )
+        self.roi_span_string = tkinter.StringVar(
+            value=(conf["defaults"]["roi_span"] if conf else "")
+        )
+        self.roi_threshold_string = tkinter.StringVar(
+            value=(conf["defaults"]["roi_threshold"] if conf else "")
+        )
         self.source_file_path_string = tkinter.StringVar(value="")
+
+        self.mean_window_width_slider_variable = tkinter.DoubleVar(
+            value=conf["stats"]["mean_window_width_seconds"] if conf else 0
+        )
 
         self.columnconfigure(0, weight=2)
         self.columnconfigure(1, weight=1)
@@ -391,6 +414,19 @@ class ControlFrame(tkinter.Frame):
             column=1, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5, columnspan=3
         )
 
+        self.mean_window_width_slider = tkinter.Scale(
+            self,
+            from_=0,
+            to=10,
+            variable=self.mean_window_width_slider_variable,
+            resolution=0.1,
+            orient=tkinter.HORIZONTAL,
+            command=self.mean_window_width_slider_commands,
+        )
+        self.mean_window_width_slider.grid(
+            column=0, row=5, sticky=tkinter.E + tkinter.W, padx=5, pady=5, columnspan=2
+        )
+
         self.configure_button = tkinter.Button(
             self, text="Configure", command=self.configure_commands
         )
@@ -435,6 +471,10 @@ class ControlFrame(tkinter.Frame):
         else:
             self.source_file_path_combo.config(state="disabled")
 
+    def mean_window_width_slider_commands(self, event):
+        window_size = self.mean_window_width_slider_variable.get()
+        self.client.mean_window_width_value.value = window_size
+
 
 class StatFrame(tkinter.Frame):
     def __init__(self, master, *args, **kwargs):
@@ -442,11 +482,6 @@ class StatFrame(tkinter.Frame):
 
         self.client = self.master.master.client  ##???
 
-        avg_window_size_bursts = (conf["stats"]["avg_window_size_bursts"] if conf else 20)
-        self.df_value_history: collections.deque = collections.deque(maxlen=avg_window_size_bursts)
-        self.df_elev_history: collections.deque = collections.deque(maxlen=avg_window_size_bursts)
-
-        ##TODO
         self.df_value_string = tkinter.StringVar(value="NaN")
         self.df_value_mean_string = tkinter.StringVar(value="NaN")
         self.df_value_deviation_string = tkinter.StringVar(value="NaN")
@@ -548,42 +583,6 @@ class StatFrame(tkinter.Frame):
             column=1, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=3
         )
 
-        ##TODO: stats
-        """ mean_disp_label = ttk.Label(self, text="DF mean:")
-        mean_disp_label.grid(column=0, row=0, sticky=tkinter.W, padx=5, pady=5)
-        mean_disp = ttk.Label(
-            self,
-            textvariable=self.df_value_mean_string,
-            font=disp_font,
-            foreground="red",
-            background="yellow",
-        )
-        mean_disp.grid(column=1, row=0, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
-
-        deviation_disp_label = ttk.Label(self, text="DF deviation:")
-        deviation_disp_label.grid(column=0, row=1, sticky=tkinter.W, padx=5, pady=3)
-        deviation_disp = ttk.Label(
-            self,
-            textvariable=self.df_value_deviation_string,
-            font=disp_font,
-            foreground="red",
-            background="yellow",
-        )
-        deviation_disp.grid(
-            column=1, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=3
-        )
-
-        rms_disp_label = ttk.Label(self, text="DF RMS error:")
-        rms_disp_label.grid(column=0, row=2, sticky=tkinter.W, padx=5, pady=3)
-        rms_disp = ttk.Label(
-            self,
-            textvariable=self.df_value_rms_string,
-            font=disp_font,
-            foreground="red",
-            background="yellow",
-        )
-        rms_disp.grid(column=1, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
-         """
         self.peak_chart = tkinter.Canvas(
             self,
             bg="white",
@@ -649,48 +648,29 @@ class StatFrame(tkinter.Frame):
             )  # formatting numbers rounded to -0 to +0
             self.peak_chart.itemconfig(self.peak_texts[i], text=text)
 
-    def update_stats(self, df_value, df_elev):
-        self.df_value_history.append(df_value)
-        self.df_elev_history.append(df_elev)
+    def update_stats(self, latest_roi_results, aggregated_roi_results):
+        rad_to_deg = lambda x: pysagax.normalize_angle(
+            x * 180 / np.pi, high=360.0, low=0.0
+        )
 
-        df_value_deg = df_value * 180 / np.pi
-        if df_value_deg < 0:
-            df_value_deg += 360
-        self.df_value_string.set(f"{df_value_deg:.2f}°")
+        self.df_value_string.set(f"{rad_to_deg(latest_roi_results['df_value']):.2f}°")
+        self.df_value_mean_string.set(
+            f"{rad_to_deg(aggregated_roi_results['df_value_mean']):.2f}°"
+        )
+        self.df_value_deviation_string.set(
+            f"{rad_to_deg(aggregated_roi_results['df_value_std']):.2f}°"
+        )
 
-        df_elev_deg = df_elev * 180 / np.pi
-        self.df_elev_string.set(f"{df_elev_deg:.2f}°")
+        self.df_elev_string.set(
+            f"{rad_to_deg(latest_roi_results['df_elevation']):.2f}°"
+        )
+        self.df_elev_mean_string.set(
+            f"{rad_to_deg(aggregated_roi_results['df_elevation_mean']):.2f}°"
+        )
+        self.df_elev_deviation_string.set(
+            f"{rad_to_deg(aggregated_roi_results['df_elevation_std']):.2f}°"
+        )
 
-        
-        if len(self.df_value_history):
-            df_value_mean = scipy.stats.circmean(
-                list(self.df_value_history), high=np.pi, low=-np.pi
-            )
-            df_value_deviation = scipy.stats.circstd(
-                list(self.df_value_history), high=np.pi, low=-np.pi
-            )   
-            self.df_value_mean_string.set(
-                f"{(df_value_mean * 180 / np.pi):.2f}°"
-            )
-            self.df_value_deviation_string.set(
-                f"{(df_value_deviation * 180 / np.pi):.2f}°"
-            )
-
-        if len(self.df_elev_history):
-            df_value_mean = scipy.stats.circmean(
-                list(self.df_elev_history), high=np.pi, low=-np.pi
-            )
-            df_value_deviation = scipy.stats.circstd(
-                list(self.df_elev_history), high=np.pi, low=-np.pi
-            )   
-            self.df_elev_mean_string.set(
-                f"{(df_value_mean * 180 / np.pi):.2f}°"
-            )
-            self.df_elev_deviation_string.set(
-                f"{(df_value_deviation * 180 / np.pi):.2f}°"
-            )
-
-        
 
 class PlotFrame(tkinter.Frame):
     def __init__(self, master, *args, **kwargs):
@@ -768,7 +748,9 @@ class PlotFrame(tkinter.Frame):
         self.magnitude_waterfall_graph = WaterfallMagnitudeGraph(
             self.magnitude_waterfall_plot, self.params
         )
-        self.magnitude_waterfall_graph.max_points = (conf["display"]["max_bin_count"] if conf else 1024)
+        self.magnitude_waterfall_graph.max_points = (
+            conf["display"]["max_bin_count"] if conf else 1024
+        )
         self.magnitude_waterfall_graph.initialize()
 
         # colorbar = self.fig_ref.colorbar(  # type: ignore
@@ -780,7 +762,9 @@ class PlotFrame(tkinter.Frame):
         self.magnitude_spectrum_graph = MagnitudeSpectrumGraph(
             self.magnitude_spectrum_plot, self.params
         )
-        self.magnitude_spectrum_graph.vmin = (conf["display"]["spectrum_graph_min_db"] if conf else -120)
+        self.magnitude_spectrum_graph.vmin = (
+            conf["display"]["spectrum_graph_min_db"] if conf else -120
+        )
         self.magnitude_spectrum_graph.initialize(color="blue").make_plot()
 
         self.fig_ref.canvas.callbacks.connect("button_press_event", self.click_handler)  # type: ignore
@@ -825,7 +809,7 @@ class PlotFrame(tkinter.Frame):
             if graph is not None
         ]
 
-        fps = (conf["display"]["fps"] if conf else 25)
+        fps = conf["display"]["fps"] if conf else 25
         self.animation = FuncAnimation(
             self.fig_ref, self.update_imag, interval=int(1000 / fps), blit=True
         )
@@ -886,12 +870,13 @@ class PlotFrame(tkinter.Frame):
 
         assert self.df_graph is not None  ##TODO: assert for all or no compass graphs?
 
-        self.df_graph.add_point(self.master.df_value)
+        ##TODO: graph df_value_std (and latest df_value??)
+        self.df_graph.add_point(self.master.aggregated_roi_results["df_value_mean"])
         self.compass_graph.add_point(self.master.compass_heading)
         self.encoder_graph.add_point(self.master.encoder_heading)
 
         df_corrected = calculate_df_corrected(
-            df_value=self.master.df_value,
+            df_value=self.master.aggregated_roi_results["df_value_mean"],
             compass_heading=self.master.compass_heading,
             encoder_heading=self.master.encoder_heading,
         )
@@ -1089,9 +1074,14 @@ class ClientWindow(tkinter.Frame):
     def __init__(self, client, root):
         self.do_stop = False
 
-        # Last measured angles for the matplotlib animation in plot_frame:
-        self.df_value = None
-        self.df_elev = None
+        # aggregated and current roi results, coming from StreaAndCompassProcess
+        self.aggregated_roi_results = {
+            "df_value_mean": None,
+            "df_value_std": None,
+            "df_elevation_mean": None,
+            "df_elevation_std": None,
+        }
+        self.latest_roi_resutls = {"df_value": None, "df_elevation": None}
         self.compass_angle = None
         self.compass_heading = None  # compass angle corrected with offset
         self.encoder_angle = None
@@ -1138,8 +1128,10 @@ class ClientWindow(tkinter.Frame):
             side=tkinter.LEFT, fill=tkinter.BOTH, padx=6, expand=True
         )
 
-        center_box_width = (conf["display"]["center_box_width"] if conf else 60)
-        self.status_info_lb = tkinter.Listbox(self.tab1, height=4, width=center_box_width)
+        center_box_width = conf["display"]["center_box_width"] if conf else 60
+        self.status_info_lb = tkinter.Listbox(
+            self.tab1, height=4, width=center_box_width
+        )
         status_info_lb_sb = tkinter.Scrollbar(self.tab1, orient="horizontal")
         status_info_lb_sb.config(command=self.status_info_lb.xview)
         status_info_lb_sb.pack(side="bottom", fill=tkinter.X)
@@ -1164,7 +1156,9 @@ class ClientWindow(tkinter.Frame):
         )
         self.stat_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.RIGHT)
 
-        self.packet_handler_thread = threading.Thread(target=self.gui_packet_handler, daemon=True)
+        self.packet_handler_thread = threading.Thread(
+            target=self.gui_packet_handler, daemon=True
+        )
         self.packet_handler_thread.start()
 
     def gui_packet_handler(self):
@@ -1173,6 +1167,7 @@ class ClientWindow(tkinter.Frame):
                 data = self.client.stream_to_gui_queue.get(timeout=0.2)
 
                 packet = data["cs_packet"]
+                self.aggregated_roi_results = data["aggregated_roi_results"]
                 self.compass_angle = data["compass_angle"]
                 self.compass_heading = data["compass_heading"]
                 self.encoder_angle = data["encoder_angle"]
@@ -1208,10 +1203,12 @@ class ClientWindow(tkinter.Frame):
                             self.stat_frame.quality_value_string.set(f"{quality:.2f}")
 
                     if isinstance(packet, CoreServiceROIResultPacket):
-                        self.df_value = packet.roi_azimuth
-                        self.df_elev = packet.roi_elevation
+                        self.latest_roi_resutls["df_value"] = packet.roi_azimuth
+                        self.latest_roi_resutls["df_elevation"] = packet.roi_elevation
 
-                        self.stat_frame.update_stats(self.df_value, self.df_elev)
+                        self.stat_frame.update_stats(
+                            self.latest_roi_resutls, self.aggregated_roi_results
+                        )
 
                     if isinstance(packet, CoreServiceEOFPacket):
                         self.info_update_handler(
@@ -1348,7 +1345,7 @@ class ClientWindow(tkinter.Frame):
             pass
 
     def info_update_handler(self, update_string: str | list[str], source: str = None):
-        if self.do_stop:    #this might happen when closing the window
+        if self.do_stop:  # this might happen when closing the window
             return
         if not isinstance(update_string, list):
             update_string = [update_string]
@@ -1388,11 +1385,15 @@ class RecordingThread(threading.Thread):
             "peak1": [],
             "peak2": [],
             "peak3": [],
+            "df_angle_mean": [],
+            "df_angle_std": [],
+            "df_elevation_mean": [],
+            "df_elevation_std": [],
         }
 
     def run(self) -> None:
         self.status_queue.put("Recording started")
-        start_time_string = datetime.now().strftime('%Y%m%d_%H%M%S')
+        start_time_string = datetime.now().strftime("%Y%m%d_%H%M%S")
         while not self.do_stop:
             try:
                 data = self.cs_packet_queue.get(timeout=0.2)
@@ -1412,10 +1413,6 @@ class RecordingThread(threading.Thread):
     def handle_packet(self, data) -> None:
         ##TODO: many similarities with client window packet handler. Maybe export those to a single function?
         packet = data["cs_packet"]
-        compass_angle = data["compass_angle"]
-        compass_heading = data["compass_heading"]
-        encoder_angle = data["encoder_angle"]
-        encoder_heading = data["encoder_heading"]
         try:
             time_ns = packet.time_ns
             if isinstance(packet, CoreServiceDebugPacket):
@@ -1432,6 +1429,11 @@ class RecordingThread(threading.Thread):
                     self.latest_quality = quality
 
             if isinstance(packet, CoreServiceROIResultPacket):
+                compass_angle = data["compass_angle"]
+                compass_heading = data["compass_heading"]
+                encoder_angle = data["encoder_angle"]
+                encoder_heading = data["encoder_heading"]
+
                 df_angle = packet.roi_azimuth
                 df_elevation = packet.roi_elevation
                 df_corrected = calculate_df_corrected(
@@ -1453,6 +1455,18 @@ class RecordingThread(threading.Thread):
                 self.buffer["peak1"].append(self.latest_peaks[1])
                 self.buffer["peak2"].append(self.latest_peaks[2])
                 self.buffer["peak3"].append(self.latest_peaks[3])
+                self.buffer["df_angle_mean"].append(
+                    data["aggregated_roi_results"]["df_value_mean"]
+                )
+                self.buffer["df_angle_std"].append(
+                    data["aggregated_roi_results"]["df_value_std"]
+                )
+                self.buffer["df_elevation_mean"].append(
+                    data["aggregated_roi_results"]["df_elevation_mean"]
+                )
+                self.buffer["df_elevation_std"].append(
+                    data["aggregated_roi_results"]["df_elevation_std"]
+                )
 
         except Exception as e:
             print("[Recording packet handler]", e)
@@ -1462,9 +1476,7 @@ class RecordingThread(threading.Thread):
         dataframe = pd.DataFrame(data=self.buffer)
 
         os.makedirs("racclient_recordings", exist_ok=True)
-        filepath = (
-            f"racclient_recordings/{start_time_string}.csv"
-        )
+        filepath = f"racclient_recordings/{start_time_string}.csv"
         dataframe.to_csv(filepath)
         self.status_queue.put(f"{len(dataframe.index)} lines saved at {filepath}")
 
@@ -1647,6 +1659,10 @@ class Client:
         next iteration.
         """
 
+        self.mean_window_width_value = self.manager.Value(
+            "float", conf["stats"]["mean_window_width_seconds"] if conf else 0
+        )
+
         self.recording_started = False
 
         self.do_stop = False
@@ -1768,6 +1784,7 @@ class Client:
         self.stream_process.host_port = f"{host_address}:12937"
         self.stream_process.compass_host_port = f"{host_address}:12938"
         self.stream_process.encoder_port = encoder_port
+        self.stream_process.mean_window_seconds = self.mean_window_width_value
         self.stream_process.start()
 
     def do_configuration(
@@ -1889,7 +1906,7 @@ def on_close():
     ex.disconnect_commands()
     sleep(0.5)
     ex.do_stop = True
-    ex.client_window.do_stop = True    
+    ex.client_window.do_stop = True
     ex.client_window.quit()
     root.destroy()
 

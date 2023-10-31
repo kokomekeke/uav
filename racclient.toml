@@ -18,5 +18,5 @@ spectrum_graph_min_db = -80
 center_box_width = 60
 
 [stats]
-avg_window_size_bursts = 60
+mean_window_width_seconds = 1
 
