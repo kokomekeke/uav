@@ -27,6 +27,7 @@ from pysagax.ui.autocomplete_command_box import AutocompleteCommandBox
 from pysagax.ui.lena_matplotlib_graphs import (
     AngleSpectrumGraph,
     CompassGraph,
+    CompassGraphWithDeviation,
     GraphImage,
     GraphParameters,
     MagnitudeSpectrumGraph,

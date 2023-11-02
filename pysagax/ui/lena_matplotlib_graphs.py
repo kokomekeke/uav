@@ -762,6 +762,59 @@ class CompassGraph(GraphImage):
             self.image.set_visible(True)  # type: ignore
 
 
+class CompassGraphWithDeviation(CompassGraph):
+        def __init__(
+                self, plot: matplotlib.axes.SubplotBase, params: GraphParameters
+        ) -> None:
+                super().__init__(plot, params)
+                self.deviation: float = 0
+
+        def init_image(self) -> None:
+                super().init_image()
+                assert self.plot is not None
+                self.image = self.plot.plot(  # type: ignore
+                        [0, self.angle],
+                        [0, self.radius],
+                        color=self.color,
+                        animated=True,
+                )[0]
+                
+                self.marker_image = self.plot.fill_between(  # type: ignore
+                        np.linspace(self.angle-self.deviation, self.angle+self.deviation, 5),
+                        0,
+                        self.radius,
+                        color=self.color,
+                        alpha=0.2,
+                        animated=True,
+                        label=f"{self.label} deviation",
+                )
+        def update(self) -> None:
+                super().update()        #plot the angle
+                if self.deviation is not None and self.angle is not None:
+                        start = self.angle-self.deviation
+                        stop = self.angle+self.deviation
+                        count = int((stop - start) / 0.16)+1 # 1 point every ~10°
+                        self.marker_image = self.plot.fill_between(  # type: ignore
+                                np.linspace(start, stop, count),
+                                0,
+                                self.radius,
+                                color=self.color,
+                                alpha=0.2,
+                                animated=True,
+                                label=f"{self.label} deviation",
+                        ) #plot the deviation
+
+        def add_point(self, value: Optional[float], deviation: Optional[float]) -> None:
+                if value is None or deviation is None:
+                        self.image.set_visible(False)  # type: ignore
+                        self.marker_image.set_visible(False)  # type: ignore
+                else:
+                        self.image.set_visible(True)  # type: ignore
+                        self.marker_image.set_visible(True)  # type: ignore
+                self.angle = value
+                self.deviation = deviation
+
+
 class ThreeDimensionObject(GraphImage):
     def __init__(
         self, plot: matplotlib.axes.SubplotBase, params: GraphParameters

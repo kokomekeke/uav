@@ -43,6 +43,7 @@ import pysagax
 from pysagax import (
     BaseConnection,
     CompassGraph,
+    CompassGraphWithDeviation,
     CoreServiceDebugPacket,
     CoreServiceEOFPacket,
     CoreServicePacket,
@@ -775,7 +776,7 @@ class PlotFrame(tkinter.Frame):
         self.df_plot = self.fig_ref.add_subplot(grid_spec[0, 1], projection="polar")
 
         self.df_graph = (
-            CompassGraph(self.df_plot, self.params)
+            CompassGraphWithDeviation(self.df_plot, self.params)
             .initialize("blue", "DF Angle")
             .make_plot()
         )
@@ -871,7 +872,7 @@ class PlotFrame(tkinter.Frame):
         assert self.df_graph is not None  ##TODO: assert for all or no compass graphs?
 
         ##TODO: graph df_value_std (and latest df_value??)
-        self.df_graph.add_point(self.master.aggregated_roi_results["df_value_mean"])
+        self.df_graph.add_point(self.master.aggregated_roi_results["df_value_mean"], self.master.aggregated_roi_results["df_value_std"])
         self.compass_graph.add_point(self.master.compass_heading)
         self.encoder_graph.add_point(self.master.encoder_heading)
 
