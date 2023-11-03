@@ -492,6 +492,7 @@ class StatFrame(tkinter.Frame):
         self.df_elev_deviation_string = tkinter.StringVar(value="NaN")
 
         self.quality_value_string = tkinter.StringVar(value="NaN")
+        self.snr_string = tkinter.StringVar(value="NaN")
 
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=1)
@@ -582,6 +583,19 @@ class StatFrame(tkinter.Frame):
         )
         quality_value_disp.grid(
             column=1, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=3
+        )
+        
+        snr_label = ttk.Label(self, text="SNR:")
+        snr_label.grid(column=2, row=3, sticky=tkinter.W, padx=5, pady=5)
+        snr_disp = ttk.Label(
+            self,
+            textvariable=self.snr_string,
+            font=disp_font,
+            foreground="red",
+            background="yellow",
+        )
+        snr_disp.grid(
+            column=3, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=3
         )
 
         self.peak_chart = tkinter.Canvas(
@@ -884,7 +898,7 @@ class PlotFrame(tkinter.Frame):
 
         self.compass_df_graph.add_point(df_corrected)
 
-    def plot_spectrum_packet(self, packet: CoreServiceSpectrumPacket) -> None:
+    def plot_spectrum_packet(self, packet: CoreServiceSpectrumPacket, signal_db: float= 0., noise_db: float= 0.) -> None:
         if packet.bin_count == 0:
             return
         if (
@@ -907,6 +921,8 @@ class PlotFrame(tkinter.Frame):
         assert self.magnitude_spectrum_graph is not None
         self.magnitude_waterfall_graph.add_data(packet.magnitude_spectrum)
         self.magnitude_spectrum_graph.add_data(packet.magnitude_spectrum)
+        self.magnitude_spectrum_graph.signal_lvl = signal_db
+        self.magnitude_spectrum_graph.noise_lvl = noise_db
 
 
 class StatusQueryThread(threading.Thread):
@@ -1187,7 +1203,9 @@ class ClientWindow(tkinter.Frame):
                     self.stream_packets_lb.see(tkinter.END)
 
                     if isinstance(packet, CoreServiceSpectrumPacket):
-                        self.plot_frame.plot_spectrum_packet(packet)
+                        signal_db, noise_db = self.calculate_snr(packet)
+                        self.stat_frame.snr_string.set(f"{signal_db-noise_db:.1f}dB")
+                        self.plot_frame.plot_spectrum_packet(packet, signal_db, noise_db)
 
                     if isinstance(
                         packet, CoreServiceDebugPacket
@@ -1358,6 +1376,28 @@ class ClientWindow(tkinter.Frame):
             self.status_info_lb.see(tkinter.END)
             print(datetime.now().strftime("%m.%d. %H:%M:%S"), line)
 
+    def calculate_snr(self, packet: CoreServiceSpectrumPacket) -> (float, float):
+        min_freq = packet.center_frequency - packet.iq_rate / 2
+        max_freq = packet.center_frequency + packet.iq_rate / 2
+        bin_freqs = np.linspace(min_freq, max_freq, packet.bin_count)
+
+        spectrum = list(zip(bin_freqs, packet.magnitude_spectrum))
+        
+        roi_center = pysagax.si_to_float(self.control_frame.roi_center_string.get()) 
+        roi_span = pysagax.si_to_float(self.control_frame.roi_span_string.get())
+        roi_min = roi_center - roi_span / 2
+        roi_max = roi_center + roi_span / 2
+
+        signal_bins = [a for f, a in spectrum if roi_min<f and f<roi_max]
+        noise_bins = [a for f, a in spectrum if not(roi_min<f and f<roi_max)]
+
+        if len(signal_bins) == 0 or len(noise_bins) == 0:
+            return 0,0
+        
+        signal_db = max(signal_bins)
+        noise_db = sum(noise_bins) / len(noise_bins)
+
+        return signal_db, noise_db
 
 class RecordingThread(threading.Thread):
     def __init__(

@@ -360,6 +360,8 @@ class MagnitudeSpectrumGraph(GraphImage):
         self.roi_center = 0
         self.roi_width = 0
         self.roi_threshold = 0
+        self.signal_lvl = 0
+        self.noise_lvl = 0
 
     def coord_to_freq(self, coord: float) -> float:
         return (coord - self.params.bin_count / 2) * (
@@ -395,8 +397,15 @@ class MagnitudeSpectrumGraph(GraphImage):
             facecolor="none",
         )  # type:ignore
 
+        # self.signal_lvl_line = matplotlib.pyplot.axhline(-22)
+        self.signal_lvl_line = matplotlib.lines.Line2D(self.plot.get_xlim(), [self.signal_lvl, self.signal_lvl],
+                                                        lw = 1, color ='green',)
+        self.noise_lvl_line = matplotlib.lines.Line2D(self.plot.get_xlim(), [self.noise_lvl, self.noise_lvl],
+                                                        lw = 1, color ='orange',animated=True)
         # Add the patch to the Axes
         self.plot.add_patch(self.rect)  # type:ignore
+        self.plot.add_line(self.signal_lvl_line)
+        self.plot.add_line(self.noise_lvl_line)
         self.marker_image = self.plot.plot(0, 0, "or", animated=True)[0]  # type: ignore
 
     def initialize(self, color: str) -> "MagnitudeSpectrumGraph":
@@ -434,6 +443,9 @@ class MagnitudeSpectrumGraph(GraphImage):
         self.marker_image.set_xdata(self.marker_bin)  # type: ignore
         self.marker_image.set_ydata(self.marker_value)  # type: ignore
 
+        self.signal_lvl_line.set_data(self.plot.get_xlim(), [self.signal_lvl, self.signal_lvl])
+        self.noise_lvl_line.set_data(self.plot.get_xlim(), [self.noise_lvl, self.noise_lvl])
+
     def add_data(self, data: npt.NDArray[np.float64]) -> None:
         super().add_data(data)
         self.set_data(data)
@@ -443,7 +455,7 @@ class MagnitudeSpectrumGraph(GraphImage):
 
     def collect_images(self) -> list[matplotlib.artist.Artist]:
         assert self.image is not None
-        return [self.image, self.rect]
+        return [self.image, self.rect, self.signal_lvl_line, self.noise_lvl_line]
 
 
 class WaterfallAngleGraph(GraphImage):
