@@ -575,11 +575,20 @@ class CompassSensor(threading.Thread):
                     )
                 else:
                     self.ahrs_filter.gain = self.gyroscope_calibration.gyro_beta
-                    self.quaternion = self.ahrs_filter.updateMARG(
-                        q=numpy.array(self.quaternion),
-                        gyr=self.gyroscope_values,
-                        acc=self.accelerometer_values,
-                        mag=self.magnetometer_values,
+                    self.quaternion = pyquaternion.Quaternion(
+                        self.ahrs_filter.updateMARG(
+                            q=np.array(
+                                [
+                                    self.quaternion[0],
+                                    self.quaternion[1],
+                                    self.quaternion[2],
+                                    self.quaternion[3],
+                                ]
+                            ),
+                            gyr=self.gyroscope_values,
+                            acc=self.accelerometer_values,
+                            mag=self.magnetometer_values,
+                        )
                     )
                 previous_time = current_time
                 self.heading = self.quaternion.rotate(

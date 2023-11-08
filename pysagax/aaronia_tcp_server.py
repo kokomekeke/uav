@@ -75,6 +75,7 @@ def main() -> None:
     serial_thread = SerialHandlerThread(ser=open_aaronia_serial_dev())
     serial_thread.start()
     # Create the server, binding to localhost on port 9999
+    socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer((HOST, PORT), MyTCPHandler) as server:
         # Activate the server; this will keep running until you
         # interrupt the program with Ctrl-C
