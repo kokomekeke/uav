@@ -177,8 +177,12 @@ class StreamAndCompassProcess(
                     if self.use_sensor_fusion
                     else self.compass.magnetometer_angle
                 )
+                gps_lat = self.comapss.parser.lat
+                gps_lon = self.comapss.parser.lon
             else:
                 compass_angle = None
+                gps_lat = None
+                gps_lon = None
 
             compass_heading = (
                 pysagax.normalize_angle(compass_angle - self.compass_offset)
@@ -206,6 +210,8 @@ class StreamAndCompassProcess(
                 "aggregated_roi_results": self.aggregated_roi_results,
                 "compass_angle": compass_angle if self.compass is not None else None,
                 "compass_heading": compass_heading,
+                "gps_lat": gps_lat,
+                "gps_lon": gps_lon,
                 "encoder_angle": self.encoder.angle
                 if self.encoder is not None
                 else None,

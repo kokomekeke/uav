@@ -57,6 +57,7 @@ from pysagax import (
     WaterfallAngleGraph,
     WaterfallMagnitudeGraph,
 )
+from pysagax.ui.sgx_dfg_map_server import DFGMapServer
 
 conf = None
 
@@ -1260,6 +1261,13 @@ class ClientWindow(tkinter.Frame):
         #         self.decrease_unfinished_send_commands()
         #         return
         self.info_update_handler(message, "Recording Thread")
+        
+    def map_server_status_msg_handler(self, message: str):
+        if message.startswith("#info"):
+            message = message[len("#info") :]
+            self.status_frame.status_map_server_string.set(message)
+            return
+        self.info_update_handler(message, "Map Server")
 
     def set_stream_status(self, message: str) -> None:
         try:
@@ -1390,6 +1398,8 @@ class RecordingThread(threading.Thread):
             "df_angle_std": [],
             "df_elevation_mean": [],
             "df_elevation_std": [],
+            "lat": [],
+            "lon": [],
         }
 
     def run(self) -> None:
@@ -1468,6 +1478,8 @@ class RecordingThread(threading.Thread):
                 self.buffer["df_elevation_std"].append(
                     data["aggregated_roi_results"]["df_elevation_std"]
                 )
+                self.buffer["lat"].append(data["gps_lat"])
+                self.buffer["lon"].append(data["gps_lon"])
 
         except Exception as e:
             print("[Recording packet handler]", e)
@@ -1625,6 +1637,60 @@ class CommandsHandlerThread(threading.Thread):
         self.status_callback(False, "")
 
 
+class MapServer(DFGMapServer):
+    def __init__(self, cs_packet_queue: queue.Queue, status_queue: queue.Queue[str]) -> None:
+        super().__init__()
+        self.cs_packet_queue = cs_packet_queue
+        self.status_queue = status_queue
+        threading.Thread(target= self.cs_packet_handler, daemon=True).start()
+
+    def cs_packet_handler(self) -> None:
+        while self.run_thread:
+            self.read_queue()
+    
+    def read_queue(self):
+        data = None
+        try:
+            while True:
+                data = self.cs_packet_queue.get_nowait()
+        except queue.Empty:
+            pass
+        except Exception as e:
+            print("[MapServer thread]", e)
+            traceback.print_tb(e.__traceback__)
+            return
+        if data is not None:            
+            self.handle_packet(data=data)
+        sleep(0.2) #send updates to clients every 0.2 seconds
+        self.status_queue.put(f"#info" + "Up on port {self.port}, "
+                                f"{self.count_clients()} clients, "
+                                f"{self.total_packets} packets")
+
+    def handle_packet(self, data):
+        df_value_mean = data["aggregated_roi_results"]["df_value_mean"]
+        if not df_value_mean:
+            return
+        compass_heading = data["compass_heading"]
+        encoder_heading = data["encoder_heading"]
+        
+        df_corrected = calculate_df_corrected(
+            df_value=df_value_mean,
+            compass_heading=compass_heading,
+            encoder_heading=encoder_heading,
+        )
+        lat = data["gps_lat"]
+        lon = data["gps_lon"]
+
+        isvalid = lambda nums: all([not math.isnan(x) if x is not None else False for x in nums])
+        if not isvalid([df_corrected, lat, lon]):
+            return #only update the map server if all values are valid
+        
+        self.update_timestamp()
+        self.update_angle(df_corrected, 1e6) #TODO: add frequency
+        self.update_lat_lon(lat, lon)
+        self.update_clients()
+        print(f"{lat}, {lon}, {df_corrected}")
+
 # Owner class for the client
 class Client:
     def __init__(self, root):
@@ -1632,6 +1698,7 @@ class Client:
 
         self.stream_to_gui_queue = self.manager.Queue(maxsize=100)
         self.stream_to_rec_queue = None
+        self.stream_to_map_queue = self.manager.Queue(maxsize=10)
 
         self.stream_process_multiqueue = MultiQueue([self.stream_to_gui_queue])
 
@@ -1651,6 +1718,9 @@ class Client:
             str
         ] = multiprocessing.Queue()
         self.recording_thread_watcher_queue: multiprocessing.Queue[
+            str
+        ] = multiprocessing.Queue()
+        self.map_server_thread_watcher_queue: multiprocessing.Queue[
             str
         ] = multiprocessing.Queue()
 
@@ -1694,6 +1764,13 @@ class Client:
                     try:
                         msg = self.recording_thread_watcher_queue.get_nowait()
                         self.client_window.recording_status_msg_handler(msg)
+                        do_sleep = False
+                    except queue.Empty:
+                        pass
+                if self.dfg_map_server is not None:
+                    try:
+                        msg = self.map_server_thread_watcher_queue.get_nowait()
+                        self.client_window.map_server_status_msg_handler(msg)
                         do_sleep = False
                     except queue.Empty:
                         pass
@@ -1786,7 +1863,14 @@ class Client:
         self.stream_process.compass_host_port = f"{host_address}:12938"
         self.stream_process.encoder_port = encoder_port
         self.stream_process.mean_window_seconds = self.mean_window_width_value
+        self.stream_process.use_sensor_fusion = conf["compass"]["use_sensor_fusion"] if conf else False
         self.stream_process.start()
+
+        self.dfg_map_server = MapServer(self.stream_to_map_queue, self.map_server_thread_watcher_queue)
+        self.stream_process_multiqueue.add_queue(self.stream_to_map_queue)
+        self.dfg_map_server.host = conf["map_server"]["host"] if conf else '0.0.0.0'
+        self.dfg_map_server.port = conf["map_server"]["port"] if conf else 20000
+        self.dfg_map_server.start()
 
     def do_configuration(
         self,

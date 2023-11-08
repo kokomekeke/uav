@@ -37,7 +37,6 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
                     self.request.sendall(line)
                 except queue.Empty:
                     print(f"No data to send for {self.client_address[0]}")
-                    self.request.sendall(b"\n")
 
         except (socket.error, socket.timeout) as e:
             print(f"{self.client_address[0]} disconnencted")
