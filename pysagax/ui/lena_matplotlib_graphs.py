@@ -3,6 +3,7 @@
 #
 from typing import Any, Optional
 
+import pyquaternion
 import matplotlib
 import numpy
 import numpy as np
@@ -822,7 +823,7 @@ class ThreeDimensionObject(GraphImage):
         super().__init__(plot)
 
         self.params = params
-        self.quaternion: npt.NDArray[np.float64] = np.array([1.0, 0.0, 0.0, 0.0])
+        self.quaternion = pyquaternion.Quaternion(1.0, 0.0, 0.0, 0.0)
 
         """
         Wf data (numpy vector)
@@ -912,19 +913,25 @@ class ThreeDimensionObject(GraphImage):
         #     ]
         # )
         # rot_matrix = yaw_matrix @ pitch_matrix @ roll_matrix
-        u = self.quaternion[1:4]
-        s = self.quaternion[0]
+        # u = [self.quaternion[1], self.quaternion[2], self.quaternion[3]]
+        # s = self.quaternion[0]
+        # new_points = list(
+        # [
+        # # np.matmul(vert, rot_matrix)
+        # list(
+        # np.array(
+        # 2.0 * np.dot(u, np.array(v)) * u
+        # + (s * s - np.dot(u, u)) * np.array(v)
+        # + 2.0 * s * np.cross(u, np.array(v))  # type: ignore
+        # )
+        # for v in vert  # type: ignore
+        # )
+        # for vert in self.verts
+        # ]
+        # )
         new_points = list(
             [
-                # np.matmul(vert, rot_matrix)
-                list(
-                    np.array(
-                        2.0 * np.dot(u, np.array(v)) * u
-                        + (s * s - np.dot(u, u)) * np.array(v)
-                        + 2.0 * s * np.cross(u, np.array(v))  # type: ignore
-                    )
-                    for v in vert  # type: ignore
-                )
+                list(self.quaternion.rotate(v) for v in vert)  # type: ignore
                 for vert in self.verts
             ]
         )
@@ -942,7 +949,7 @@ class ThreeDimensionObject(GraphImage):
         super().add_data(data)
 
     def add_point(self, quaternion: npt.NDArray[np.float64]) -> None:
-        self.quaternion = quaternion
+        self.quaternion = pyquaternion.Quaternion(quaternion)
 
     def collect_images(self) -> list[matplotlib.artist.Artist]:
         return (

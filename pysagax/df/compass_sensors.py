@@ -11,6 +11,7 @@ from typing import Optional, Callable
 import ahrs  # type: ignore
 import numpy as np
 import numpy.typing as npt
+import pyquaternion
 import scipy  # type: ignore
 import serial
 from pysagax.df.magnetometer_calibration import MagnetometerCalibration
@@ -46,6 +47,16 @@ class CompassParser:
         self.gyroscope_values: Optional[npt.NDArray[np.float64]] = None
         """
         Processed coordinates from gyroscope sensor (if present)
+        """
+
+        self.heading_values: Optional[npt.NDArray[np.float64]] = None
+        """
+        Processed coordinates from AHRS (if present)
+        """
+
+        self.altitude: Optional[float] = None
+        """
+        Altitude of the measurement system
         """
 
         self.lat: Optional[float] = None
@@ -171,6 +182,7 @@ class AaroniaParser(CompassParser):
             elevation_units = tokens[13]
             geoidal_separation = float(tokens[14])
             geoidal_separation_units = tokens[15]
+            print(f"GPS;{self.lat};{self.lon}")
             return True
         return False
 
@@ -232,6 +244,13 @@ class AaroniaParser(CompassParser):
                 #     ]
                 # )
                 self.is_new = (self.is_new[0], self.is_new[1], True)
+            if data_type == "A":
+                # extension for a (not aaronia) device which
+                # calculates already calibrated headings
+                # print(f"AHRS {data_coord}")
+                self.heading_values = np.array(data_coord)  # Range is -pi..pi
+                return True
+
             if all(self.is_new):
                 self.is_new = (False, False, False)
                 return True
@@ -457,7 +476,9 @@ class CompassSensor(threading.Thread):
         self.parser: CompassParser = parser
 
         self.ahrs_filter = self.ahrs_class()
-        self.quaternion = np.array([1.0, 0.0, 0.0, 0.0])
+        self.quaternion = pyquaternion.Quaternion(
+            1.0, 0.0, 0.0, 0.0
+        )  # np.array([1.0, 0.0, 0.0, 0.0])
 
         self.magnetometer_calib_helper = MagnetometerCalibration()
         self.magnetometer_calibration = Calibration(
@@ -495,7 +516,9 @@ class CompassSensor(threading.Thread):
 
     def reset_ahrs_filter(self) -> None:
         self.ahrs_filter = self.ahrs_class()
-        self.quaternion = np.array([1.0, 0.0, 0.0, 0.0])
+        self.quaternion = pyquaternion.Quaternion(
+            1.0, 0.0, 0.0, 0.0
+        )  # np.array([1.0, 0.0, 0.0, 0.0])
 
     def set_serial_device(self, sensor_dev: io.RawIOBase) -> None:
         self.ser = sensor_dev
@@ -538,17 +561,38 @@ class CompassSensor(threading.Thread):
                 self.magnetometer_values = self.magnetometer_calibration.s(
                     self.parser.magnetometer_values * 1e-6
                 )  # mT
-                self.ahrs_filter.gain = self.gyroscope_calibration.gyro_beta
-                self.quaternion = self.ahrs_filter.updateMARG(
-                    q=self.quaternion,
-                    gyr=self.gyroscope_values,
-                    acc=self.accelerometer_values,
-                    mag=self.magnetometer_values,
-                )
+                if self.parser.heading_values is not None:
+                    self.quaternion = (
+                        pyquaternion.Quaternion(
+                            axis=[0, 0, 1], angle=self.parser.heading_values[0]
+                        )
+                        * pyquaternion.Quaternion(
+                            axis=[0, 1, 0], angle=self.parser.heading_values[1]
+                        )
+                        * pyquaternion.Quaternion(
+                            axis=[1, 0, 0], angle=self.parser.heading_values[2]
+                        )
+                    )
+                else:
+                    self.ahrs_filter.gain = self.gyroscope_calibration.gyro_beta
+                    self.quaternion = self.ahrs_filter.updateMARG(
+                        q=self.quaternion,
+                        gyr=self.gyroscope_values,
+                        acc=self.accelerometer_values,
+                        mag=self.magnetometer_values,
+                    )
                 previous_time = current_time
-                self.heading = self.quaternion[1:4]
+                self.heading = self.quaternion.rotate(
+                    np.array([1.0, 0.0, 0.0])
+                )  # self.quaternion[1:4]
                 self.calculate_angle()
-                self.angle = self.yaw
+                # self.angle = self.yaw
+
+                self.angle = -math.atan2(
+                    self.heading[1],
+                    self.heading[0],
+                )
+
                 self.magnetometer_angle = -math.atan2(
                     self.magnetometer_values[1],
                     self.magnetometer_values[0],
