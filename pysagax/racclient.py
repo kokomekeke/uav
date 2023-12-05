@@ -1904,6 +1904,7 @@ class Client:
         self.stream_process.encoder_port = encoder_port
         self.stream_process.mean_window_seconds = self.mean_window_width_value
         self.stream_process.use_sensor_fusion = conf["compass"]["use_sensor_fusion"] if conf else False
+        self.stream_process.compass_offset = conf["compass"]["offset"] * np.pi / 180 if conf else 0
         self.stream_process.start()
 
         self.dfg_map_server = MapServer(self.stream_to_map_queue, self.map_server_thread_watcher_queue)

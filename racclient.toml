@@ -26,3 +26,4 @@ port = 20000
 
 [compass]
 use_sensor_fusion = false #true: compass.angle (for RAC), false: compass.magnetometer_angle (for aaronia)
+offset=0

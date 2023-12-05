@@ -597,7 +597,7 @@ class CompassSensor(threading.Thread):
                 self.calculate_angle()
                 # self.angle = self.yaw
 
-                self.angle = -math.atan2(
+                self.angle = math.atan2(
                     self.heading[1],
                     self.heading[0],
                 )
