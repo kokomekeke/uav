@@ -585,7 +585,7 @@ class StatFrame(tkinter.Frame):
         quality_value_disp.grid(
             column=1, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=3
         )
-        
+
         snr_label = ttk.Label(self, text="SNR:")
         snr_label.grid(column=2, row=3, sticky=tkinter.W, padx=5, pady=5)
         snr_disp = ttk.Label(
@@ -595,9 +595,7 @@ class StatFrame(tkinter.Frame):
             foreground="red",
             background="yellow",
         )
-        snr_disp.grid(
-            column=3, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=3
-        )
+        snr_disp.grid(column=3, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
 
         self.peak_chart = tkinter.Canvas(
             self,
@@ -887,7 +885,10 @@ class PlotFrame(tkinter.Frame):
         assert self.df_graph is not None  ##TODO: assert for all or no compass graphs?
 
         ##TODO: graph df_value_std (and latest df_value??)
-        self.df_graph.add_point(self.master.aggregated_roi_results["df_value_mean"], self.master.aggregated_roi_results["df_value_std"])
+        self.df_graph.add_point(
+            self.master.aggregated_roi_results["df_value_mean"],
+            self.master.aggregated_roi_results["df_value_std"],
+        )
         self.compass_graph.add_point(self.master.compass_heading)
         self.encoder_graph.add_point(self.master.encoder_heading)
 
@@ -899,7 +900,12 @@ class PlotFrame(tkinter.Frame):
 
         self.compass_df_graph.add_point(df_corrected)
 
-    def plot_spectrum_packet(self, packet: CoreServiceSpectrumPacket, signal_db: float= 0., noise_db: float= 0.) -> None:
+    def plot_spectrum_packet(
+        self,
+        packet: CoreServiceSpectrumPacket,
+        signal_db: float = 0.0,
+        noise_db: float = 0.0,
+    ) -> None:
         if packet.bin_count == 0:
             return
         if (
@@ -1206,7 +1212,9 @@ class ClientWindow(tkinter.Frame):
                     if isinstance(packet, CoreServiceSpectrumPacket):
                         signal_db, noise_db = self.calculate_snr(packet)
                         self.stat_frame.snr_string.set(f"{signal_db-noise_db:.1f}dB")
-                        self.plot_frame.plot_spectrum_packet(packet, signal_db, noise_db)
+                        self.plot_frame.plot_spectrum_packet(
+                            packet, signal_db, noise_db
+                        )
 
                     if isinstance(
                         packet, CoreServiceDebugPacket
@@ -1279,7 +1287,7 @@ class ClientWindow(tkinter.Frame):
         #         self.decrease_unfinished_send_commands()
         #         return
         self.info_update_handler(message, "Recording Thread")
-        
+
     def map_server_status_msg_handler(self, message: str):
         if message.startswith("#info"):
             message = message[len("#info") :]
@@ -1390,22 +1398,23 @@ class ClientWindow(tkinter.Frame):
         bin_freqs = np.linspace(min_freq, max_freq, packet.bin_count)
 
         spectrum = list(zip(bin_freqs, packet.magnitude_spectrum))
-        
-        roi_center = pysagax.si_to_float(self.control_frame.roi_center_string.get()) 
+
+        roi_center = pysagax.si_to_float(self.control_frame.roi_center_string.get())
         roi_span = pysagax.si_to_float(self.control_frame.roi_span_string.get())
         roi_min = roi_center - roi_span / 2
         roi_max = roi_center + roi_span / 2
 
-        signal_bins = [a for f, a in spectrum if roi_min<f and f<roi_max]
-        noise_bins = [a for f, a in spectrum if not(roi_min<f and f<roi_max)]
+        signal_bins = [a for f, a in spectrum if roi_min < f and f < roi_max]
+        noise_bins = [a for f, a in spectrum if not (roi_min < f and f < roi_max)]
 
         if len(signal_bins) == 0 or len(noise_bins) == 0:
-            return 0,0
-        
+            return 0, 0
+
         signal_db = max(signal_bins)
         noise_db = sum(noise_bins) / len(noise_bins)
 
         return signal_db, noise_db
+
 
 class RecordingThread(threading.Thread):
     def __init__(
@@ -1678,16 +1687,18 @@ class CommandsHandlerThread(threading.Thread):
 
 
 class MapServer(DFGMapServer):
-    def __init__(self, cs_packet_queue: queue.Queue, status_queue: queue.Queue[str]) -> None:
+    def __init__(
+        self, cs_packet_queue: queue.Queue, status_queue: queue.Queue[str]
+    ) -> None:
         super().__init__()
         self.cs_packet_queue = cs_packet_queue
         self.status_queue = status_queue
-        threading.Thread(target= self.cs_packet_handler, daemon=True).start()
+        threading.Thread(target=self.cs_packet_handler, daemon=True).start()
 
     def cs_packet_handler(self) -> None:
         while self.run_thread:
             self.read_queue()
-    
+
     def read_queue(self):
         data = None
         try:
@@ -1699,12 +1710,14 @@ class MapServer(DFGMapServer):
             print("[MapServer thread]", e)
             traceback.print_tb(e.__traceback__)
             return
-        if data is not None:            
+        if data is not None:
             self.handle_packet(data=data)
-        sleep(0.2) #send updates to clients every 0.2 seconds
-        self.status_queue.put(f"#info" + "Up on port {self.port}, "
-                                f"{self.count_clients()} clients, "
-                                f"{self.total_packets} packets")
+        sleep(0.2)  # send updates to clients every 0.2 seconds
+        self.status_queue.put(
+            f"#info" + "Up on port {self.port}, "
+            f"{self.count_clients()} clients, "
+            f"{self.total_packets} packets"
+        )
 
     def handle_packet(self, data):
         df_value_mean = data["aggregated_roi_results"]["df_value_mean"]
@@ -1712,7 +1725,7 @@ class MapServer(DFGMapServer):
             return
         compass_heading = data["compass_heading"]
         encoder_heading = data["encoder_heading"]
-        
+
         df_corrected = calculate_df_corrected(
             df_value=df_value_mean,
             compass_heading=compass_heading,
@@ -1721,15 +1734,18 @@ class MapServer(DFGMapServer):
         lat = data["gps_lat"]
         lon = data["gps_lon"]
 
-        isvalid = lambda nums: all([not math.isnan(x) if x is not None else False for x in nums])
+        isvalid = lambda nums: all(
+            [not math.isnan(x) if x is not None else False for x in nums]
+        )
         if not isvalid([df_corrected, lat, lon]):
-            return #only update the map server if all values are valid
-        
+            return  # only update the map server if all values are valid
+
         self.update_timestamp()
-        self.update_angle(df_corrected, 1e6) #TODO: add frequency
+        self.update_angle(df_corrected, 1e6)  # TODO: add frequency
         self.update_lat_lon(lat, lon)
         self.update_clients()
         print(f"{lat}, {lon}, {df_corrected}")
+
 
 # Owner class for the client
 class Client:
@@ -1903,13 +1919,19 @@ class Client:
         self.stream_process.compass_host_port = f"{host_address}:12938"
         self.stream_process.encoder_port = encoder_port
         self.stream_process.mean_window_seconds = self.mean_window_width_value
-        self.stream_process.use_sensor_fusion = conf["compass"]["use_sensor_fusion"] if conf else False
-        self.stream_process.compass_offset = conf["compass"]["offset"] * np.pi / 180 if conf else 0
+        self.stream_process.use_sensor_fusion = (
+            conf["compass"]["use_sensor_fusion"] if conf else False
+        )
+        self.stream_process.compass_offset = (
+            conf["compass"]["offset"] * np.pi / 180 if conf else 0
+        )
         self.stream_process.start()
 
-        self.dfg_map_server = MapServer(self.stream_to_map_queue, self.map_server_thread_watcher_queue)
+        self.dfg_map_server = MapServer(
+            self.stream_to_map_queue, self.map_server_thread_watcher_queue
+        )
         self.stream_process_multiqueue.add_queue(self.stream_to_map_queue)
-        self.dfg_map_server.host = conf["map_server"]["host"] if conf else '0.0.0.0'
+        self.dfg_map_server.host = conf["map_server"]["host"] if conf else "0.0.0.0"
         self.dfg_map_server.port = conf["map_server"]["port"] if conf else 20000
         self.dfg_map_server.start()
 
