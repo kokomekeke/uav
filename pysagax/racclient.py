@@ -1712,7 +1712,7 @@ class MapServer(DFGMapServer):
             return
         if data is not None:
             self.handle_packet(data=data)
-        sleep(0.2)  # send updates to clients every 0.2 seconds
+        sleep(1)  # send updates to clients every 0.2 seconds
         self.status_queue.put(
             f"#info" + "Up on port {self.port}, "
             f"{self.count_clients()} clients, "
@@ -1726,13 +1726,17 @@ class MapServer(DFGMapServer):
         compass_heading = data["compass_heading"]
         encoder_heading = data["encoder_heading"]
 
-        df_corrected = calculate_df_corrected(
-            df_value=df_value_mean,
-            compass_heading=compass_heading,
-            encoder_heading=encoder_heading,
-        )
-        lat = data["gps_lat"]
-        lon = data["gps_lon"]
+        # df_corrected = calculate_df_corrected(
+        #     df_value=df_value_mean,
+        #     compass_heading=compass_heading,
+        #     encoder_heading=encoder_heading,
+        # )
+        df_corrected = df_value_mean
+        if self.predefined_coords is not None:
+            lat, lon = self.predefined_coords
+        else:
+            lat = data["gps_lat"]
+            lon = data["gps_lon"]
 
         isvalid = lambda nums: all(
             [not math.isnan(x) if x is not None else False for x in nums]
@@ -1933,6 +1937,11 @@ class Client:
         self.stream_process_multiqueue.add_queue(self.stream_to_map_queue)
         self.dfg_map_server.host = conf["map_server"]["host"] if conf else "0.0.0.0"
         self.dfg_map_server.port = conf["map_server"]["port"] if conf else 20000
+        if "lat" in conf["map_server"] and "lon" in conf["map_server"]:
+            self.dfg_map_server.predefined_coords = (
+                conf["map_server"]["lat"],
+                conf["map_server"]["lon"],
+            )
         self.dfg_map_server.start()
 
     def do_configuration(

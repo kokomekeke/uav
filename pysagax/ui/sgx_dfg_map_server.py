@@ -30,11 +30,23 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
         my_q: Queue[bytes] = Queue()
         global dfgmapserver_queues
         dfgmapserver_queues.append(my_q)
+        current_values: dict[int, bytes] = {}
         try:
             while True:
                 try:
-                    line = my_q.get(block=True, timeout=1)
-                    self.request.sendall(line)
+                    message = my_q.get(block=True, timeout=1)
+                    message_type = int.from_bytes(message[0:4], "little")
+                    if message_type < 4:
+                        current_value = (
+                            current_values[message_type]
+                            if message_type in current_values
+                            else b""
+                        )
+                        if current_value != message:
+                            self.request.sendall(message)
+                        current_values[message_type] = message
+                    else:
+                        self.request.sendall(message)
                 except queue.Empty:
                     print(f"No data to send for {self.client_address[0]}")
 
@@ -52,6 +64,7 @@ class DFGMapServer(threading.Thread):
         self.host = "0.0.0.0"
         self.port = 20000
 
+        self.predefined_coords: Optional[tuple[float, float]] = None
         self.data_lat: int = 0
         self.data_lon: int = 0
         self.data_days: int = 0
@@ -86,18 +99,18 @@ class DFGMapServer(threading.Thread):
 
     def update_clients(self) -> None:
         self.push_packet(
-            0x00000001.to_bytes(4, "little") + self.data_days.to_bytes(4, "little")
-        )
-        self.push_packet(
-            0x00000000.to_bytes(4, "little") + self.data_ms.to_bytes(4, "little")
-        )
-        self.push_packet(
             0x00000003.to_bytes(4, "little")
             + self.data_lat.to_bytes(4, "little", signed=True)
         )
         self.push_packet(
             0x00000002.to_bytes(4, "little")
             + self.data_lon.to_bytes(4, "little", signed=True)
+        )
+        self.push_packet(
+            0x00000001.to_bytes(4, "little") + self.data_days.to_bytes(4, "little")
+        )
+        self.push_packet(
+            0x00000000.to_bytes(4, "little") + self.data_ms.to_bytes(4, "little")
         )
         self.push_packet(
             self.data_freq.to_bytes(4, "little") + self.data_angle.to_bytes(4, "little")
