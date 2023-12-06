@@ -1537,8 +1537,8 @@ class RecordingThread(threading.Thread):
     def save_recording(self, start_time_string):
         dataframe = pd.DataFrame(data=self.buffer)
 
-        os.makedirs("racclient_recordings", exist_ok=True)
-        filepath = f"racclient_recordings/{start_time_string}.csv"
+        os.makedirs("spotclient_recordings", exist_ok=True)
+        filepath = f"spotclient_recordings/{start_time_string}.csv"
         dataframe.to_csv(filepath)
         self.status_queue.put(f"{len(dataframe.index)} lines saved at {filepath}")
 
@@ -2072,8 +2072,8 @@ def main() -> None:
     global ex
     global root
     global conf
-    parser = argparse.ArgumentParser(description="RacClient")
-    parser.add_argument("config", nargs="?", default="racclient.toml")
+    parser = argparse.ArgumentParser(description="SPOTClient")
+    parser.add_argument("config", nargs="?", default="spotclient.toml")
     args = parser.parse_args()
     conf = None
     if os.path.isfile(args.config):
@@ -2087,7 +2087,7 @@ def main() -> None:
     root = tkinter.Tk()
     ex = Client(root)
     root.geometry("1200x850")
-    root.wm_title(f"Sagax Direction Finder Client Application {pysagax.__version__}")
+    root.wm_title(f"SPOTClient {pysagax.__version__}")
     root.protocol("WM_DELETE_WINDOW", on_close)
     root.mainloop()
 

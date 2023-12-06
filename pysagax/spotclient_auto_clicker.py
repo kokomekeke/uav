@@ -11,11 +11,11 @@ except ModuleNotFoundError:
     import tomli as tomllib
 
 import pysagax
-from pysagax.racclient import Client, on_close
+from pysagax.spotclient import Client, on_close
 
 root = None
 
-parser = argparse.ArgumentParser(description="RacClient AutoClicker")
+parser = argparse.ArgumentParser(description="SPOTClient AutoClicker")
 # parser.add_argument("address")
 args = parser.parse_args()
 
@@ -80,8 +80,8 @@ def main() -> None:
     global root
     multiprocessing.set_start_method("spawn")
     global conf
-    parser = argparse.ArgumentParser(description="RacClient")
-    parser.add_argument("config", nargs="?", default="racclient.toml")
+    parser = argparse.ArgumentParser(description="SPOTClient")
+    parser.add_argument("config", nargs="?", default="spotclient.toml")
     args = parser.parse_args()
     conf = None
     if os.path.isfile(args.config):
