@@ -13,6 +13,7 @@ import socket
 import threading
 import time
 import tkinter
+import shlex
 
 try:
     import tomllib
@@ -268,11 +269,67 @@ class StatusFrame(tkinter.Frame):
         )
 
 
+class SourceSelectFrame(tkinter.Frame):
+    def __init__(self, master, *args, **kwargs):
+        tkinter.Frame.__init__(self, master, *args, **kwargs)
+
+        self.client: Client = self.master.master.master.client  ##??? todo
+        self.source_file_path_string = tkinter.StringVar(value="")
+
+        self.columnconfigure(0, weight=2)
+        self.columnconfigure(1, weight=1)
+        self.columnconfigure(2, weight=2)
+        self.columnconfigure(3, weight=1)
+        self.source_combo = ttk.Combobox(self, width=12)
+        self.source_combo["values"] = ["USRP", "Generator", "Recording"]
+        self.source_combo.current(0)
+        self.source_combo.grid(
+            column=0, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+        )
+        self.source_combo.bind("<<ComboboxSelected>>", self.source_combo_update)
+
+        self.source_file_path_combo = ttk.Combobox(
+            self, textvariable=self.source_file_path_string, width=11, state="disabled"
+        )
+        self.source_file_path_combo.grid(
+            column=1, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5, columnspan=3
+        )
+
+        self.configure_button = tkinter.Button(
+            self, text="Set Source", command=self.configure_commands
+        )
+        self.configure_button.grid(
+            column=3, row=5, padx=10, pady=5, sticky=tkinter.E + tkinter.W
+        )
+        self.configure_button.configure(state="disabled")
+
+    def configure_commands(self):
+        default_source_file_path = "/home/sagax/Generator/"
+        if self.source_combo.current() == 1:
+            source_file_path = default_source_file_path
+        else:
+            source_file_path = self.source_file_path_string.get()
+
+        kwargs = {
+            "from_file": self.source_combo.current() != 0,
+            "source_file_path": source_file_path,
+        }
+        self.client.do_set_source(**kwargs)
+
+    def source_combo_update(self, event):
+        if self.source_combo.current() == 2:
+            self.source_file_path_combo.config(state="enabled")
+        else:
+            self.source_file_path_combo.config(state="disabled")
+
+
 class ControlFrame(tkinter.Frame):
     def __init__(self, master, *args, **kwargs):
         tkinter.Frame.__init__(self, master, *args, **kwargs)
 
-        self.client: Client = self.master.master.client  ##???
+        self.client: Client = self.master.master.master.client  ##??? todo
+
+        self.path_string = tkinter.StringVar(value="No Source")
 
         ###TODO here or in ClientWindow???
         self.freq_string = tkinter.StringVar(
@@ -310,34 +367,37 @@ class ControlFrame(tkinter.Frame):
         self.columnconfigure(2, weight=2)
         self.columnconfigure(3, weight=1)
 
+        path_label = ttk.Label(self, textvariable=self.path_string)
+        path_label.grid(column=0, row=0, columnspan=4, padx=5, pady=5)
+
         freq_entry_label = ttk.Label(self, text="Frequency:")
-        freq_entry_label.grid(column=0, row=0, sticky=tkinter.W, padx=5, pady=5)
+        freq_entry_label.grid(column=0, row=1, sticky=tkinter.W, padx=5, pady=5)
 
         self.freq_entry = ttk.Entry(self, textvariable=self.freq_string, width=11)
         self.freq_entry.grid(
-            column=1, row=0, sticky=tkinter.E + tkinter.W, padx=5, pady=5
-        )
-
-        bw_entry_label = ttk.Label(self, text="Bandwidth:")
-        bw_entry_label.grid(column=0, row=1, sticky=tkinter.W, padx=5, pady=5)
-
-        self.bw_entry = ttk.Entry(self, textvariable=self.bw_string, width=11)
-        self.bw_entry.grid(
             column=1, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=5
         )
 
+        bw_entry_label = ttk.Label(self, text="Bandwidth:")
+        bw_entry_label.grid(column=0, row=2, sticky=tkinter.W, padx=5, pady=5)
+
+        self.bw_entry = ttk.Entry(self, textvariable=self.bw_string, width=11)
+        self.bw_entry.grid(
+            column=1, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+        )
+
         gain_entry_label = ttk.Label(self, text="USRP Gain:")
-        gain_entry_label.grid(column=0, row=2, sticky=tkinter.W, padx=5, pady=5)
+        gain_entry_label.grid(column=0, row=3, sticky=tkinter.W, padx=5, pady=5)
 
         self.gain_entry = ttk.Entry(self, textvariable=self.gain_string, width=11)
         self.gain_entry.grid(
-            column=1, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+            column=1, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=5
         )
 
         bin_count_entry_label = ttk.Label(
             self, text="Bin count:"
         )  # TODO:separate bin count and burst stride setting?
-        bin_count_entry_label.grid(column=0, row=3, sticky=tkinter.W, padx=5, pady=5)
+        bin_count_entry_label.grid(column=0, row=4, sticky=tkinter.W, padx=5, pady=5)
 
         bin_count_combo = ttk.Combobox(
             self, textvariable=self.bin_count_string, width=11
@@ -366,37 +426,37 @@ class ControlFrame(tkinter.Frame):
             0x80000,
         ]
         bin_count_combo.grid(
-            column=1, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+            column=1, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5
         )
 
         roi_center_entry_label = ttk.Label(self, text="ROI center freq:")
-        roi_center_entry_label.grid(column=2, row=0, sticky=tkinter.W, padx=5, pady=5)
+        roi_center_entry_label.grid(column=2, row=1, sticky=tkinter.W, padx=5, pady=5)
 
         roi_center_entry = ttk.Entry(
             self, textvariable=self.roi_center_string, width=11
         )
         roi_center_entry.grid(
-            column=3, row=0, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+            column=3, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=5
         )
 
         roi_span_entry_label = ttk.Label(self, text="ROI span:")
-        roi_span_entry_label.grid(column=2, row=1, sticky=tkinter.W, padx=5, pady=5)
+        roi_span_entry_label.grid(column=2, row=2, sticky=tkinter.W, padx=5, pady=5)
 
         roi_span_entry = ttk.Entry(self, textvariable=self.roi_span_string, width=11)
         roi_span_entry.grid(
-            column=3, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+            column=3, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5
         )
 
         roi_threshold_entry_label = ttk.Label(self, text="ROI threshold")
         roi_threshold_entry_label.grid(
-            column=2, row=2, sticky=tkinter.W, padx=5, pady=5
+            column=2, row=3, sticky=tkinter.W, padx=5, pady=5
         )
 
         roi_threshold_entry = ttk.Entry(
             self, textvariable=self.roi_threshold_string, width=11
         )
         roi_threshold_entry.grid(
-            column=3, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+            column=3, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=5
         )
 
         burst_stride_entry_label = ttk.Label(self, text="Burst stride:")
@@ -406,24 +466,8 @@ class ControlFrame(tkinter.Frame):
             self, textvariable=self.burst_stride_string, width=11
         )
         burst_stride_entry.grid(
-            column=3, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+            column=3, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5
         )
-
-        self.source_combo = ttk.Combobox(self, width=12)
-        self.source_combo["values"] = ["USRP", "Generator", "Recording"]
-        self.source_combo.current(0)
-        self.source_combo.grid(
-            column=0, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5
-        )
-        self.source_combo.bind("<<ComboboxSelected>>", self.source_combo_update)
-
-        self.source_file_path_combo = ttk.Combobox(
-            self, textvariable=self.source_file_path_string, width=11, state="disabled"
-        )
-        self.source_file_path_combo.grid(
-            column=1, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5, columnspan=3
-        )
-
         self.mean_window_width_slider = tkinter.Scale(
             self,
             from_=0,
@@ -445,13 +489,18 @@ class ControlFrame(tkinter.Frame):
         )
         self.configure_button.configure(state="disabled")
 
-    def configure_commands(self):
-        default_source_file_path = "/home/sagax/Generator/"
-        if self.source_combo.current() == 1:
-            source_file_path = default_source_file_path
+    def path_update(self, path: list[str]) -> None:
+        self.path_string.set(" - ".join(part.strip('"') for part in path[1:]))
+        if path[1].strip('"') == "UHD":
+            self.freq_entry.config(state="enabled")
+            self.bw_entry.config(state="enabled")
+            self.gain_entry.config(state="enabled")
         else:
-            source_file_path = self.source_file_path_string.get()
+            self.freq_entry.config(state="disabled")
+            self.bw_entry.config(state="disabled")
+            self.gain_entry.config(state="disabled")
 
+    def configure_commands(self):
         kwargs = {
             "freq": pysagax.si_to_float(self.freq_string.get()),
             "bw": pysagax.si_to_float(self.bw_string.get()),
@@ -461,25 +510,8 @@ class ControlFrame(tkinter.Frame):
             "roi_center": pysagax.si_to_float(self.roi_center_string.get()),
             "roi_span": pysagax.si_to_float(self.roi_span_string.get()),
             "roi_threshold": self.roi_threshold_string.get(),
-            "from_file": self.source_combo.current() != 0,
-            "source_file_path": source_file_path,
         }
         self.client.do_configuration(**kwargs)
-
-    def source_combo_update(self, event):
-        if self.source_combo.current() == 0:
-            self.freq_entry.config(state="enabled")
-            self.bw_entry.config(state="enabled")
-            self.gain_entry.config(state="enabled")
-        else:
-            self.freq_entry.config(state="disabled")
-            self.bw_entry.config(state="disabled")
-            self.gain_entry.config(state="disabled")
-
-        if self.source_combo.current() == 2:
-            self.source_file_path_combo.config(state="enabled")
-        else:
-            self.source_file_path_combo.config(state="disabled")
 
     def mean_window_width_slider_commands(self, event):
         window_size = self.mean_window_width_slider_variable.get()
@@ -950,6 +982,9 @@ class StatusQueryThread(threading.Thread):
         if resp[0] == "0":
             self.pb_tab.position_variable.set(int(resp[1]))
 
+    def source_path_handler(self, cmd: str, resp: list[str]) -> None:
+        self.ct_tab.path_update(resp)
+
     def source_status_handler(self, cmd: str, resp: list[str]) -> None:
         self.pb_tab.source_configured = True if int(resp[1]) else False
         self.pb_tab.source_running = True if int(resp[2]) else False
@@ -979,22 +1014,26 @@ class StatusQueryThread(threading.Thread):
             )
         )
 
-    def __init__(self, comm: CommandsHandlerThread, pb_tab: PlaybackTab) -> None:
+    def __init__(
+        self, comm: CommandsHandlerThread, pb_tab: PlaybackTab, ct_tab: ControlFrame
+    ) -> None:
         super().__init__(daemon=True)
         self.comm = comm
         self.pb_tab = pb_tab
+        self.ct_tab = ct_tab
         self.comm.set_response_handler("SOURCE:Status?", self.source_status_handler)
         self.comm.set_response_handler(
             "RECORDING:Status?", self.recording_status_handler
         )
         self.comm.set_response_handler("SOURCE:Length?", self.source_length_handler)
         self.comm.set_response_handler("SOURCE:Position?", self.source_position_handler)
+        self.comm.set_response_handler("SOURCE:Path?", self.source_path_handler)
 
     def run(self) -> None:
         while self.comm.is_alive():
             if not self.pb_tab.working:
                 self.comm.enqueue_commands(
-                    "SOURCE:Status?;RECORDING:Status?;SOURCE:Length?;SOURCE:Position?;"
+                    "SOURCE:Status?;RECORDING:Status?;SOURCE:Length?;SOURCE:Position?;SOURCE:Path?;"
                 )
             time.sleep(0.2)
 
@@ -1143,18 +1182,23 @@ class ClientWindow(tkinter.Frame):
         self.bottom_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
 
         self.plot_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
-
-        self.control_frame = ControlFrame(
-            self.bottom_frame, relief=tkinter.RAISED, borderwidth=1
+        self.left_notebook = ttk.Notebook(self.bottom_frame)
+        self.source_select_frame = SourceSelectFrame(
+            self.left_notebook, relief=tkinter.RAISED, borderwidth=1
         )
-        self.control_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.LEFT)
+        self.left_notebook.add(self.source_select_frame, text="Source Select")
+        self.control_frame = ControlFrame(
+            self.left_notebook, relief=tkinter.RAISED, borderwidth=1
+        )
+        self.left_notebook.add(self.control_frame, text="Configuration")
+        self.left_notebook.pack(fill=tkinter.BOTH, expand=False, side=tkinter.LEFT)
 
         self.center_notebook = ttk.Notebook(self.bottom_frame)
         self.playback_tab = PlaybackTab(self.center_notebook, client)
-        self.tab1 = ttk.Frame(self.center_notebook)
+        self.status_info_tab = ttk.Frame(self.center_notebook)
         self.stream_packets_tab = ttk.Frame(self.center_notebook)
         self.center_notebook.add(self.playback_tab, text="Playback")
-        self.center_notebook.add(self.tab1, text="Status info")
+        self.center_notebook.add(self.status_info_tab, text="Status info")
         self.center_notebook.add(self.stream_packets_tab, text="Stream packets")
         self.center_notebook.pack(
             side=tkinter.LEFT, fill=tkinter.BOTH, padx=6, expand=True
@@ -1162,9 +1206,9 @@ class ClientWindow(tkinter.Frame):
 
         center_box_width = conf["display"]["center_box_width"] if conf else 60
         self.status_info_lb = tkinter.Listbox(
-            self.tab1, height=4, width=center_box_width
+            self.status_info_tab, height=4, width=center_box_width
         )
-        status_info_lb_sb = tkinter.Scrollbar(self.tab1, orient="horizontal")
+        status_info_lb_sb = tkinter.Scrollbar(self.status_info_tab, orient="horizontal")
         status_info_lb_sb.config(command=self.status_info_lb.xview)
         status_info_lb_sb.pack(side="bottom", fill=tkinter.X)
         self.status_info_lb.pack(
@@ -1337,6 +1381,7 @@ class ClientWindow(tkinter.Frame):
         self.connect_frame.channel_spectrum_combo.configure(state="normal")
 
         self.control_frame.configure_button.configure(state="normal")
+        self.source_select_frame.configure_button.configure(state="normal")
 
         self.playback_tab.connected = True
         self.playback_tab.set_buttons_enabled()
@@ -1356,7 +1401,7 @@ class ClientWindow(tkinter.Frame):
                     path_list += data
             path_list = path_list.decode().split()
             path_list = sorted([path.strip() for path in path_list])
-            self.control_frame.source_file_path_combo["values"] = path_list
+            self.source_select_frame.source_file_path_combo["values"] = path_list
         except Exception as e:
             print("[Updating recording paths]", e)
         if self.plot_frame.animation is not None:
@@ -1376,6 +1421,7 @@ class ClientWindow(tkinter.Frame):
             self.connect_frame.channel_spectrum_combo.configure(state="disabled")
 
             self.control_frame.configure_button.configure(state="disabled")
+            self.source_select_frame.configure_button.configure(state="disabled")
 
             self.playback_tab.connected = False
             self.playback_tab.set_buttons_enabled()
@@ -1669,7 +1715,7 @@ class CommandsHandlerThread(threading.Thread):
         self.status_queue.put(f"Command {command} timed out.")
 
     def response_handler(self, command: str, response: str) -> None:
-        response_parts = response.split(" ")
+        response_parts = shlex.split(response)  # response.split(" ")
         error_code = int(response_parts[0])
         for key, handler in self.response_handlers.items():
             if key in command:
@@ -1685,7 +1731,8 @@ class CommandsHandlerThread(threading.Thread):
                 continue
             cmd_line = cmd_line.strip()
             cmd_line += ";"
-            self.command_queue.put(cmd_line)
+            if cmd_line not in self.command_queue.queue:
+                self.command_queue.put(cmd_line)
 
     def abort_commands(self):
         self.do_abort = True
@@ -1917,7 +1964,9 @@ class Client:
             ),
         )
         self.status_query_thread = StatusQueryThread(
-            self.command_thread, self.client_window.playback_tab
+            self.command_thread,
+            self.client_window.playback_tab,
+            self.client_window.control_frame,
         )
         self.status_query_thread.start()
 
@@ -1953,6 +2002,21 @@ class Client:
             )
         self.dfg_map_server.start()
 
+    def do_set_source(
+        self,
+        from_file,
+        source_file_path,
+    ) -> None:
+        if from_file:
+            if source_file_path[-1] != "/":
+                source_file_path = source_file_path + "/"
+            self.send_commands(
+                f"CORE:Version?;"
+                f'SOURCE:Path! SigMF "{source_file_path}recording.sigmf-collection";SOURCE:Path?;'
+            )
+        else:
+            self.send_commands(f"CORE:Version?;" f"SOURCE:Path! UHD;SOURCE:Path?;")
+
     def do_configuration(
         self,
         freq,
@@ -1963,48 +2027,26 @@ class Client:
         roi_center,
         roi_span,
         roi_threshold,
-        from_file,
-        source_file_path,
     ) -> None:
-        connect_string = "UHD"
-
-        if from_file:
-            if source_file_path[-1] != "/":
-                source_file_path = source_file_path + "/"
-            self.send_commands(
-                f"CORE:Version?;"
-                f'SOURCE:Path! SigMF "{source_file_path}recording.sigmf-collection";'
-                f"SOURCE:Position! 0;"
-                f"AOA:BinCount! {bin_count};"
-                f"SOURCE:BurstStride! {burst_stride};"
-                f"SOURCE:Configure!;"
-                f"AOA:Configure!;"
-                f"ROI:Enable! 1;"
-                f"ROI:CenterFrequency! {roi_center:.0f};"
-                f"ROI:Span! {roi_span:.0f};"
-                f"ROI:Threshold! {roi_threshold};"
-                f"ROI:Configure!;"
-            )
-        else:
-            self.send_commands(
-                f"CORE:Version?;"
-                f"SOURCE:Path! {connect_string};"
-                f"SOURCE:CenterFrequency! {freq:.0f};"
-                f"SOURCE:IqRate! {bw:.0f};"
-                f"SOURCE:ChannelGain! 0 {gain};"
-                f"SOURCE:ChannelGain! 1 {gain};"
-                f"SOURCE:ChannelGain! 2 {gain};"
-                f"SOURCE:ChannelGain! 3 {gain};"
-                f"AOA:BinCount! {bin_count};"
-                f"SOURCE:BurstStride! {burst_stride};"
-                f"SOURCE:Configure!;"
-                f"AOA:Configure!;"
-                f"ROI:Enable! 1;"
-                f"ROI:CenterFrequency! {roi_center:.0f};"
-                f"ROI:Span! {roi_span:.0f};"
-                f"ROI:Threshold! {roi_threshold};"
-                f"ROI:Configure!;"
-            )
+        self.send_commands(
+            f"CORE:Version?;"
+            f"SOURCE:Position! 0;"
+            f"SOURCE:CenterFrequency! {freq:.0f};"
+            f"SOURCE:IqRate! {bw:.0f};"
+            f"SOURCE:ChannelGain! 0 {gain};"
+            f"SOURCE:ChannelGain! 1 {gain};"
+            f"SOURCE:ChannelGain! 2 {gain};"
+            f"SOURCE:ChannelGain! 3 {gain};"
+            f"AOA:BinCount! {bin_count};"
+            f"SOURCE:BurstStride! {burst_stride};"
+            f"SOURCE:Configure!;"
+            f"AOA:Configure!;"
+            f"ROI:Enable! 1;"
+            f"ROI:CenterFrequency! {roi_center:.0f};"
+            f"ROI:Span! {roi_span:.0f};"
+            f"ROI:Threshold! {roi_threshold};"
+            f"ROI:Configure!;"
+        )
 
     def disconnect_commands(self) -> None:
         """
@@ -2097,10 +2139,13 @@ def main() -> None:
     root = tkinter.Tk()
     icon_image_fn = "spot.png"
     if os.path.isfile(f"pysagax/{icon_image_fn}"):
-        icon_image = tkinter.PhotoImage(file="pysagax/{icon_image_fn}")
+        icon_image = tkinter.PhotoImage(file=f"pysagax/{icon_image_fn}")
     else:
         import importlib.resources
-        icon_image = tkinter.PhotoImage(file=importlib.resources.files("pysagax").joinpath(icon_image_fn))
+
+        icon_image = tkinter.PhotoImage(
+            file=importlib.resources.files("pysagax").joinpath(icon_image_fn)
+        )
     root.iconphoto(False, icon_image)
     root.geometry("1200x850")
     root.wm_title(f"SPOTClient {pysagax.__version__}")
