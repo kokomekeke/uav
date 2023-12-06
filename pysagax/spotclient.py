@@ -1202,14 +1202,11 @@ class ClientWindow(tkinter.Frame):
         self.plot_frame = PlotFrame(self)
         self.plot_frame.root = root
         self.plot_frame.create_canvas()
-        self.plot_frame.pack(
-            fill=tkinter.BOTH, expand=True, side=tkinter.TOP
-        )  ##TODO: this was after bottom_frame.pack(). Should it be there?
-
+        
         self.bottom_frame = tkinter.Frame(
             self, relief=tkinter.RAISED, borderwidth=1
-        )  ##TODO: frames inside this will be one level deeper than connect and status frames. is it OK??
-        self.bottom_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
+        )
+        self.bottom_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.BOTTOM)
 
         self.plot_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
         self.left_notebook = ttk.Notebook(self.bottom_frame)
