@@ -1,0 +1,46 @@
+[project]
+name = "pysagax"
+version = "0.1.17"
+authors = [
+  { name="Peter Rigo", email="peter.rigo@sagaxcommunications.com" },
+  { name="Aron Szabo", email="aron.szabo@sagaxcommunications.com" },
+]
+description = "Python helper libraries for Sagax DF products"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "tk",
+    "numpy",
+    "AHRS",
+    "scipy",
+    "pyserial",
+    "pyftdi",
+    "matplotlib",
+    "PyVISA",
+    "Pillow",
+    "pyquaternion",
+    "pandas",
+    "tomli",
+]
+
+[tool.versioneer]
+VCS = "git"
+style = "pep440"
+versionfile_source = "pysagax/_version.py"
+tag_prefix = "v"
+
+[build-system]
+requires = ["setuptools", "wheel", "versioneer"]
+build-backend = "setuptools.build_meta"
+
+[project.scripts]
+aaronia-tcp-server = "pysagax.aaronia_tcp_server:main"
+clitestclient = "pysagax.clitestclient:main"
+cstestclient = "pysagax.cstestclient:main"
+dfclient = "pysagax.dfclient:main"
+spotclient = "pysagax.spotclient:main"
+sigmfdisp = "pysagax.sigmfdisp:main"

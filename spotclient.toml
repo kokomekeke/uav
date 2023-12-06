@@ -1,0 +1,31 @@
+[defaults]
+host = '10.1.1.114'
+encoder_port = 'COM6'
+center_freq = '446M'
+bandwith = '1M'
+gain = '50'
+bin_count = '1024'
+burst_stride = '50000'
+roi_center = '446.065M'
+roi_span = '50k'
+roi_threshold = '-40'
+df_corrected_from_compass = false    #true: compass, false: encoder
+
+[display]
+fps = 25
+max_bin_count = 1024
+spectrum_graph_min_db = -80
+center_box_width = 60
+
+[stats]
+mean_window_width_seconds = 1
+
+[map_server]
+host = '0.0.0.0'
+port = 20000
+lat = 47.33
+lon = 19.33
+
+[compass]
+use_sensor_fusion = false #true: compass.angle (for RAC), false: compass.magnetometer_angle (for aaronia)
+offset=0

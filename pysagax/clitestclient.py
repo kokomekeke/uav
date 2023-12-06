@@ -12,12 +12,11 @@ from datetime import datetime
 from time import sleep
 from typing import Optional
 
-from pysagax import StreamAndCompassProcess
-from pysagax.lena_core_service import (
+from pysagax import (
     BaseConnection,
     CoreServicePacket,
-    StreamConnectionProcess,
 )
+from pysagax import StreamConnectionProcess
 
 parser = argparse.ArgumentParser(description="CLI Test client parameters")
 parser.add_argument("address")
@@ -139,8 +138,8 @@ class TestStreamDisplayThread(threading.Thread):
         This queue will transfer the processed packets from the stream process to the main (GUI) process
         """
 
-        stream_process = StreamAndCompassProcess(
-            [packets_queue], self.disconnect_value, status_queue
+        stream_process = StreamConnectionProcess(
+            packets_queue, self.disconnect_value, status_queue
         )
 
         stream_process.host_port = self.host_port
@@ -151,7 +150,7 @@ class TestStreamDisplayThread(threading.Thread):
             if self.disconnect or not watcher_thread.is_alive():
                 break
             try:
-                angle, packet = packets_queue.get(
+                packet = packets_queue.get(
                     timeout=0.5
                 )  # get a packet from the stream process
             except queue.Empty:
@@ -159,7 +158,7 @@ class TestStreamDisplayThread(threading.Thread):
             ts = datetime.fromtimestamp(packet.time_ns / 1e9, tz=None)
             print(
                 f"[{packet.stream_id}] {ts.strftime('%H:%M:%S')}.{int((packet.time_ns % 1e9) / 1e6):03d} - "
-                f"{str(packet)} - {angle}",
+                f"{str(packet)}",
             )
         self.disconnect_value.value = True
         stream_process.join()
@@ -209,7 +208,7 @@ class CsClient:
         self.disconnect_all()
 
 
-if __name__ == "__main__":
+def main() -> None:
     multiprocessing.set_start_method("spawn")
     client = CsClient()
     while client.command_thread.is_alive() and client.stream_thread.is_alive():
@@ -218,3 +217,7 @@ if __name__ == "__main__":
             break
         client.send_command(inp)
     client.disconnect_all()
+
+
+if __name__ == "__main__":
+    main()

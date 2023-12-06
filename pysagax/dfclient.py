@@ -539,7 +539,7 @@ class ClientWindow(tkinter.Frame):
             pass
 
 
-if __name__ == "__main__":
+def main() -> None:
     multiprocessing.set_start_method("spawn")
     root = tkinter.Tk()
     ex = ClientWindow()
@@ -547,3 +547,7 @@ if __name__ == "__main__":
     root.wm_title("DF Client")
     root.mainloop()
     ex.disconnect_commands()
+
+
+if __name__ == "__main__":
+    main()

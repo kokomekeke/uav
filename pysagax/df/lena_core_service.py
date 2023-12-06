@@ -140,6 +140,19 @@ class BaseConnection:
         """
         return self.disconnect
 
+    def send_on_socket(self, data: bytes) -> bool:
+        try:
+            self.client_socket.send(data)
+            return True
+        except OSError:  # Bad file descriptor -> client disconnected
+            self.disconnect = True
+            self.connected = False
+            if self.client_socket:
+                self.client_socket.close()  # close the connection
+            if self.disconnect_action is not None:
+                self.disconnect_action()
+            return False
+
     def run_socket(self) -> None:
         """
         General implementation of socket handling for both the stream and the command sockets.
@@ -151,6 +164,7 @@ class BaseConnection:
         try:
             if self.connect_action is not None:
                 self.connect_action()
+            self.disconnect = False
             self.display_status("Connecting...")
             self.client_socket = socket.socket()  # instantiate
             self.client_socket.settimeout(1.0)
@@ -179,6 +193,7 @@ class BaseConnection:
             self.display_status(f"Connection error: {e}")
             pass
         self.connected = False
+        self.disconnect = True
         if self.client_socket:
             self.client_socket.close()  # close the connection
         if self.disconnect_action is not None:
@@ -400,10 +415,10 @@ class StreamConnectionProcess(
         self.counter_packet_index += 1
         try:
             self.display_status(
-                f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
-                f"index {cs_packet.sample_index if isinstance(cs_packet, CoreServiceSpectrumPacket) else '-'} , "
-                f"speed: {self.counter_packet_ratio} packets/sec, "
-                f"queue count on insert: {self.mp_queue.qsize()}"
+                f"P#{cs_packet.packet_index} - S{cs_packet.stream_id}"
+                f"i{cs_packet.sample_index if isinstance(cs_packet, CoreServiceSpectrumPacket) else '-'} , "
+                f"sp: {self.counter_packet_ratio} p/s, "
+                f"Q: {self.mp_queue.qsize()}"
             )
         except (
             NotImplementedError

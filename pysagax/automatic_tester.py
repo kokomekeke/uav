@@ -8,23 +8,18 @@ import argparse
 import math
 import multiprocessing
 import os
-import queue
-import random
-import struct
 import threading
 import time
 import tkinter
 import typing
 from datetime import datetime
-from time import sleep
 from tkinter import messagebox, ttk
 from typing import Any, Callable, Optional
 
 import matplotlib.cm
 import numpy as np
-import numpy.typing as npt
+import pandas as pd
 import scipy
-import serial
 from matplotlib import pyplot
 from matplotlib.animation import FuncAnimation  # type: ignore
 from matplotlib.backend_bases import KeyEvent, key_press_handler  # type: ignore
@@ -32,19 +27,12 @@ from matplotlib.backends.backend_tkagg import (  # type: ignore
     FigureCanvasTkAgg,
     NavigationToolbar2Tk,
 )
-import pandas as pd
 
 import pysagax
 from pysagax import (
-    AngleSpectrumGraph,
-    BaseConnection,
-    CompassSensor,
-    CoreServicePacket,
     GraphImage,
     GraphParameters,
-    StreamConnectionProcess,
     WaterfallAngleGraph,
-    WaterfallMagnitudeGraph,
     DfModule,
     DfResult,
     LenaDf,
@@ -963,7 +951,7 @@ class ClientWindow(tkinter.Frame):
             pass
 
 
-if __name__ == "__main__":
+def main() -> None:
     multiprocessing.set_start_method("spawn")
     root = tkinter.Tk()
     ex = ClientWindow()
@@ -971,3 +959,7 @@ if __name__ == "__main__":
     root.wm_title("Automatic LENA Tester")
     root.mainloop()
     ex.disconnect_commands()
+
+
+if __name__ == "__main__":
+    main()

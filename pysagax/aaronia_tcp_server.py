@@ -2,6 +2,7 @@
 #
 # Created by aron.szabo@sagaxcommunications.com on 21/08/2023.
 #
+import os
 import queue
 import socketserver
 import socket
@@ -35,6 +36,7 @@ class SerialHandlerThread(threading.Thread):
                     f"Please reconnect the sensor and then restart the python program. \n"
                     f"{str(e)}",
                 )
+                os._exit(1)
 
 
 class MyTCPHandler(socketserver.BaseRequestHandler):
@@ -67,13 +69,18 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
             queues.remove(my_q)
 
 
-if __name__ == "__main__":
+def main() -> None:
     HOST, PORT = "0.0.0.0", 12938
 
     serial_thread = SerialHandlerThread(ser=open_aaronia_serial_dev())
     serial_thread.start()
     # Create the server, binding to localhost on port 9999
+    socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer((HOST, PORT), MyTCPHandler) as server:
         # Activate the server; this will keep running until you
         # interrupt the program with Ctrl-C
         server.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

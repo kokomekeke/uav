@@ -1,38 +1,42 @@
-from pysagax.lena_core_service import (
-    CoreServicePacket,
-    CoreServiceSpectrumPacket,
-    CoreServiceEOFPacket,
-    CoreServiceDebugPacket,
-    CoreServiceROIResultPacket,
-    CoreServiceROILackOfSignalPacket,
-    BaseConnection,
-    StreamConnectionProcess,
-    CoreServiceParser,
+import numpy as np
+
+from pysagax.df.compass_sensors import (
+    AaroniaParser,
+    CalibrationStatus,
+    CompassParser,
+    CompassSensor,
+    SimpleParser,
+    open_aaronia_serial_dev,
+    open_aaronia_socket_dev,
+    open_arduino_serial_dev,
 )
-from pysagax.lena_matplotlib_graphs import (
-    GraphParameters,
-    GraphImage,
+from pysagax.df.df_classes import DDF260, DfModule, DfResult, LenaDf
+from pysagax.df.lena_core_service import (
+    BaseConnection,
+    CoreServiceDebugPacket,
+    CoreServiceEOFPacket,
+    CoreServicePacket,
+    CoreServiceParser,
+    CoreServiceROILackOfSignalPacket,
+    CoreServiceROIResultPacket,
+    CoreServiceSpectrumPacket,
+    StreamConnectionProcess,
+)
+from pysagax.df.lena_with_compass import StreamAndCompassProcess, MultiQueue
+from pysagax.ui.autocomplete_command_box import AutocompleteCommandBox
+from pysagax.ui.lena_matplotlib_graphs import (
     AngleSpectrumGraph,
-    WaterfallAngleGraph,
-    WaterfallMagnitudeGraph,
+    CompassGraph,
+    CompassGraphWithDeviation,
+    GraphImage,
+    GraphParameters,
+    MagnitudeSpectrumGraph,
     ThreeDimensionGraph,
     ThreeDimensionObject,
-    CompassGraph,
+    WaterfallAngleGraph,
+    WaterfallMagnitudeGraph,
 )
-from pysagax.autocomplete_command_box import AutocompleteCommandBox
-from pysagax.compass_sensors import (
-    CompassParser,
-    AaroniaParser,
-    SimpleParser,
-    CompassSensor,
-    open_aaronia_serial_dev,
-    open_arduino_serial_dev,
-    open_aaronia_socket_dev,
-    CalibrationStatus,
-)
-from pysagax.df_classes import DfModule, DfResult, DDF260, LenaDf
-from pysagax.octave_data import save_octave
-from pysagax.lena_with_compass import StreamAndCompassProcess
+from pysagax.ui.octave_data import save_octave
 
 
 def si_to_float(si: str) -> float:
@@ -63,6 +67,15 @@ def si_to_float(si: str) -> float:
         return float(si)
 
 
+def normalize_angle(angle: float, high: float = np.pi, low: float = -np.pi) -> float:
+    span = high - low
+    while angle >= high:
+        angle = angle - span
+    while angle < low:
+        angle = angle + span
+    return angle
+
+
 __all__ = [
     "CoreServicePacket",
     "CoreServiceSpectrumPacket",
@@ -78,6 +91,7 @@ __all__ = [
     "AngleSpectrumGraph",
     "WaterfallMagnitudeGraph",
     "WaterfallAngleGraph",
+    "MagnitudeSpectrumGraph",
     "ThreeDimensionGraph",
     "ThreeDimensionObject",
     "CompassGraph",
@@ -97,3 +111,11 @@ __all__ = [
     "si_to_float",
     "StreamAndCompassProcess",
 ]
+
+from . import _version
+
+__version__ = _version.get_versions()["version"]
+
+from . import _version
+
+__version__ = _version.get_versions()["version"]

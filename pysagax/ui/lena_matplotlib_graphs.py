@@ -3,6 +3,7 @@
 #
 from typing import Any, Optional
 
+import pyquaternion
 import matplotlib
 import numpy
 import numpy as np
@@ -163,7 +164,7 @@ class WaterfallMagnitudeGraph(GraphImage):
         return f"{((x - self.params.bin_count / 2) * (self.params.iq_rate / self.params.bin_count) + self.params.center_frequency) / 1e6:.3f}M"
 
     def sample_id_formatter(self, x: float, pos: Any = None) -> str:
-        return f"{x - self.params.waterfall_size:.0f}"
+        return f"{-x:.0f}"
 
     def magnitude_format_coord(self, x: float, y: float) -> str:
         return f"Frequency: {self.bin_freq_formatter(x)} (bin {int(x)}), Packet: {self.sample_id_formatter(y)}"
@@ -214,14 +215,14 @@ class WaterfallMagnitudeGraph(GraphImage):
     def add_data(self, data: npt.NDArray[np.float64]) -> None:
         super().add_data(data)
         self.waterfall = np.append(
-            self.waterfall[-self.params.waterfall_size + 1 :, :],
             np.array([data]),
+            self.waterfall[:-1, :],
             axis=0,
         )
         try:
             self.decimated_waterfall = np.append(
-                self.decimated_waterfall[-self.params.waterfall_size + 1 :, :],
                 np.array([data[:: self.decimate]]),
+                self.decimated_waterfall[:-1, :],
                 axis=0,
             )
         except ValueError:
@@ -324,6 +325,140 @@ class AngleSpectrumGraph(GraphImage):
         self.spectrum = data
 
 
+class MagnitudeSpectrumGraph(GraphImage):
+    def __init__(
+        self, plot: matplotlib.axes.SubplotBase, params: GraphParameters
+    ) -> None:
+        super().__init__(plot)
+        self.params = params
+
+        self.spectrum = np.zeros([self.params.bin_count])
+        """
+        Spectrum data (numpy vector)
+        """
+        self.marker_enabled: bool = False
+        """
+        Marker display is enabled
+        """
+
+        self.marker_bin: int = 0
+        """
+        Location of the marker
+        """
+
+        self.marker_value: float = 0
+        """
+        Value of marker
+        """
+
+        self.color: str = "blue"
+        """
+        Color of the plot image
+        """
+        self.vmin: float = -120
+        self.vmax: float = 0
+        self.rect: Any = None
+        self.roi_center = 0
+        self.roi_width = 0
+        self.roi_threshold = 0
+        self.signal_lvl = 0
+        self.noise_lvl = 0
+
+    def coord_to_freq(self, coord: float) -> float:
+        return (coord - self.params.bin_count / 2) * (
+            self.params.iq_rate / self.params.bin_count
+        ) + self.params.center_frequency
+
+    def bin_freq_formatter(self, x: float, pos: Any = None) -> str:
+        return f"{self.coord_to_freq(x) / 1e6:.3f}M"
+
+    def angle_format_coord(self, x: float, y: float) -> str:
+        if 0 < x < len(self.spectrum):
+            val = self.spectrum[int(x)]
+        else:
+            val = numpy.float64(0.0)
+        return (
+            f"Frequency: {self.bin_freq_formatter(x)} (bin {int(x)}), "
+            f"Value: {val:.3f} "
+        )
+
+    def init_image(self) -> None:
+        super().init_image()
+        self.spectrum = np.zeros([self.params.bin_count])
+        self.image = self.plot.plot(  # type: ignore
+            self.spectrum, lw=1, color=self.color, animated=True
+        )[0]
+        # Create a Rectangle patch
+        self.rect = matplotlib.patches.Rectangle(
+            (0, self.vmin),
+            0,
+            self.vmax - self.vmin,
+            linewidth=1,
+            edgecolor="r",
+            facecolor="none",
+        )  # type:ignore
+
+        # self.signal_lvl_line = matplotlib.pyplot.axhline(-22)
+        self.signal_lvl_line = matplotlib.lines.Line2D(self.plot.get_xlim(), [self.signal_lvl, self.signal_lvl],
+                                                        lw = 1, color ='green',)
+        self.noise_lvl_line = matplotlib.lines.Line2D(self.plot.get_xlim(), [self.noise_lvl, self.noise_lvl],
+                                                        lw = 1, color ='orange',animated=True)
+        # Add the patch to the Axes
+        self.plot.add_patch(self.rect)  # type:ignore
+        self.plot.add_line(self.signal_lvl_line)
+        self.plot.add_line(self.noise_lvl_line)
+        self.marker_image = self.plot.plot(0, 0, "or", animated=True)[0]  # type: ignore
+
+    def initialize(self, color: str) -> "MagnitudeSpectrumGraph":
+        self.color = color
+        self.init_image()
+        return self
+
+    def make_plot(self) -> "MagnitudeSpectrumGraph":
+        self.init_plot()
+        return self
+
+    def init_plot(self) -> None:
+        super().init_plot()
+        assert self.plot is not None
+        self.plot.xaxis.set_major_formatter(  # type: ignore
+            matplotlib.ticker.FuncFormatter(self.bin_freq_formatter)  # type: ignore
+        )
+
+        self.plot.xaxis.set_major_locator(HalfLocator(max=self.params.bin_count))  # type: ignore
+        self.plot.tick_params(axis="x", labelrotation=45)  # type: ignore
+        self.plot.yaxis.set_major_formatter(  # type: ignore
+            matplotlib.ticker.StrMethodFormatter("{x:.2f}")  # type: ignore
+        )
+        self.plot.grid(axis="both")
+        self.plot.set_ylim(self.vmin, self.vmax)
+        self.plot.set_aspect("auto")  # type: ignore
+
+    def update(self) -> None:
+        super().update()
+        self.image.set_ydata(self.spectrum)  # type: ignore
+        self.rect.set_x(self.roi_center - self.roi_width // 2)
+        self.rect.set_y(self.roi_threshold)
+        self.rect.set_width(self.roi_width)
+        # self.rect.set_height( -self.roi_threshold)
+        self.marker_image.set_xdata(self.marker_bin)  # type: ignore
+        self.marker_image.set_ydata(self.marker_value)  # type: ignore
+
+        self.signal_lvl_line.set_data(self.plot.get_xlim(), [self.signal_lvl, self.signal_lvl])
+        self.noise_lvl_line.set_data(self.plot.get_xlim(), [self.noise_lvl, self.noise_lvl])
+
+    def add_data(self, data: npt.NDArray[np.float64]) -> None:
+        super().add_data(data)
+        self.set_data(data)
+
+    def set_data(self, data: npt.NDArray[np.float64]) -> None:
+        self.spectrum = data
+
+    def collect_images(self) -> list[matplotlib.artist.Artist]:
+        assert self.image is not None
+        return [self.image, self.rect, self.signal_lvl_line, self.noise_lvl_line]
+
+
 class WaterfallAngleGraph(GraphImage):
     def __init__(
         self, plot: matplotlib.axes.SubplotBase, params: GraphParameters
@@ -348,6 +483,10 @@ class WaterfallAngleGraph(GraphImage):
         """
         Label of the plot
         """
+        self.rad: bool = False
+        """
+        Display angles in radians
+        """
 
     def sample_id_formatter(self, x: float, pos: Any = None) -> str:
         return f"{x - self.params.waterfall_size:.0f}"
@@ -370,9 +509,12 @@ class WaterfallAngleGraph(GraphImage):
             label=self.label,
         )[0]
 
-    def initialize(self, color: str, label: str) -> "WaterfallAngleGraph":
+    def initialize(
+        self, color: str, label: str, rad: bool = True
+    ) -> "WaterfallAngleGraph":
         self.color = color
         self.label = label
+        self.rad = rad
         self.init_image()
         return self
 
@@ -389,7 +531,11 @@ class WaterfallAngleGraph(GraphImage):
         self.plot.set_ylabel("Packets")
         self.plot.set_aspect("auto")  # type: ignore
 
-        self.plot.xaxis.set_major_formatter(lambda x, y: f"{x/np.pi:.2f}{pi_chr}")  # type: ignore
+        if self.rad:
+            self.plot.xaxis.set_major_formatter(lambda x, y: f"{x/np.pi:.2f}{pi_chr}")  # type: ignore
+        else:
+            self.plot.xaxis.set_major_formatter(lambda x, y: f"{x/np.pi*180:.2f}°")  # type: ignore
+
         self.plot.grid(axis="both")
 
         self.plot.set_xlim(-np.pi, np.pi)
@@ -566,6 +712,10 @@ class CompassGraph(GraphImage):
         """
         Label of the plot
         """
+        self.nesw = False
+        """
+        Display compass labels
+        """
 
     def sample_id_formatter(self, x: float, pos: Any = None) -> str:
         return f"{x - self.params.waterfall_size:.0f}"
@@ -587,9 +737,10 @@ class CompassGraph(GraphImage):
             label=self.label,
         )[0]
 
-    def initialize(self, color: str, label: str) -> "CompassGraph":
+    def initialize(self, color: str, label: str, nesw: bool = False) -> "CompassGraph":
         self.label = label
         self.color = color
+        self.nesw = nesw
         self.init_image()
         return self
 
@@ -601,8 +752,10 @@ class CompassGraph(GraphImage):
         super().init_plot()
         self.plot.set_theta_direction(-1)  # type: ignore
         self.plot.set_theta_offset(np.pi / 2.0)  # type: ignore
+        if self.nesw:
+            self.plot.set_thetagrids(range(0, 360, 45), ("N", "NE", "E", "SE", "S", "SW", "W", "NW"))  # type: ignore
         self.plot.set_rmax(1)  # type: ignore
-        self.plot.set_rticks([0.5, 1])  # type: ignore
+        self.plot.set_rticks([])  # type: ignore
         self.plot.legend()
         self.plot.grid(True)
 
@@ -622,6 +775,59 @@ class CompassGraph(GraphImage):
             self.image.set_visible(True)  # type: ignore
 
 
+class CompassGraphWithDeviation(CompassGraph):
+        def __init__(
+                self, plot: matplotlib.axes.SubplotBase, params: GraphParameters
+        ) -> None:
+                super().__init__(plot, params)
+                self.deviation: float = 0
+
+        def init_image(self) -> None:
+                super().init_image()
+                assert self.plot is not None
+                self.image = self.plot.plot(  # type: ignore
+                        [0, self.angle],
+                        [0, self.radius],
+                        color=self.color,
+                        animated=True,
+                )[0]
+                
+                self.marker_image = self.plot.fill_between(  # type: ignore
+                        np.linspace(self.angle-self.deviation, self.angle+self.deviation, 5),
+                        0,
+                        self.radius,
+                        color=self.color,
+                        alpha=0.2,
+                        animated=True,
+                        label=f"{self.label} deviation",
+                )
+        def update(self) -> None:
+                super().update()        #plot the angle
+                if self.deviation is not None and self.angle is not None:
+                        start = self.angle-self.deviation
+                        stop = self.angle+self.deviation
+                        count = int((stop - start) / 0.16)+1 # 1 point every ~10°
+                        self.marker_image = self.plot.fill_between(  # type: ignore
+                                np.linspace(start, stop, count),
+                                0,
+                                self.radius,
+                                color=self.color,
+                                alpha=0.2,
+                                animated=True,
+                                label=f"{self.label} deviation",
+                        ) #plot the deviation
+
+        def add_point(self, value: Optional[float], deviation: Optional[float]) -> None:
+                if value is None or deviation is None:
+                        self.image.set_visible(False)  # type: ignore
+                        self.marker_image.set_visible(False)  # type: ignore
+                else:
+                        self.image.set_visible(True)  # type: ignore
+                        self.marker_image.set_visible(True)  # type: ignore
+                self.angle = value
+                self.deviation = deviation
+
+
 class ThreeDimensionObject(GraphImage):
     def __init__(
         self, plot: matplotlib.axes.SubplotBase, params: GraphParameters
@@ -629,7 +835,7 @@ class ThreeDimensionObject(GraphImage):
         super().__init__(plot)
 
         self.params = params
-        self.quaternion: npt.NDArray[np.float64] = np.array([1.0, 0.0, 0.0, 0.0])
+        self.quaternion = pyquaternion.Quaternion(1.0, 0.0, 0.0, 0.0)
 
         """
         Wf data (numpy vector)
@@ -719,19 +925,25 @@ class ThreeDimensionObject(GraphImage):
         #     ]
         # )
         # rot_matrix = yaw_matrix @ pitch_matrix @ roll_matrix
-        u = self.quaternion[1:4]
-        s = self.quaternion[0]
+        # u = [self.quaternion[1], self.quaternion[2], self.quaternion[3]]
+        # s = self.quaternion[0]
+        # new_points = list(
+        # [
+        # # np.matmul(vert, rot_matrix)
+        # list(
+        # np.array(
+        # 2.0 * np.dot(u, np.array(v)) * u
+        # + (s * s - np.dot(u, u)) * np.array(v)
+        # + 2.0 * s * np.cross(u, np.array(v))  # type: ignore
+        # )
+        # for v in vert  # type: ignore
+        # )
+        # for vert in self.verts
+        # ]
+        # )
         new_points = list(
             [
-                # np.matmul(vert, rot_matrix)
-                list(
-                    np.array(
-                        2.0 * np.dot(u, np.array(v)) * u
-                        + (s * s - np.dot(u, u)) * np.array(v)
-                        + 2.0 * s * np.cross(u, np.array(v))  # type: ignore
-                    )
-                    for v in vert  # type: ignore
-                )
+                list(self.quaternion.rotate(v) for v in vert)  # type: ignore
                 for vert in self.verts
             ]
         )
@@ -749,7 +961,7 @@ class ThreeDimensionObject(GraphImage):
         super().add_data(data)
 
     def add_point(self, quaternion: npt.NDArray[np.float64]) -> None:
-        self.quaternion = quaternion
+        self.quaternion = pyquaternion.Quaternion(quaternion)
 
     def collect_images(self) -> list[matplotlib.artist.Artist]:
         return (
