@@ -60,6 +60,7 @@ from pysagax import (
 from pysagax.ui.sgx_dfg_map_server import DFGMapServer
 
 conf = None
+icon_image = None
 
 
 def en_if(cond: bool) -> Literal["normal", "active", "disabled"]:
@@ -169,6 +170,13 @@ class ConnectFrame(tkinter.Frame):
             self, textvariable=self.encoder_port_string, width=8
         )
         self.encoder_port_entry.pack(side=tkinter.LEFT, padx=5, expand=False)
+        self.icon_frame = tkinter.Frame(self, width=32, height=32)
+        self.icon_frame.place(anchor="center", relx=0.5, rely=0.5)
+        self.icon_frame.pack_propagate(False)
+        self.icon_frame.pack(side=tkinter.RIGHT)
+        global icon_image
+        self.icon_label = tkinter.Label(self.icon_frame, image=icon_image)
+        self.icon_label.pack()
 
         self.disconnect_button = tkinter.Button(
             self, text="Disconnect", command=self.master.disconnect_commands
@@ -1754,6 +1762,7 @@ class MapServer(DFGMapServer):
 # Owner class for the client
 class Client:
     def __init__(self, root):
+        self.icon_image: Any = None
         self.manager = multiprocessing.get_context("spawn").Manager()
 
         self.stream_to_gui_queue = self.manager.Queue(maxsize=100)
@@ -2072,6 +2081,7 @@ def main() -> None:
     global ex
     global root
     global conf
+    global icon_image
     parser = argparse.ArgumentParser(description="SPOTClient")
     parser.add_argument("config", nargs="?", default="spotclient.toml")
     args = parser.parse_args()
@@ -2085,10 +2095,17 @@ def main() -> None:
         print("Config file not found")
     multiprocessing.set_start_method("spawn")
     root = tkinter.Tk()
-    ex = Client(root)
+    icon_image_fn = "spot.png"
+    if os.path.isfile(f"pysagax/{icon_image_fn}"):
+        icon_image = tkinter.PhotoImage(file="pysagax/{icon_image_fn}")
+    else:
+        import importlib.resources
+        icon_image = tkinter.PhotoImage(file=importlib.resources.files("pysagax").joinpath(icon_image_fn))
+    root.iconphoto(False, icon_image)
     root.geometry("1200x850")
     root.wm_title(f"SPOTClient {pysagax.__version__}")
     root.protocol("WM_DELETE_WINDOW", on_close)
+    ex = Client(root)
     root.mainloop()
 
 
