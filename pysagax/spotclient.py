@@ -1202,10 +1202,8 @@ class ClientWindow(tkinter.Frame):
         self.plot_frame = PlotFrame(self)
         self.plot_frame.root = root
         self.plot_frame.create_canvas()
-        
-        self.bottom_frame = tkinter.Frame(
-            self, relief=tkinter.RAISED, borderwidth=1
-        )
+
+        self.bottom_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
         self.bottom_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.BOTTOM)
 
         self.plot_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
@@ -1809,7 +1807,7 @@ class MapServer(DFGMapServer):
             return
         if data is not None:
             self.handle_packet(data=data)
-        sleep(1)  # send updates to clients every 0.2 seconds
+        sleep(1)  # send updates to clients every 1 second
         self.status_queue.put(
             f"#infoUp on port {self.port}, "
             f"{self.count_clients()} clients, "
@@ -1845,7 +1843,6 @@ class MapServer(DFGMapServer):
         self.update_angle(df_corrected, 1e6)  # TODO: add frequency
         self.update_lat_lon(lat, lon)
         self.update_clients()
-        print(f"{lat}, {lon}, {df_corrected}")
 
 
 # Owner class for the client

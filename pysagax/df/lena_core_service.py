@@ -190,14 +190,16 @@ class BaseConnection:
                     self.receive_on_socket(data)
                 except TimeoutError:
                     pass
+                except OSError as e:
+                    self.display_status(
+                        f"Connection error: {e}"
+                    )  # Multiprocessing error on Windows
+                    pass
         except TimeoutError:
             self.display_status("Connection timed out")
             pass
         except ConnectionError:
             self.display_status("Connection broken")
-            pass
-        except OSError as e:
-            self.display_status(f"Connection error: {e}")
             pass
         self.connected = False
         self.disconnect = True
