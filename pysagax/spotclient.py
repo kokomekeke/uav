@@ -506,7 +506,11 @@ class ControlFrame(tkinter.Frame):
         self.configure_button.configure(state="disabled")
 
     def path_update(self, path: list[str]) -> None:
-        self.path_string.set(" - ".join(part.strip('"') for part in path[1:]))
+        self.path_string.set(
+            " - ".join(
+                part.replace("recording.sigmf-collection", "") for part in path[1:]
+            )
+        )
         if path[1].strip('"') == "UHD":
             self.freq_entry.config(state="enabled")
             self.bw_entry.config(state="enabled")
@@ -1108,6 +1112,10 @@ class PlaybackTab(ttk.Frame):
         self.rec_status_label.pack(side=tkinter.LEFT, expand=False)
         self.stop_button = tkinter.Button(self, text="⏹️", command=self.stop_commands)
         self.stop_button.pack(side=tkinter.LEFT)
+        self.repeat_button = tkinter.Button(
+            self, text="🔃", command=self.repeat_commands
+        )
+        self.repeat_button.pack(side=tkinter.LEFT)
         self.status_label = tkinter.Label(
             self,
             textvariable=self.status_string,
@@ -1148,6 +1156,14 @@ class PlaybackTab(ttk.Frame):
 
     def stop_commands(self) -> None:
         self.client.command_thread.enqueue_commands("SOURCE:Stop!")
+
+    def repeat_commands(self) -> None:
+        if self.client.repeat_playback:
+            self.client.repeat_playback = False
+            self.repeat_button.config(relief="raised")
+        else:
+            self.client.repeat_playback = True
+            self.repeat_button.config(relief="sunken")
 
     def abort_commands(self) -> None:
         self.client.command_thread.abort_commands()
@@ -1309,6 +1325,10 @@ class ClientWindow(tkinter.Frame):
                             "End of file reached for Sigmf recording",
                             source="GUI packet handler",
                         )
+                        if self.client.repeat_playback:
+                            self.client.send_commands(
+                                "SOURCE:Position! 0;SOURCE:Start!;"
+                            )
                 except Exception as e:
                     if not self.do_stop:
                         print("[GUI packet handler]", e)
@@ -1834,7 +1854,6 @@ class MapServer(DFGMapServer):
 # Owner class for the client
 class Client:
     def __init__(self, root):
-        self.icon_image: Any = None
         self.manager = multiprocessing.get_context("spawn").Manager()
 
         self.stream_to_gui_queue = self.manager.Queue(maxsize=100)
@@ -1851,6 +1870,8 @@ class Client:
         self.recording_thread = None
         self.dfg_map_server = None
         self.encoder_thread = None
+
+        self.repeat_playback: bool = False
 
         self.stream_process_watcher_queue: multiprocessing.Queue[
             str
