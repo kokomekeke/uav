@@ -267,6 +267,22 @@ class StatusFrame(tkinter.Frame):
         self.status_map_server_label.pack(
             side=tkinter.LEFT, padx=5, pady=10, anchor="w"
         )
+        self.map_server_button = tkinter.Button(
+            self,
+            text="DFGS",
+            command=self.map_server_button_commands,
+        )
+        self.map_server_button.pack(side=tkinter.RIGHT)
+        self.map_server_start_callable: Optional[Callable[[], None]] = None
+        self.map_server_stop_callable: Optional[Callable[[], None]] = None
+
+    def map_server_button_commands(self) -> None:
+        if self.map_server_button.config("relief")[-1] == "sunken":
+            self.map_server_button.config(relief="raised")
+            self.map_server_stop_callable()
+        else:
+            self.map_server_button.config(relief="sunken")
+            self.map_server_start_callable()
 
 
 class SourceSelectFrame(tkinter.Frame):
@@ -1107,11 +1123,7 @@ class PlaybackTab(ttk.Frame):
         self.abort_button.configure(state="disabled")
 
     def command_status_callback(self, working: bool, current_cmd: str) -> None:
-        if (
-            "Status?" in current_cmd
-            or "Position?" in current_cmd
-            or "Length?" in current_cmd
-        ):
+        if "?" in current_cmd:
             self.working = False
         else:
             self.working = working
@@ -1165,6 +1177,8 @@ class ClientWindow(tkinter.Frame):
 
         self.status_frame = StatusFrame(self, relief=tkinter.RAISED, borderwidth=1)
         self.status_frame.pack(fill=tkinter.BOTH, side=tkinter.BOTTOM, expand=False)
+        self.status_frame.map_server_start_callable = self.client.start_dfg_map_server
+        self.status_frame.map_server_stop_callable = self.client.stop_dfg_map_server
 
         self.connect_frame = ConnectFrame(self, relief=tkinter.RAISED, borderwidth=1)
         self.connect_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
@@ -1360,34 +1374,21 @@ class ClientWindow(tkinter.Frame):
             pass  ##TODO: when exiting, this gets called after the window no longer exists
 
     def connect_commands(self):
-        connect_action = self.connect_action
-        disconnect_action = self.disconnect_action
         host_address = self.connect_frame.host_address.get()
         encoder_port = self.connect_frame.encoder_port_string.get()
         self.client.connect_commands(
-            connect_action, disconnect_action, host_address, encoder_port
+            self.connect_action,
+            self.connected_action,
+            self.disconnect_action,
+            host_address,
+            encoder_port,
         )
 
     def disconnect_commands(self):
         self.client.disconnect_commands()
 
-    def connect_action(self) -> None:
-        """
-        Events triggered by successful connection
-        """
-        self.connect_frame.connect_button.configure(state="disabled")
-        self.connect_frame.host_entry.configure(state="disabled")
-        self.connect_frame.disconnect_button.configure(state="normal")
-        self.connect_frame.channel_spectrum_combo.configure(state="normal")
-
-        self.control_frame.configure_button.configure(state="normal")
-        self.source_select_frame.configure_button.configure(state="normal")
-
-        self.playback_tab.connected = True
-        self.playback_tab.set_buttons_enabled()
-        # self.control_frame.rec_button.configure(state="normal")
-
-        try:  ##TODO: move this from GUI thread
+    def get_recording_paths(self):
+        try:
             path_list = b""
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.connect(
@@ -1404,11 +1405,33 @@ class ClientWindow(tkinter.Frame):
             self.source_select_frame.source_file_path_combo["values"] = path_list
         except Exception as e:
             print("[Updating recording paths]", e)
+
+    def connected_action(self) -> None:
+        get_recording_paths_thread = threading.Thread(
+            target=self.get_recording_paths, daemon=True
+        )
+        get_recording_paths_thread.start()
         if self.plot_frame.animation is not None:
             try:
                 self.plot_frame.animation.event_source.start()
             except Exception as e:
                 pass
+
+    def connect_action(self) -> None:
+        """
+        Events triggered by successful connection
+        """
+        self.connect_frame.connect_button.configure(state="disabled")
+        self.connect_frame.host_entry.configure(state="disabled")
+        self.connect_frame.disconnect_button.configure(state="normal")
+        self.connect_frame.channel_spectrum_combo.configure(state="normal")
+
+        self.control_frame.configure_button.configure(state="normal")
+        self.source_select_frame.configure_button.configure(state="normal")
+
+        self.playback_tab.connected = True
+        self.playback_tab.set_buttons_enabled()
+        # self.control_frame.rec_button.configure(state="normal")
 
     def disconnect_action(self) -> None:
         """
@@ -1645,6 +1668,7 @@ class CommandsConnectionThread(BaseConnection, threading.Thread):
             self.incoming_buffer = self.incoming_buffer[idx + 1 :]
 
     def display_status(self, message: str) -> None:
+        print(message)
         self.status_text = message
         self.status_queue.put(message)
 
@@ -1753,6 +1777,7 @@ class MapServer(DFGMapServer):
     def cs_packet_handler(self) -> None:
         while self.run_thread:
             self.read_queue()
+        self.status_queue.put(f"#infoDown")
 
     def read_queue(self):
         data = None
@@ -1769,7 +1794,7 @@ class MapServer(DFGMapServer):
             self.handle_packet(data=data)
         sleep(1)  # send updates to clients every 0.2 seconds
         self.status_queue.put(
-            f"#info" + "Up on port {self.port}, "
+            f"#infoUp on port {self.port}, "
             f"{self.count_clients()} clients, "
             f"{self.total_packets} packets"
         )
@@ -1913,8 +1938,32 @@ class Client:
         self.command_thread_watcher_queue.put("#action" + "send_commands_finished")
         self.client_window.playback_tab.command_status_callback(working, current_cmd)
 
+    def start_dfg_map_server(self):
+        self.dfg_map_server = MapServer(
+            self.stream_to_map_queue, self.map_server_thread_watcher_queue
+        )
+        self.stream_process_multiqueue.add_queue(self.stream_to_map_queue)
+
+        self.dfg_map_server.host = conf["map_server"]["host"] if conf else "0.0.0.0"
+        self.dfg_map_server.port = conf["map_server"]["port"] if conf else 20000
+        if "lat" in conf["map_server"] and "lon" in conf["map_server"]:
+            self.dfg_map_server.predefined_coords = (
+                conf["map_server"]["lat"],
+                conf["map_server"]["lon"],
+            )
+        self.dfg_map_server.start()
+
+    def stop_dfg_map_server(self):
+        if isinstance(self.dfg_map_server, MapServer):
+            self.dfg_map_server.run_thread = False
+
     def connect_commands(
-        self, connect_action, disconnect_action, host_address, encoder_port: str = ""
+        self,
+        connect_action,
+        connected_action,
+        disconnect_action,
+        host_address,
+        encoder_port: str = "",
     ) -> None:
         """
         Action of the "Connect" button
@@ -1923,6 +1972,7 @@ class Client:
             self.command_thread_watcher_queue
         )
         self.command_connection_thread.connect_action = connect_action
+        self.command_connection_thread.connected_action = connected_action
         self.command_connection_thread.disconnect_action = disconnect_action
         self.command_connection_thread.host_port = f"{host_address}:12936"
         self.command_connection_thread.start()
@@ -1988,19 +2038,6 @@ class Client:
             conf["compass"]["offset"] * np.pi / 180 if conf else 0
         )
         self.stream_process.start()
-
-        self.dfg_map_server = MapServer(
-            self.stream_to_map_queue, self.map_server_thread_watcher_queue
-        )
-        self.stream_process_multiqueue.add_queue(self.stream_to_map_queue)
-        self.dfg_map_server.host = conf["map_server"]["host"] if conf else "0.0.0.0"
-        self.dfg_map_server.port = conf["map_server"]["port"] if conf else 20000
-        if "lat" in conf["map_server"] and "lon" in conf["map_server"]:
-            self.dfg_map_server.predefined_coords = (
-                conf["map_server"]["lat"],
-                conf["map_server"]["lon"],
-            )
-        self.dfg_map_server.start()
 
     def do_set_source(
         self,

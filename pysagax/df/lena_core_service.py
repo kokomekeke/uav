@@ -115,7 +115,12 @@ class BaseConnection:
 
         self.connect_action: Optional[Callable[[], None]] = None
         """
-        This function handle is called when the socket is connected.
+        This function handle is called when the socket is initiating connection.
+        """
+
+        self.connected_action: Optional[Callable[[], None]] = None
+        """
+        This function handle is called when the socket is initiating connection.
         """
 
         self.disconnect_action: Optional[Callable[[], None]] = None
@@ -171,6 +176,8 @@ class BaseConnection:
             self.client_socket.connect((host, int(port)))  # connect to the server
             self.connected = True
             self.display_status("Connected")
+            if self.connected_action is not None:
+                self.connected_action()
             while True:
                 try:
                     if self.is_disconnect():
