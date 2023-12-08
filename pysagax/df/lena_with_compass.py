@@ -240,6 +240,15 @@ class StreamAndCompassProcess(
             return bool(self.mp_disconnect.value)
         except TypeError as e:  # TODO: multiprocessing debug (JIRA issue ALTS-150)
             print("[MultiprocessingError]:", e)
+            print("trying to read mp_disconnect.value again")
+            from time import sleep
+            sleep(0.1)
+            try:
+                return bool(self.mp_disconnect.value)
+            except TypeError as e:  # TODO: multiprocessing debug (JIRA issue ALTS-150)
+                print("[MultiprocessingError]:", e)
+                # traceback.print_exception(type(e), e, e.__traceback__)
+                print("Failed to read mp_disconnect.value a second time")
             return True
 
     def display_status(self, message: str) -> None:

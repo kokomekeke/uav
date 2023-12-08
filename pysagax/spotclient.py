@@ -1745,7 +1745,13 @@ class CommandsHandlerThread(threading.Thread):
                     if response is None:
                         self.timeout_handler(command)
                     else:
-                        self.response_handler(command, response)
+                        try:
+                            self.response_handler(command, response)
+                        except Exception as e:
+                            print(f"ERROR in command response handler: \n COMMAND: {command} \n RESPONSE: {response}")
+                            # traceback.print_exception(type(e), e, e.__traceback__)
+                            raise e
+                            
                 self.status_queue.put("#action" + "send_commands_finished")
                 self.status_callback(False, "")
             sleep(0.1)
@@ -2110,19 +2116,9 @@ class Client:
         if self.stream_process is not None:
             if self.disconnect_value is not None:
                 self.disconnect_value.value = True
-        ###TODO
-        """
-        if self.encoder_thread is not None:
-            self.encoder_thread.close()
-        global compass
-        if compass is not None:
-            compass.do_stop = True
-            compass = None
-        global dfg_map_server
-        dfg_map_server.run_thread = False
-        dfg_map_server.join() """
-
-        # TODO: properly make these threads stop after disconnect
+        if self.dfg_map_server is not None:
+            self.dfg_map_server.run_thread = False
+            self.dfg_map_server.join() 
         """ self.command_thread.join()
         self.stream_thread.join() """
 
