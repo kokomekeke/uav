@@ -43,7 +43,7 @@ from pysagax import (
     MultiQueue,
     StreamAndCompassProcess,
     PlotFrame,
-    PlotSettingsFrame
+    PlotSettingsFrame,
 )
 from pysagax.ui.sgx_dfg_map_server import DFGMapServer
 
@@ -940,9 +940,7 @@ class ClientWindow(tkinter.Frame):
         self.connect_frame = ConnectFrame(self, relief=tkinter.RAISED, borderwidth=1)
         self.connect_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
 
-        self.plot_frame = PlotFrame(self, conf)
-        self.plot_frame.root = root
-        self.plot_frame.create_canvas()
+        self.plot_frame = PlotFrame(self, conf, root)
 
         self.bottom_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
         self.bottom_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.BOTTOM)
@@ -959,7 +957,11 @@ class ClientWindow(tkinter.Frame):
         self.left_notebook.add(self.control_frame, text="Configuration")
         self.left_notebook.pack(fill=tkinter.BOTH, expand=False, side=tkinter.LEFT)
         self.plot_settings_frame = PlotSettingsFrame(
-            self.left_notebook, self.plot_frame, conf, relief=tkinter.RAISED, borderwidth=1
+            self.left_notebook,
+            self.plot_frame,
+            conf,
+            relief=tkinter.RAISED,
+            borderwidth=1,
         )
         self.left_notebook.add(self.plot_settings_frame, text="Plot Settings")
         self.left_notebook.pack(fill=tkinter.BOTH, expand=False, side=tkinter.LEFT)
@@ -1172,11 +1174,6 @@ class ClientWindow(tkinter.Frame):
             target=self.get_recording_paths, daemon=True
         )
         get_recording_paths_thread.start()
-        if self.plot_frame.animation is not None:
-            try:
-                self.plot_frame.animation.event_source.start()
-            except Exception as e:
-                pass
 
     def connect_action(self) -> None:
         """
@@ -1494,10 +1491,12 @@ class CommandsHandlerThread(threading.Thread):
                         try:
                             self.response_handler(command, response)
                         except Exception as e:
-                            print(f"ERROR in command response handler: \n COMMAND: {command} \n RESPONSE: {response}")
+                            print(
+                                f"ERROR in command response handler: \n COMMAND: {command} \n RESPONSE: {response}"
+                            )
                             # traceback.print_exception(type(e), e, e.__traceback__)
                             raise e
-                            
+
                 self.status_queue.put("#action" + "send_commands_finished")
                 self.status_callback(False, "")
             sleep(0.1)
@@ -1864,7 +1863,7 @@ class Client:
                 self.disconnect_value.value = True
         if self.dfg_map_server is not None:
             self.dfg_map_server.run_thread = False
-            self.dfg_map_server.join() 
+            self.dfg_map_server.join()
         """ self.command_thread.join()
         self.stream_thread.join() """
 

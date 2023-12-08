@@ -16,6 +16,7 @@ fps = 25
 max_bin_count = 1024
 waterfall_size = 200 #Amount of spectrum lines to be displayed on the waterfall diagram.
 spectrum_graph_min_db = -80
+make_plots = true
 center_box_width = 60
 
 [stats]

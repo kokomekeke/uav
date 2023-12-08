@@ -26,7 +26,7 @@ from pysagax import (
 
 
 class PlotFrame(tkinter.Frame):
-    def __init__(self, master, conf, *args, **kwargs):
+    def __init__(self, master, conf, root, *args, **kwargs):
         tkinter.Frame.__init__(self, master, *args, **kwargs)
 
         global calculate_df_corrected
@@ -35,7 +35,7 @@ class PlotFrame(tkinter.Frame):
         self.conf = conf
         self.client: Client = self.master.client
 
-        self.root: Any = None
+        self.root: Any = root
 
         self.fig: Optional[pyplot.Figure] = None
         self.canvas: Optional[FigureCanvasTkAgg] = None
@@ -65,20 +65,18 @@ class PlotFrame(tkinter.Frame):
 
         self.params.waterfall_size = (
             self.conf["display"]["waterfall_size"] if self.conf else 200
-        )  ##TODO: get from params #Amount of spectrum lines to be displayed on the waterfall diagram.
+        )  # Amount of spectrum lines to be displayed on the waterfall diagram.
+
+        self.make_plots = self.conf["display"]["make_plots"] if self.conf else True
+
+        self.create_canvas()
 
     def create_canvas(self) -> None:
         """
         Creates matplotlib canvas for graph plots. Called when connecting to the client.
         """
-        if self.fig is not None:
-            self.fig.gca().cla()  # type: ignore
-        if self.canvas is not None:  # Remove old widget if there is one
-            self.canvas.get_tk_widget().destroy()
-            self.canvas = None
-        if self.canvas_toolbar is not None:
-            self.canvas_toolbar.destroy()
-            self.canvas_toolbar = None
+        self.destroy_plot()
+
         self.fig = pyplot.Figure(tight_layout=True)  # type: ignore
         self.canvas = FigureCanvasTkAgg(self.fig, master=self)
         self.canvas.get_tk_widget().pack(
@@ -125,7 +123,9 @@ class PlotFrame(tkinter.Frame):
         # )     #TODO:show colorbar but keep waterfall and spectrum graphs the same width
         self.magnitude_waterfall_graph.make_plot()
 
-        self.magnitude_spectrum_plot = self.fig_ref.add_subplot(grid_spec[0, 0])
+        self.magnitude_spectrum_plot = self.fig_ref.add_subplot(
+            grid_spec[0, 0], sharex=self.magnitude_waterfall_plot
+        )
         self.magnitude_spectrum_graph = MagnitudeSpectrumGraph(
             self.magnitude_spectrum_plot, self.params
         )
@@ -219,19 +219,6 @@ class PlotFrame(tkinter.Frame):
             control_frame_ref.roi_span_string.set(f"{roi_span:.0f}")
 
     def update_sensors_and_graphs(self) -> None:
-        ##TODO
-        """dfg_map_server.update_timestamp()
-                dfg_map_server.update_angle(df_corrected, 1e6)
-            else:
-                self.compass_df_graph.add_point(None)
-
-        if (
-            compass is not None
-            and compass.parser.lat is not None
-            and compass.parser.lon is not None
-        ):
-            dfg_map_server.update_lat_lon(compass.parser.lat, compass.parser.lon)"""
-
         assert self.df_graph is not None  ##TODO: assert for all or no compass graphs?
 
         ##TODO: graph df_value_std (and latest df_value??)
@@ -256,6 +243,8 @@ class PlotFrame(tkinter.Frame):
         signal_db: float = 0.0,
         noise_db: float = 0.0,
     ) -> None:
+        if self.make_plots == False:
+            return
         if packet.bin_count == 0:
             return
         if (
@@ -273,7 +262,6 @@ class PlotFrame(tkinter.Frame):
             self.params.center_frequency = packet.center_frequency
             self.create_anim()
             self.animation_started = True
-            self
 
         assert self.magnitude_waterfall_graph is not None
         assert self.magnitude_spectrum_graph is not None
@@ -281,6 +269,20 @@ class PlotFrame(tkinter.Frame):
         self.magnitude_spectrum_graph.add_data(packet.magnitude_spectrum)
         self.magnitude_spectrum_graph.signal_lvl = signal_db
         self.magnitude_spectrum_graph.noise_lvl = noise_db
+
+    def destroy_plot(
+        self,
+    ) -> None:
+        if self.fig is not None:
+            self.fig.gca().cla()  # type: ignore
+        if self.canvas is not None:  # Remove old widget if there is one
+            self.canvas.get_tk_widget().destroy()
+            self.canvas = None
+        if self.canvas_toolbar is not None:
+            self.canvas_toolbar.destroy()
+            self.canvas_toolbar = None
+
+        self.animation_started = False
 
 
 class PlotSettingsFrame(tkinter.Frame):
@@ -306,12 +308,20 @@ class PlotSettingsFrame(tkinter.Frame):
             value=(self.conf["display"]["waterfall_size"] if conf else 200)
         )
 
-        ###TODO here or in ClientWindow???
-
         self.columnconfigure(0, weight=2)
         self.columnconfigure(1, weight=1)
         self.columnconfigure(2, weight=2)
         self.columnconfigure(3, weight=1)
+
+        make_plots_label = ttk.Label(self, text="Make plots:")
+        make_plots_label.grid(column=0, row=0, sticky=tkinter.W, padx=5, pady=5)
+        self.toggle_button = ToggleButton(
+            self,
+            self.on_action,
+            self.off_action,
+            default_value=self.plot_frame.make_plots,
+        )
+        self.toggle_button.grid(column=1, row=0)
 
         spectrum_graph_min_label = ttk.Label(self, text="Spectrum graph min dB:")
         spectrum_graph_min_label.grid(column=0, row=1, sticky=tkinter.W, padx=5, pady=5)
@@ -362,12 +372,74 @@ class PlotSettingsFrame(tkinter.Frame):
         self.plot_frame.spectrum_graph_min_db = (
             self.spectrum_graph_min_db_variable.get()
         )
+
         fps = self.fps_variable.get()
         if fps <= 0:
             fps = self.conf["display"]["fps"]
             self.fps_variable.set(fps)
         self.plot_frame.fps = fps
-        self.plot_frame.max_bin_count = self.max_bin_count_variable.get()
-        self.plot_frame.params.waterfall_size = self.waterfall_size_variable.get()
+
+        max_bin_count = self.max_bin_count_variable.get()
+        if max_bin_count <= 0:
+            max_bin_count = self.conf["display"]["max_bin_count"]
+            self.max_bin_count_variable.set(max_bin_count)
+        self.plot_frame.max_bin_count = max_bin_count
+
+        waterfall_size = self.waterfall_size_variable.get()
+        if waterfall_size <= 0:
+            waterfall_size = self.conf["display"]["waterfall_size"]
+            self.waterfall_size_variable.set(waterfall_size)
+        self.plot_frame.params.waterfall_size = waterfall_size
 
         self.plot_frame.animation_started = False  # Forces the redrawing of plots
+
+    def on_action(self) -> None:
+        """
+        Turn on plotting
+        """
+        self.plot_frame.make_plots = True
+
+    def off_action(self) -> None:
+        """
+        Turn plotting off
+        """
+        self.plot_frame.make_plots = False
+        self.plot_frame.animation_started = False
+        try:
+            self.plot_frame.animation.event_source.stop()
+        except:
+            pass
+        self.plot_frame.destroy_plot()
+
+
+class ToggleButton(tkinter.Frame):
+    def __init__(
+        self, master, on_action, off_action, default_value=True, *args, **kwargs
+    ) -> None:
+        tkinter.Frame.__init__(self, master, *args, **kwargs)
+
+        self.on_action = on_action
+        self.off_action = off_action
+
+        self.switch_variable = tkinter.BooleanVar(value=default_value)
+        off_button = tkinter.Radiobutton(
+            self,
+            text="Off",
+            variable=self.switch_variable,
+            indicatoron=False,
+            value=False,
+            width=8,
+            command=self.off_action,
+        )
+        on_button = tkinter.Radiobutton(
+            self,
+            text="On",
+            variable=self.switch_variable,
+            indicatoron=False,
+            value=True,
+            width=8,
+            command=self.on_action,
+        )
+
+        off_button.pack(side="left")
+        on_button.pack(side="left")
