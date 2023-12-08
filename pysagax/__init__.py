@@ -36,6 +36,10 @@ from pysagax.ui.lena_matplotlib_graphs import (
     WaterfallAngleGraph,
     WaterfallMagnitudeGraph,
 )
+from pysagax.ui.plot_frame import (
+    PlotFrame,
+    PlotSettingsFrame
+)
 from pysagax.ui.octave_data import save_octave
 
 
