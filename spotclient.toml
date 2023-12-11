@@ -9,7 +9,7 @@ burst_stride = '50000'
 roi_center = '446.065M'
 roi_span = '50k'
 roi_threshold = '-40'
-df_corrected_from_compass = false    #true: compass, false: encoder
+df_corrected_from_compass = true    #true: compass, false: encoder
 
 [display]
 fps = 10
@@ -30,4 +30,4 @@ lon = 19.33
 
 [compass]
 use_sensor_fusion = false #true: compass.angle (for RAC), false: compass.magnetometer_angle (for aaronia)
-offset=0
+offset=0   #without compass sensor this value will be used as compass heading (in radians). Don't forget to set df_corrected_from_compass = true

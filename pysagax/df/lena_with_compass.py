@@ -187,7 +187,7 @@ class StreamAndCompassProcess(
             compass_heading = (
                 pysagax.normalize_angle(compass_angle - self.compass_offset)
                 if self.compass is not None
-                else None
+                else self.compass_offset
             )
             encoder_heading = (
                 pysagax.normalize_angle(self.encoder.angle - self.encoder_offset)

@@ -1527,12 +1527,12 @@ class MapServer(DFGMapServer):
         compass_heading = data["compass_heading"]
         encoder_heading = data["encoder_heading"]
 
-        # df_corrected = calculate_df_corrected(
-        #     df_value=df_value_mean,
-        #     compass_heading=compass_heading,
-        #     encoder_heading=encoder_heading,
-        # )
-        df_corrected = df_value_mean
+        df_corrected = calculate_df_corrected(
+            df_value=df_value_mean,
+            compass_heading=compass_heading,
+            encoder_heading=encoder_heading,
+        )
+        # df_corrected = df_value_mean
         if self.predefined_coords is not None:
             lat, lon = self.predefined_coords
         else:
