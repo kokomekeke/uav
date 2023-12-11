@@ -44,6 +44,7 @@ from pysagax import (
     StreamAndCompassProcess,
     PlotFrame,
     PlotSettingsFrame,
+    EntryWithLabel,
 )
 from pysagax.ui.sgx_dfg_map_server import DFGMapServer
 
@@ -334,30 +335,8 @@ class ControlFrame(tkinter.Frame):
 
         self.path_string = tkinter.StringVar(value="No Source")
 
-        ###TODO here or in ClientWindow???
-        self.freq_string = tkinter.StringVar(
-            value=(conf["defaults"]["center_freq"] if conf else "")
-        )
-        self.bw_string = tkinter.StringVar(
-            value=(conf["defaults"]["bandwith"] if conf else "")
-        )
-        self.gain_string = tkinter.StringVar(
-            value=(conf["defaults"]["gain"] if conf else "")
-        )
         self.bin_count_string = tkinter.StringVar(
             value=(conf["defaults"]["bin_count"] if conf else "")
-        )
-        self.burst_stride_string = tkinter.StringVar(
-            value=(conf["defaults"]["burst_stride"] if conf else "")
-        )
-        self.roi_center_string = tkinter.StringVar(
-            value=(conf["defaults"]["roi_center"] if conf else "")
-        )
-        self.roi_span_string = tkinter.StringVar(
-            value=(conf["defaults"]["roi_span"] if conf else "")
-        )
-        self.roi_threshold_string = tkinter.StringVar(
-            value=(conf["defaults"]["roi_threshold"] if conf else "")
         )
         self.source_file_path_string = tkinter.StringVar(value="")
 
@@ -373,28 +352,16 @@ class ControlFrame(tkinter.Frame):
         path_label = ttk.Label(self, textvariable=self.path_string)
         path_label.grid(column=0, row=0, columnspan=4, padx=5, pady=5)
 
-        freq_entry_label = ttk.Label(self, text="Frequency:")
-        freq_entry_label.grid(column=0, row=1, sticky=tkinter.W, padx=5, pady=5)
-
-        self.freq_entry = ttk.Entry(self, textvariable=self.freq_string, width=11)
-        self.freq_entry.grid(
-            column=1, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+        self.freq_entry = EntryWithLabel(
+            self, "Frequency:", 0, 1, (conf["defaults"]["center_freq"] if conf else "")
         )
 
-        bw_entry_label = ttk.Label(self, text="Bandwidth:")
-        bw_entry_label.grid(column=0, row=2, sticky=tkinter.W, padx=5, pady=5)
-
-        self.bw_entry = ttk.Entry(self, textvariable=self.bw_string, width=11)
-        self.bw_entry.grid(
-            column=1, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+        self.bw_entry = EntryWithLabel(
+            self, "Bandwidth:", 0, 2, (conf["defaults"]["bandwith"] if conf else "")
         )
 
-        gain_entry_label = ttk.Label(self, text="USRP Gain:")
-        gain_entry_label.grid(column=0, row=3, sticky=tkinter.W, padx=5, pady=5)
-
-        self.gain_entry = ttk.Entry(self, textvariable=self.gain_string, width=11)
-        self.gain_entry.grid(
-            column=1, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+        self.gain_entry = EntryWithLabel(
+            self, "USRP Gain:", 0, 3, (conf["defaults"]["gain"] if conf else "")
         )
 
         bin_count_entry_label = ttk.Label(
@@ -432,44 +399,32 @@ class ControlFrame(tkinter.Frame):
             column=1, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5
         )
 
-        roi_center_entry_label = ttk.Label(self, text="ROI center freq:")
-        roi_center_entry_label.grid(column=2, row=1, sticky=tkinter.W, padx=5, pady=5)
-
-        roi_center_entry = ttk.Entry(
-            self, textvariable=self.roi_center_string, width=11
-        )
-        roi_center_entry.grid(
-            column=3, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+        self.roi_center_entry = EntryWithLabel(
+            self,
+            "ROI center freq:",
+            2,
+            1,
+            (conf["defaults"]["roi_center"] if conf else ""),
         )
 
-        roi_span_entry_label = ttk.Label(self, text="ROI span:")
-        roi_span_entry_label.grid(column=2, row=2, sticky=tkinter.W, padx=5, pady=5)
-
-        roi_span_entry = ttk.Entry(self, textvariable=self.roi_span_string, width=11)
-        roi_span_entry.grid(
-            column=3, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+        self.roi_span_entry = EntryWithLabel(
+            self, "ROI span:", 2, 2, (conf["defaults"]["roi_span"] if conf else "")
         )
 
-        roi_threshold_entry_label = ttk.Label(self, text="ROI threshold")
-        roi_threshold_entry_label.grid(
-            column=2, row=3, sticky=tkinter.W, padx=5, pady=5
+        self.roi_threshold_entry = EntryWithLabel(
+            self,
+            "ROI threshold:",
+            2,
+            3,
+            (conf["defaults"]["roi_threshold"] if conf else ""),
         )
 
-        roi_threshold_entry = ttk.Entry(
-            self, textvariable=self.roi_threshold_string, width=11
-        )
-        roi_threshold_entry.grid(
-            column=3, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=5
-        )
-
-        burst_stride_entry_label = ttk.Label(self, text="Burst stride:")
-        burst_stride_entry_label.grid(column=2, row=4, sticky=tkinter.W, padx=5, pady=5)
-
-        burst_stride_entry = ttk.Entry(
-            self, textvariable=self.burst_stride_string, width=11
-        )
-        burst_stride_entry.grid(
-            column=3, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+        self.burst_stride_entry = EntryWithLabel(
+            self,
+            "Burst stride:",
+            2,
+            4,
+            (conf["defaults"]["burst_stride"] if conf else ""),
         )
         self.mean_window_width_slider = tkinter.Scale(
             self,
@@ -509,14 +464,14 @@ class ControlFrame(tkinter.Frame):
 
     def configure_commands(self):
         kwargs = {
-            "freq": pysagax.si_to_float(self.freq_string.get()),
-            "bw": pysagax.si_to_float(self.bw_string.get()),
-            "gain": self.gain_string.get(),
+            "freq": pysagax.si_to_float(self.freq_entry.get()),
+            "bw": pysagax.si_to_float(self.bw_entry.get()),
+            "gain": self.gain_entry.get(),
             "bin_count": self.bin_count_string.get(),
-            "burst_stride": self.burst_stride_string.get(),
-            "roi_center": pysagax.si_to_float(self.roi_center_string.get()),
-            "roi_span": pysagax.si_to_float(self.roi_span_string.get()),
-            "roi_threshold": self.roi_threshold_string.get(),
+            "burst_stride": self.burst_stride_entry.get(),
+            "roi_center": pysagax.si_to_float(self.roi_center_entry.get()),
+            "roi_span": pysagax.si_to_float(self.roi_span_entry.get()),
+            "roi_threshold": self.roi_threshold_entry.get(),
         }
         self.client.do_configuration(**kwargs)
 
@@ -1234,8 +1189,8 @@ class ClientWindow(tkinter.Frame):
 
         spectrum = list(zip(bin_freqs, packet.magnitude_spectrum))
 
-        roi_center = pysagax.si_to_float(self.control_frame.roi_center_string.get())
-        roi_span = pysagax.si_to_float(self.control_frame.roi_span_string.get())
+        roi_center = pysagax.si_to_float(self.control_frame.roi_center_entry.get())
+        roi_span = pysagax.si_to_float(self.control_frame.roi_span_entry.get())
         roi_min = roi_center - roi_span / 2
         roi_max = roi_center + roi_span / 2
 
