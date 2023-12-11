@@ -12,7 +12,7 @@ roi_threshold = '-40'
 df_corrected_from_compass = false    #true: compass, false: encoder
 
 [display]
-fps = 25
+fps = 10
 max_bin_count = 1024
 waterfall_size = 200 #Amount of spectrum lines to be displayed on the waterfall diagram.
 spectrum_graph_min_db = -80

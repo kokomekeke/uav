@@ -1904,10 +1904,9 @@ class Client:
 def on_close():
     global root
     # dfg_map_server.run_thread = False
-    ex.disconnect_commands()
-    sleep(0.5)
     ex.do_stop = True
     ex.client_window.do_stop = True
+    ex.disconnect_commands()
     ex.client_window.quit()
     root.destroy()
 
