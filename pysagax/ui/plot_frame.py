@@ -23,6 +23,7 @@ from pysagax import (
     MagnitudeSpectrumGraph,
     WaterfallMagnitudeGraph,
 )
+from pysagax.ui.custom_widgets import ToggleButton, EntryWithLabel
 
 
 class PlotFrame(tkinter.Frame):
@@ -200,7 +201,7 @@ class PlotFrame(tkinter.Frame):
         if self.magnitude_spectrum_graph is None:
             return
         if event.inaxes == self.magnitude_spectrum_graph.plot:
-            roi_span = pysagax.si_to_float(control_frame_ref.roi_span_string.get())
+            roi_span = pysagax.si_to_float(control_frame_ref.roi_span_entry.get())
             roi_freq = self.magnitude_spectrum_graph.coord_to_freq(event.xdata)
             roi_threshold = event.ydata
 
@@ -214,9 +215,9 @@ class PlotFrame(tkinter.Frame):
             )
             self.magnitude_spectrum_graph.roi_threshold = int(math.floor(event.ydata))
 
-            control_frame_ref.roi_center_string.set(f"{roi_freq:.0f}")
-            control_frame_ref.roi_threshold_string.set(f"{roi_threshold:.0f}")
-            control_frame_ref.roi_span_string.set(f"{roi_span:.0f}")
+            control_frame_ref.roi_center_entry.set(f"{roi_freq:.0f}")
+            control_frame_ref.roi_threshold_entry.set(f"{roi_threshold:.0f}")
+            control_frame_ref.roi_span_entry.set(f"{roi_span:.0f}")
 
     def update_sensors_and_graphs(self) -> None:
         assert self.df_graph is not None  ##TODO: assert for all or no compass graphs?
@@ -295,19 +296,6 @@ class PlotSettingsFrame(tkinter.Frame):
             self.master.master.master.client
         )  ##??? Dont need client reference?
 
-        self.spectrum_graph_min_db_variable = tkinter.DoubleVar(
-            value=(self.conf["display"]["spectrum_graph_min_db"] if conf else -80)
-        )
-        self.fps_variable = tkinter.DoubleVar(
-            value=(self.conf["display"]["fps"] if conf else -25)
-        )
-        self.max_bin_count_variable = tkinter.IntVar(
-            value=(self.conf["display"]["max_bin_count"] if conf else 1024)
-        )
-        self.waterfall_size_variable = tkinter.IntVar(
-            value=(self.conf["display"]["waterfall_size"] if conf else 200)
-        )
-
         self.columnconfigure(0, weight=2)
         self.columnconfigure(1, weight=1)
         self.columnconfigure(2, weight=2)
@@ -323,42 +311,40 @@ class PlotSettingsFrame(tkinter.Frame):
         )
         self.toggle_button.grid(column=1, row=0)
 
-        spectrum_graph_min_label = ttk.Label(self, text="Spectrum graph min dB:")
-        spectrum_graph_min_label.grid(column=0, row=1, sticky=tkinter.W, padx=5, pady=5)
-
-        self.spectrum_graph_min_entry = ttk.Entry(
-            self, textvariable=self.spectrum_graph_min_db_variable, width=11
-        )
-        self.spectrum_graph_min_entry.grid(
-            column=1, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=5
-        )
-
-        fps_label = ttk.Label(self, text="fps:")
-        fps_label.grid(column=0, row=2, sticky=tkinter.W, padx=5, pady=5)
-
-        self.fps_entry = ttk.Entry(self, textvariable=self.fps_variable, width=11)
-        self.fps_entry.grid(
-            column=1, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+        self.spectrum_graph_min_entry = EntryWithLabel(
+            self,
+            "Spectrum graph min dB:",
+            0,
+            1,
+            (conf["display"]["spectrum_graph_min_db"] if conf else -80),
+            tkinter.DoubleVar,
         )
 
-        max_bin_count_label = ttk.Label(self, text="Waterfall bin count:")
-        max_bin_count_label.grid(column=0, row=3, sticky=tkinter.W, padx=5, pady=5)
-
-        self.max_bin_count_entry = ttk.Entry(
-            self, textvariable=self.max_bin_count_variable, width=11
+        self.fps_entry = EntryWithLabel(
+            self,
+            "FPS:",
+            0,
+            2,
+            (conf["display"]["fps"] if conf else -25),
+            tkinter.DoubleVar,
         )
-        self.max_bin_count_entry.grid(
-            column=1, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+
+        self.max_bin_count_entry = EntryWithLabel(
+            self,
+            "Waterfall bin count:",
+            0,
+            3,
+            (conf["display"]["max_bin_count"] if conf else 1024),
+            tkinter.IntVar,
         )
 
-        waterfall_size_label = ttk.Label(self, text="Waterfall size:")
-        waterfall_size_label.grid(column=0, row=4, sticky=tkinter.W, padx=5, pady=5)
-
-        self.waterfall_size_entry = ttk.Entry(
-            self, textvariable=self.waterfall_size_variable, width=11
-        )
-        self.waterfall_size_entry.grid(
-            column=1, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+        self.waterfall_size_entry = EntryWithLabel(
+            self,
+            "Waterfall size:",
+            0,
+            4,
+            (conf["display"]["waterfall_size"] if conf else 200),
+            tkinter.IntVar,
         )
 
         self.configure_plot_button = tkinter.Button(
@@ -369,26 +355,24 @@ class PlotSettingsFrame(tkinter.Frame):
         )
 
     def configure_plot_commands(self):
-        self.plot_frame.spectrum_graph_min_db = (
-            self.spectrum_graph_min_db_variable.get()
-        )
+        self.plot_frame.spectrum_graph_min_db = self.spectrum_graph_min_entry.get()
 
-        fps = self.fps_variable.get()
+        fps = self.fps_entry.get()
         if fps <= 0:
             fps = self.conf["display"]["fps"]
-            self.fps_variable.set(fps)
+            self.fps_entry.set(fps)
         self.plot_frame.fps = fps
 
-        max_bin_count = self.max_bin_count_variable.get()
+        max_bin_count = self.max_bin_count_entry.get()
         if max_bin_count <= 0:
             max_bin_count = self.conf["display"]["max_bin_count"]
-            self.max_bin_count_variable.set(max_bin_count)
+            self.max_bin_count_entry.set(max_bin_count)
         self.plot_frame.max_bin_count = max_bin_count
 
-        waterfall_size = self.waterfall_size_variable.get()
+        waterfall_size = self.waterfall_size_entry.get()
         if waterfall_size <= 0:
             waterfall_size = self.conf["display"]["waterfall_size"]
-            self.waterfall_size_variable.set(waterfall_size)
+            self.waterfall_size_entry.set(waterfall_size)
         self.plot_frame.params.waterfall_size = waterfall_size
 
         self.plot_frame.animation_started = False  # Forces the redrawing of plots
@@ -410,36 +394,3 @@ class PlotSettingsFrame(tkinter.Frame):
         except:
             pass
         self.plot_frame.destroy_plot()
-
-
-class ToggleButton(tkinter.Frame):
-    def __init__(
-        self, master, on_action, off_action, default_value=True, *args, **kwargs
-    ) -> None:
-        tkinter.Frame.__init__(self, master, *args, **kwargs)
-
-        self.on_action = on_action
-        self.off_action = off_action
-
-        self.switch_variable = tkinter.BooleanVar(value=default_value)
-        off_button = tkinter.Radiobutton(
-            self,
-            text="Off",
-            variable=self.switch_variable,
-            indicatoron=False,
-            value=False,
-            width=8,
-            command=self.off_action,
-        )
-        on_button = tkinter.Radiobutton(
-            self,
-            text="On",
-            variable=self.switch_variable,
-            indicatoron=False,
-            value=True,
-            width=8,
-            command=self.on_action,
-        )
-
-        off_button.pack(side="left")
-        on_button.pack(side="left")
