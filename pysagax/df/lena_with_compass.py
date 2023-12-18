@@ -1,109 +1,26 @@
 import multiprocessing
+import multiprocessing.managers
 import queue
 import re
 import threading
 import traceback
 import typing
 from typing import Optional
+
 import numpy as np
 import scipy
-
 import serial
 
 import pysagax
 from pysagax import (
-    CoreServicePacket,
-    CoreServiceROIResultPacket,
-    CoreServiceParser,
     BaseConnection,
     CompassSensor,
+    CoreServicePacket,
+    CoreServiceParser,
+    CoreServiceROIResultPacket,
 )
-
-"""
-Class for handling multiple multiprocessing.Queue objects together.
-It could be modified to take queue.Queue objects as well. 
-"""
-
-
-class MultiQueue:
-    def __init__(self, queues=[]):
-        manager = multiprocessing.get_context("spawn").Manager()
-        self.queues = manager.dict()
-        for queue in queues:
-            self.add_queue(queue)
-
-    def add_queue(self, queue: multiprocessing.Queue):
-        """
-        Add a queue
-        """
-        if not isinstance(queue, multiprocessing.managers.BaseProxy):
-            raise ValueError("Input must be a multiprocessing.managers.Queue object")
-        self.queues[id(queue)] = queue
-
-    def remove_queue(self, queue):
-        """
-        Remove a queue by reference
-        """
-        if self.queues.pop(id(queue), None) is None:
-            raise ValueError("Queue not found in MultiQueue")
-
-    def put(self, item, block=True, timeout=None):
-        """
-        Put an item into all queues
-        """
-        ##TODO: properly handle if one of the queues is full
-        for q in self.queues.values():
-            try:
-                q.put(item, block=False)
-            except multiprocessing.queues.Full:
-                pass  # we ignore full queues for now, since multiprocessing queues can't be used similarly to collections.Deque objects or be cleared easily.
-            except TypeError as e:  # TODO: multiprocessing debug (JIRA issue ALTS-150)
-                print("[MultiQueue]:", e)
-                # Maybe setting a maxsize to all queues would solve this?
-
-    def empty(self):
-        """
-        Check if the every queue in MultiQueue is empty.
-        """
-        if not self.queues:
-            raise ValueError("No queues added to MultiQueue")
-        return all(queue.empty() for queue in self.queues)
-
-
-class EncoderThread(threading.Thread):  ###
-    def __init__(self, port: str, status_queue: queue.Queue[str]):
-        super().__init__()
-        self.daemon = True
-        self.port = port
-        self.angle = float("NaN")
-        self.connection = None
-        self.status_queue = status_queue
-
-    def run(self):
-        global run_threads
-        try:
-            self.connection = serial.Serial(self.port, baudrate=9600, timeout=0.5)
-            self.status_queue.put("#encoder" + "Connected")
-        except:
-            self.status_queue.put(
-                "#encoder" + f"Could not connect to encoder on port {self.port}"
-            )
-            return
-        while True:  ##TODO: stop condition and connection closing
-            try:
-                msg = self.connection.readline()
-                ctr = re.findall(r"\d+\.\d+", str(msg))
-                if len(ctr):
-                    self.angle = pysagax.normalize_angle(float(ctr[0]))
-            except:
-                self.angle = float("NaN")
-                self.status_queue("#encoder" + "Disconnected.")
-                break
-        self.close()
-
-    def close(self):
-        if self.connection is not None:
-            self.connection.close()
+from pysagax.heading.queue_collector import QueueValueCollector
+from pysagax.util import MultiQueue
 
 
 class StreamAndCompassProcess(
@@ -141,7 +58,7 @@ class StreamAndCompassProcess(
 
         self.compass = None
 
-        self.encoder = None
+        self.heading_queue: Optional[QueueValueCollector] = None
 
         self.compass_offset = 0.0
 
@@ -149,15 +66,20 @@ class StreamAndCompassProcess(
 
         self.use_sensor_fusion: bool = False
 
-        self.mean_window_seconds = 1.0  # TODO: set from gui
+        self.mean_window_seconds: Optional[
+            multiprocessing.managers.ValueProxy[float]
+        ] = None  # TODO: set from gui
 
-        self.past_roi_results = {"df_values": [], "df_elevations": []}
+        self.past_roi_results: dict[str, list[typing.Any]] = {
+            "df_values": [],
+            "df_elevations": [],
+        }
 
         self.df_aggregated_last_updated_ns = (
             0  # timestamp for the last mean angle calculation
         )
 
-        self.aggregated_roi_results = {
+        self.aggregated_roi_results: dict[str, Optional[float]] = {
             "df_value_mean": None,
             "df_value_std": None,
             "df_elevation_mean": None,
@@ -171,14 +93,15 @@ class StreamAndCompassProcess(
         for cs_packet in self.extract_packets(data):
             cs_packet.packet_index = self.packet_count
             self.packet_count += 1
-            if self.compass is not None:
-                compass_angle = (
-                    self.compass.angle
-                    if self.use_sensor_fusion
-                    else self.compass.magnetometer_angle
+            if self.heading_queue is not None:
+                self.heading_queue.collect_values()
+                compass_angle = self.heading_queue.heading()
+                gps_lat, gps_lon = (
+                    self.heading_queue.gps
+                    if self.heading_queue.gps is not None
+                    else None,
+                    None,
                 )
-                gps_lat = self.comapss.parser.lat
-                gps_lon = self.comapss.parser.lon
             else:
                 compass_angle = None
                 gps_lat = None
@@ -186,12 +109,7 @@ class StreamAndCompassProcess(
 
             compass_heading = (
                 pysagax.normalize_angle(compass_angle - self.compass_offset)
-                if self.compass is not None
-                else None
-            )
-            encoder_heading = (
-                pysagax.normalize_angle(self.encoder.angle - self.encoder_offset)
-                if self.encoder is not None
+                if compass_angle is not None
                 else None
             )
 
@@ -205,28 +123,23 @@ class StreamAndCompassProcess(
 
                 # TODO: if we receive no roi packets for a time then update aggregated results with None
 
-            data = {
+            result: dict[str, typing.Any] = {
                 "cs_packet": cs_packet,
                 "aggregated_roi_results": self.aggregated_roi_results,
                 "compass_angle": compass_angle if self.compass is not None else None,
                 "compass_heading": compass_heading,
                 "gps_lat": gps_lat,
                 "gps_lon": gps_lon,
-                "encoder_angle": self.encoder.angle
-                if self.encoder is not None
-                else None,
-                "encoder_heading": encoder_heading,
+                "encoder_angle": None,
+                "encoder_heading": None,
             }
 
-            self.queues.put(data)
+            self.queues.put(result)
 
     def run(self) -> None:
         """
         Entry point of the stream collecting process.
         """
-        self.init_compass_thread()
-
-        self.init_encoder_thread()
 
         self.run_socket()
         self.mp_status.put("END")
@@ -242,6 +155,7 @@ class StreamAndCompassProcess(
             print("[MultiprocessingError]:", e)
             print("trying to read mp_disconnect.value again")
             from time import sleep
+
             sleep(0.1)
             try:
                 return bool(self.mp_disconnect.value)
@@ -258,40 +172,8 @@ class StreamAndCompassProcess(
         assert self.mp_status
         self.mp_status.put(message)
 
-    def init_compass_thread(self):
-        self.compass = CompassSensor(pysagax.AaroniaParser())
-        # TODO: put CompassSensor errors in status queue instead of messagebox and print
-        try:
-            self.compass.load_calibration()
-        except FileNotFoundError:
-            self.mp_status.put(
-                "#compass"
-                + "Startup error, Calibration file calibration.npz not found. Make sure sgx-pc is your workdir"
-            )
-            # messagebox.showerror( ##TODO
-            #     "Startup error",
-            #     "Calibration file calibration.npz not found. Make sure sgx-pc is your workdir.",
-            # )
-
-        try:
-            self.compass.set_serial_device(
-                pysagax.open_aaronia_socket_dev(self.compass_host_port)
-            )
-        except serial.SerialException:
-            self.mp_status("#compass" + "Compass sensor not connected")
-        except ConnectionError as e:
-            self.mp_status.put("#compass" + str(e))
-            self.compass = None
-            return
-        else:
-            self.mp_status.put("#compass" + "Connected")
-        self.compass.start()
-
-    def init_encoder_thread(self):
-        self.encoder = EncoderThread(self.encoder_port, self.mp_status)
-        self.encoder.start()
-
     def update_aggregated_results(self, cs_packet: CoreServiceROIResultPacket) -> None:
+        assert self.mean_window_seconds is not None
         if self.mean_window_seconds.value <= 0:
             # no averaging in this case
             self.aggregated_roi_results["df_value_mean"] = cs_packet.roi_azimuth

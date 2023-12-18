@@ -6,7 +6,8 @@ import threading
 import time
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Callable
+from tkinter import messagebox
+from typing import Callable, Optional
 
 import ahrs  # type: ignore
 import numpy as np
@@ -14,8 +15,8 @@ import numpy.typing as npt
 import pyquaternion
 import scipy  # type: ignore
 import serial
+
 from pysagax.df.magnetometer_calibration import MagnetometerCalibration
-from tkinter import messagebox
 
 
 class CompassParser:
@@ -455,15 +456,11 @@ class AccelCalibration(Calibration, threading.Thread):
             self.status = CalibrationStatus.CALIBRATING
 
 
-class CompassSensor(threading.Thread):
+class CompassBase:
     def __init__(self, parser: CompassParser) -> None:
-        super().__init__()
-
-        self.ahrs_class = ahrs.filters.Madgwick
-
-        self.daemon = True
         self.ser: Optional[io.RawIOBase] = None  # serial.Serial()
 
+        self.ahrs_class = ahrs.filters.Madgwick
         self.magnetometer_angle: float = 0.0
         self.angle: float = 0.0
         self.yaw: float = 0.0
@@ -514,100 +511,88 @@ class CompassSensor(threading.Thread):
         Stops the loop if true
         """
 
-    def reset_ahrs_filter(self) -> None:
-        self.ahrs_filter = self.ahrs_class()
-        self.quaternion = pyquaternion.Quaternion(
-            1.0, 0.0, 0.0, 0.0
-        )  # np.array([1.0, 0.0, 0.0, 0.0])
+        self.previous_time: float = time.time()
 
-    def set_serial_device(self, sensor_dev: io.RawIOBase) -> None:
-        self.ser = sensor_dev
+        pass
 
-    def run(self) -> None:
-        assert self.ser is not None
-        previous_time = time.time()
-        while not self.do_stop:
-            line = b""
-            try:
-                line = self.ser.readline()
-            except Exception as e:
-                messagebox.showerror(
-                    "Compass sensor error",
-                    f"Could not read from compass sensor, it might be disconnected. \n"
-                    f"Please reconnect the sensor and then restart the python program. \n"
-                    f"{str(e)}",
-                )
-                print(e)
-                return
-            if self.parser.parse(line):
-                if self.parser.accelerometer_values is None:
-                    print("No accelerometer value")
-                    self.parser.accelerometer_values = np.array([0, 0, 0])
-                if self.parser.magnetometer_values is None:
-                    print("No magnetometer value")
-                    self.parser.magnetometer_values = np.array([0, 0, 0])
-                if self.parser.gyroscope_values is None:
-                    print("No gyroscope value")
-                    self.parser.gyroscope_values = np.array([0, 0, 0])
+    def loop(self) -> None:
+        line = b""
 
-                current_time = time.time()
-                self.ahrs_filter.Dt = current_time - previous_time
-                self.gyroscope_values = self.gyroscope_calibration.s(
-                    self.parser.gyroscope_values
-                )
-                self.accelerometer_values = self.accelerometer_calibration.s(
-                    self.parser.accelerometer_values
-                )
-                self.magnetometer_values = self.magnetometer_calibration.s(
-                    self.parser.magnetometer_values * 1e-6
-                )  # mT
-                if self.parser.heading_values is not None:
-                    self.quaternion = (
-                        pyquaternion.Quaternion(
-                            axis=[0, 0, 1], angle=self.parser.heading_values[0]
-                        )
-                        * pyquaternion.Quaternion(
-                            axis=[0, 1, 0], angle=self.parser.heading_values[1]
-                        )
-                        * pyquaternion.Quaternion(
-                            axis=[1, 0, 0], angle=self.parser.heading_values[2]
-                        )
+        if self.ser is None:
+            raise ValueError()
+        line = self.ser.readline()
+
+        if self.parser.parse(line):
+            if self.parser.accelerometer_values is None:
+                print("No accelerometer value")
+                self.parser.accelerometer_values = np.array([0, 0, 0])
+            if self.parser.magnetometer_values is None:
+                print("No magnetometer value")
+                self.parser.magnetometer_values = np.array([0, 0, 0])
+            if self.parser.gyroscope_values is None:
+                print("No gyroscope value")
+                self.parser.gyroscope_values = np.array([0, 0, 0])
+
+            current_time = time.time()
+            self.ahrs_filter.Dt = current_time - self.previous_time
+            self.gyroscope_values = self.gyroscope_calibration.s(
+                self.parser.gyroscope_values
+            )
+            self.accelerometer_values = self.accelerometer_calibration.s(
+                self.parser.accelerometer_values
+            )
+            self.magnetometer_values = self.magnetometer_calibration.s(
+                self.parser.magnetometer_values * 1e-6
+            )  # mT
+            if self.parser.heading_values is not None:
+                self.quaternion = (
+                    pyquaternion.Quaternion(
+                        axis=[0, 0, 1], angle=self.parser.heading_values[0]
                     )
-                else:
-                    self.ahrs_filter.gain = self.gyroscope_calibration.gyro_beta
-                    self.quaternion = pyquaternion.Quaternion(
-                        self.ahrs_filter.updateMARG(
-                            q=np.array(
-                                [
-                                    self.quaternion[0],
-                                    self.quaternion[1],
-                                    self.quaternion[2],
-                                    self.quaternion[3],
-                                ]
-                            ),
-                            gyr=self.gyroscope_values,
-                            acc=self.accelerometer_values,
-                            mag=self.magnetometer_values,
-                        )
+                    * pyquaternion.Quaternion(
+                        axis=[0, 1, 0], angle=self.parser.heading_values[1]
                     )
-                previous_time = current_time
-                self.heading = self.quaternion.rotate(
-                    np.array([1.0, 0.0, 0.0])
-                )  # self.quaternion[1:4]
-                self.calculate_angle()
-                # self.angle = self.yaw
-
-                self.angle = math.atan2(
-                    self.heading[1],
-                    self.heading[0],
+                    * pyquaternion.Quaternion(
+                        axis=[1, 0, 0], angle=self.parser.heading_values[2]
+                    )
                 )
-
-                self.magnetometer_angle = -math.atan2(
-                    self.magnetometer_values[1],
-                    self.magnetometer_values[0],
+            else:
+                self.ahrs_filter.gain = self.gyroscope_calibration.gyro_beta
+                self.quaternion = pyquaternion.Quaternion(
+                    self.ahrs_filter.updateMARG(
+                        q=np.array(
+                            [
+                                self.quaternion[0],
+                                self.quaternion[1],
+                                self.quaternion[2],
+                                self.quaternion[3],
+                            ]
+                        ),
+                        gyr=self.gyroscope_values,
+                        acc=self.accelerometer_values,
+                        mag=self.magnetometer_values,
+                    )
                 )
+            previous_time = current_time
+            self.heading = self.quaternion.rotate(
+                np.array([1.0, 0.0, 0.0])
+            )  # self.quaternion[1:4]
+            self.calculate_angle()
+            # self.angle = self.yaw
 
-        self.ser.close()
+            self.angle = math.atan2(
+                self.heading[1],
+                self.heading[0],
+            )
+
+            self.magnetometer_angle = -math.atan2(
+                self.magnetometer_values[1],
+                self.magnetometer_values[0],
+            )
+
+    def close(self) -> None:
+        if self.ser is not None:
+            self.ser.close()
 
     def calculate_angle(self) -> None:
         """
@@ -630,10 +615,6 @@ class CompassSensor(threading.Thread):
         siny_cosp = 2 * (w * z + x * y)
         cosy_cosp = 1 - 2 * (y * y + z * z)
         self.yaw = math.atan2(siny_cosp, cosy_cosp)
-
-    def close(self) -> None:
-        if self.ser is not None:
-            self.ser.close()
 
     def save_calibration(self) -> None:
         np.savez(
@@ -663,6 +644,40 @@ class CompassSensor(threading.Thread):
             self.magnetometer_calibration.status = CalibrationStatus.CALIBRATED
             self.accelerometer_calibration.status = CalibrationStatus.CALIBRATED
             print(f"Compass calibration loaded from {self.calibration_file}")
+
+    def reset_ahrs_filter(self) -> None:
+        self.ahrs_filter = self.ahrs_class()
+        self.quaternion = pyquaternion.Quaternion(
+            1.0, 0.0, 0.0, 0.0
+        )  # np.array([1.0, 0.0, 0.0, 0.0])
+
+    def set_serial_device(self, sensor_dev: io.RawIOBase) -> None:
+        self.ser = sensor_dev
+
+
+class CompassSensor(threading.Thread, CompassBase):
+    def __init__(self, parser: CompassParser) -> None:
+        threading.Thread.__init__(self, daemon=True)
+        CompassBase.__init__(self, parser)
+
+        self.daemon = True
+
+    def run(self) -> None:
+        assert self.ser is not None
+        self.previous_time = time.time()
+        try:
+            while not self.do_stop:
+                self.loop()
+        except Exception as e:
+            messagebox.showerror(
+                "Compass sensor error",
+                f"Could not read from compass sensor, it might be disconnected. \n"
+                f"Please reconnect the sensor and then restart the python program. \n"
+                f"{str(e)}",
+            )
+            print(e)
+            return
+        self.ser.close()
 
 
 def open_arduino_serial_dev(device_string: str) -> serial.Serial:
@@ -712,6 +727,7 @@ def open_aaronia_serial_dev() -> serial.Serial:
 def open_aaronia_socket_dev(host_port: str) -> socket.SocketIO:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     host_port_split = host_port.split(":")
+    print(repr(host_port_split))
     sock.connect((host_port_split[0], int(host_port_split[1])))
     sock_reader: socket.SocketIO = socket.SocketIO(sock, mode="r")
     # Initializing not needed: it is done on the server side.

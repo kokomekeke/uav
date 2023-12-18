@@ -14,6 +14,10 @@ import threading
 import time
 import tkinter
 import shlex
+from pysagax.heading.heading_manager import HeadingManager
+from pysagax.heading.queue_collector import QueueValueCollector
+
+from pysagax.ui import HeadingSourceFrame
 
 try:
     import tomllib
@@ -40,11 +44,12 @@ from pysagax import (
     CoreServiceROILackOfSignalPacket,
     CoreServiceROIResultPacket,
     CoreServiceSpectrumPacket,
-    MultiQueue,
     StreamAndCompassProcess,
     PlotFrame,
     PlotSettingsFrame,
-)
+
+    )
+from pysagax.util.multiqueue import MultiQueue
 from pysagax.ui.sgx_dfg_map_server import DFGMapServer
 
 conf = None
@@ -911,7 +916,7 @@ class PlaybackTab(ttk.Frame):
 
 
 class ClientWindow(tkinter.Frame):
-    def __init__(self, client, root):
+    def __init__(self, client: Client, root):
         self.do_stop = False
 
         # aggregated and current roi results, coming from StreaAndCompassProcess
@@ -955,7 +960,6 @@ class ClientWindow(tkinter.Frame):
             self.left_notebook, relief=tkinter.RAISED, borderwidth=1
         )
         self.left_notebook.add(self.control_frame, text="Configuration")
-        self.left_notebook.pack(fill=tkinter.BOTH, expand=False, side=tkinter.LEFT)
         self.plot_settings_frame = PlotSettingsFrame(
             self.left_notebook,
             self.plot_frame,
@@ -964,8 +968,9 @@ class ClientWindow(tkinter.Frame):
             borderwidth=1,
         )
         self.left_notebook.add(self.plot_settings_frame, text="Plot Settings")
+        self.heading_source_frame = HeadingSourceFrame(self.left_notebook, self.client.heading_manager)
+        self.left_notebook.add(self.heading_source_frame, text="Heading&GPS")
         self.left_notebook.pack(fill=tkinter.BOTH, expand=False, side=tkinter.LEFT)
-
         self.center_notebook = ttk.Notebook(self.bottom_frame)
         self.playback_tab = PlaybackTab(self.center_notebook, client)
         self.status_info_tab = ttk.Frame(self.center_notebook)
@@ -1102,6 +1107,7 @@ class ClientWindow(tkinter.Frame):
         elif message.startswith("#compass"):
             message = message[len("#compass") :]
             self.info_update_handler(message, source="Compass")
+            self.client.client_window.status_frame.status_compass_string.set(message)
         else:  # status updates have no prefix, these should also be shown on status_frame
             self.set_stream_status(message)
             self.info_update_handler(message, source="Stream Process")
@@ -1601,6 +1607,7 @@ class Client:
     def __init__(self, root):
         self.manager = multiprocessing.get_context("spawn").Manager()
 
+        self.heading_manager = HeadingManager()
         self.stream_to_gui_queue = self.manager.Queue(maxsize=100)
         self.stream_to_rec_queue = None
         self.stream_to_map_queue = self.manager.Queue(maxsize=10)
@@ -1615,7 +1622,6 @@ class Client:
         self.recording_thread = None
         self.dfg_map_server = None
         self.encoder_thread = None
-
         self.repeat_playback: bool = False
 
         self.stream_process_watcher_queue: multiprocessing.Queue[
@@ -1681,6 +1687,14 @@ class Client:
                         do_sleep = False
                     except queue.Empty:
                         pass
+                if self.heading_manager is not None:
+                    try:
+                        msg = self.heading_manager.mp_status.get_nowait()
+                        self.client_window.stream_status_msg_handler(msg)
+                        do_sleep = False
+                    except queue.Empty:
+                        pass
+
                 ##TODO: msg_handler functions might not need separate threads
                 if do_sleep:
                     sleep(0.1)
@@ -1792,7 +1806,7 @@ class Client:
             self.disconnect_value,
             self.stream_process_watcher_queue,
         )
-
+        self.stream_process.heading_queue = QueueValueCollector(self.heading_manager.mp_values)
         self.stream_process.host_port = f"{host_address}:12937"
         self.stream_process.compass_host_port = f"{host_address}:12938"
         self.stream_process.encoder_port = encoder_port
