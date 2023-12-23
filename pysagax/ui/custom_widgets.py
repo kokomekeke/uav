@@ -1,11 +1,17 @@
 import tkinter
 from tkinter import ttk
-from typing import Any, Optional
+from typing import Any, Callable, Optional, Type
 
 
 class ToggleButton(tkinter.Frame):
     def __init__(
-        self, master, on_action, off_action, default_value=True, *args, **kwargs
+        self,
+        master: tkinter.Misc,
+        on_action: Callable[[], None],
+        off_action: Callable[[], None],
+        default_value: bool = True,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         tkinter.Frame.__init__(self, master, *args, **kwargs)
 
@@ -39,15 +45,15 @@ class ToggleButton(tkinter.Frame):
 class EntryWithLabel(ttk.Entry):
     def __init__(
         self,
-        master,
+        master: tkinter.Misc,
         labeltext: str,
         column: int,
         row: int,
-        default_value="",
-        variable_type=tkinter.StringVar,
-        width=11,
-        padx=5,
-        pady=5,
+        default_value: str = "",
+        variable_type: Type[Any] = tkinter.StringVar,
+        width: int = 11,
+        padx: int = 5,
+        pady: int = 5,
     ) -> None:
         """
         tkinter widget of a label, entry box and tkinter variable combined to be used in frames with columnconfigure
@@ -66,8 +72,8 @@ class EntryWithLabel(ttk.Entry):
             pady=pady,
         )
 
-    def get(self):
+    def get(self) -> Any:
         return self.variable.get()
 
-    def set(self, value):
+    def set(self, value: Any) -> Any:
         return self.variable.set(value=value)

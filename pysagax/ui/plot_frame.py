@@ -1,8 +1,9 @@
+import math
 import tkinter
 from tkinter import ttk
 from typing import Any, Optional
+
 import matplotlib
-import math
 from matplotlib import pyplot
 from matplotlib.animation import FuncAnimation  # type: ignore
 from matplotlib.backend_bases import KeyEvent  # type: ignore
@@ -13,25 +14,25 @@ from matplotlib.backends.backend_tkagg import (  # type: ignore
 )
 
 import pysagax
+from pysagax.df.lena_core_service import CoreServiceSpectrumPacket
+from pysagax.spot.calculate_df_corrected import calculate_df_corrected
 
 # from pysagax.spotclient import Client, conf, calculate_df_corrected
-from pysagax import (
+from pysagax.ui.custom_widgets import EntryWithLabel, ToggleButton
+from pysagax.ui.lena_matplotlib_graphs import (
     CompassGraph,
     CompassGraphWithDeviation,
-    CoreServiceSpectrumPacket,
     GraphParameters,
     MagnitudeSpectrumGraph,
     WaterfallMagnitudeGraph,
 )
-from pysagax.ui.custom_widgets import ToggleButton, EntryWithLabel
 
 
 class PlotFrame(tkinter.Frame):
     def __init__(self, master, conf, root, *args, **kwargs):
         tkinter.Frame.__init__(self, master, *args, **kwargs)
 
-        global calculate_df_corrected
-        from pysagax.spotclient import Client, calculate_df_corrected
+        from pysagax.spotclient import Client
 
         self.conf = conf
         self.client: Client = self.master.client
@@ -233,7 +234,7 @@ class PlotFrame(tkinter.Frame):
         df_corrected = calculate_df_corrected(
             df_value=self.master.aggregated_roi_results["df_value_mean"],
             compass_heading=self.master.compass_heading,
-            encoder_heading=self.master.encoder_heading,
+            # encoder_heading=self.master.encoder_heading,
         )
 
         self.compass_df_graph.add_point(df_corrected)
@@ -353,6 +354,25 @@ class PlotSettingsFrame(tkinter.Frame):
         self.configure_plot_button.grid(
             column=3, row=5, padx=10, pady=5, sticky=tkinter.E + tkinter.W
         )
+        self.mean_window_width_slider_variable = tkinter.DoubleVar(
+            value=conf["stats"]["mean_window_width_seconds"] if conf else 0
+        )
+        self.mean_window_width_slider = tkinter.Scale(
+            self,
+            from_=0,
+            to=10,
+            variable=self.mean_window_width_slider_variable,
+            resolution=0.1,
+            orient=tkinter.HORIZONTAL,
+            command=self.mean_window_width_slider_commands,
+        )
+        self.mean_window_width_slider.grid(
+            column=0, row=6, sticky=tkinter.E + tkinter.W, padx=5, pady=5, columnspan=2
+        )
+
+    def mean_window_width_slider_commands(self, event: Any) -> None:
+        window_size = self.mean_window_width_slider_variable.get()
+        self.client.mean_window_width_value.value = window_size
 
     def configure_plot_commands(self):
         self.plot_frame.spectrum_graph_min_db = self.spectrum_graph_min_entry.get()

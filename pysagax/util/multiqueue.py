@@ -13,13 +13,15 @@ It could be modified to take queue.Queue objects as well.
 
 
 class MultiQueue:
-    def __init__(self, queues: Iterable[multiprocessing.Queue[Any]] = []) -> None:
+    def __init__(
+        self, queues: Iterable[multiprocessing.Queue[Any] | queue.Queue[Any]] = []
+    ) -> None:
         manager = multiprocessing.get_context("spawn").Manager()
         self.queues = manager.dict()
         for queue in queues:
             self.add_queue(queue)
 
-    def add_queue(self, queue: multiprocessing.Queue[Any]) -> None:
+    def add_queue(self, queue: multiprocessing.Queue[Any] | queue.Queue[Any]) -> None:
         """
         Add a queue
         """
@@ -27,10 +29,14 @@ class MultiQueue:
             raise ValueError("Input must be a multiprocessing.managers.Queue object")
         self.queues[id(queue)] = queue
 
-    def remove_queue(self, queue: multiprocessing.Queue[Any]) -> None:
+    def remove_queue(
+        self, queue: multiprocessing.Queue[Any] | queue.Queue[Any] | None
+    ) -> None:
         """
         Remove a queue by reference
         """
+        if queue is None:
+            return
         if self.queues.pop(id(queue), None) is None:
             raise ValueError("Queue not found in MultiQueue")
 

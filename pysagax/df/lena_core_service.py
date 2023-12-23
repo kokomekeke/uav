@@ -8,7 +8,7 @@ import socket
 import struct
 import threading
 import time
-from typing import Callable, Optional, Iterable
+from typing import Callable, Iterable, Optional
 
 import numpy as np
 import numpy.typing as npt
@@ -147,6 +147,8 @@ class BaseConnection:
 
     def send_on_socket(self, data: bytes) -> bool:
         try:
+            if self.client_socket is None:
+                raise OSError()
             self.client_socket.send(data)
             return True
         except OSError:  # Bad file descriptor -> client disconnected
@@ -257,7 +259,7 @@ class CoreServiceParser:
                             f"{cs_spectrum_packet.bin_count}f",
                             self.buffer[28 : 28 + cs_spectrum_packet.bin_count * 4],
                         )
-                    )  # type: ignore
+                    )
                     cs_spectrum_packet.azimuth_spectrum = np.asarray(
                         struct.unpack(
                             f"{cs_spectrum_packet.bin_count}f",
@@ -267,7 +269,7 @@ class CoreServiceParser:
                                 )
                             ],
                         )
-                    )  # type: ignore
+                    )
                     cs_spectrum_packet.elevation_spectrum = np.asarray(
                         struct.unpack(
                             f"{cs_spectrum_packet.bin_count}f",
@@ -277,7 +279,7 @@ class CoreServiceParser:
                                 )
                             ],
                         )
-                    )  # type: ignore
+                    )
                     yield cs_spectrum_packet
                     self.buffer = self.buffer[packet_size:]  # drop packet from buffer
                 else:
