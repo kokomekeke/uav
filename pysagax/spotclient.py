@@ -605,9 +605,9 @@ class Client:
         self.command_connection_thread = CommandsConnectionThread(
             self.command_thread_watcher_queue
         )
-        self.command_connection_thread.connect_action = connect_action
-        self.command_connection_thread.connected_action = connected_action
-        self.command_connection_thread.disconnect_action = disconnect_action
+        self.command_connection_thread.connect_callback = connect_action
+        self.command_connection_thread.connected_callback = connected_action
+        self.command_connection_thread.disconnect_callback = disconnect_action
         self.command_connection_thread.host_port = f"{host_address}:12936"
         self.command_connection_thread.start()
 

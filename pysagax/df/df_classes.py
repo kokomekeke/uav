@@ -176,7 +176,7 @@ class LenaCommandThread(BaseConnection, threading.Thread):
         """
         print(data.decode())
 
-    def display_status(self, message: str) -> None:
+    def display_status_callback(self, message: str) -> None:
         print(f"LENA Command Socket: {message}")
 
     def run(self) -> None:

@@ -11,6 +11,9 @@ from pysagax.spot.commands_connection_thread import CommandsConnectionThread
 
 
 class CommandsHandlerThread(threading.Thread):
+    """
+    Asynchronous handling of the CoreService command queue
+    """
     def __init__(
         self,
         conn: CommandsConnectionThread,
@@ -33,6 +36,12 @@ class CommandsHandlerThread(threading.Thread):
     def set_response_handler(
         self, command: str, handler: Callable[[str, list[str]], None]
     ) -> None:
+        """
+        Adds or replaces the response handler callback function for a specific command
+        :param command: the command to set the response handler for (without semicolon)
+        :param handler: callback function (command: str, response: list[str])
+        :return:
+        """
         self.response_handlers[command] = handler
 
     def run(self) -> None:
@@ -51,10 +60,10 @@ class CommandsHandlerThread(threading.Thread):
                     self.status_callback(True, command)
                     response = self.conn.send_command(command)
                     if response is None:
-                        self.timeout_handler(command)
+                        self._timeout_handler(command)
                     else:
                         try:
-                            self.response_handler(command, response)
+                            self._response_handler(command, response)
                         except Exception as e:
                             print(
                                 f"ERROR in command response handler: \n COMMAND: {command} \n RESPONSE: {response}"
@@ -66,10 +75,10 @@ class CommandsHandlerThread(threading.Thread):
                 self.status_callback(False, "")
             time.sleep(0.1)
 
-    def timeout_handler(self, command: str) -> None:
+    def _timeout_handler(self, command: str) -> None:
         self.status_queue.put(f"Command {command} timed out.")
 
-    def response_handler(self, command: str, response: str) -> None:
+    def _response_handler(self, command: str, response: str) -> None:
         response_parts = shlex.split(response)  # response.split(" ")
         error_code = int(response_parts[0])
         for key, handler in self.response_handlers.items():

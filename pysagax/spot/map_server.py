@@ -25,10 +25,10 @@ class MapServer(DFGMapServer):
 
     def cs_packet_handler(self) -> None:
         while self.run_thread:
-            self.read_queue()
+            self._read_queue()
         self.status_queue.put(f"#infoDown")
 
-    def read_queue(self) -> None:
+    def _read_queue(self) -> None:
         data = None
         try:
             while True:
@@ -40,7 +40,7 @@ class MapServer(DFGMapServer):
             traceback.print_tb(e.__traceback__)
             return
         if data is not None:
-            self.handle_packet(data=data)
+            self._handle_packet(data=data)
         time.sleep(1)  # send updates to clients every 1 second
         self.status_queue.put(
             f"#infoUp on port {self.port}, "
@@ -48,7 +48,7 @@ class MapServer(DFGMapServer):
             f"{self.total_packets} packets"
         )
 
-    def handle_packet(self, data: dict[str, Any]) -> None:
+    def _handle_packet(self, data: dict[str, Any]) -> None:
         df_value_mean = data["aggregated_roi_results"]["df_value_mean"]
         if not df_value_mean:
             return

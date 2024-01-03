@@ -167,7 +167,7 @@ class StreamAndCompassProcess(
                 print("Failed to read mp_disconnect.value a second time")
             return True
 
-    def display_status(self, message: str) -> None:
+    def display_status_callback(self, message: str) -> None:
         """
         Display a status message (on the GUI status bar)
         """
