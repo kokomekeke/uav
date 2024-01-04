@@ -3,7 +3,7 @@ import tkinter.font
 from tkinter import ttk
 from typing import Any, Callable, Optional
 
-from pysagax.spot.ui_helpers import en_if
+from pysagax.ui.ui_helpers import en_if
 
 
 class PlaybackTab(ttk.Frame):

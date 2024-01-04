@@ -2,8 +2,8 @@ import threading
 import time
 
 from pysagax.spot.commands_handler_thread import CommandsHandlerThread
-from pysagax.spot.control_frame import ControlFrame
-from pysagax.spot.playback_tab import PlaybackTab
+from pysagax.ui.control_frame import ControlFrame
+from pysagax.ui.playback_tab import PlaybackTab
 
 
 class StatusQueryThread(threading.Thread):

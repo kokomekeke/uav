@@ -16,16 +16,16 @@ from pysagax.heading.heading_manager import HeadingManager
 from pysagax.heading.queue_collector import QueueValueCollector
 from pysagax.spot.commands_connection_thread import CommandsConnectionThread
 from pysagax.spot.commands_handler_thread import CommandsHandlerThread
-from pysagax.spot.connect_frame import ConnectFrame
-from pysagax.spot.control_frame import ControlFrame
 from pysagax.spot.map_server import MapServer
-from pysagax.spot.playback_tab import PlaybackTab
 from pysagax.spot.recording_thread import RecordingThread
-from pysagax.spot.source_select_frame import SourceSelectFrame
-from pysagax.spot.stat_frame import StatFrame
-from pysagax.spot.status_frame import StatusFrame
 from pysagax.spot.status_query_thread import StatusQueryThread
 from pysagax.ui import HeadingSourceFrame
+from pysagax.ui.connect_frame import ConnectFrame
+from pysagax.ui.control_frame import ControlFrame
+from pysagax.ui.playback_tab import PlaybackTab
+from pysagax.ui.source_select_frame import SourceSelectFrame
+from pysagax.ui.stat_frame import StatFrame
+from pysagax.ui.status_frame import StatusFrame
 
 try:
     import tomllib
@@ -41,13 +41,9 @@ from typing import Any, Callable, Literal, Optional
 import numpy as np
 
 import pysagax
-from pysagax import (
-    CoreServiceDebugPacket,
-    CoreServiceEOFPacket,
-    CoreServiceROIResultPacket,
-    CoreServiceSpectrumPacket,
-    StreamAndCompassProcess,
-)
+from pysagax import (CoreServiceDebugPacket, CoreServiceEOFPacket,
+                     CoreServiceROIResultPacket, CoreServiceSpectrumPacket,
+                     StreamAndCompassProcess)
 from pysagax.ui.plot_frame import PlotFrame, PlotSettingsFrame
 from pysagax.util.multiqueue import MultiQueue
 
