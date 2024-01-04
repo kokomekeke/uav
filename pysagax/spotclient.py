@@ -3,874 +3,62 @@
 from __future__ import annotations
 
 import argparse
-import collections
-import math
 import multiprocessing
 import os
 import queue
 import re
 import socket
 import threading
-import time
 import tkinter
-import shlex
+from multiprocessing.managers import ValueProxy
+
 from pysagax.heading.heading_manager import HeadingManager
 from pysagax.heading.queue_collector import QueueValueCollector
-
+from pysagax.spot.commands_connection_thread import CommandsConnectionThread
+from pysagax.spot.commands_handler_thread import CommandsHandlerThread
+from pysagax.spot.connect_frame import ConnectFrame
+from pysagax.spot.control_frame import ControlFrame
+from pysagax.spot.map_server import MapServer
+from pysagax.spot.playback_tab import PlaybackTab
+from pysagax.spot.recording_thread import RecordingThread
+from pysagax.spot.source_select_frame import SourceSelectFrame
+from pysagax.spot.stat_frame import StatFrame
+from pysagax.spot.status_frame import StatusFrame
+from pysagax.spot.status_query_thread import StatusQueryThread
 from pysagax.ui import HeadingSourceFrame
 
 try:
     import tomllib
 except ModuleNotFoundError:
     import tomli as tomllib
+
 import traceback
-from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
 from time import sleep
-from tkinter import font  # #why this it needed?
 from tkinter import ttk
 from typing import Any, Callable, Literal, Optional
 
 import numpy as np
-import pandas as pd
-import scipy
 
 import pysagax
 from pysagax import (
-    BaseConnection,
     CoreServiceDebugPacket,
     CoreServiceEOFPacket,
-    CoreServicePacket,
-    CoreServiceROILackOfSignalPacket,
     CoreServiceROIResultPacket,
     CoreServiceSpectrumPacket,
     StreamAndCompassProcess,
-    PlotFrame,
-    PlotSettingsFrame,
-    EntryWithLabel
 )
+from pysagax.ui.plot_frame import PlotFrame, PlotSettingsFrame
 from pysagax.util.multiqueue import MultiQueue
-from pysagax.ui.sgx_dfg_map_server import DFGMapServer
 
-conf = None
-icon_image = None
-
-
-def en_if(cond: bool) -> Literal["normal", "active", "disabled"]:
-    if cond:
-        return "normal"
-    else:
-        return "disabled"
-
-
-def calculate_df_corrected(df_value, compass_heading, encoder_heading):
-    df_corrected_from_compass = (
-        conf["defaults"]["df_corrected_from_compass"] if conf else True
-    )
-    df_corrected = None
-    if df_value is not None:
-        if df_corrected_from_compass and compass_heading is not None:
-            df_corrected = pysagax.normalize_angle(compass_heading + df_value)
-        if not df_corrected_from_compass and encoder_heading is not None:
-            df_corrected = pysagax.normalize_angle(encoder_heading + df_value)
-    return df_corrected
-
-
-###TODO:REMOVE
-class ExapmleFrame(tkinter.Frame):
-    def __init__(self, master, *args, **kwargs):
-        tkinter.Frame.__init__(self, master, *args, **kwargs)
-
-        self.client = self.master.client  ##???
-
-
-class ConnectFrame(tkinter.Frame):
-    def __init__(self, master, *args, **kwargs):
-        tkinter.Frame.__init__(self, master, *args, **kwargs)
-
-        self.client = self.master.client  ##???
-
-        compass_offset = -1  ##TODO: should be an argument of master.client?
-        encoder_offset = np.pi  ##TODO: should be an argument of master.client?
-
-        self.host_address = tkinter.StringVar(
-            value=(conf["defaults"]["host"] if conf else "")
-        )
-        self.encoder_port_string = tkinter.StringVar(
-            value=(conf["defaults"]["encoder_port"] if conf else "")
-        )
-
-        offset_frame = tkinter.Frame(
-            self,
-        )
-        offset_frame.pack(
-            fill=tkinter.BOTH, expand=False, side=tkinter.LEFT, pady=0, padx=(20, 0)
-        )
-        compass_offset_label_label = tkinter.Label(
-            offset_frame, text="Compass offset: ", font=tkinter.font.Font(size=8)
-        )
-        compass_offset_label_label.grid(column=0, row=0, pady=0)
-        self.compass_offset_label = tkinter.Label(
-            offset_frame,
-            text=f"{(compass_offset * 180 / np.pi):.2f}°",
-            font=tkinter.font.Font(size=8),
-        )
-        self.compass_offset_label.grid(column=1, row=0, pady=0)
-        encoder_offset_label_label = tkinter.Label(
-            offset_frame, text="Encoder offset: ", font=tkinter.font.Font(size=8)
-        )
-        encoder_offset_label_label.grid(column=0, row=1, pady=0)
-        self.encoder_offset_label = tkinter.Label(
-            offset_frame,
-            text=f"{(encoder_offset * 180 / np.pi):.2f}°",
-            font=tkinter.font.Font(size=8),
-        )
-        self.encoder_offset_label.grid(column=1, row=1, pady=0)
-
-        self.set_offset_button = tkinter.Button(
-            self, text="Set offsets", command=self.set_offsets
-        )
-        self.set_offset_button.pack(side=tkinter.LEFT)
-
-        host_label = tkinter.Label(self, text="Spectrum channel:")
-        host_label.pack(
-            side=tkinter.LEFT, fill=tkinter.NONE, padx=(20, 5), pady=10, expand=False
-        )
-
-        # self.channel_spectrum_combo_string =
-        self.channel_spectrum_combo = ttk.Combobox(self, width=1)
-        self.channel_spectrum_combo["values"] = [0, 1, 2, 3]
-        self.channel_spectrum_combo.pack(side=tkinter.LEFT)
-        self.channel_spectrum_combo.bind(
-            "<<ComboboxSelected>>", self.choose_spectrum_commands
-        )
-        self.channel_spectrum_combo.configure(state="disabled")
-
-        host_label = tkinter.Label(self, text="Host:")
-        host_label.pack(
-            side=tkinter.LEFT, fill=tkinter.NONE, padx=(60, 5), pady=10, expand=False
-        )
-
-        self.host_entry = tkinter.Entry(self, textvariable=self.host_address, width=15)
-        self.host_entry.pack(side=tkinter.LEFT, padx=5, expand=False)
-
-        encoder_port_label = tkinter.Label(self, text="Encoder port:")
-        encoder_port_label.pack(
-            side=tkinter.LEFT, fill=tkinter.BOTH, padx=(10, 5), pady=10, expand=False
-        )
-
-        self.encoder_port_entry = tkinter.Entry(
-            self, textvariable=self.encoder_port_string, width=8
-        )
-        self.encoder_port_entry.pack(side=tkinter.LEFT, padx=5, expand=False)
-        self.icon_frame = tkinter.Frame(self, width=32, height=32)
-        self.icon_frame.place(anchor="center", relx=0.5, rely=0.5)
-        self.icon_frame.pack_propagate(False)
-        self.icon_frame.pack(side=tkinter.RIGHT)
-        global icon_image
-        self.icon_label = tkinter.Label(self.icon_frame, image=icon_image)
-        self.icon_label.pack()
-
-        self.disconnect_button = tkinter.Button(
-            self, text="Disconnect", command=self.master.disconnect_commands
-        )
-        self.disconnect_button.pack(side=tkinter.RIGHT, padx=5, pady=5)
-        self.disconnect_button.configure(state="disabled")
-
-        self.connect_button = tkinter.Button(
-            self, text="Connect", command=self.master.connect_commands
-        )
-        self.connect_button.pack(side=tkinter.RIGHT)
-
-    def set_offsets(self):
-        pass  # TODO
-
-    def choose_spectrum_commands(self, event):
-        self.client.send_commands(
-            f"DEBUG:SpectrumChannel! {self.channel_spectrum_combo.current()};"
-        )
-
-
-class StatusFrame(tkinter.Frame):
-    def __init__(self, master, *args, **kwargs):
-        tkinter.Frame.__init__(self, master, *args, **kwargs)
-
-        self.status_command_string = tkinter.StringVar(value="Not connected")
-        self.status_stream_string = tkinter.StringVar(value="Not connected")
-        self.status_compass_string = tkinter.StringVar(value="Not connected")
-        self.status_map_server_string = tkinter.StringVar(value="Down")
-
-        status_command_label_label = tkinter.Label(
-            self,
-            text="Command:",
-            font=tkinter.font.Font(weight=tkinter.font.BOLD, size=10),
-        )
-        status_command_label_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
-
-        self.status_command_label = tkinter.Label(
-            self,
-            textvariable=self.status_command_string,
-            font=tkinter.font.Font(size=10),
-        )
-        self.status_command_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
-
-        status_stream_label_label = tkinter.Label(
-            self,
-            text="Stream:",
-            font=tkinter.font.Font(weight=tkinter.font.BOLD, size=10),
-        )
-        status_stream_label_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
-
-        self.status_stream_label = tkinter.Label(
-            self,
-            textvariable=self.status_stream_string,
-            font=tkinter.font.Font(size=10),
-        )
-        self.status_stream_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
-
-        status_compass_label_label = tkinter.Label(
-            self,
-            text="GPS/Compass:",
-            font=tkinter.font.Font(weight=tkinter.font.BOLD, size=10),
-        )
-        status_compass_label_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
-
-        self.status_compass_label = tkinter.Label(
-            self,
-            textvariable=self.status_compass_string,
-            font=tkinter.font.Font(size=10),
-        )
-        self.status_compass_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
-
-        status_map_server_label_label = tkinter.Label(
-            self,
-            text="Map server:",
-            font=tkinter.font.Font(weight=tkinter.font.BOLD, size=10),
-        )
-        status_map_server_label_label.pack(
-            side=tkinter.LEFT, padx=5, pady=10, anchor="w"
-        )
-
-        self.status_map_server_label = tkinter.Label(
-            self,
-            textvariable=self.status_map_server_string,
-            font=tkinter.font.Font(size=10),
-        )
-        self.status_map_server_label.pack(
-            side=tkinter.LEFT, padx=5, pady=10, anchor="w"
-        )
-        self.map_server_button = tkinter.Button(
-            self,
-            text="DFGS",
-            command=self.map_server_button_commands,
-        )
-        self.map_server_button.pack(side=tkinter.RIGHT)
-        self.map_server_start_callable: Optional[Callable[[], None]] = None
-        self.map_server_stop_callable: Optional[Callable[[], None]] = None
-
-    def map_server_button_commands(self) -> None:
-        if self.map_server_button.config("relief")[-1] == "sunken":
-            self.map_server_button.config(relief="raised")
-            self.map_server_stop_callable()
-        else:
-            self.map_server_button.config(relief="sunken")
-            self.map_server_start_callable()
-
-
-class SourceSelectFrame(tkinter.Frame):
-    def __init__(self, master, *args, **kwargs):
-        tkinter.Frame.__init__(self, master, *args, **kwargs)
-
-        self.client: Client = self.master.master.master.client  ##??? todo
-        self.source_file_path_string = tkinter.StringVar(value="")
-
-        self.columnconfigure(0, weight=2)
-        self.columnconfigure(1, weight=1)
-        self.columnconfigure(2, weight=2)
-        self.columnconfigure(3, weight=1)
-        self.source_combo = ttk.Combobox(self, width=12)
-        self.source_combo["values"] = ["USRP", "Generator", "Recording"]
-        self.source_combo.current(0)
-        self.source_combo.grid(
-            column=0, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5
-        )
-        self.source_combo.bind("<<ComboboxSelected>>", self.source_combo_update)
-
-        self.source_file_path_combo = ttk.Combobox(
-            self, textvariable=self.source_file_path_string, width=11, state="disabled"
-        )
-        self.source_file_path_combo.grid(
-            column=1, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5, columnspan=3
-        )
-
-        self.configure_button = tkinter.Button(
-            self, text="Set Source", command=self.configure_commands
-        )
-        self.configure_button.grid(
-            column=3, row=5, padx=10, pady=5, sticky=tkinter.E + tkinter.W
-        )
-        self.configure_button.configure(state="disabled")
-
-    def configure_commands(self):
-        default_source_file_path = "/home/sagax/Generator/"
-        if self.source_combo.current() == 1:
-            source_file_path = default_source_file_path
-        else:
-            source_file_path = self.source_file_path_string.get()
-
-        kwargs = {
-            "from_file": self.source_combo.current() != 0,
-            "source_file_path": source_file_path,
-        }
-        self.client.do_set_source(**kwargs)
-
-    def source_combo_update(self, event):
-        if self.source_combo.current() == 2:
-            self.source_file_path_combo.config(state="enabled")
-        else:
-            self.source_file_path_combo.config(state="disabled")
-
-
-class ControlFrame(tkinter.Frame):
-    def __init__(self, master, *args, **kwargs):
-        tkinter.Frame.__init__(self, master, *args, **kwargs)
-
-        self.client: Client = self.master.master.master.client  ##??? todo
-
-        self.path_string = tkinter.StringVar(value="No Source")
-
-        self.bin_count_string = tkinter.StringVar(
-            value=(conf["defaults"]["bin_count"] if conf else "")
-        )
-        self.source_file_path_string = tkinter.StringVar(value="")
-
-        self.mean_window_width_slider_variable = tkinter.DoubleVar(
-            value=conf["stats"]["mean_window_width_seconds"] if conf else 0
-        )
-
-        self.columnconfigure(0, weight=2)
-        self.columnconfigure(1, weight=1)
-        self.columnconfigure(2, weight=2)
-        self.columnconfigure(3, weight=1)
-
-        path_label = ttk.Label(self, textvariable=self.path_string)
-        path_label.grid(column=0, row=0, columnspan=4, padx=5, pady=5)
-
-        self.freq_entry = EntryWithLabel(
-            self, "Frequency:", 0, 1, (conf["defaults"]["center_freq"] if conf else "")
-        )
-
-        self.bw_entry = EntryWithLabel(
-            self, "Bandwidth:", 0, 2, (conf["defaults"]["bandwith"] if conf else "")
-        )
-
-        self.gain_entry = EntryWithLabel(
-            self, "USRP Gain:", 0, 3, (conf["defaults"]["gain"] if conf else "")
-        )
-
-        bin_count_entry_label = ttk.Label(
-            self, text="Bin count:"
-        )  # TODO:separate bin count and burst stride setting?
-        bin_count_entry_label.grid(column=0, row=4, sticky=tkinter.W, padx=5, pady=5)
-
-        bin_count_combo = ttk.Combobox(
-            self, textvariable=self.bin_count_string, width=11
-        )
-        bin_count_combo["values"] = [
-            # Virgin monetary scale values.
-            200,
-            500,
-            1000,
-            2000,
-            5000,
-            10000,
-            # Chad power of 2 values.
-            0x80,
-            0x100,
-            0x200,
-            0x400,
-            0x800,
-            0x1000,
-            0x2000,
-            0x4000,
-            0x8000,
-            0x10000,
-            0x20000,
-            0x40000,
-            0x80000,
-        ]
-        bin_count_combo.grid(
-            column=1, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5
-        )
-
-        self.roi_center_entry = EntryWithLabel(
-            self,
-            "ROI center freq:",
-            2,
-            1,
-            (conf["defaults"]["roi_center"] if conf else ""),
-        )
-
-        self.roi_span_entry = EntryWithLabel(
-            self, "ROI span:", 2, 2, (conf["defaults"]["roi_span"] if conf else "")
-        )
-
-        self.roi_threshold_entry = EntryWithLabel(
-            self,
-            "ROI threshold:",
-            2,
-            3,
-            (conf["defaults"]["roi_threshold"] if conf else ""),
-        )
-
-        self.burst_stride_entry = EntryWithLabel(
-            self,
-            "Burst stride:",
-            2,
-            4,
-            (conf["defaults"]["burst_stride"] if conf else ""),
-        )
-        self.mean_window_width_slider = tkinter.Scale(
-            self,
-            from_=0,
-            to=10,
-            variable=self.mean_window_width_slider_variable,
-            resolution=0.1,
-            orient=tkinter.HORIZONTAL,
-            command=self.mean_window_width_slider_commands,
-        )
-        self.mean_window_width_slider.grid(
-            column=0, row=5, sticky=tkinter.E + tkinter.W, padx=5, pady=5, columnspan=2
-        )
-
-        self.configure_button = tkinter.Button(
-            self, text="Configure", command=self.configure_commands
-        )
-        self.configure_button.grid(
-            column=3, row=5, padx=10, pady=5, sticky=tkinter.E + tkinter.W
-        )
-        self.configure_button.configure(state="disabled")
-
-    def path_update(self, path: list[str]) -> None:
-        self.path_string.set(
-            " - ".join(
-                part.replace("recording.sigmf-collection", "") for part in path[1:]
-            )
-        )
-        if path[1].strip('"') == "UHD":
-            self.freq_entry.config(state="enabled")
-            self.bw_entry.config(state="enabled")
-            self.gain_entry.config(state="enabled")
-        else:
-            self.freq_entry.config(state="disabled")
-            self.bw_entry.config(state="disabled")
-            self.gain_entry.config(state="disabled")
-
-    def configure_commands(self):
-        kwargs = {
-            "freq": pysagax.si_to_float(self.freq_entry.get()),
-            "bw": pysagax.si_to_float(self.bw_entry.get()),
-            "gain": self.gain_entry.get(),
-            "bin_count": self.bin_count_string.get(),
-            "burst_stride": self.burst_stride_entry.get(),
-            "roi_center": pysagax.si_to_float(self.roi_center_entry.get()),
-            "roi_span": pysagax.si_to_float(self.roi_span_entry.get()),
-            "roi_threshold": self.roi_threshold_entry.get(),
-        }
-        self.client.do_configuration(**kwargs)
-
-    def mean_window_width_slider_commands(self, event):
-        window_size = self.mean_window_width_slider_variable.get()
-        self.client.mean_window_width_value.value = window_size
-
-
-class StatFrame(tkinter.Frame):
-    def __init__(self, master, *args, **kwargs):
-        tkinter.Frame.__init__(self, master, *args, **kwargs)
-
-        self.client = self.master.master.client  ##???
-
-        self.df_value_string = tkinter.StringVar(value="NaN")
-        self.df_value_mean_string = tkinter.StringVar(value="NaN")
-        self.df_value_deviation_string = tkinter.StringVar(value="NaN")
-        # self.df_value_rms_string = tkinter.StringVar(value="NaN")
-        self.df_elev_string = tkinter.StringVar(value="NaN")
-        self.df_elev_mean_string = tkinter.StringVar(value="NaN")
-        self.df_elev_deviation_string = tkinter.StringVar(value="NaN")
-
-        self.quality_value_string = tkinter.StringVar(value="NaN")
-        self.snr_string = tkinter.StringVar(value="NaN")
-
-        self.columnconfigure(0, weight=1)
-        self.columnconfigure(1, weight=1)
-        self.columnconfigure(2, weight=1)
-        self.columnconfigure(3, weight=1)
-
-        disp_font = tkinter.font.Font(family="serif", size=14)
-
-        angle_label = ttk.Label(self, text="angle:")
-        angle_label.grid(column=1, row=0, sticky=tkinter.W, padx=5, pady=5)
-        mean_label = ttk.Label(self, text="mean:")
-        mean_label.grid(column=2, row=0, sticky=tkinter.W, padx=5, pady=5)
-        deviation_label = ttk.Label(self, text="deviation:")
-        deviation_label.grid(column=3, row=0, sticky=tkinter.W, padx=5, pady=5)
-
-        df_value_label = ttk.Label(self, text="DF angle:")
-        df_value_label.grid(column=0, row=1, sticky=tkinter.W, padx=5, pady=5)
-        df_value_disp = ttk.Label(
-            self,
-            textvariable=self.df_value_string,
-            font=disp_font,
-            foreground="red",
-            background="yellow",
-        )
-        df_value_disp.grid(
-            column=1, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=3
-        )
-        df_value_mean_disp = ttk.Label(
-            self,
-            textvariable=self.df_value_mean_string,
-            font=disp_font,
-            foreground="red",
-            background="yellow",
-        )
-        df_value_mean_disp.grid(
-            column=2, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=3
-        )
-        df_value_deviation_disp = ttk.Label(
-            self,
-            textvariable=self.df_value_deviation_string,
-            font=disp_font,
-            foreground="red",
-            background="yellow",
-        )
-        df_value_deviation_disp.grid(
-            column=3, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=3
-        )
-
-        df_elev_label = ttk.Label(self, text="DF elevation:")
-        df_elev_label.grid(column=0, row=2, sticky=tkinter.W, padx=5, pady=5)
-        df_elev_disp = ttk.Label(
-            self,
-            textvariable=self.df_elev_string,
-            font=disp_font,
-            foreground="red",
-            background="yellow",
-        )
-        df_elev_disp.grid(column=1, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
-        df_elev_mean_disp = ttk.Label(
-            self,
-            textvariable=self.df_elev_mean_string,
-            font=disp_font,
-            foreground="red",
-            background="yellow",
-        )
-        df_elev_mean_disp.grid(
-            column=2, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=3
-        )
-        df_elev_deviation_disp = ttk.Label(
-            self,
-            textvariable=self.df_elev_deviation_string,
-            font=disp_font,
-            foreground="red",
-            background="yellow",
-        )
-        df_elev_deviation_disp.grid(
-            column=3, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=3
-        )
-
-        quality_value_label = ttk.Label(self, text="Signal quality:")
-        quality_value_label.grid(column=0, row=3, sticky=tkinter.W, padx=5, pady=5)
-        quality_value_disp = ttk.Label(
-            self,
-            textvariable=self.quality_value_string,
-            font=disp_font,
-            foreground="red",
-            background="yellow",
-        )
-        quality_value_disp.grid(
-            column=1, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=3
-        )
-
-        snr_label = ttk.Label(self, text="SNR:")
-        snr_label.grid(column=2, row=3, sticky=tkinter.W, padx=5, pady=5)
-        snr_disp = ttk.Label(
-            self,
-            textvariable=self.snr_string,
-            font=disp_font,
-            foreground="red",
-            background="yellow",
-        )
-        snr_disp.grid(column=3, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
-
-        self.peak_chart = tkinter.Canvas(
-            self,
-            bg="white",
-            bd=0,
-            highlightthickness=2,
-            highlightbackground="black",
-            height=59,
-        )
-        self.peak_chart.grid(
-            column=0, row=4, columnspan=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5
-        )
-        self.peak_bars = [
-            self.peak_chart.create_rectangle(2, 2, 100, 14, fill="yellow"),
-            self.peak_chart.create_rectangle(2, 17, 100, 29, fill="dodger blue"),
-            self.peak_chart.create_rectangle(2, 32, 100, 44, fill="green"),
-            self.peak_chart.create_rectangle(2, 47, 100, 59, fill="red"),
-        ]
-        self.peak_texts = [
-            self.peak_chart.create_text(
-                30, 8, text="32555", fill="black", font=("Helvetica 7 bold")
-            ),
-            self.peak_chart.create_text(
-                30, 23, text="32555", fill="black", font=("Helvetica 7 bold")
-            ),
-            self.peak_chart.create_text(
-                30, 38, text="32555", fill="black", font=("Helvetica 7 bold")
-            ),
-            self.peak_chart.create_text(
-                30, 53, text="32555", fill="black", font=("Helvetica 7 bold")
-            ),
-        ]
-
-    def update_peak_plot(self, peaks: list) -> None:
-        """
-        Updates the bar plots for peak values.
-        """
-        max_width = self.peak_chart.winfo_width()
-        adc_resolution = 2**15 - 1
-
-        peaks = [int(peak) for peak in peaks]
-        peaks_dbfs = [
-            20 * math.log10(peak / adc_resolution) if peak > 0 else float("-inf")
-            for peak in peaks
-        ]
-        min_dbfs_level = 20 * math.log10(
-            400 / adc_resolution
-        )  # min value of the scale (aprox. noise level)
-        bar_widths = [
-            2 + (1 - peak / min_dbfs_level) * (max_width - 4)
-            if peak != float("-inf")
-            else 0
-            for peak in peaks_dbfs
-        ]  # logarithmic scaling
-
-        self.peak_chart.coords(self.peak_bars[0], 2, 2, bar_widths[0], 14)
-        self.peak_chart.coords(self.peak_bars[1], 2, 17, bar_widths[1], 29)
-        self.peak_chart.coords(self.peak_bars[2], 2, 32, bar_widths[2], 44)
-        self.peak_chart.coords(self.peak_bars[3], 2, 47, bar_widths[3], 59)
-
-        for i in range(4):
-            text = re.sub(
-                r"^-(0\.?0*)$", r"\1", f"{peaks_dbfs[i]:.0f}"
-            )  # formatting numbers rounded to -0 to +0
-            self.peak_chart.itemconfig(self.peak_texts[i], text=text)
-
-    def update_stats(self, latest_roi_results, aggregated_roi_results):
-        rad_to_deg = lambda x: pysagax.normalize_angle(
-            x * 180 / np.pi, high=360.0, low=0.0
-        )
-
-        self.df_value_string.set(f"{rad_to_deg(latest_roi_results['df_value']):.2f}°")
-        self.df_value_mean_string.set(
-            f"{rad_to_deg(aggregated_roi_results['df_value_mean']):.2f}°"
-        )
-        self.df_value_deviation_string.set(
-            f"{rad_to_deg(aggregated_roi_results['df_value_std']):.2f}°"
-        )
-
-        self.df_elev_string.set(
-            f"{rad_to_deg(latest_roi_results['df_elevation']):.2f}°"
-        )
-        self.df_elev_mean_string.set(
-            f"{rad_to_deg(aggregated_roi_results['df_elevation_mean']):.2f}°"
-        )
-        self.df_elev_deviation_string.set(
-            f"{rad_to_deg(aggregated_roi_results['df_elevation_std']):.2f}°"
-        )
-
-
-class StatusQueryThread(threading.Thread):
-    def source_length_handler(self, cmd: str, resp: list[str]) -> None:
-        if resp[0] == "0":
-            source_length = int(resp[1])
-            self.pb_tab.position_slider.configure(to=source_length)
-
-    def source_position_handler(self, cmd: str, resp: list[str]) -> None:
-        if resp[0] == "0":
-            self.pb_tab.position_variable.set(int(resp[1]))
-
-    def source_path_handler(self, cmd: str, resp: list[str]) -> None:
-        self.ct_tab.path_update(resp)
-
-    def source_status_handler(self, cmd: str, resp: list[str]) -> None:
-        self.pb_tab.source_configured = True if int(resp[1]) else False
-        self.pb_tab.source_running = True if int(resp[2]) else False
-        self.pb_tab.set_buttons_enabled()
-
-    def recording_status_handler(self, cmd: str, resp: list[str]) -> None:
-        rec_activated = True if int(resp[1]) else False
-        rec_running = True if int(resp[2]) else False
-        self.pb_tab.rec_status_string.set(
-            "🟣"
-            if (not rec_activated) and (not rec_running)
-            else "🟢"
-            if rec_activated and (not rec_running)
-            else "🟠"
-            if rec_activated and rec_running
-            else "❓"
-        )
-        self.pb_tab.rec_status_label.configure(
-            fg=(
-                "Aqua"
-                if (not rec_activated) and (not rec_running)
-                else "LimeGreen"
-                if rec_activated and (not rec_running)
-                else "Red"
-                if rec_activated and rec_running
-                else "Red"
-            )
-        )
-
-    def __init__(
-        self, comm: CommandsHandlerThread, pb_tab: PlaybackTab, ct_tab: ControlFrame
-    ) -> None:
-        super().__init__(daemon=True)
-        self.comm = comm
-        self.pb_tab = pb_tab
-        self.ct_tab = ct_tab
-        self.comm.set_response_handler("SOURCE:Status?", self.source_status_handler)
-        self.comm.set_response_handler(
-            "RECORDING:Status?", self.recording_status_handler
-        )
-        self.comm.set_response_handler("SOURCE:Length?", self.source_length_handler)
-        self.comm.set_response_handler("SOURCE:Position?", self.source_position_handler)
-        self.comm.set_response_handler("SOURCE:Path?", self.source_path_handler)
-
-    def run(self) -> None:
-        while self.comm.is_alive():
-            if not self.pb_tab.working:
-                self.comm.enqueue_commands(
-                    "SOURCE:Status?;RECORDING:Status?;SOURCE:Length?;SOURCE:Position?;SOURCE:Path?;"
-                )
-            time.sleep(0.2)
-
-
-class PlaybackTab(ttk.Frame):
-    def set_buttons_enabled(self) -> None:
-        self.start_button.configure(
-            state=en_if(
-                self.connected
-                and (not self.working)
-                and self.source_configured
-                and (not self.source_running)
-            )
-        )
-        self.rec_button.configure(
-            state=en_if(
-                self.connected and (not self.working) and self.source_configured
-            )
-        )
-        self.stop_button.configure(
-            state=en_if(self.connected and (not self.working) and self.source_running)
-        )
-        self.abort_button.configure(state=en_if(self.connected and self.working))
-
-    def __init__(self, master: tkinter.Misc, client: Client) -> None:
-        super().__init__(master)
-        self.position_variable = tkinter.DoubleVar()
-        self.status_string = tkinter.StringVar(value="Idle")
-        self.rec_status_string = tkinter.StringVar(value="🟣️")
-
-        self.client = client
-        self.connected: bool = False
-        self.working: bool = False
-        self.source_configured: bool = False
-        self.source_running: bool = False
-
-        self.position_slider = tkinter.Scale(
-            self,
-            from_=0,
-            to=1,
-            variable=self.position_variable,
-            orient=tkinter.HORIZONTAL,
-            command=self.position_commands,
-        )
-        self.position_slider.pack(side=tkinter.TOP, expand=True, fill=tkinter.X)
-        self.start_button = tkinter.Button(self, text="▶️", command=self.start_commands)
-        self.start_button.pack(side=tkinter.LEFT)
-        self.rec_button = tkinter.Button(self, text="⏺️️", command=self.rec_commands)
-        self.rec_button.pack(side=tkinter.LEFT)
-        self.rec_status_label = tkinter.Label(
-            self,
-            textvariable=self.rec_status_string,
-            font=tkinter.font.Font(size=16),
-            fg="#ccc",
-        )
-        self.rec_status_label.pack(side=tkinter.LEFT, expand=False)
-        self.stop_button = tkinter.Button(self, text="⏹️", command=self.stop_commands)
-        self.stop_button.pack(side=tkinter.LEFT)
-        self.repeat_button = tkinter.Button(
-            self, text="🔃", command=self.repeat_commands
-        )
-        self.repeat_button.pack(side=tkinter.LEFT)
-        self.status_label = tkinter.Label(
-            self,
-            textvariable=self.status_string,
-            font=tkinter.font.Font(size=8),
-        )
-        self.status_label.pack(side=tkinter.LEFT)
-        self.abort_button = tkinter.Button(self, text="⛔", command=self.abort_commands)
-        self.abort_button.pack(side=tkinter.RIGHT)
-
-        self.start_button.configure(state="disabled")
-        self.rec_button.configure(state="disabled")
-        self.stop_button.configure(state="disabled")
-        self.abort_button.configure(state="disabled")
-
-    def command_status_callback(self, working: bool, current_cmd: str) -> None:
-        if "?" in current_cmd:
-            self.working = False
-        else:
-            self.working = working
-        self.set_buttons_enabled()
-        self.status_string.set(current_cmd)
-
-    def position_commands(self, event: typing.Any) -> None:
-        self.client.command_thread.enqueue_commands(
-            f"SOURCE:Position! {self.position_variable.get()}"
-        )
-
-    def start_commands(self) -> None:
-        self.client.command_thread.enqueue_commands("SOURCE:Start!")
-
-    def rec_commands(self) -> None:
-        if self.client.recording_started:
-            self.client.stop_recording()
-            self.rec_button.config(relief="raised")
-        else:
-            self.client.start_recording()
-            self.rec_button.config(relief="sunken")
-
-    def stop_commands(self) -> None:
-        self.client.command_thread.enqueue_commands("SOURCE:Stop!")
-
-    def repeat_commands(self) -> None:
-        if self.client.repeat_playback:
-            self.client.repeat_playback = False
-            self.repeat_button.config(relief="raised")
-        else:
-            self.client.repeat_playback = True
-            self.repeat_button.config(relief="sunken")
-
-    def abort_commands(self) -> None:
-        self.client.command_thread.abort_commands()
+conf: Optional[dict[str, Any]] = None
+icon_image: Optional[tkinter.PhotoImage] = None
+root: Optional[tkinter.Misc] = None
+ex: Optional[Client] = None
 
 
 class ClientWindow(tkinter.Frame):
-    def __init__(self, client: Client, root):
+    def __init__(self, client: Client, root) -> None:
         self.do_stop = False
 
         # aggregated and current roi results, coming from StreaAndCompassProcess
@@ -880,7 +68,10 @@ class ClientWindow(tkinter.Frame):
             "df_elevation_mean": None,
             "df_elevation_std": None,
         }
-        self.latest_roi_resutls = {"df_value": None, "df_elevation": None}
+        self.latest_roi_resutls: dict[str, Optional[float]] = {
+            "df_value": None,
+            "df_elevation": None,
+        }
         self.compass_angle = None
         self.compass_heading = None  # compass angle corrected with offset
         self.encoder_angle = None
@@ -891,12 +82,25 @@ class ClientWindow(tkinter.Frame):
 
         self.client = client  # The GUI communicates with other components of the client through this reference
 
-        self.status_frame = StatusFrame(self, relief=tkinter.RAISED, borderwidth=1)
+        self.status_frame = StatusFrame(
+            master=self,
+            map_server_start_callable=self.client.start_dfg_map_server,
+            map_server_stop_callable=self.client.stop_dfg_map_server,
+            relief=tkinter.RAISED,
+            borderwidth=1,
+        )
         self.status_frame.pack(fill=tkinter.BOTH, side=tkinter.BOTTOM, expand=False)
-        self.status_frame.map_server_start_callable = self.client.start_dfg_map_server
-        self.status_frame.map_server_stop_callable = self.client.stop_dfg_map_server
 
-        self.connect_frame = ConnectFrame(self, relief=tkinter.RAISED, borderwidth=1)
+        self.connect_frame = ConnectFrame(
+            master=self,
+            conf=conf,
+            send_commands_function=self.client.send_commands,
+            connect_commands_function=self.connect_commands,
+            disconnect_commands_function=self.disconnect_commands,
+            logo_image=icon_image,
+            relief=tkinter.RAISED,
+            borderwidth=1,
+        )
         self.connect_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
 
         self.plot_frame = PlotFrame(self, conf, root)
@@ -907,11 +111,19 @@ class ClientWindow(tkinter.Frame):
         self.plot_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
         self.left_notebook = ttk.Notebook(self.bottom_frame)
         self.source_select_frame = SourceSelectFrame(
-            self.left_notebook, relief=tkinter.RAISED, borderwidth=1
+            master=self.left_notebook,
+            conf=conf,
+            do_select_source_function=self.client.do_set_source_params,
+            relief=tkinter.RAISED,
+            borderwidth=1,
         )
         self.left_notebook.add(self.source_select_frame, text="Source Select")
         self.control_frame = ControlFrame(
-            self.left_notebook, relief=tkinter.RAISED, borderwidth=1
+            master=self.left_notebook,
+            conf=conf,
+            do_configuration_function=self.client.do_configuration_params,
+            relief=tkinter.RAISED,
+            borderwidth=1,
         )
         self.left_notebook.add(self.control_frame, text="Configuration")
         self.plot_settings_frame = PlotSettingsFrame(
@@ -922,11 +134,23 @@ class ClientWindow(tkinter.Frame):
             borderwidth=1,
         )
         self.left_notebook.add(self.plot_settings_frame, text="Plot Settings")
-        self.heading_source_frame = HeadingSourceFrame(self.left_notebook, self.client.heading_manager)
+        self.heading_source_frame = HeadingSourceFrame(
+            self.left_notebook, self.client.heading_manager
+        )
         self.left_notebook.add(self.heading_source_frame, text="Heading&GPS")
         self.left_notebook.pack(fill=tkinter.BOTH, expand=False, side=tkinter.LEFT)
         self.center_notebook = ttk.Notebook(self.bottom_frame)
-        self.playback_tab = PlaybackTab(self.center_notebook, client)
+        self.playback_tab = PlaybackTab(
+            master=self.center_notebook,
+            send_commands_function=self.client.send_commands,
+        )
+        self.playback_tab.start_local_recording_function = (
+            self.client.start_local_recording
+        )
+        self.playback_tab.stop_local_recording_function = (
+            self.client.stop_local_recording
+        )
+        self.playback_tab.abort_commands_function = self.client.abort_commands
         self.status_info_tab = ttk.Frame(self.center_notebook)
         self.stream_packets_tab = ttk.Frame(self.center_notebook)
         self.center_notebook.add(self.playback_tab, text="Playback")
@@ -960,7 +184,7 @@ class ClientWindow(tkinter.Frame):
         )
 
         self.stat_frame = StatFrame(
-            self.bottom_frame, relief=tkinter.RAISED, borderwidth=1, width=600
+            master=self.bottom_frame, relief=tkinter.RAISED, borderwidth=1, width=600
         )
         self.stat_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.RIGHT)
 
@@ -969,7 +193,7 @@ class ClientWindow(tkinter.Frame):
         )
         self.packet_handler_thread.start()
 
-    def gui_packet_handler(self):
+    def gui_packet_handler(self) -> None:
         while not self.do_stop:
             try:
                 data = self.client.stream_to_gui_queue.get(timeout=0.2)
@@ -1042,7 +266,7 @@ class ClientWindow(tkinter.Frame):
                 traceback.print_tb(e.__traceback__)
                 return
 
-    def command_status_msg_handler(self, message: str):
+    def command_status_msg_handler(self, message: str) -> None:
         if message.startswith("#info"):
             message = message[len("#info") :]
         elif message.startswith("#action"):
@@ -1054,7 +278,7 @@ class ClientWindow(tkinter.Frame):
             self.set_command_status(message)
         self.info_update_handler(message, "Command Thread")
 
-    def stream_status_msg_handler(self, message: str):
+    def stream_status_msg_handler(self, message: str) -> None:
         if message.startswith("#encoder"):
             message = message[len("#encoder") :]
             self.info_update_handler(message, source="Encoder")
@@ -1067,7 +291,7 @@ class ClientWindow(tkinter.Frame):
             self.info_update_handler(message, source="Stream Process")
         # TODO: update compass end map server in status_frame
 
-    def recording_status_msg_handler(self, message: str):
+    def recording_status_msg_handler(self, message: str) -> None:
         # if message.startswith("#info"):
         #     message = message[len("#info") :]
         # elif message.startswith("#action"):
@@ -1077,7 +301,7 @@ class ClientWindow(tkinter.Frame):
         #         return
         self.info_update_handler(message, "Recording Thread")
 
-    def map_server_status_msg_handler(self, message: str):
+    def map_server_status_msg_handler(self, message: str) -> None:
         if message.startswith("#info"):
             message = message[len("#info") :]
             self.status_frame.status_map_server_string.set(message)
@@ -1096,7 +320,7 @@ class ClientWindow(tkinter.Frame):
         except:
             pass  ##TODO: when exiting, this gets called after the window no longer exists
 
-    def connect_commands(self):
+    def connect_commands(self, host_address: str) -> None:
         host_address = self.connect_frame.host_address.get()
         encoder_port = self.connect_frame.encoder_port_string.get()
         self.client.connect_commands(
@@ -1107,10 +331,10 @@ class ClientWindow(tkinter.Frame):
             encoder_port,
         )
 
-    def disconnect_commands(self):
+    def disconnect_commands(self) -> None:
         self.client.disconnect_commands()
 
-    def get_recording_paths(self):
+    def get_recording_paths(self) -> None:
         try:
             path_list = b""
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -1123,9 +347,11 @@ class ClientWindow(tkinter.Frame):
                     if not data:
                         break
                     path_list += data
-            path_list = path_list.decode().split()
-            path_list = sorted([path.strip() for path in path_list])
-            self.source_select_frame.source_file_path_combo["values"] = path_list
+            path_list_split = path_list.decode().split()
+            path_list_stripped = sorted([path.strip() for path in path_list_split])
+            self.source_select_frame.source_file_path_combo[
+                "values"
+            ] = path_list_stripped
         except Exception as e:
             print("[Updating recording paths]", e)
 
@@ -1170,11 +396,14 @@ class ClientWindow(tkinter.Frame):
         except:
             pass  # it might happen when closing the window
         try:
-            self.plot_frame.animation.event_source.stop()
+            if self.plot_frame.animation is not None:
+                self.plot_frame.animation.event_source.stop()
         except Exception as e:
             pass
 
-    def info_update_handler(self, update_string: str | list[str], source: str = None):
+    def info_update_handler(
+        self, update_string: str | list[str], source: Optional[str] = None
+    ) -> None:
         if self.do_stop:  # this might happen when closing the window
             return
         if not isinstance(update_string, list):
@@ -1187,7 +416,7 @@ class ClientWindow(tkinter.Frame):
             self.status_info_lb.see(tkinter.END)
             print(datetime.now().strftime("%m.%d. %H:%M:%S"), line)
 
-    def calculate_snr(self, packet: CoreServiceSpectrumPacket) -> (float, float):
+    def calculate_snr(self, packet: CoreServiceSpectrumPacket) -> tuple[float, float]:
         min_freq = packet.center_frequency - packet.iq_rate / 2
         max_freq = packet.center_frequency + packet.iq_rate / 2
         bin_freqs = np.linspace(min_freq, max_freq, packet.bin_count)
@@ -1211,360 +440,15 @@ class ClientWindow(tkinter.Frame):
         return signal_db, noise_db
 
 
-class RecordingThread(threading.Thread):
-    def __init__(
-        self, cs_packet_queue: queue.Queue, status_queue: queue.Queue[str]
-    ) -> None:
-        super().__init__(daemon=True)
-        self.cs_packet_queue = cs_packet_queue
-        self.status_queue = status_queue
-
-        self.do_stop = False
-
-        self.latest_peaks = [0, 0, 0, 0]
-        self.latest_quality = 0
-
-        self.buffer = {
-            "time_ns": [],
-            "df_angle": [],
-            "df_corrected": [],
-            "compass_angle": [],
-            "compass_heading": [],
-            "encoder_angle": [],
-            "encoder_heading": [],
-            "df_elevation": [],
-            "quality": [],
-            "peak0": [],
-            "peak1": [],
-            "peak2": [],
-            "peak3": [],
-            "df_angle_mean": [],
-            "df_angle_std": [],
-            "df_elevation_mean": [],
-            "df_elevation_std": [],
-            "lat": [],
-            "lon": [],
-        }
-
-    def run(self) -> None:
-        self.status_queue.put("Recording started")
-        start_time_string = datetime.now().strftime("%Y%m%d_%H%M%S")
-        while not self.do_stop:
-            try:
-                data = self.cs_packet_queue.get(timeout=0.2)
-                self.handle_packet(data=data)
-            except queue.Empty:
-                pass
-            except Exception as e:
-                print("[Recording thread]", e)
-                traceback.print_tb(e.__traceback__)
-                return
-        self.status_queue.put("saving recording...")
-        try:
-            self.save_recording(start_time_string)
-        except Exception as e:
-            self.status_queue.put(f"Error while saving recording: {e}")
-
-    def handle_packet(self, data) -> None:
-        ##TODO: many similarities with client window packet handler. Maybe export those to a single function?
-        packet = data["cs_packet"]
-        try:
-            time_ns = packet.time_ns
-            if isinstance(packet, CoreServiceDebugPacket):
-                # save the peaks to later match with the next ROI results
-                if packet.title == "peaks":
-                    regex = r"peak(\d+)=(\d+)"
-                    matches = re.findall(
-                        regex, str(packet)
-                    )  # creating a list of (ChannelID, PeakValue) tuples from the debug message
-                    peaks = [peak[1] for peak in matches]
-                    self.latest_peaks = peaks
-                elif packet.title == "q":
-                    quality = float(packet.contents.decode().strip())
-                    self.latest_quality = quality
-
-            if isinstance(packet, CoreServiceROIResultPacket):
-                compass_angle = data["compass_angle"]
-                compass_heading = data["compass_heading"]
-                encoder_angle = data["encoder_angle"]
-                encoder_heading = data["encoder_heading"]
-
-                df_angle = packet.roi_azimuth
-                df_elevation = packet.roi_elevation
-                df_corrected = calculate_df_corrected(
-                    df_value=df_angle,
-                    compass_heading=compass_heading,
-                    encoder_heading=encoder_heading,
-                )
-
-                self.buffer["time_ns"].append(time_ns)
-                self.buffer["df_angle"].append(df_angle)
-                self.buffer["df_corrected"].append(df_corrected)
-                self.buffer["compass_angle"].append(compass_angle)
-                self.buffer["compass_heading"].append(compass_heading)
-                self.buffer["encoder_angle"].append(encoder_angle)
-                self.buffer["encoder_heading"].append(encoder_heading)
-                self.buffer["df_elevation"].append(df_elevation)
-                self.buffer["quality"].append(self.latest_quality)
-                self.buffer["peak0"].append(self.latest_peaks[0])
-                self.buffer["peak1"].append(self.latest_peaks[1])
-                self.buffer["peak2"].append(self.latest_peaks[2])
-                self.buffer["peak3"].append(self.latest_peaks[3])
-                self.buffer["df_angle_mean"].append(
-                    data["aggregated_roi_results"]["df_value_mean"]
-                )
-                self.buffer["df_angle_std"].append(
-                    data["aggregated_roi_results"]["df_value_std"]
-                )
-                self.buffer["df_elevation_mean"].append(
-                    data["aggregated_roi_results"]["df_elevation_mean"]
-                )
-                self.buffer["df_elevation_std"].append(
-                    data["aggregated_roi_results"]["df_elevation_std"]
-                )
-                self.buffer["lat"].append(data["gps_lat"])
-                self.buffer["lon"].append(data["gps_lon"])
-
-        except Exception as e:
-            print("[Recording packet handler]", e)
-            traceback.print_tb(e.__traceback__)
-
-    def save_recording(self, start_time_string):
-        dataframe = pd.DataFrame(data=self.buffer)
-
-        os.makedirs("spotclient_recordings", exist_ok=True)
-        filepath = f"spotclient_recordings/{start_time_string}.csv"
-        dataframe.to_csv(filepath)
-        self.status_queue.put(f"{len(dataframe.index)} lines saved at {filepath}")
-
-        ##TODO: plot results of recording
-        """ df_value_recording_deg = [d * 180 / np.pi if d is not None else None for d in self.buffer["df_angle"]]
-        df_corrected_recording_deg = [d * 180 / np.pi if d is not None else None for d in self.buffer["df_corrected"]]
-        compass_heading_recording_deg = [d * 180 / np.pi if d is not None else None for d in self.buffer["compass_heading"]]
-        encoder_heading_recording_deg = [d * 180 / np.pi if d is not None else None for d in self.buffer["encoder_heading"]]
-        fig, (ax1, ax2) = pyplot.subplots(1, 2)
-        ax1.plot(compass_heading_recording_deg, df_value_recording_deg, color="red", label="compass-DF")
-        ax1.plot(encoder_heading_recording_deg, df_value_recording_deg, color="green", label="encoder-DF")
-        ax1.legend()
-        
-        ax2.plot(df_value_recording_deg, color="blue", label="DF angle")
-        ax2.plot(df_corrected_recording_deg, color="cyan", label="DF corrected")
-        ax2.plot(compass_heading_recording_deg, color="red", label="compass")
-        ax2.plot(encoder_heading_recording_deg, color="green", label="encoder")
-        ax2.legend()
-        
-        ax1.grid(visible=True)
-        ax1.set_ylabel("DF angle")
-        ax1.set_xlabel("Compass and encoder angle")
-        ax2.grid(visible=True)
-        ax2.set_ylabel("Angle")
-        ax2.set_xlabel("Sample")
-        ax1.set_xlim(-180, 180)
-        ax1.set_ylim(-180, 180)
-        ax2.set_ylim(-180, 180)
-        pyplot.show(block=False) """
-
-
-class CommandsConnectionThread(BaseConnection, threading.Thread):
-    def __init__(self, status_queue: queue.Queue[str]) -> None:
-        BaseConnection.__init__(self)
-        threading.Thread.__init__(self, daemon=True)
-        self.incoming_buffer: bytearray = bytearray()
-        self.status_text: str = ""
-        self.incoming_messages_queue: queue.Queue[str] = queue.Queue()
-
-        self.status_queue = status_queue
-
-    def receive_on_socket(self, data: bytes) -> None:
-        """
-        When text is received on the command socket, display it in the console textbox.
-        """
-        self.incoming_buffer += data
-        while b";" in self.incoming_buffer:
-            idx = self.incoming_buffer.find(b";")
-            self.incoming_messages_queue.put(self.incoming_buffer[0:idx].decode())
-            self.incoming_buffer = self.incoming_buffer[idx + 1 :]
-
-    def display_status(self, message: str) -> None:
-        print(message)
-        self.status_text = message
-        self.status_queue.put(message)
-
-    def run(self) -> None:
-        """
-        Entry point of the thread
-        """
-        self.disconnect = False
-        self.run_socket()
-
-    def send_command(self, cmd: str) -> Optional[str]:
-        self.send_on_socket(cmd.encode())
-        try:
-            return self.incoming_messages_queue.get(block=True, timeout=30)
-        except queue.Empty:
-            return None
-
-
-class CommandsHandlerThread(threading.Thread):
-    def __init__(
-        self,
-        conn: CommandsConnectionThread,
-        status_callback: Callable[[bool, str], None],
-        status_queue: queue.Queue[str],
-    ):
-        super().__init__(daemon=True)
-        self.conn = conn
-        self.command_queue: queue.Queue[str] = queue.Queue()
-        self.do_abort: bool = False
-        self.status_callback = status_callback
-        """
-        Callback to display status of commands
-        bool: is working on a command
-        str: the command it is working on
-        """
-        self.status_queue = status_queue
-        self.response_handlers: dict[str, Callable[[str, list[str]], None]] = {}
-
-    def set_response_handler(
-        self, command: str, handler: Callable[[str, list[str]], None]
-    ):
-        self.response_handlers[command] = handler
-
-    def run(self) -> None:
-        while not self.conn.connected:
-            sleep(0.1)
-            if self.conn.disconnect:
-                return
-        while self.conn.connected:
-            if not self.command_queue.empty():
-                while (
-                    (not self.command_queue.empty())
-                    and not self.do_abort
-                    and self.conn.connected
-                ):
-                    command = self.command_queue.get(block=True, timeout=1)
-                    self.status_callback(True, command)
-                    response = self.conn.send_command(command)
-                    if response is None:
-                        self.timeout_handler(command)
-                    else:
-                        try:
-                            self.response_handler(command, response)
-                        except Exception as e:
-                            print(
-                                f"ERROR in command response handler: \n COMMAND: {command} \n RESPONSE: {response}"
-                            )
-                            # traceback.print_exception(type(e), e, e.__traceback__)
-                            raise e
-
-                self.status_queue.put("#action" + "send_commands_finished")
-                self.status_callback(False, "")
-            sleep(0.1)
-
-    def timeout_handler(self, command: str) -> None:
-        self.status_queue.put(f"Command {command} timed out.")
-
-    def response_handler(self, command: str, response: str) -> None:
-        response_parts = shlex.split(response)  # response.split(" ")
-        error_code = int(response_parts[0])
-        for key, handler in self.response_handlers.items():
-            if key in command:
-                handler(command, response_parts)
-        if error_code:
-            self.status_queue.put(f'#infoError with command "{command}": {response}')
-
-    def enqueue_commands(self, commands: str):
-        self.do_abort = False
-        cmd = commands.replace("\n", "").replace("\r", "")
-        for cmd_line in cmd.split(";"):  # One command per line
-            if not cmd_line:
-                continue
-            cmd_line = cmd_line.strip()
-            cmd_line += ";"
-            if cmd_line not in self.command_queue.queue:
-                self.command_queue.put(cmd_line)
-
-    def abort_commands(self):
-        self.do_abort = True
-        while not self.command_queue.empty():
-            self.command_queue.get()  # clear queue
-        self.status_callback(False, "")
-
-
-class MapServer(DFGMapServer):
-    def __init__(
-        self, cs_packet_queue: queue.Queue, status_queue: queue.Queue[str]
-    ) -> None:
-        super().__init__()
-        self.cs_packet_queue = cs_packet_queue
-        self.status_queue = status_queue
-        threading.Thread(target=self.cs_packet_handler, daemon=True).start()
-
-    def cs_packet_handler(self) -> None:
-        while self.run_thread:
-            self.read_queue()
-        self.status_queue.put(f"#infoDown")
-
-    def read_queue(self):
-        data = None
-        try:
-            while True:
-                data = self.cs_packet_queue.get_nowait()
-        except queue.Empty:
-            pass
-        except Exception as e:
-            print("[MapServer thread]", e)
-            traceback.print_tb(e.__traceback__)
-            return
-        if data is not None:
-            self.handle_packet(data=data)
-        sleep(1)  # send updates to clients every 1 second
-        self.status_queue.put(
-            f"#infoUp on port {self.port}, "
-            f"{self.count_clients()} clients, "
-            f"{self.total_packets} packets"
-        )
-
-    def handle_packet(self, data):
-        df_value_mean = data["aggregated_roi_results"]["df_value_mean"]
-        if not df_value_mean:
-            return
-        compass_heading = data["compass_heading"]
-        encoder_heading = data["encoder_heading"]
-
-        df_corrected = calculate_df_corrected(
-            df_value=df_value_mean,
-            compass_heading=compass_heading,
-            encoder_heading=encoder_heading,
-        )
-        # df_corrected = df_value_mean
-        if self.predefined_coords is not None:
-            lat, lon = self.predefined_coords
-        else:
-            lat = data["gps_lat"]
-            lon = data["gps_lon"]
-
-        isvalid = lambda nums: all(
-            [not math.isnan(x) if x is not None else False for x in nums]
-        )
-        if not isvalid([df_corrected, lat, lon]):
-            return  # only update the map server if all values are valid
-
-        self.update_timestamp()
-        self.update_angle(df_corrected, 1e6)  # TODO: add frequency
-        self.update_lat_lon(lat, lon)
-        self.update_clients()
-
-
 # Owner class for the client
 class Client:
-    def __init__(self, root):
+    def __init__(self, root: Any) -> None:
         self.manager = multiprocessing.get_context("spawn").Manager()
 
         self.heading_manager = HeadingManager()
-        self.stream_to_gui_queue = self.manager.Queue(maxsize=100)
-        self.stream_to_rec_queue = None
-        self.stream_to_map_queue = self.manager.Queue(maxsize=10)
+        self.stream_to_gui_queue: queue.Queue[Any] = self.manager.Queue(maxsize=100)
+        self.stream_to_rec_queue: Optional[queue.Queue[Any]] = None
+        self.stream_to_map_queue: queue.Queue[Any] = self.manager.Queue(maxsize=10)
 
         self.stream_process_multiqueue = MultiQueue([self.stream_to_gui_queue])
 
@@ -1572,10 +456,9 @@ class Client:
         self.command_connection_thread: Optional[CommandsConnectionThread] = None
         self.command_thread: Optional[CommandsHandlerThread] = None
         self.status_query_thread: Optional[StatusQueryThread] = None
-        self.stream_process = None
-        self.recording_thread = None
-        self.dfg_map_server = None
-        self.encoder_thread = None
+        self.stream_process: Optional[StreamAndCompassProcess] = None
+        self.recording_thread: Optional[RecordingThread] = None
+        self.dfg_map_server: Optional[MapServer] = None
         self.repeat_playback: bool = False
 
         self.stream_process_watcher_queue: multiprocessing.Queue[
@@ -1597,17 +480,18 @@ class Client:
         next iteration.
         """
 
-        self.mean_window_width_value = self.manager.Value(
-            "float", conf["stats"]["mean_window_width_seconds"] if conf else 0
+        self.mean_window_width_value: ValueProxy[float] = self.manager.Value(
+            "float",
+            conf["stats"]["mean_window_width_seconds"] if conf is not None else 0,
         )
 
         self.recording_started = False
 
         self.do_stop = False
-        self.watcher_thread = threading.Thread(target=self.watcher_thread)
+        self.watcher_thread = threading.Thread(target=self.watcher_thread_fun)
         self.watcher_thread.start()
 
-    def watcher_thread(self):
+    def watcher_thread_fun(self) -> None:
         while not self.do_stop:
             try:
                 do_sleep = True  # if every queue is empty -> sleep
@@ -1657,6 +541,17 @@ class Client:
                     raise e
         ##TODO: empty and join watcher queues before terminating thread
 
+    def abort_commands(self) -> None:
+        """
+        Send the command from the command entry box to the client. Called on pressing the Return key in the autocomplete box.
+        """
+        assert self.command_thread is not None
+        if (
+            self.command_connection_thread is None
+        ):  ##TODO: After disconnecting command_thread should be None
+            return
+        self.command_thread.abort_commands()
+
     def send_commands(self, cmd: str) -> None:
         """
         Send the command from the command entry box to the client. Called on pressing the Return key in the autocomplete box.
@@ -1668,11 +563,12 @@ class Client:
             return
         self.command_thread.enqueue_commands(cmd)
 
-    def command_status_callback(self, working: bool, current_cmd: str):
+    def command_status_callback(self, working: bool, current_cmd: str) -> None:
         self.command_thread_watcher_queue.put("#action" + "send_commands_finished")
         self.client_window.playback_tab.command_status_callback(working, current_cmd)
 
-    def start_dfg_map_server(self):
+    def start_dfg_map_server(self) -> None:
+        global conf
         self.dfg_map_server = MapServer(
             self.stream_to_map_queue, self.map_server_thread_watcher_queue
         )
@@ -1680,23 +576,27 @@ class Client:
 
         self.dfg_map_server.host = conf["map_server"]["host"] if conf else "0.0.0.0"
         self.dfg_map_server.port = conf["map_server"]["port"] if conf else 20000
-        if "lat" in conf["map_server"] and "lon" in conf["map_server"]:
+        if (
+            conf is not None
+            and "lat" in conf["map_server"]
+            and "lon" in conf["map_server"]
+        ):
             self.dfg_map_server.predefined_coords = (
                 conf["map_server"]["lat"],
                 conf["map_server"]["lon"],
             )
         self.dfg_map_server.start()
 
-    def stop_dfg_map_server(self):
+    def stop_dfg_map_server(self) -> None:
         if isinstance(self.dfg_map_server, MapServer):
             self.dfg_map_server.run_thread = False
 
     def connect_commands(
         self,
-        connect_action,
-        connected_action,
-        disconnect_action,
-        host_address,
+        connect_action: Optional[Callable[[], None]],
+        connected_action: Optional[Callable[[], None]],
+        disconnect_action: Optional[Callable[[], None]],
+        host_address: str,
         encoder_port: str = "",
     ) -> None:
         """
@@ -1705,9 +605,9 @@ class Client:
         self.command_connection_thread = CommandsConnectionThread(
             self.command_thread_watcher_queue
         )
-        self.command_connection_thread.connect_action = connect_action
-        self.command_connection_thread.connected_action = connected_action
-        self.command_connection_thread.disconnect_action = disconnect_action
+        self.command_connection_thread.connect_callback = connect_action
+        self.command_connection_thread.connected_callback = connected_action
+        self.command_connection_thread.disconnect_callback = disconnect_action
         self.command_connection_thread.host_port = f"{host_address}:12936"
         self.command_connection_thread.start()
 
@@ -1760,7 +660,9 @@ class Client:
             self.disconnect_value,
             self.stream_process_watcher_queue,
         )
-        self.stream_process.heading_queue = QueueValueCollector(self.heading_manager.mp_values)
+        self.stream_process.heading_queue = QueueValueCollector(
+            self.heading_manager.mp_values
+        )
         self.stream_process.host_port = f"{host_address}:12937"
         self.stream_process.compass_host_port = f"{host_address}:12938"
         self.stream_process.encoder_port = encoder_port
@@ -1772,6 +674,9 @@ class Client:
             conf["compass"]["offset"] * np.pi / 180 if conf else 0
         )
         self.stream_process.start()
+
+    def do_set_source_params(self, params: dict[str, Any]) -> None:
+        self.do_set_source(**params)
 
     def do_set_source(
         self,
@@ -1787,6 +692,9 @@ class Client:
             )
         else:
             self.send_commands(f"CORE:Version?;" f"SOURCE:Path! UHD;SOURCE:Path?;")
+
+    def do_configuration_params(self, params: dict[str, Any]) -> None:
+        self.do_configuration(**params)
 
     def do_configuration(
         self,
@@ -1835,7 +743,7 @@ class Client:
         """ self.command_thread.join()
         self.stream_thread.join() """
 
-    def update_roi_settings(self, roi_center, roi_span, roi_threshold):
+    def update_roi_settings(self, roi_center, roi_span, roi_threshold) -> None:
         self.send_commands(
             f"ROI:CenterFrequency! {roi_center:.0f};"
             f"ROI:Span! {roi_span:.0f};"
@@ -1843,18 +751,18 @@ class Client:
             f"ROI:Configure!;"
         )
 
-    def start_recording(self):
+    def start_recording(self) -> None:
         self.start_local_recording()
         self.send_commands("RECORDING:Start!;")
         self.recording_started = True
         ##TODO: start local recording if CS is also recording when connecting to it
 
-    def stop_recording(self):
+    def stop_recording(self) -> None:
         self.stop_local_recording()
         self.send_commands("RECORDING:Stop!;")
         self.recording_started = False
 
-    def start_local_recording(self):
+    def start_local_recording(self) -> None:
         self.stream_to_rec_queue = self.manager.Queue()  # TODO: set some large maxsize
         self.stream_process_multiqueue.add_queue(self.stream_to_rec_queue)
         self.recording_thread = RecordingThread(
@@ -1863,20 +771,28 @@ class Client:
         )
         self.recording_thread.start()
 
-    def stop_local_recording(self):
-        self.recording_thread.do_stop = True
+    def set_repeat(self, repeat_value: bool) -> None:
+        self.repeat_playback = repeat_value
+
+    def stop_local_recording(self) -> None:
+        if self.recording_thread is not None:
+            self.recording_thread.do_stop = True
         self.stream_process_multiqueue.remove_queue(self.stream_to_rec_queue)
         self.stream_to_rec_queue = None
 
 
-def on_close():
+def on_close() -> None:
     global root
+    global ex
+    assert ex is not None
+
     # dfg_map_server.run_thread = False
     ex.do_stop = True
     ex.client_window.do_stop = True
     ex.disconnect_commands()
     ex.client_window.quit()
-    root.destroy()
+    if root is not None:
+        root.destroy()
 
 
 def main() -> None:
@@ -1904,7 +820,7 @@ def main() -> None:
         import importlib.resources
 
         icon_image = tkinter.PhotoImage(
-            file=importlib.resources.files("pysagax").joinpath(icon_image_fn)
+            file=str(importlib.resources.files("pysagax").joinpath(icon_image_fn))
         )
     root.iconphoto(False, icon_image)
     root.geometry("1200x850")

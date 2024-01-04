@@ -153,7 +153,7 @@ class CommandsConnectionThread(BaseConnection, threading.Thread):
         self.console_textarea_ref.see(tkinter.END)  # Scroll to the bottom
         self.console_textarea_ref.configure(state="disabled")  # Block user editing
 
-    def display_status(self, message: str) -> None:
+    def display_status_callback(self, message: str) -> None:
         assert self.status_label_ref
         try:
             self.status_label_ref.config(text=message)
@@ -942,8 +942,8 @@ class ClientWindow(tkinter.Frame):
         """
         self.command_thread = CommandsConnectionThread()
         self.command_thread.console_textarea_ref = self.console_textarea
-        self.command_thread.connect_action = self.connect_action
-        self.command_thread.disconnect_action = self.disconnect_action
+        self.command_thread.connect_callback = self.connect_action
+        self.command_thread.disconnect_callback = self.disconnect_action
         self.command_thread.host_port = self.host_command.get()
         self.command_thread.status_label_ref = self.status_command_label
         self.command_thread.start()

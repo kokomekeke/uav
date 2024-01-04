@@ -8,7 +8,7 @@ import socket
 import struct
 import threading
 import time
-from typing import Callable, Optional, Iterable
+from typing import Callable, Iterable, Optional
 
 import numpy as np
 import numpy.typing as npt
@@ -113,17 +113,17 @@ class BaseConnection:
         Flag that indicates if the socket is connected.
         """
 
-        self.connect_action: Optional[Callable[[], None]] = None
+        self.connect_callback: Optional[Callable[[], None]] = None
         """
         This function handle is called when the socket is initiating connection.
         """
 
-        self.connected_action: Optional[Callable[[], None]] = None
+        self.connected_callback: Optional[Callable[[], None]] = None
         """
         This function handle is called when the socket is initiating connection.
         """
 
-        self.disconnect_action: Optional[Callable[[], None]] = None
+        self.disconnect_callback: Optional[Callable[[], None]] = None
         """
         This function handle is called when the socket is disconnected.
         """
@@ -133,7 +133,7 @@ class BaseConnection:
         This buffer size will be read at once from the TCP socket.
         """
 
-    def display_status(self, message: str) -> None:
+    def display_status_callback(self, message: str) -> None:
         """
         Display a status message (on the GUI status bar)
         """
@@ -147,6 +147,8 @@ class BaseConnection:
 
     def send_on_socket(self, data: bytes) -> bool:
         try:
+            if self.client_socket is None:
+                raise OSError()
             self.client_socket.send(data)
             return True
         except OSError:  # Bad file descriptor -> client disconnected
@@ -154,8 +156,8 @@ class BaseConnection:
             self.connected = False
             if self.client_socket:
                 self.client_socket.close()  # close the connection
-            if self.disconnect_action is not None:
-                self.disconnect_action()
+            if self.disconnect_callback is not None:
+                self.disconnect_callback()
             return False
 
     def run_socket(self) -> None:
@@ -167,46 +169,46 @@ class BaseConnection:
         host_port_split = self.host_port.split(":")
         host, port = (host_port_split[0], host_port_split[1])
         try:
-            if self.connect_action is not None:
-                self.connect_action()
+            if self.connect_callback is not None:
+                self.connect_callback()
             self.disconnect = False
-            self.display_status("Connecting...")
+            self.display_status_callback("Connecting...")
             self.client_socket = socket.socket()  # instantiate
             self.client_socket.settimeout(1.0)
             self.client_socket.connect((host, int(port)))  # connect to the server
             self.connected = True
-            self.display_status("Connected")
-            if self.connected_action is not None:
-                self.connected_action()
+            self.display_status_callback("Connected")
+            if self.connected_callback is not None:
+                self.connected_callback()
             while True:
                 try:
                     if self.is_disconnect():
-                        self.display_status("Disconnected")
+                        self.display_status_callback("Disconnected")
                         break
                     data = self.client_socket.recv(self.buf_size)  # receive response
                     if not data:  # If the pipe is broken, data will be empty string
-                        self.display_status("Disconnected")
+                        self.display_status_callback("Disconnected")
                         break
                     self.receive_on_socket(data)
                 except TimeoutError:
                     pass
                 except OSError as e:
-                    self.display_status(
+                    self.display_status_callback(
                         f"Connection error: {e}"
                     )  # Multiprocessing error on Windows
                     pass
         except TimeoutError:
-            self.display_status("Connection timed out")
+            self.display_status_callback("Connection timed out")
             pass
         except ConnectionError:
-            self.display_status("Connection broken")
+            self.display_status_callback("Connection broken")
             pass
         self.connected = False
         self.disconnect = True
         if self.client_socket:
             self.client_socket.close()  # close the connection
-        if self.disconnect_action is not None:
-            self.disconnect_action()
+        if self.disconnect_callback is not None:
+            self.disconnect_callback()
 
     def receive_on_socket(self, data: bytes) -> None:
         """
@@ -257,7 +259,7 @@ class CoreServiceParser:
                             f"{cs_spectrum_packet.bin_count}f",
                             self.buffer[28 : 28 + cs_spectrum_packet.bin_count * 4],
                         )
-                    )  # type: ignore
+                    )
                     cs_spectrum_packet.azimuth_spectrum = np.asarray(
                         struct.unpack(
                             f"{cs_spectrum_packet.bin_count}f",
@@ -267,7 +269,7 @@ class CoreServiceParser:
                                 )
                             ],
                         )
-                    )  # type: ignore
+                    )
                     cs_spectrum_packet.elevation_spectrum = np.asarray(
                         struct.unpack(
                             f"{cs_spectrum_packet.bin_count}f",
@@ -277,7 +279,7 @@ class CoreServiceParser:
                                 )
                             ],
                         )
-                    )  # type: ignore
+                    )
                     yield cs_spectrum_packet
                     self.buffer = self.buffer[packet_size:]  # drop packet from buffer
                 else:
@@ -406,7 +408,7 @@ class StreamConnectionProcess(
         assert self.mp_disconnect is not None
         return bool(self.mp_disconnect.value)
 
-    def display_status(self, message: str) -> None:
+    def display_status_callback(self, message: str) -> None:
         """
         Display a status message (on the GUI status bar)
         """
@@ -423,7 +425,7 @@ class StreamConnectionProcess(
             self.counter_ns += self.counter_block_size_parameter
         self.counter_packet_index += 1
         try:
-            self.display_status(
+            self.display_status_callback(
                 f"P#{cs_packet.packet_index} - S{cs_packet.stream_id}"
                 f"i{cs_packet.sample_index if isinstance(cs_packet, CoreServiceSpectrumPacket) else '-'} , "
                 f"sp: {self.counter_packet_ratio} p/s, "
@@ -432,7 +434,7 @@ class StreamConnectionProcess(
         except (
             NotImplementedError
         ):  # multiprocessing.Queue.qsize() not implemented on Mac OS X
-            self.display_status(
+            self.display_status_callback(
                 f"Packet {cs_packet.packet_index} - Stream {cs_packet.stream_id}, "
                 f"index {cs_packet.sample_index if isinstance(cs_packet, CoreServiceSpectrumPacket) else '-'}"
             )

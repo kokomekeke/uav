@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import multiprocessing
 import multiprocessing.managers
 import queue
@@ -30,7 +32,7 @@ class StreamAndCompassProcess(
         self,
         queues: MultiQueue,
         disconnect_value: multiprocessing.managers.ValueProxy[int],
-        status_value: queue.Queue[str],
+        status_value: queue.Queue[str] | multiprocessing.Queue[str],
     ):
         CoreServiceParser.__init__(self)
         BaseConnection.__init__(self)
@@ -42,7 +44,7 @@ class StreamAndCompassProcess(
         Overall packet count
         """
 
-        self.mp_status: queue.Queue[str] = status_value
+        self.mp_status = status_value
         """
         Status message queue for multiprocessing process
         """
@@ -165,7 +167,7 @@ class StreamAndCompassProcess(
                 print("Failed to read mp_disconnect.value a second time")
             return True
 
-    def display_status(self, message: str) -> None:
+    def display_status_callback(self, message: str) -> None:
         """
         Display a status message (on the GUI status bar)
         """

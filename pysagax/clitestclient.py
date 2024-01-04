@@ -34,7 +34,7 @@ class CommandsConnectionThread(BaseConnection, threading.Thread):
         """
         print(f"# {data.decode()}")
 
-    def display_status(self, message: str) -> None:
+    def display_status_callback(self, message: str) -> None:
         pass
 
     def run(self) -> None:
@@ -171,8 +171,8 @@ class CsClient:
         self.command_thread = CommandsConnectionThread()
         self.stream_thread = TestStreamDisplayThread()
 
-        self.command_thread.connect_action = self.command_connect_action
-        self.command_thread.disconnect_action = self.command_disconnect_action
+        self.command_thread.connect_callback = self.command_connect_action
+        self.command_thread.disconnect_callback = self.command_disconnect_action
         self.command_thread.host_port = f"{args.address}:12936"
         self.command_thread.start()
         self.stream_thread.host_port = f"{args.address}:12937"
