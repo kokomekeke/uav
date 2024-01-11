@@ -53,7 +53,12 @@ def HeadingWorker(
     heading_source.status_updates_callback = status_callback.callback
     value_collector.invalid_callback()
     initialized: bool = False
-    while not mp_disconnect.get():
+    while True:
+        try:
+            if mp_disconnect.get():
+                break
+        except TypeError as e:  # TODO: multiprocessing debug (JIRA issue ALTS-150)
+            pass
         try:
             while True:
                 command = mp_commands.get_nowait()

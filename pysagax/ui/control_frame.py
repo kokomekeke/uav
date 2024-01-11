@@ -4,6 +4,7 @@ from typing import Any, Callable, Optional
 
 from pysagax.ui.custom_widgets import EntryWithLabel
 from pysagax.util.mat import si_to_float
+from pysagax.ui.ui_helpers import en_if
 
 
 class ControlFrame(tkinter.Frame):
@@ -121,15 +122,12 @@ class ControlFrame(tkinter.Frame):
                 part.replace("recording.sigmf-collection", "") for part in path[1:]
             )
         )
-        if path[1].strip('"') == "UHD":
-            self.freq_entry.config(state="enabled")
-            self.bw_entry.config(state="enabled")
-            self.gain_entry.config(state="enabled")
-        else:
-            self.freq_entry.config(state="disabled")
-            self.bw_entry.config(state="disabled")
-            self.gain_entry.config(state="disabled")
-
+        
+        btn_state = en_if(path[1].strip('"') == "UHD")
+        self.freq_entry.config(state=btn_state)
+        self.bw_entry.config(state=btn_state)
+        self.gain_entry.config(state=btn_state)
+        
     def configure_commands(self) -> None:
         kwargs = {
             "freq": si_to_float(self.freq_entry.get()),

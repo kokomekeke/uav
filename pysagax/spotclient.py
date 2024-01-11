@@ -64,10 +64,6 @@ class ClientWindow(tkinter.Frame):
             "df_elevation_mean": None,
             "df_elevation_std": None,
         }
-        self.latest_roi_resutls: dict[str, Optional[float]] = {
-            "df_value": None,
-            "df_elevation": None,
-        }
         self.compass_angle = None
         self.compass_heading = None  # compass angle corrected with offset
         self.encoder_angle = None
@@ -235,11 +231,12 @@ class ClientWindow(tkinter.Frame):
                             self.stat_frame.quality_value_string.set(f"{quality:.2f}")
 
                     if isinstance(packet, CoreServiceROIResultPacket):
-                        self.latest_roi_resutls["df_value"] = packet.roi_azimuth
-                        self.latest_roi_resutls["df_elevation"] = packet.roi_elevation
+                        latest_roi_resutls = {"df_value": packet.roi_azimuth,
+                                            "df_elevation": packet.roi_elevation
+                        }
 
                         self.stat_frame.update_stats(
-                            self.latest_roi_resutls, self.aggregated_roi_results
+                            latest_roi_resutls, self.aggregated_roi_results
                         )
 
                     if isinstance(packet, CoreServiceEOFPacket):
