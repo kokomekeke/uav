@@ -794,6 +794,7 @@ def on_close() -> None:
     # dfg_map_server.run_thread = False
     ex.do_stop = True
     ex.client_window.do_stop = True
+    ex.heading_manager.stop()
     ex.disconnect_commands()
     ex.client_window.quit()
     if root is not None:

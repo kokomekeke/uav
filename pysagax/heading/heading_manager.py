@@ -4,6 +4,7 @@ import multiprocessing
 import multiprocessing.managers
 import queue
 from typing import Any, Optional, Type
+from time import sleep
 
 from pysagax.heading.heading_sources import (
     HeadingAHRS,
@@ -87,7 +88,7 @@ def HeadingWorker(
                     heading_source.status_updates_callback = status_callback.callback
                     value_collector.invalid_callback()
         except queue.Empty:
-            pass
+            sleep(0.1)
         if initialized:
             heading_source.loop()
     heading_source.close()
