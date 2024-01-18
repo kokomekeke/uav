@@ -52,6 +52,7 @@ def si_to_float(si: str) -> float:
 
 
 def normalize_angle(angle: float, high: float = np.pi, low: float = -np.pi) -> float:
+    assert high > low
     span = high - low
     while angle >= high:
         angle = angle - span

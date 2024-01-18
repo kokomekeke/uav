@@ -41,9 +41,13 @@ from typing import Any, Callable, Literal, Optional
 import numpy as np
 
 import pysagax
-from pysagax import (CoreServiceDebugPacket, CoreServiceEOFPacket,
-                     CoreServiceROIResultPacket, CoreServiceSpectrumPacket,
-                     StreamAndCompassProcess)
+from pysagax import (
+    CoreServiceDebugPacket,
+    CoreServiceEOFPacket,
+    CoreServiceROIResultPacket,
+    CoreServiceSpectrumPacket,
+    StreamAndCompassProcess,
+)
 from pysagax.ui.plot_frame import PlotFrame, PlotSettingsFrame
 from pysagax.util.multiqueue import MultiQueue
 
@@ -231,8 +235,9 @@ class ClientWindow(tkinter.Frame):
                             self.stat_frame.quality_value_string.set(f"{quality:.2f}")
 
                     if isinstance(packet, CoreServiceROIResultPacket):
-                        latest_roi_resutls = {"df_value": packet.roi_azimuth,
-                                            "df_elevation": packet.roi_elevation
+                        latest_roi_resutls = {
+                            "df_value": packet.roi_azimuth,
+                            "df_elevation": packet.roi_elevation,
                         }
 
                         self.stat_frame.update_stats(
@@ -363,12 +368,10 @@ class ClientWindow(tkinter.Frame):
         self.connect_frame.disconnect_button.configure(state="normal")
         self.connect_frame.channel_spectrum_combo.configure(state="normal")
 
-        self.control_frame.configure_button.configure(state="normal")
         self.source_select_frame.configure_button.configure(state="normal")
 
         self.playback_tab.connected = True
         self.playback_tab.set_buttons_enabled()
-        # self.control_frame.rec_button.configure(state="normal")
 
     def disconnect_action(self) -> None:
         """
@@ -700,15 +703,24 @@ class Client:
         roi_span,
         roi_threshold,
     ) -> None:
+        if self.status_query_thread.source_type == "UHD":
+            source_dependent_commands = (
+                f"SOURCE:CenterFrequency! {freq:.0f};"
+                f"SOURCE:IqRate! {bw:.0f};"
+                f"SOURCE:ChannelGain! 0 {gain};"
+                f"SOURCE:ChannelGain! 1 {gain};"
+                f"SOURCE:ChannelGain! 2 {gain};"
+                f"SOURCE:ChannelGain! 3 {gain};"
+            )
+        elif self.status_query_thread.source_type == "SigMF":
+            source_dependent_commands = f"SOURCE:Position! 0;"
+        else:
+            raise Exception(
+                f"Unknown source type ({self.status_query_thread.source_type}) is used for by CoreService"
+            )
         self.send_commands(
             f"CORE:Version?;"
-            f"SOURCE:Position! 0;"
-            f"SOURCE:CenterFrequency! {freq:.0f};"
-            f"SOURCE:IqRate! {bw:.0f};"
-            f"SOURCE:ChannelGain! 0 {gain};"
-            f"SOURCE:ChannelGain! 1 {gain};"
-            f"SOURCE:ChannelGain! 2 {gain};"
-            f"SOURCE:ChannelGain! 3 {gain};"
+            f"{source_dependent_commands}"
             f"AOA:BinCount! {bin_count};"
             f"SOURCE:BurstStride! {burst_stride};"
             f"SOURCE:Configure!;"

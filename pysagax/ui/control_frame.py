@@ -23,7 +23,6 @@ class ControlFrame(tkinter.Frame):
         self.bin_count_string = tkinter.StringVar(
             value=(conf["defaults"]["bin_count"] if conf else "")
         )
-        self.source_file_path_string = tkinter.StringVar(value="")
 
         self.columnconfigure(0, weight=2)
         self.columnconfigure(1, weight=1)
@@ -122,12 +121,17 @@ class ControlFrame(tkinter.Frame):
                 part.replace("recording.sigmf-collection", "") for part in path[1:]
             )
         )
-        
-        btn_state = en_if(path[1].strip('"') == "UHD")
-        self.freq_entry.config(state=btn_state)
-        self.bw_entry.config(state=btn_state)
-        self.gain_entry.config(state=btn_state)
-        
+
+        usrp_settings_state = en_if(path[1].strip('"') == "UHD")
+        self.freq_entry.config(state=usrp_settings_state)
+        self.bw_entry.config(state=usrp_settings_state)
+        self.gain_entry.config(state=usrp_settings_state)
+
+        config_btn_state = en_if(
+            path[1] in ["UHD", "SigMF"]
+        )  # only enable the button if the source is known and supported
+        self.configure_button.configure(state=config_btn_state)
+
     def configure_commands(self) -> None:
         kwargs = {
             "freq": si_to_float(self.freq_entry.get()),

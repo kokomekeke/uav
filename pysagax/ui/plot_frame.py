@@ -177,7 +177,11 @@ class PlotFrame(tkinter.Frame):
         ]
 
         self.animation = FuncAnimation(
-            self.fig_ref, self.update_imag, interval=int(1000 / self.fps), blit=True
+            self.fig_ref,
+            self.update_imag,
+            interval=int(1000 / self.fps),
+            blit=True,
+            cache_frame_data=False,
         )
 
         grid_spec.tight_layout(figure=self.fig_ref)
