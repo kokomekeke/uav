@@ -50,6 +50,7 @@ from pysagax import (
 )
 from pysagax.ui.plot_frame import PlotFrame, PlotSettingsFrame
 from pysagax.util.multiqueue import MultiQueue
+from pysagax.util.confreader import confreader
 
 conf: Optional[dict[str, Any]] = None
 icon_image: Optional[tkinter.PhotoImage] = None
@@ -156,7 +157,7 @@ class ClientWindow(tkinter.Frame):
             side=tkinter.LEFT, fill=tkinter.BOTH, padx=6, expand=True
         )
 
-        center_box_width = conf["display"]["center_box_width"] if conf else 60
+        center_box_width = confreader(conf, ["display", "center_box_width"], 60)
         self.status_info_lb = tkinter.Listbox(
             self.status_info_tab, height=4, width=center_box_width
         )
@@ -478,7 +479,7 @@ class Client:
 
         self.mean_window_width_value: ValueProxy[float] = self.manager.Value(
             "float",
-            conf["stats"]["mean_window_width_seconds"] if conf is not None else 0,
+            confreader(conf, ["stats", "mean_window_width_seconds"], 0),
         )
 
         self.recording_started = False
@@ -570,13 +571,9 @@ class Client:
         )
         self.stream_process_multiqueue.add_queue(self.stream_to_map_queue)
 
-        self.dfg_map_server.host = conf["map_server"]["host"] if conf else "0.0.0.0"
-        self.dfg_map_server.port = conf["map_server"]["port"] if conf else 20000
-        if (
-            conf is not None
-            and "lat" in conf["map_server"]
-            and "lon" in conf["map_server"]
-        ):
+        self.dfg_map_server.host = confreader(conf, ["map_server", "host"], "0.0.0.0")
+        self.dfg_map_server.port = confreader(conf, ["map_server", "port"], 20000)
+        if "lat" in conf["map_server"] and "lon" in conf["map_server"]:
             self.dfg_map_server.predefined_coords = (
                 conf["map_server"]["lat"],
                 conf["map_server"]["lon"],
@@ -663,11 +660,11 @@ class Client:
         self.stream_process.compass_host_port = f"{host_address}:12938"
         self.stream_process.encoder_port = encoder_port
         self.stream_process.mean_window_seconds = self.mean_window_width_value
-        self.stream_process.use_sensor_fusion = (
-            conf["compass"]["use_sensor_fusion"] if conf else False
+        self.stream_process.use_sensor_fusion = confreader(
+            conf, ["compass", "use_sensor_fusion"], False
         )
         self.stream_process.compass_offset = (
-            conf["compass"]["offset"] * np.pi / 180 if conf else 0
+            confreader(conf, ["compass", "offset"], 0) * np.pi / 180
         )
         self.stream_process.start()
 
@@ -809,7 +806,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="SPOTClient")
     parser.add_argument("config", nargs="?", default="spotclient.toml")
     args = parser.parse_args()
-    conf = None
+    conf = {}
     if os.path.isfile(args.config):
         print("Config file found")
         with open(args.config, "rb") as f:

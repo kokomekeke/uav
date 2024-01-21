@@ -5,6 +5,8 @@ from typing import Any, Callable, Optional
 
 import numpy as np
 
+from pysagax.util.confreader import confreader
+
 
 class ConnectFrame(tkinter.Frame):
     def __init__(
@@ -25,10 +27,10 @@ class ConnectFrame(tkinter.Frame):
         encoder_offset = np.pi  ##TODO: should be an argument of master.client?
 
         self.host_address = tkinter.StringVar(
-            value=(conf["defaults"]["host"] if conf else "")
+            value=confreader(conf, ["defaults", "host"], "")
         )
         self.encoder_port_string = tkinter.StringVar(
-            value=(conf["defaults"]["encoder_port"] if conf else "")
+            value=confreader(conf, ["defaults", "encoder_port"], "")
         )
 
         offset_frame = tkinter.Frame(

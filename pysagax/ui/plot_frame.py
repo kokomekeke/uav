@@ -26,6 +26,7 @@ from pysagax.ui.lena_matplotlib_graphs import (
     MagnitudeSpectrumGraph,
     WaterfallMagnitudeGraph,
 )
+from pysagax.util.confreader import confreader
 
 
 class PlotFrame(tkinter.Frame):
@@ -55,21 +56,19 @@ class PlotFrame(tkinter.Frame):
         Indicates whether the animation and plot objects have been created
         """
 
-        self.spectrum_graph_min_db = (
-            self.conf["display"]["spectrum_graph_min_db"] if self.conf else -120
+        self.spectrum_graph_min_db = confreader(
+            self.conf, ["display", "spectrum_graph_min_db"], -120
         )
 
-        self.fps = self.conf["display"]["fps"] if self.conf else 25
+        self.fps = confreader(self.conf, ["display", "fps"], 25)
 
-        self.max_bin_count = (
-            self.conf["display"]["max_bin_count"] if self.conf else 1024
-        )
+        self.max_bin_count = confreader(self.conf, ["display", "max_bin_count"], 1024)
 
-        self.params.waterfall_size = (
-            self.conf["display"]["waterfall_size"] if self.conf else 200
+        self.params.waterfall_size = confreader(
+            self.conf, ["display", "waterfall_size"], 200
         )  # Amount of spectrum lines to be displayed on the waterfall diagram.
 
-        self.make_plots = self.conf["display"]["make_plots"] if self.conf else True
+        self.make_plots = confreader(self.conf, ["display", "make_plots"], True)
 
         self.create_canvas()
 
@@ -321,7 +320,7 @@ class PlotSettingsFrame(tkinter.Frame):
             "Spectrum graph min dB:",
             0,
             1,
-            (conf["display"]["spectrum_graph_min_db"] if conf else -80),
+            confreader(conf, ["display", "spectrum_graph_min_db"], -80),
             tkinter.DoubleVar,
         )
 
@@ -330,7 +329,7 @@ class PlotSettingsFrame(tkinter.Frame):
             "FPS:",
             0,
             2,
-            (conf["display"]["fps"] if conf else -25),
+            confreader(conf, ["display", "fps"], -25),
             tkinter.DoubleVar,
         )
 
@@ -339,7 +338,7 @@ class PlotSettingsFrame(tkinter.Frame):
             "Waterfall bin count:",
             0,
             3,
-            (conf["display"]["max_bin_count"] if conf else 1024),
+            confreader(conf, ["display", "max_bin_count"], 1024),
             tkinter.IntVar,
         )
 
@@ -348,7 +347,7 @@ class PlotSettingsFrame(tkinter.Frame):
             "Waterfall size:",
             0,
             4,
-            (conf["display"]["waterfall_size"] if conf else 200),
+            confreader(conf, ["display", "waterfall_size"], 200),
             tkinter.IntVar,
         )
 
@@ -359,7 +358,7 @@ class PlotSettingsFrame(tkinter.Frame):
             column=3, row=5, padx=10, pady=5, sticky=tkinter.E + tkinter.W
         )
         self.mean_window_width_slider_variable = tkinter.DoubleVar(
-            value=conf["stats"]["mean_window_width_seconds"] if conf else 0
+            value=confreader(conf, ["stats", "mean_window_width_seconds"], 0)
         )
         self.mean_window_width_slider = tkinter.Scale(
             self,
@@ -383,19 +382,19 @@ class PlotSettingsFrame(tkinter.Frame):
 
         fps = self.fps_entry.get()
         if fps <= 0:
-            fps = self.conf["display"]["fps"]
+            fps = confreader(self.conf, ["display", "fps"], 25)
             self.fps_entry.set(fps)
         self.plot_frame.fps = fps
 
         max_bin_count = self.max_bin_count_entry.get()
         if max_bin_count <= 0:
-            max_bin_count = self.conf["display"]["max_bin_count"]
+            max_bin_count = confreader(self.conf, ["display", "max_bin_count"], 1024)
             self.max_bin_count_entry.set(max_bin_count)
         self.plot_frame.max_bin_count = max_bin_count
 
         waterfall_size = self.waterfall_size_entry.get()
         if waterfall_size <= 0:
-            waterfall_size = self.conf["display"]["waterfall_size"]
+            waterfall_size = confreader(self.conf, ["display", "waterfall_size"], 200)
             self.waterfall_size_entry.set(waterfall_size)
         self.plot_frame.params.waterfall_size = waterfall_size
 
