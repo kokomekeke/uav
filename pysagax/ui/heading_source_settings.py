@@ -10,9 +10,11 @@ from pysagax.heading.heading_sources import HeadingStatic
 
 
 class HeadingSourceFrame(tkinter.Frame):
-    def __init__(self, master: Any, heading_manager: HeadingManager):
+    def __init__(self, master: Any, heading_manager: HeadingManager, conf):
         super().__init__(master)
         self.heading_manager = heading_manager
+
+        self.conf = conf
 
         self.type_string = tkinter.StringVar(value="Static")
 
@@ -23,7 +25,7 @@ class HeadingSourceFrame(tkinter.Frame):
         self.type_combo.current(0)
         self.type_combo.bind("<<ComboboxSelected>>", self.select_new_source)
         self.type_combo.pack(fill=tkinter.X, expand=True)
-        self.heading_manager.create(HeadingStatic())
+        self.heading_manager.create(HeadingStatic(self.conf))
         self.config_vars: dict[str, tkinter.Variable] = {}
         self.reconfigure_button = tkinter.Button(self)
         self.config_frame = self.construct_settings_frame()
@@ -51,7 +53,7 @@ class HeadingSourceFrame(tkinter.Frame):
         new_source = list(self.heading_manager.heading_source_types.values())[
             self.type_combo.current()
         ]
-        self.heading_manager.create(new_source())
+        self.heading_manager.create(new_source(self.conf))
         self.update_configuration()
         self.heading_manager.initialize()
 
@@ -59,7 +61,7 @@ class HeadingSourceFrame(tkinter.Frame):
         new_source = list(self.heading_manager.heading_source_types.values())[
             self.type_combo.current()
         ]
-        self.heading_manager.create(new_source())
+        self.heading_manager.create(new_source(self.conf))
         self.heading_manager.initialize()
         print(repr(self.heading_manager.heading_source))
         self.config_frame.destroy()
@@ -76,18 +78,17 @@ class HeadingSourceFrame(tkinter.Frame):
         )  # this needed to be added
         new_frame.grid_columnconfigure(0, weight=1)  # as did this
         new_frame.grid_columnconfigure(1, weight=1)  # as did this
-        for (
-            setting_key,
+        for setting_key, [
             setting_type,
-        ) in self.heading_manager.heading_source.get_parameters().items():
+            default_value,
+        ] in self.heading_manager.heading_source.get_parameters().items():
             label = tkinter.Label(
                 new_frame,
                 text=f"{setting_key}",
             )
             label.grid(column=0, row=row, pady=0)
             if setting_type in ["number", "text"]:
-                self.config_vars[setting_key] = tkinter.StringVar()
-                self.config_vars[setting_key].set(0)
+                self.config_vars[setting_key] = tkinter.StringVar(value=default_value)
 
                 textbox = tkinter.Entry(
                     new_frame,
@@ -99,7 +100,7 @@ class HeadingSourceFrame(tkinter.Frame):
 
                 textbox.grid(column=1, row=row, sticky="nsew")
             elif setting_type in ["bool"]:
-                self.config_vars[setting_key] = tkinter.BooleanVar()
+                self.config_vars[setting_key] = tkinter.BooleanVar(value=default_value)
                 check = ttk.Checkbutton(
                     new_frame,
                     variable=self.config_vars[setting_key],
@@ -111,7 +112,7 @@ class HeadingSourceFrame(tkinter.Frame):
             else:
                 result = re.search(r"(\d+)-(\d+)", setting_type)
                 if result:
-                    v = tkinter.IntVar()
+                    v = tkinter.IntVar(value=default_value)
                     self.config_vars[setting_key] = v
                     scale = tkinter.Scale(
                         new_frame,

@@ -13,11 +13,12 @@ from pysagax.df.compass_sensors import (
     open_aaronia_socket_dev,
     open_arduino_serial_dev,
 )
+from pysagax.util.confreader import confreader
 from pysagax.util.mat import normalize_angle, rotation_matrix_from_vectors
 
 
 class HeadingSource:
-    def __init__(self) -> None:
+    def __init__(self, conf) -> None:
         self.gps_updated_callback: Optional[Callable[[float, float], None]] = None
         self.quaternion_updated_callback: Optional[
             Callable[[float, float, float, float], None]
@@ -25,6 +26,12 @@ class HeadingSource:
         self.data_invalid_callback: Optional[Callable[[], None]] = None
         self.status_updates_callback: Optional[Callable[[str], None]] = None
         self.quaternion = pyquaternion.Quaternion([1, 0, 0, 0])
+
+        self.conf = conf
+
+    def cr(self, keys, default_value):
+        # shortened config parser for readablity
+        return confreader(self.conf, keys, default_value)
 
     def _gps(self, lat: float, lon: float) -> None:
         if self.gps_updated_callback:
@@ -48,7 +55,20 @@ class HeadingSource:
         pass
 
     def get_parameters(self) -> dict[str, str]:
-        return {}
+        """
+        Values here are parsed for child classes to use as default parameters.
+        Makes it possible to use generic config parameters for all heading sources
+        or specific ones for each source type as desired.
+        return dict: key -> [type, default value]
+        """
+        return {
+            "lat": ["number", self.cr(["heading", "lat"], 47.498056)],
+            "lon": ["number", self.cr(["heading", "lon"], 19.04)],
+            "angle": ["0-360", self.cr(["heading", "angle"], 0)],
+            "address": ["text", self.cr(["heading", "address"], "")],
+            "port": ["text", self.cr(["heading", "port"], "")],
+            "use_magneto": ["bool", self.cr(["heading", "use_magneto"], False)],
+        }
 
     def initialize(self) -> bool:
         return False
@@ -71,8 +91,8 @@ class HeadingStatic(HeadingSource):
     def initialize(self) -> bool:
         return True
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
         self.lat: float = 0.0
         self.lon: float = 0.0
 
@@ -88,12 +108,21 @@ class HeadingStatic(HeadingSource):
             self._gps(self.lat, self.lon)
 
     def get_parameters(self) -> dict[str, str]:
-        return {"lat": "number", "lon": "number", "angle": "0-360"}
+        defaults = super().get_parameters()
+
+        lat = self.cr(["heading", "static", "lat"], defaults["lat"][1])
+        lon = self.cr(["heading", "static", "lon"], defaults["lon"][1])
+        angle = self.cr(["heading", "static", "angle"], defaults["angle"][1])
+        return {
+            "lat": ["number", lat],
+            "lon": ["number", lon],
+            "angle": ["0-360", angle],
+        }
 
 
 class HeadingEncoder(HeadingSource):
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
         self.connection: Optional[serial.Serial] = None
         self.port: str = ""
 
@@ -101,10 +130,15 @@ class HeadingEncoder(HeadingSource):
         self.lon = 0.0
 
     def get_parameters(self) -> dict[str, str]:
+        defaults = super().get_parameters()
+
+        lat = self.cr(["heading", "encoder", "lat"], defaults["lat"][1])
+        lon = self.cr(["heading", "encoder", "lon"], defaults["lon"][1])
+        port = self.cr(["heading", "encoder", "port"], defaults["port"][1])
         return {
-            "port": "text",
-            "lat": "number",
-            "lon": "number",
+            "port": ["text", port],
+            "lat": ["number", lat],
+            "lon": ["number", lon],
         }
 
     def update_parameter(self, key: str, value: Any) -> None:
@@ -148,8 +182,8 @@ class HeadingEncoder(HeadingSource):
 
 
 class HeadingAHRS(HeadingSource):
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
         self.compass: Optional[CompassBase] = None
         self.address: str = ""
         self.use_magneto: bool = False
@@ -161,9 +195,14 @@ class HeadingAHRS(HeadingSource):
             self.use_magneto = bool(value)
 
     def get_parameters(self) -> dict[str, str]:
+        defaults = super().get_parameters()
+        address = self.cr(["heading", "ahrs_socket", "address"], defaults["address"][1])
+        use_magneto = self.cr(
+            ["heading", "ahrs_socket", "use_magneto"], defaults["use_magneto"][1]
+        )
         return {
-            "address": "text",
-            "use_magneto": "bool",
+            "address": ["text", address],
+            "use_magneto": ["bool", use_magneto],
         }
 
     def calibrate(self) -> None:
@@ -226,8 +265,8 @@ class HeadingAHRS(HeadingSource):
 
 
 class HeadingAHRSUSB(HeadingAHRS):
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
         self.port: str = ""
 
     def update_parameter(self, key: str, value: Any) -> None:
@@ -237,9 +276,14 @@ class HeadingAHRSUSB(HeadingAHRS):
             self.use_magneto = bool(value)
 
     def get_parameters(self) -> dict[str, str]:
+        defaults = HeadingSource.get_parameters(self)
+        port = self.cr(["heading", "ahrs_usb", "port"], defaults["port"][1])
+        use_magneto = self.cr(
+            ["heading", "ahrs_usb", "use_magneto"], defaults["use_magneto"][1]
+        )
         return {
-            "port": "text",
-            "use_magneto": "bool",
+            "port": ["text", port],
+            "use_magneto": ["bool", use_magneto],
         }
 
     def initialize(self) -> bool:
@@ -260,16 +304,20 @@ class HeadingAHRSUSB(HeadingAHRS):
 
 
 class HeadingAHRSFTDI(HeadingAHRS):
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
 
     def update_parameter(self, key: str, value: Any) -> None:
         if key == "use_magneto":
             self.use_magneto = bool(value)
 
     def get_parameters(self) -> dict[str, str]:
+        defaults = HeadingSource.get_parameters(self)
+        use_magneto = self.cr(
+            ["heading", "ahrs_ftdi", "use_magneto"], defaults["use_magneto"][1]
+        )
         return {
-            "use_magneto": "bool",
+            "use_magneto": ["bool", use_magneto],
         }
 
     def initialize(self) -> bool:

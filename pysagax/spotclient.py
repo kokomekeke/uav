@@ -132,7 +132,7 @@ class ClientWindow(tkinter.Frame):
         )
         self.left_notebook.add(self.plot_settings_frame, text="Plot Settings")
         self.heading_source_frame = HeadingSourceFrame(
-            self.left_notebook, self.client.heading_manager
+            self.left_notebook, self.client.heading_manager, conf
         )
         self.left_notebook.add(self.heading_source_frame, text="Heading&GPS")
         self.left_notebook.pack(fill=tkinter.BOTH, expand=False, side=tkinter.LEFT)
