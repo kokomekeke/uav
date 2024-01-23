@@ -26,6 +26,9 @@ class ValueCollector:
     def quaternion_callback(self, q0: float, q1: float, q2: float, q3: float) -> None:
         self.mp_values.put(("quaternion", [q0, q1, q2, q3]))
 
+    def offset_callback(self, offset: float) -> None:
+        self.mp_values.put(("offset", offset))
+
     def invalid_callback(self) -> None:
         self.mp_values.put(("gps", None))
         self.mp_values.put(("quaternion", None))
@@ -50,6 +53,7 @@ def HeadingWorker(
     status_callback = StatusCallback(mp_status)
     heading_source.gps_updated_callback = value_collector.gps_callback
     heading_source.quaternion_updated_callback = value_collector.quaternion_callback
+    heading_source.offset_updated_callback = value_collector.offset_callback
     heading_source.data_invalid_callback = value_collector.invalid_callback
     heading_source.status_updates_callback = status_callback.callback
     value_collector.invalid_callback()

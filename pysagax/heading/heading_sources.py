@@ -23,6 +23,7 @@ class HeadingSource:
         self.quaternion_updated_callback: Optional[
             Callable[[float, float, float, float], None]
         ] = None
+        self.offset_updated_callback: Optional[Callable[[float], None]] = None
         self.data_invalid_callback: Optional[Callable[[], None]] = None
         self.status_updates_callback: Optional[Callable[[str], None]] = None
         self.quaternion = pyquaternion.Quaternion([1, 0, 0, 0])
@@ -43,6 +44,10 @@ class HeadingSource:
                 quaternion[0], quaternion[1], quaternion[2], quaternion[3]
             )
 
+    def _offset(self, offset: float) -> None:
+        if self.offset_updated_callback:
+            self.offset_updated_callback(offset)
+
     def _data_invalid(self) -> None:
         if self.data_invalid_callback:
             self.data_invalid_callback()
@@ -52,7 +57,8 @@ class HeadingSource:
             self.status_updates_callback(status)
 
     def update_parameter(self, key: str, value: Any) -> None:
-        pass
+        if key == "offset":
+            self._offset(value)
 
     def get_parameters(self) -> dict[str, str]:
         """
@@ -97,6 +103,7 @@ class HeadingStatic(HeadingSource):
         self.lon: float = 0.0
 
     def update_parameter(self, key: str, value: Any) -> None:
+        super().update_parameter(key, value)
         if key == "angle":
             self.update_heading(float(value) / 180 * np.pi, 0, 0)
             self._quaternion(self.quaternion)
@@ -142,6 +149,7 @@ class HeadingEncoder(HeadingSource):
         }
 
     def update_parameter(self, key: str, value: Any) -> None:
+        super().update_parameter(key, value)
         if key == "port":
             self.port = str(value)
 
@@ -189,6 +197,7 @@ class HeadingAHRS(HeadingSource):
         self.use_magneto: bool = False
 
     def update_parameter(self, key: str, value: Any) -> None:
+        super().update_parameter(key, value)
         if key == "address":
             self.address = str(value)
         elif key == "use_magneto":
@@ -270,6 +279,7 @@ class HeadingAHRSUSB(HeadingAHRS):
         self.port: str = ""
 
     def update_parameter(self, key: str, value: Any) -> None:
+        super().update_parameter(key, value)
         if key == "port":
             self.port = str(value)
         elif key == "use_magneto":
@@ -308,6 +318,7 @@ class HeadingAHRSFTDI(HeadingAHRS):
         super().__init__(*args)
 
     def update_parameter(self, key: str, value: Any) -> None:
+        super().update_parameter(key, value)
         if key == "use_magneto":
             self.use_magneto = bool(value)
 

@@ -2,11 +2,14 @@ import re
 import tkinter
 from tkinter import ttk
 from typing import Any
+import numpy as np
 
 from numpy._typing import _16Bit
 
 from pysagax.heading.heading_manager import HeadingManager
 from pysagax.heading.heading_sources import HeadingStatic
+from pysagax.ui.custom_widgets import EntryWithLabel
+from pysagax.util.confreader import confreader
 
 
 class HeadingSourceFrame(tkinter.Frame):
@@ -30,6 +33,9 @@ class HeadingSourceFrame(tkinter.Frame):
         self.reconfigure_button = tkinter.Button(self)
         self.config_frame = self.construct_settings_frame()
         self.config_frame.pack(fill=tkinter.BOTH, expand=True)
+
+        self.offset_frame = self.construct_offset_frame()
+        self.offset_frame.pack(side=tkinter.RIGHT, fill=tkinter.NONE, expand=False, padx=5, pady=5)
 
         self.pack()
         self.heading_manager.start()
@@ -133,3 +139,24 @@ class HeadingSourceFrame(tkinter.Frame):
         self.reconfigure_button.grid(column=0, columnspan=2, row=row)
 
         return new_frame
+
+    def construct_offset_frame(self) -> tkinter.Frame:
+        new_frame = tkinter.Frame(self)
+        if self.heading_manager.heading_source is None:
+            return new_frame
+        new_frame.grid_columnconfigure(0, weight=1)
+        new_frame.grid_columnconfigure(1, weight=1)
+        new_frame.grid_columnconfigure(2, weight=1)
+        default_offset = confreader(self.conf, ["heading", "offset"], 0)
+        self.offset_entry = EntryWithLabel(new_frame, labeltext="Offset (degrees):", column=0, row=0, default_value=default_offset, width=5)
+        self.set_offset_button = tkinter.Button(new_frame, text="set offset", command=self.set_offset_commands)
+        self.set_offset_button.grid(column=2, row=0)
+
+        return new_frame
+    
+    def set_offset_commands(self):
+        if self.heading_manager.heading_source is None:
+            return False
+        offset = float(self.offset_entry.get()) * np.pi / 180
+        self.heading_manager.update_parameter("offset", offset)
+        return True

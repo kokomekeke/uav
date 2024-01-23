@@ -101,16 +101,16 @@ class StreamAndCompassProcess(
                 gps_lat, gps_lon = (
                     self.heading_queue.gps
                     if self.heading_queue.gps is not None
-                    else None,
-                    None,
+                    else (None, None)
                 )
+                compass_offset = self.heading_queue.offset
             else:
                 compass_angle = None
                 gps_lat = None
                 gps_lon = None
 
             compass_heading = (
-                pysagax.normalize_angle(compass_angle - self.compass_offset)
+                pysagax.normalize_angle(compass_angle + compass_offset)
                 if compass_angle is not None
                 else None
             )
@@ -128,7 +128,7 @@ class StreamAndCompassProcess(
             result: dict[str, typing.Any] = {
                 "cs_packet": cs_packet,
                 "aggregated_roi_results": self.aggregated_roi_results,
-                "compass_angle": compass_angle if self.compass is not None else None,
+                "compass_angle": compass_angle,
                 "compass_heading": compass_heading,
                 "gps_lat": gps_lat,
                 "gps_lon": gps_lon,

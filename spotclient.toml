@@ -37,6 +37,7 @@ offset=0   #without compass sensor th
     lat = 47.498056
     lon = 19.04
     use_magneto = true
+    offset = 90 # in degrees
     [heading.static]
         #lat = 
         #lon = 

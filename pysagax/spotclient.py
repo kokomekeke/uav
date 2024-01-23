@@ -654,7 +654,7 @@ class Client:
             self.stream_process_watcher_queue,
         )
         self.stream_process.heading_queue = QueueValueCollector(
-            self.heading_manager.mp_values
+            self.heading_manager.mp_values, conf
         )
         self.stream_process.host_port = f"{host_address}:12937"
         self.stream_process.compass_host_port = f"{host_address}:12938"
