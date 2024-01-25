@@ -373,6 +373,7 @@ class ClientWindow(tkinter.Frame):
 
         self.playback_tab.connected = True
         self.playback_tab.set_buttons_enabled()
+        self.plot_frame.start_animation()
 
     def disconnect_action(self) -> None:
         """
@@ -392,11 +393,7 @@ class ClientWindow(tkinter.Frame):
             self.disconnect_commands()  # to disconnect the other thread
         except:
             pass  # it might happen when closing the window
-        try:
-            if self.plot_frame.animation is not None:
-                self.plot_frame.animation.event_source.stop()
-        except Exception as e:
-            pass
+        self.plot_frame.stop_animation()
 
     def info_update_handler(
         self, update_string: str | list[str], source: Optional[str] = None
