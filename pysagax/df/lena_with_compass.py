@@ -118,10 +118,8 @@ class StreamAndCompassProcess(
             if isinstance(cs_packet, CoreServiceROIResultPacket):
                 try:
                     self.update_aggregated_results(cs_packet)
-                except (
-                    TypeError
-                ) as e:  # TODO: multiprocessing debug (JIRA issue ALTS-150)
-                    print("[MultiprocessingError@aggregating]:", e)
+                except TypeError as e:  # TODO: JIRA issue ALTS-150
+                    pass
 
                 # TODO: if we receive no roi packets for a time then update aggregated results with None
 
@@ -154,17 +152,16 @@ class StreamAndCompassProcess(
         try:
             return bool(self.mp_disconnect.value)
         except TypeError as e:  # TODO: multiprocessing debug (JIRA issue ALTS-150)
-            print("[MultiprocessingError]:", e)
-            print("trying to read mp_disconnect.value again")
+            # print("[MultiprocessingError]:", e)
+            # print("trying to read mp_disconnect.value again")
             from time import sleep
 
             sleep(0.1)
             try:
                 return bool(self.mp_disconnect.value)
             except TypeError as e:  # TODO: multiprocessing debug (JIRA issue ALTS-150)
-                print("[MultiprocessingError]:", e)
-                # traceback.print_exception(type(e), e, e.__traceback__)
-                print("Failed to read mp_disconnect.value a second time")
+                # print("Failed to read mp_disconnect.value a second time")
+                pass
             return True
 
     def display_status_callback(self, message: str) -> None:

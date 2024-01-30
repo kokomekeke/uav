@@ -41,7 +41,6 @@ class CommandsConnectionThread(BaseConnection, threading.Thread):
         :param message: text to display on the GUI
         :return:
         """
-        print(message)
         self.status_text = message
         if self.status_queue is not None:
             self.status_queue.put(message)
