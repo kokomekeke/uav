@@ -230,7 +230,14 @@ class ClientWindow(tkinter.Frame):
                                 regex, str(packet)
                             )  # creating a list of (ChannelID, PeakValue) tuples from the debug message
                             peaks = [peak[1] for peak in matches]
-                            self.stat_frame.update_peak_plot(peaks)
+                            try:
+                                self.stat_frame.update_peak_plot(peaks)
+                            except IndexError:
+                                """
+                                During changing center freq, the CoreService sometiomes sends negative peak values.
+                                This behaviour has not been investigated on the CS side, only handled here
+                                """
+                                pass
                         elif packet.title == "q":
                             quality = float(packet.contents.decode().strip())
                             self.stat_frame.quality_value_string.set(f"{quality:.2f}")
