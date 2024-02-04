@@ -24,6 +24,8 @@ def rotation_matrix_from_vectors(
 
 
 def si_to_float(si: str) -> float:
+    if si == "":
+        return 0
     prefix = {
         "y": 1e-24,  # yocto
         "z": 1e-21,  # zepto
