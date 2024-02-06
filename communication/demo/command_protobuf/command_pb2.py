@@ -20,7 +20,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   syntax='proto3',
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-  serialized_pb=b'\n\x1e\x63ommand_protobuf/command.proto\"Y\n\x07\x43ommand\x12\x1a\n\x04type\x18\x01 \x01(\x0e\x32\x0c.Instruction\x12\x12\n\x08start_id\x18\x02 \x01(\x05H\x00\x12\x11\n\x07stop_id\x18\x03 \x01(\x05H\x00\x42\x0b\n\tparameter\"\x94\x01\n\x08Response\x12\x1a\n\x04type\x18\x01 \x01(\x0e\x32\x0c.Instruction\x12(\n\x05\x65rror\x18\x02 \x01(\x0b\x32\x17.Response.ResponseErrorH\x00\x12\x14\n\nquery_data\x18\x03 \x01(\tH\x00\x1a$\n\rResponseError\x12\x13\n\x0b\x64\x65scription\x18\x01 \x01(\tB\x06\n\x04\x64\x61ta*6\n\x0bInstruction\x12\t\n\x05QUERY\x10\x00\x12\t\n\x05START\x10\x01\x12\x08\n\x04STOP\x10\x02\x12\x07\n\x03REC\x10\x03\x62\x06proto3'
+  serialized_pb=b'\n\x1e\x63ommand_protobuf/command.proto\"Y\n\x07\x43ommand\x12\x1a\n\x04type\x18\x01 \x01(\x0e\x32\x0c.Instruction\x12\x12\n\x08start_id\x18\x02 \x01(\x05H\x00\x12\x11\n\x07stop_id\x18\x03 \x01(\x05H\x00\x42\x0b\n\tparameter\"\x1c\n\x05\x45rror\x12\x13\n\x0b\x64\x65scription\x18\x01 \x01(\t\"]\n\x08Response\x12\x1a\n\x04type\x18\x01 \x01(\x0e\x32\x0c.Instruction\x12\x17\n\x05\x65rror\x18\x02 \x01(\x0b\x32\x06.ErrorH\x00\x12\x14\n\nquery_data\x18\x03 \x01(\tH\x00\x42\x06\n\x04\x64\x61ta*6\n\x0bInstruction\x12\t\n\x05QUERY\x10\x00\x12\t\n\x05START\x10\x01\x12\x08\n\x04STOP\x10\x02\x12\x07\n\x03REC\x10\x03\x62\x06proto3'
 )
 
 _INSTRUCTION = _descriptor.EnumDescriptor(
@@ -53,8 +53,8 @@ _INSTRUCTION = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   serialized_options=None,
-  serialized_start=276,
-  serialized_end=330,
+  serialized_start=250,
+  serialized_end=304,
 )
 _sym_db.RegisterEnumDescriptor(_INSTRUCTION)
 
@@ -117,16 +117,16 @@ _COMMAND = _descriptor.Descriptor(
 )
 
 
-_RESPONSE_RESPONSEERROR = _descriptor.Descriptor(
-  name='ResponseError',
-  full_name='Response.ResponseError',
+_ERROR = _descriptor.Descriptor(
+  name='Error',
+  full_name='Error',
   filename=None,
   file=DESCRIPTOR,
   containing_type=None,
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='description', full_name='Response.ResponseError.description', index=0,
+      name='description', full_name='Error.description', index=0,
       number=1, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=b"".decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
@@ -144,9 +144,10 @@ _RESPONSE_RESPONSEERROR = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=230,
-  serialized_end=266,
+  serialized_start=125,
+  serialized_end=153,
 )
+
 
 _RESPONSE = _descriptor.Descriptor(
   name='Response',
@@ -180,7 +181,7 @@ _RESPONSE = _descriptor.Descriptor(
   ],
   extensions=[
   ],
-  nested_types=[_RESPONSE_RESPONSEERROR, ],
+  nested_types=[],
   enum_types=[
   ],
   serialized_options=None,
@@ -194,8 +195,8 @@ _RESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=126,
-  serialized_end=274,
+  serialized_start=155,
+  serialized_end=248,
 )
 
 _COMMAND.fields_by_name['type'].enum_type = _INSTRUCTION
@@ -205,9 +206,8 @@ _COMMAND.fields_by_name['start_id'].containing_oneof = _COMMAND.oneofs_by_name['
 _COMMAND.oneofs_by_name['parameter'].fields.append(
   _COMMAND.fields_by_name['stop_id'])
 _COMMAND.fields_by_name['stop_id'].containing_oneof = _COMMAND.oneofs_by_name['parameter']
-_RESPONSE_RESPONSEERROR.containing_type = _RESPONSE
 _RESPONSE.fields_by_name['type'].enum_type = _INSTRUCTION
-_RESPONSE.fields_by_name['error'].message_type = _RESPONSE_RESPONSEERROR
+_RESPONSE.fields_by_name['error'].message_type = _ERROR
 _RESPONSE.oneofs_by_name['data'].fields.append(
   _RESPONSE.fields_by_name['error'])
 _RESPONSE.fields_by_name['error'].containing_oneof = _RESPONSE.oneofs_by_name['data']
@@ -215,6 +215,7 @@ _RESPONSE.oneofs_by_name['data'].fields.append(
   _RESPONSE.fields_by_name['query_data'])
 _RESPONSE.fields_by_name['query_data'].containing_oneof = _RESPONSE.oneofs_by_name['data']
 DESCRIPTOR.message_types_by_name['Command'] = _COMMAND
+DESCRIPTOR.message_types_by_name['Error'] = _ERROR
 DESCRIPTOR.message_types_by_name['Response'] = _RESPONSE
 DESCRIPTOR.enum_types_by_name['Instruction'] = _INSTRUCTION
 _sym_db.RegisterFileDescriptor(DESCRIPTOR)
@@ -226,20 +227,19 @@ Command = _reflection.GeneratedProtocolMessageType('Command', (_message.Message,
   })
 _sym_db.RegisterMessage(Command)
 
-Response = _reflection.GeneratedProtocolMessageType('Response', (_message.Message,), {
+Error = _reflection.GeneratedProtocolMessageType('Error', (_message.Message,), {
+  'DESCRIPTOR' : _ERROR,
+  '__module__' : 'command_protobuf.command_pb2'
+  # @@protoc_insertion_point(class_scope:Error)
+  })
+_sym_db.RegisterMessage(Error)
 
-  'ResponseError' : _reflection.GeneratedProtocolMessageType('ResponseError', (_message.Message,), {
-    'DESCRIPTOR' : _RESPONSE_RESPONSEERROR,
-    '__module__' : 'command_protobuf.command_pb2'
-    # @@protoc_insertion_point(class_scope:Response.ResponseError)
-    })
-  ,
+Response = _reflection.GeneratedProtocolMessageType('Response', (_message.Message,), {
   'DESCRIPTOR' : _RESPONSE,
   '__module__' : 'command_protobuf.command_pb2'
   # @@protoc_insertion_point(class_scope:Response)
   })
 _sym_db.RegisterMessage(Response)
-_sym_db.RegisterMessage(Response.ResponseError)
 
 
 # @@protoc_insertion_point(module_scope)

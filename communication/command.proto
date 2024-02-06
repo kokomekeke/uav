@@ -2,7 +2,7 @@ syntax = "proto3";
 import "google/protobuf/timestamp.proto";
 
 enum Instruction {
-    QUERY = 0;
+    HEARTBEAT = 0;
     START = 1;
     STOP = 2;
     REC = 3;
@@ -92,8 +92,6 @@ message HeadingConfiguration {
 }
 
 message ROIMask {
-    google.protobuf.Timestamp time = 1;
-    fixed32 stream_id = 2;
     fixed32 roi_id = 3;
     float center_frequency = 4;
     float span = 5;
