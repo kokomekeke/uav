@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+enum SourceKind {
+    LIVE = 0;
+    RECORDED = 1;
+}
+
+message SourceMetadata{
+
+    SourceKind source_kind = 1;
+    string source_module = 2;
+    map<int32, int32> channel_gain = 5;
+    map<int32, int32> peaks = 6;
+    bool overflow = 8;
+}
+
+message RecordingMetadata {
+    bool recording_active = 1;
+    string filename = 2;
+    uint64 length = 3;
+}
+
+message Telemetry {
+    google.protobuf.Timestamp time = 1;
+    fixed32 stream_id = 2;
+    fixed64 disk_usage = 3;
+}
+
+message PlaybackMetadata {
+    uint64 length = 2;  // total [samples] in source
+    uint64 position = 3;  // position in [samples]
+    uint32 sample_rate = 4;
+    float playback_speed = 5;
+    uint32 iq_rate = 13;
+    uint64 burst_stride = 15;
+    uint64 bin_count = 16;
+    float center_frequency = 17;
+    repeated ROIMask roi_masks = 19;
+    map<int32, float> heading_quaternion = 20;
+}
+
+
+enum CoreServiceState {
+    NONE = 0;
+    CONFIGURED = 1;
+    RUNNING = 2;
+    RECORDING = 3;
+}
+
+message Heartbeat {
+    google.protobuf.Timestamp time = 1;
+    CoreServiceState state = 2;
+    Telemetry telemetry = 3;
+    oneof data{
+        PlaybackMetadata meta = 4;
+    }
+}
+message Spectrum {
+    google.protobuf.Timestamp time = 1;
+    Telemetry telemetry = 2;
+    fixed32 stream_id = 3;
+    uint64 packet_id = 4;
+    PlaybackMetadata meta = 5;
+    bytes magnitude = 6;
+}
+
+message Detection {
+    google.protobuf.Timestamp time = 1;
+    fixed32 stream_id = 2;
+    fixed32 roi_id = 3;
+
+    float frequency = 4;
+    float bandwidth = 5;
+    float signal_strength = 6;
+    float azimuth = 7;
+    float elevation = 8;
+    float snr = 9;
+    float precision = 10;
+
+    uint64 event_id = 20;
+}
+
+message Event {
+    google.protobuf.Timestamp time = 1;
+    fixed32 stream_id = 2;
+    uint64 event_id = 20;
+
+    float frequency = 4;
+    float avg_signal_strength = 6;
+    float avg_line_of_bearing = 7;
+    float certainty_of_lob = 8;
+    google.protobuf.Timestamp first_detection = 9;
+    float duration = 10;
+
+}

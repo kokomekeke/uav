@@ -2,96 +2,176 @@ syntax = "proto3";
 
 import "google/protobuf/timestamp.proto";
 
-enum SourceKind {
-    LIVE = 0;
-    RECORDED = 1;
-}
-
-message SourceMetadata{
-
-    SourceKind source_kind = 1;
-    string source_module = 2;
-    map<int32, int32> channel_gain = 5;
-    map<int32, int32> peaks = 6;
-    bool overflow = 8;
-}
-
-message RecordingMetadata {
-    bool recording_active = 1;
-    string filename = 2;
-    uint64 length = 3;
-}
-
 message Telemetry {
+    // Non-critical information changing regularly
+
     google.protobuf.Timestamp time = 1;
     fixed32 stream_id = 2;
-    fixed64 disk_usage = 3;
-}
 
-message PlaybackMetadata {
-    uint64 length = 2;  // total [samples] in source
-    uint64 position = 3;  // position in [samples]
-    uint32 sample_rate = 4;
-    float playback_speed = 5;
-    uint32 iq_rate = 13;
-    uint64 burst_stride = 15;
-    uint64 bin_count = 16;
-    float center_frequency = 17;
-    repeated ROIMask roi_masks = 19;
-    map<int32, float> heading_quaternion = 20;
-}
-
-
-enum CoreServiceState {
-    NONE = 0;
-    CONFIGURED = 1;
-    RUNNING = 2;
-    RECORDING = 3;
-}
-
-message Heartbeat {
-    google.protobuf.Timestamp time = 1;
-    CoreServiceState state = 2;
-    Telemetry telemetry = 3;
-    oneof data{
-        PlaybackMetadata meta = 4;
+    // Hardware info
+    message Hardware {
+        float cpu_usage = 1;
+        int64 disk_usage = 2;
+        float temperature = 3;
     }
-}
-message Spectrum {
-    google.protobuf.Timestamp time = 1;
-    Telemetry telemetry = 2;
-    fixed32 stream_id = 3;
-    uint64 packet_id = 4;
-    PlaybackMetadata meta = 5;
-    bytes magnitude = 6;
+    Hardware hardware = 5;
+
+    // Source info
+    message Source {
+        // Source status
+        enum Status {
+            DISABLED = 0;
+            ENABLED = 1;
+            RUNNING = 2;
+        }
+        Status status = 3;
+
+        // Current position in selected source
+        uint64 position = 5;
+
+        // Length of selected source
+        uint64 length = 6;
+    }
+    Source source = 9;
+
+    // Recording info
+    message Recording {
+        // Recording status
+        enum Status {
+            DISABLED = 0;
+            ENABLED = 1;
+            RUNNING = 2;
+        }
+        Status status = 1;
+
+        // Path of recording being written
+        string filename = 2;
+
+        // Current length of recording
+        uint64 length = 3;
+    }
+    Recording recording = 10;
 }
 
 message Detection {
+    // A single detection instance
+
+    // ID of Event to which it belongs
+    uint32 event_id = 1;
+
+    // ID of source region
+    uint32 roi_id = 6;
+
+    // General detection information
+    float frequency = 7;
+    float bandwidth = 8;
+    float strength = 9;
+    float azimuth = 10;
+    float elevation = 11;
+    float snr = 12;
+    float deviation = 13;
+}
+
+message Spectrum {
+    // Spectrum data
+
+    int32 channel_id = 1;
+
+    // Type of spectrum contained
+    enum SpectrumType {
+        MAGNITUDE = 0;
+        AZIMUTH = 1;
+        ELEVATION = 2;
+    }
+    SpectrumType spectrum_type = 2;
+
+    // Data type of data in byte array
+    enum DataType {
+        INT16 = 0;
+        INT8 = 1;
+        FLOAT32 = 5;
+    }
+    DataType data_type = 3;
+
+    bytes data = 5;
+}
+
+message Measurement {
+    // Constanstly steamed data
+
     google.protobuf.Timestamp time = 1;
-    fixed32 stream_id = 2;
-    fixed32 roi_id = 3;
+    uint32 stream_id = 2;
 
-    float frequency = 4;
-    float bandwidth = 5;
-    float signal_strength = 6;
-    float azimuth = 7;
-    float elevation = 8;
-    float snr = 9;
-    float precision = 10;
+    // ID of configuration at time of measurement
+    uint32 config_id = 3;
 
-    uint64 event_id = 20;
+    // Metadata
+    uint64 packet_id = 5;
+    uint64 position = 6;
+    float heading = 7;
+    repeated float quaternion = 8;
+    bool overflow = 9;
+    repeated int32 peaks = 10;
+
+    // Spectrum data
+    repeated Spectrum data = 13;
+
+    // Detections made on above spectrum
+    repeated Detection detection = 17;
 }
 
 message Event {
+    // High-level ComInt event, aggregate of one or more Detections
+
     google.protobuf.Timestamp time = 1;
-    fixed32 stream_id = 2;
-    uint64 event_id = 20;
+    uint32 stream_id = 2;
 
-    float frequency = 4;
-    float avg_signal_strength = 6;
-    float avg_line_of_bearing = 7;
-    float certainty_of_lob = 8;
-    google.protobuf.Timestamp first_detection = 9;
+    // ID of event
+    uint32 event_id = 5;
+
+    // General information
+    float frequency = 6;
+    float strength = 7;
+    float lob = 8;
+    float certainty = 9;
     float duration = 10;
+    google.protobuf.Timestamp detection = 11;
+}
 
+message OperationalError {
+    // Error during operation (not during command execution)
+
+    enum ErrorType {
+        // Possible error types
+        UNKNOWN = 0;
+    }
+
+    // General error information
+    google.protobuf.Timestamp time = 1;
+    ErrorType type = 2;
+
+    // Detailed error message
+    string description = 5;
+}
+
+message Packet {
+    // High-level message encapsulating all possible streaming message types
+
+    // treaming message type
+    enum PacketType {
+        // Possible types
+        MEASUREMENT = 0;
+        TELEMETRY = 1;
+        EVENT = 2;
+        ERROR = 8;
+    }
+    PacketType type = 1;
+
+    // Data
+    oneof data {
+        Measurement measurement = 5;
+        Telemetry telemetry = 6;
+        Event event = 7;
+        OperationalError error = 13;
+    }
 }
