@@ -22,7 +22,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   syntax='proto3',
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-  serialized_pb=b'\n\rcommand.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\ndata.proto\"S\n\x07ROIMask\x12\x0e\n\x06roi_id\x18\x01 \x01(\x05\x12\x18\n\x10\x63\x65nter_frequency\x18\x05 \x01(\x02\x12\x0c\n\x04span\x18\x06 \x01(\x02\x12\x10\n\x08treshold\x18\x07 \x01(\x02\"x\n\x07Heading\x12\x0c\n\x04type\x18\x01 \x01(\t\x12,\n\nparameters\x18\x02 \x03(\x0b\x32\x18.Heading.ParametersEntry\x1a\x31\n\x0fParametersEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\xb5\x02\n\x06\x43onfig\x12\x11\n\tconfig_id\x18\x01 \x01(\r\x12\x18\n\x10\x63\x65nter_frequency\x18\x05 \x01(\x02\x12\x0f\n\x07iq_rate\x18\x06 \x01(\r\x12\x16\n\x0eplayback_speed\x18\x07 \x01(\x02\x12\x11\n\tbin_count\x18\x08 \x01(\x04\x12\x14\n\x0c\x62urst_stride\x18\t \x01(\x04\x12\x14\n\x0c\x63hannel_gain\x18\n \x03(\x05\x12\x13\n\x0bsource_path\x18\x11 \x01(\t\x12\x1a\n\x04type\x18\x12 \x01(\x0e\x32\x0c.Config.Type\x12\x15\n\x03roi\x18\x15 \x03(\x0b\x32\x08.ROIMask\x12\x19\n\x07heading\x18\x19 \x01(\x0b\x32\x08.Heading\x12\x13\n\x0bmean_window\x18\x1d \x01(\x02\"\x1e\n\x04Type\x12\x08\n\x04LIVE\x10\x00\x12\x0c\n\x08RECORDED\x10\x01\"\x82\x02\n\nSystemInfo\x12&\n\x08hardware\x18\x01 \x01(\x0b\x32\x14.SystemInfo.Hardware\x12&\n\x08software\x18\x02 \x01(\x0b\x32\x14.SystemInfo.Software\x12\x1a\n\x08headings\x18\x03 \x03(\x0b\x32\x08.Heading\x12\x1f\n\x06radios\x18\x04 \x03(\x0b\x32\x0f.SystemInfo.SDR\x1a\x18\n\x08Hardware\x12\x0c\n\x04\x64isk\x18\x01 \x01(\x03\x1a\x37\n\x08Software\x12\x12\n\ncs_version\x18\x01 \x01(\t\x12\x17\n\x0fpysagax_version\x18\x02 \x01(\t\x1a\x14\n\x03SDR\x12\r\n\x05model\x18\x01 \x01(\t\"\x8e\x01\n\x0c\x43ommandError\x12(\n\x04time\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12%\n\x04type\x18\x02 \x01(\x0e\x32\x17.CommandError.ErrorType\x12\x13\n\x0b\x64\x65scription\x18\x05 \x01(\t\"\x18\n\tErrorType\x12\x0b\n\x07UNKNOWN\x10\x00\"}\n\x07\x43ommand\x12!\n\x0binstruction\x18\x01 \x01(\x0e\x32\x0c.Instruction\x12\x13\n\tping_data\x18\x05 \x01(\tH\x00\x12\x19\n\x06\x63onfig\x18\x06 \x01(\x0b\x32\x07.ConfigH\x00\x12\x12\n\x08position\x18\x07 \x01(\x04H\x00\x42\x0b\n\tparameter\"\xe8\x01\n\x08Response\x12!\n\x0binstruction\x18\x01 \x01(\x0e\x32\x0c.Instruction\x12\x1c\n\x05\x65rror\x18\x02 \x01(\x0b\x32\r.CommandError\x12\x11\n\x07success\x18\x05 \x01(\x08H\x00\x12\x13\n\tping_data\x18\x06 \x01(\tH\x00\x12\x19\n\x06\x63onfig\x18\x07 \x01(\x0b\x32\x07.ConfigH\x00\x12\x1f\n\ttelemetry\x18\x08 \x01(\x0b\x32\n.TelemetryH\x00\x12\x1b\n\x04info\x18\t \x01(\x0b\x32\x0b.SystemInfoH\x00\x12\x12\n\x08position\x18\n \x01(\x04H\x00\x42\x06\n\x04\x64\x61ta*\xef\x01\n\x0bInstruction\x12\x08\n\x04PING\x10\x00\x12\n\n\x06\x43ONFIG\x10\x01\x12\r\n\tTELEMETRY\x10\x02\x12\x08\n\x04INFO\x10\x03\x12\x0c\n\x08\x43S_START\x10\t\x12\x0b\n\x07\x43S_STOP\x10\n\x12\x0e\n\nCS_RESTART\x10\x0b\x12\x10\n\x0cSOURCE_START\x10\r\x12\x0f\n\x0bSOURCE_STOP\x10\x0e\x12\x0c\n\x08POSITION\x10\x0f\x12\r\n\tREC_START\x10\x11\x12\x0c\n\x08REC_STOP\x10\x12\x12\x11\n\rHEADING_START\x10\x15\x12\x10\n\x0cHEADING_STOP\x10\x16\x12\x13\n\x0fHEADING_RESTART\x10\x17\x62\x06proto3'
+  serialized_pb=b'\n\rcommand.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\ndata.proto\"S\n\x07ROIMask\x12\x0e\n\x06roi_id\x18\x01 \x01(\x05\x12\x18\n\x10\x63\x65nter_frequency\x18\x05 \x01(\x02\x12\x0c\n\x04span\x18\x06 \x01(\x02\x12\x10\n\x08treshold\x18\x07 \x01(\x02\"x\n\x07Heading\x12\x0c\n\x04type\x18\x01 \x01(\t\x12,\n\nparameters\x18\x02 \x03(\x0b\x32\x18.Heading.ParametersEntry\x1a\x31\n\x0fParametersEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\xb5\x02\n\x06\x43onfig\x12\x11\n\tconfig_id\x18\x01 \x01(\r\x12\x18\n\x10\x63\x65nter_frequency\x18\x05 \x01(\x02\x12\x0f\n\x07iq_rate\x18\x06 \x01(\r\x12\x16\n\x0eplayback_speed\x18\x07 \x01(\x02\x12\x11\n\tbin_count\x18\x08 \x01(\x04\x12\x14\n\x0c\x62urst_stride\x18\t \x01(\x04\x12\x14\n\x0c\x63hannel_gain\x18\n \x03(\x05\x12\x13\n\x0bsource_path\x18\x11 \x01(\t\x12\x1a\n\x04type\x18\x12 \x01(\x0e\x32\x0c.Config.Type\x12\x15\n\x03roi\x18\x15 \x03(\x0b\x32\x08.ROIMask\x12\x19\n\x07heading\x18\x19 \x01(\x0b\x32\x08.Heading\x12\x13\n\x0bmean_window\x18\x1d \x01(\x02\"\x1e\n\x04Type\x12\x08\n\x04LIVE\x10\x00\x12\x0c\n\x08RECORDED\x10\x01\"\x82\x02\n\nSystemInfo\x12&\n\x08hardware\x18\x01 \x01(\x0b\x32\x14.SystemInfo.Hardware\x12&\n\x08software\x18\x02 \x01(\x0b\x32\x14.SystemInfo.Software\x12\x1a\n\x08headings\x18\x03 \x03(\x0b\x32\x08.Heading\x12\x1f\n\x06radios\x18\x04 \x03(\x0b\x32\x0f.SystemInfo.SDR\x1a\x18\n\x08Hardware\x12\x0c\n\x04\x64isk\x18\x01 \x01(\x03\x1a\x37\n\x08Software\x12\x12\n\ncs_version\x18\x01 \x01(\t\x12\x17\n\x0fpysagax_version\x18\x02 \x01(\t\x1a\x14\n\x03SDR\x12\r\n\x05model\x18\x01 \x01(\t\"\x8e\x01\n\x0c\x43ommandError\x12(\n\x04time\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12%\n\x04type\x18\x02 \x01(\x0e\x32\x17.CommandError.ErrorType\x12\x13\n\x0b\x64\x65scription\x18\x05 \x01(\t\"\x18\n\tErrorType\x12\x0b\n\x07UNKNOWN\x10\x00\"\x89\x01\n\x07\x43ommand\x12\n\n\x02id\x18\x01 \x01(\x05\x12!\n\x0binstruction\x18\x02 \x01(\x0e\x32\x0c.Instruction\x12\x13\n\tping_data\x18\x05 \x01(\tH\x00\x12\x19\n\x06\x63onfig\x18\x06 \x01(\x0b\x32\x07.ConfigH\x00\x12\x12\n\x08position\x18\x07 \x01(\x04H\x00\x42\x0b\n\tparameter\"\xf4\x01\n\x08Response\x12\n\n\x02id\x18\x01 \x01(\x05\x12!\n\x0binstruction\x18\x02 \x01(\x0e\x32\x0c.Instruction\x12\x1c\n\x05\x65rror\x18\x03 \x01(\x0b\x32\r.CommandError\x12\x11\n\x07success\x18\x05 \x01(\x08H\x00\x12\x13\n\tping_data\x18\x06 \x01(\tH\x00\x12\x19\n\x06\x63onfig\x18\x07 \x01(\x0b\x32\x07.ConfigH\x00\x12\x1f\n\ttelemetry\x18\x08 \x01(\x0b\x32\n.TelemetryH\x00\x12\x1b\n\x04info\x18\t \x01(\x0b\x32\x0b.SystemInfoH\x00\x12\x12\n\x08position\x18\n \x01(\x04H\x00\x42\x06\n\x04\x64\x61ta*\xef\x01\n\x0bInstruction\x12\x08\n\x04PING\x10\x00\x12\n\n\x06\x43ONFIG\x10\x01\x12\r\n\tTELEMETRY\x10\x02\x12\x08\n\x04INFO\x10\x03\x12\x0c\n\x08\x43S_START\x10\t\x12\x0b\n\x07\x43S_STOP\x10\n\x12\x0e\n\nCS_RESTART\x10\x0b\x12\x10\n\x0cSOURCE_START\x10\r\x12\x0f\n\x0bSOURCE_STOP\x10\x0e\x12\x0c\n\x08POSITION\x10\x0f\x12\r\n\tREC_START\x10\x11\x12\x0c\n\x08REC_STOP\x10\x12\x12\x11\n\rHEADING_START\x10\x15\x12\x10\n\x0cHEADING_STOP\x10\x16\x12\x13\n\x0fHEADING_RESTART\x10\x17\x62\x06proto3'
   ,
   dependencies=[google_dot_protobuf_dot_timestamp__pb2.DESCRIPTOR,data__pb2.DESCRIPTOR,])
 
@@ -111,8 +111,8 @@ _INSTRUCTION = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   serialized_options=None,
-  serialized_start=1350,
-  serialized_end=1589,
+  serialized_start=1375,
+  serialized_end=1614,
 )
 _sym_db.RegisterEnumDescriptor(_INSTRUCTION)
 
@@ -629,28 +629,35 @@ _COMMAND = _descriptor.Descriptor(
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='instruction', full_name='Command.instruction', index=0,
-      number=1, type=14, cpp_type=8, label=1,
+      name='id', full_name='Command.id', index=0,
+      number=1, type=5, cpp_type=1, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='ping_data', full_name='Command.ping_data', index=1,
+      name='instruction', full_name='Command.instruction', index=1,
+      number=2, type=14, cpp_type=8, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='ping_data', full_name='Command.ping_data', index=2,
       number=5, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=b"".decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='config', full_name='Command.config', index=2,
+      name='config', full_name='Command.config', index=3,
       number=6, type=11, cpp_type=10, label=1,
       has_default_value=False, default_value=None,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='position', full_name='Command.position', index=3,
+      name='position', full_name='Command.position', index=4,
       number=7, type=4, cpp_type=4, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
@@ -673,8 +680,8 @@ _COMMAND = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=987,
-  serialized_end=1112,
+  serialized_start=988,
+  serialized_end=1125,
 )
 
 
@@ -687,56 +694,63 @@ _RESPONSE = _descriptor.Descriptor(
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='instruction', full_name='Response.instruction', index=0,
-      number=1, type=14, cpp_type=8, label=1,
+      name='id', full_name='Response.id', index=0,
+      number=1, type=5, cpp_type=1, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='error', full_name='Response.error', index=1,
-      number=2, type=11, cpp_type=10, label=1,
+      name='instruction', full_name='Response.instruction', index=1,
+      number=2, type=14, cpp_type=8, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='error', full_name='Response.error', index=2,
+      number=3, type=11, cpp_type=10, label=1,
       has_default_value=False, default_value=None,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='success', full_name='Response.success', index=2,
+      name='success', full_name='Response.success', index=3,
       number=5, type=8, cpp_type=7, label=1,
       has_default_value=False, default_value=False,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='ping_data', full_name='Response.ping_data', index=3,
+      name='ping_data', full_name='Response.ping_data', index=4,
       number=6, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=b"".decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='config', full_name='Response.config', index=4,
+      name='config', full_name='Response.config', index=5,
       number=7, type=11, cpp_type=10, label=1,
       has_default_value=False, default_value=None,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='telemetry', full_name='Response.telemetry', index=5,
+      name='telemetry', full_name='Response.telemetry', index=6,
       number=8, type=11, cpp_type=10, label=1,
       has_default_value=False, default_value=None,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='info', full_name='Response.info', index=6,
+      name='info', full_name='Response.info', index=7,
       number=9, type=11, cpp_type=10, label=1,
       has_default_value=False, default_value=None,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='position', full_name='Response.position', index=7,
+      name='position', full_name='Response.position', index=8,
       number=10, type=4, cpp_type=4, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
@@ -759,8 +773,8 @@ _RESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=1115,
-  serialized_end=1347,
+  serialized_start=1128,
+  serialized_end=1372,
 )
 
 _HEADING_PARAMETERSENTRY.containing_type = _HEADING

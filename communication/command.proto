@@ -175,8 +175,11 @@ message CommandError {
 message Command {
     // Common message encapsulating all possible commands
 
+    // Unique ID of command
+    int32 id = 1;
+
     // Type of instruction
-    Instruction instruction = 1;
+    Instruction instruction = 2;
 
     // Parameter
     oneof parameter {
@@ -194,9 +197,12 @@ message Command {
 message Response {
     // Common message encapsulating all possible responses
 
+    // Unique ID of command
+    int32 id = 1;
+
     // Type of instruction
-    Instruction instruction = 1;
-    CommandError error = 2;
+    Instruction instruction = 2;
+    CommandError error = 3;
 
     // Response data
     oneof data {
