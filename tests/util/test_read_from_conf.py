@@ -1,5 +1,5 @@
 from typing import Any
-from pysagax.util.confreader import *
+from pysagax.util.read_from_conf import *
 import pytest
 
 test_conf: dict[str, Any] = {"a": None, "b": 1, "c": {"x": None, "y": 2, "z": {}}}
@@ -24,8 +24,8 @@ test_conf: dict[str, Any] = {"a": None, "b": 1, "c": {"x": None, "y": 2, "z": {}
         ((test_conf, ["d", "z", "w"]), None),  # 13: no default value, invalid keys
     ],
 )
-def test_confreader(params: tuple[dict[Any, Any], list[str], Any], expected: Any):
-    result = confreader(*params)
+def test_read_from_conf(params: tuple[dict[Any, Any], list[str], Any], expected: Any):
+    result = read_from_conf(*params)
     assert result == expected
 
 
@@ -38,9 +38,9 @@ def test_confreader(params: tuple[dict[Any, Any], list[str], Any], expected: Any
         ((None, ["a"], -1), -1),
     ],
 )
-def test_confreader_invalid_conf(params: tuple[Any, list[str], Any], expected: Any):
+def test_read_from_conf_invalid_conf(params: tuple[Any, list[str], Any], expected: Any):
     with pytest.raises(AssertionError):
-        confreader(*params)
+        read_from_conf(*params)
 
 
 @pytest.mark.parametrize(
@@ -50,6 +50,6 @@ def test_confreader_invalid_conf(params: tuple[Any, list[str], Any], expected: A
         ((test_conf, "abc", -1), -1),
     ],
 )
-def test_confreader_invalid_keys(params: tuple[dict[Any, Any], Any, Any], expected):
+def test_read_from_conf_invalid_keys(params: tuple[dict[Any, Any], Any, Any], expected):
     with pytest.raises(AssertionError):
-        confreader(*params)
+        read_from_conf(*params)

@@ -26,7 +26,7 @@ from pysagax.ui.lena_matplotlib_graphs import (
     MagnitudeSpectrumGraph,
     WaterfallMagnitudeGraph,
 )
-from pysagax.util.confreader import confreader
+from pysagax.util.confreader import read_from_conf
 
 
 class PlotFrame(tkinter.Frame):
@@ -56,19 +56,19 @@ class PlotFrame(tkinter.Frame):
         Indicates to the packet handler whether the canvas needs to be redrawn 
         """
 
-        self.spectrum_graph_min_db = confreader(
+        self.spectrum_graph_min_db = read_from_conf(
             self.conf, ["display", "spectrum_graph_min_db"], -120
         )
 
-        self.fps = confreader(self.conf, ["display", "fps"], 25)
+        self.fps = read_from_conf(self.conf, ["display", "fps"], 25)
 
-        self.max_bin_count = confreader(self.conf, ["display", "max_bin_count"], 1024)
+        self.max_bin_count = read_from_conf(self.conf, ["display", "max_bin_count"], 1024)
 
-        self.params.waterfall_size = confreader(
+        self.params.waterfall_size = read_from_conf(
             self.conf, ["display", "waterfall_size"], 200
         )  # Amount of spectrum lines to be displayed on the waterfall diagram.
 
-        self.make_plots = confreader(self.conf, ["display", "make_plots"], True)
+        self.make_plots = read_from_conf(self.conf, ["display", "make_plots"], True)
 
         self.create_canvas()
 
@@ -344,7 +344,7 @@ class PlotSettingsFrame(tkinter.Frame):
             "Spectrum graph min dB:",
             0,
             1,
-            confreader(conf, ["display", "spectrum_graph_min_db"], -80),
+            read_from_conf(conf, ["display", "spectrum_graph_min_db"], -80),
             tkinter.DoubleVar,
         )
 
@@ -353,7 +353,7 @@ class PlotSettingsFrame(tkinter.Frame):
             "FPS:",
             0,
             2,
-            confreader(conf, ["display", "fps"], -25),
+            read_from_conf(conf, ["display", "fps"], -25),
             tkinter.DoubleVar,
         )
 
@@ -362,7 +362,7 @@ class PlotSettingsFrame(tkinter.Frame):
             "Waterfall bin count:",
             0,
             3,
-            confreader(conf, ["display", "max_bin_count"], 1024),
+            read_from_conf(conf, ["display", "max_bin_count"], 1024),
             tkinter.IntVar,
         )
 
@@ -371,7 +371,7 @@ class PlotSettingsFrame(tkinter.Frame):
             "Waterfall size:",
             0,
             4,
-            confreader(conf, ["display", "waterfall_size"], 200),
+            read_from_conf(conf, ["display", "waterfall_size"], 200),
             tkinter.IntVar,
         )
 
@@ -382,7 +382,7 @@ class PlotSettingsFrame(tkinter.Frame):
             column=2, row=5, padx=10, pady=5, sticky=tkinter.E + tkinter.W
         )
         self.mean_window_width_slider_variable = tkinter.DoubleVar(
-            value=confreader(conf, ["stats", "mean_window_width_seconds"], 0)
+            value=read_from_conf(conf, ["stats", "mean_window_width_seconds"], 0)
         )
         self.mean_window_width_slider = tkinter.Scale(
             self,
@@ -410,17 +410,17 @@ class PlotSettingsFrame(tkinter.Frame):
         """
         fps = self.fps_entry.get()
         if fps <= 0:
-            fps = confreader(self.conf, ["display", "fps"], 25)
+            fps = read_from_conf(self.conf, ["display", "fps"], 25)
             self.fps_entry.set(fps)
 
         max_bin_count = self.max_bin_count_entry.get()
         if max_bin_count <= 0:
-            max_bin_count = confreader(self.conf, ["display", "max_bin_count"], 1024)
+            max_bin_count = read_from_conf(self.conf, ["display", "max_bin_count"], 1024)
             self.max_bin_count_entry.set(max_bin_count)
 
         waterfall_size = self.waterfall_size_entry.get()
         if waterfall_size <= 0:
-            waterfall_size = confreader(self.conf, ["display", "waterfall_size"], 200)
+            waterfall_size = read_from_conf(self.conf, ["display", "waterfall_size"], 200)
             self.waterfall_size_entry.set(waterfall_size)
 
         self.plot_frame.reconfigure_plots(spectrum_graph_min_db=self.spectrum_graph_min_entry.get(),

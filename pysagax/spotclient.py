@@ -50,7 +50,7 @@ from pysagax import (
 )
 from pysagax.ui.plot_frame import PlotFrame, PlotSettingsFrame
 from pysagax.util.multiqueue import MultiQueue
-from pysagax.util.confreader import confreader
+from pysagax.util.read_from_conf import read_from_conf
 
 conf: Optional[dict[str, Any]] = None
 icon_image: Optional[tkinter.PhotoImage] = None
@@ -157,7 +157,7 @@ class ClientWindow(tkinter.Frame):
             side=tkinter.LEFT, fill=tkinter.BOTH, padx=6, expand=True
         )
 
-        center_box_width = confreader(conf, ["display", "center_box_width"], 60)
+        center_box_width = read_from_conf(conf, ["display", "center_box_width"], 60)
         self.status_info_lb = tkinter.Listbox(
             self.status_info_tab, height=4, width=center_box_width
         )
@@ -483,7 +483,7 @@ class Client:
 
         self.mean_window_width_value: ValueProxy[float] = self.manager.Value(
             "float",
-            confreader(conf, ["stats", "mean_window_width_seconds"], 0),
+            read_from_conf(conf, ["stats", "mean_window_width_seconds"], 0),
         )
 
         self.recording_started = False
@@ -575,8 +575,8 @@ class Client:
         )
         self.stream_process_multiqueue.add_queue(self.stream_to_map_queue)
 
-        self.dfg_map_server.host = confreader(conf, ["map_server", "host"], "0.0.0.0")
-        self.dfg_map_server.port = confreader(conf, ["map_server", "port"], 20000)
+        self.dfg_map_server.host = read_from_conf(conf, ["map_server", "host"], "0.0.0.0")
+        self.dfg_map_server.port = read_from_conf(conf, ["map_server", "port"], 20000)
         if "lat" in conf["map_server"] and "lon" in conf["map_server"]:
             self.dfg_map_server.predefined_coords = (
                 conf["map_server"]["lat"],
@@ -664,11 +664,11 @@ class Client:
         self.stream_process.compass_host_port = f"{host_address}:12938"
         self.stream_process.encoder_port = encoder_port
         self.stream_process.mean_window_seconds = self.mean_window_width_value
-        self.stream_process.use_sensor_fusion = confreader(
+        self.stream_process.use_sensor_fusion = read_from_conf(
             conf, ["compass", "use_sensor_fusion"], False
         )
         self.stream_process.compass_offset = (
-            confreader(conf, ["compass", "offset"], 0) * np.pi / 180
+            read_from_conf(conf, ["compass", "offset"], 0) * np.pi / 180
         )
         self.stream_process.start()
 

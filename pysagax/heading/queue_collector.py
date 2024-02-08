@@ -7,14 +7,14 @@ import math
 import numpy as np
 import queue
 
-from pysagax.util.confreader import confreader
+from pysagax.util.read_from_conf import read_from_conf
 
 class QueueValueCollector:
     def __init__(self, mp_values: multiprocessing.Queue[tuple[str, Any]], conf) -> None:
         self.mp_values: multiprocessing.Queue[tuple[str, Any]] = mp_values
         self.gps: Optional[tuple[float, float]] = None
         self.quaternion: Optional[pyquaternion.Quaternion] = None
-        self.offset = confreader(conf, ["heading", "offset"], 0) / 180 * np.pi
+        self.offset = read_from_conf(conf, ["heading", "offset"], 0) / 180 * np.pi
 
     def heading(self) -> Optional[float]:
         if self.quaternion is None:

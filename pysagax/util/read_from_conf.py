@@ -1,7 +1,7 @@
 from typing import Any
 
 
-def confreader(conf: dict[str, Any], keys: list[str], default_value: Any =None):
+def read_from_conf(conf: dict[str, Any], keys: list[str], default_value: Any =None):
     """
     Recursively find an element in a nested dictionary.
     Return a default value instead of an exception if the keys don't point to an existing element.
@@ -14,4 +14,4 @@ def confreader(conf: dict[str, Any], keys: list[str], default_value: Any =None):
         return conf[keys[0]]
     if type(conf[keys[0]]) is not dict:  # keys are deeper than the actual nested dict
         return default_value
-    return confreader(conf[keys[0]], keys[1:], default_value)
+    return read_from_conf(conf[keys[0]], keys[1:], default_value)

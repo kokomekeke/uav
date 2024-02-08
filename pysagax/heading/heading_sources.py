@@ -13,7 +13,7 @@ from pysagax.df.compass_sensors import (
     open_aaronia_socket_dev,
     open_arduino_serial_dev,
 )
-from pysagax.util.confreader import confreader
+from pysagax.util.read_from_conf import read_from_conf
 from pysagax.util.mat import normalize_angle, rotation_matrix_from_vectors
 
 
@@ -32,7 +32,7 @@ class HeadingSource:
 
     def cr(self, keys, default_value):
         # shortened config parser for readablity
-        return confreader(self.conf, keys, default_value)
+        return read_from_conf(self.conf, keys, default_value)
 
     def _gps(self, lat: float, lon: float) -> None:
         if self.gps_updated_callback:

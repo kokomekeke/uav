@@ -3,7 +3,7 @@ from tkinter import ttk
 from typing import Any, Callable, Optional
 
 from pysagax.ui.custom_widgets import EntryWithLabel
-from pysagax.util.confreader import confreader
+from pysagax.util.read_from_conf import read_from_conf
 from pysagax.util.mat import si_to_float
 from pysagax.ui.ui_helpers import en_if
 
@@ -22,7 +22,7 @@ class ControlFrame(tkinter.Frame):
         self.path_string = tkinter.StringVar(value="No Source")
 
         self.bin_count_string = tkinter.StringVar(
-            value=confreader(conf, ["defaults", "bin_count"], 1024)
+            value=read_from_conf(conf, ["defaults", "bin_count"], 1024)
         )
 
         self.columnconfigure(0, weight=2)
@@ -38,15 +38,15 @@ class ControlFrame(tkinter.Frame):
             "Frequency:",
             0,
             1,
-            confreader(conf, ["defaults", "center_freq"], "446M"),
+            read_from_conf(conf, ["defaults", "center_freq"], "446M"),
         )
 
         self.bw_entry = EntryWithLabel(
-            self, "Bandwidth:", 0, 2, confreader(conf, ["defaults", "bandwith"], "1M")
+            self, "Bandwidth:", 0, 2, read_from_conf(conf, ["defaults", "bandwith"], "1M")
         )
 
         self.gain_entry = EntryWithLabel(
-            self, "USRP Gain:", 0, 3, confreader(conf, ["defaults", "gain"], "50")
+            self, "USRP Gain:", 0, 3, read_from_conf(conf, ["defaults", "gain"], "50")
         )
 
         bin_count_entry_label = ttk.Label(
@@ -89,11 +89,11 @@ class ControlFrame(tkinter.Frame):
             "ROI center freq:",
             2,
             1,
-            confreader(conf, ["defaults", "roi_center"], "446.065M"),
+            read_from_conf(conf, ["defaults", "roi_center"], "446.065M"),
         )
 
         self.roi_span_entry = EntryWithLabel(
-            self, "ROI span:", 2, 2, confreader(conf, ["defaults", "roi_span"], "50k")
+            self, "ROI span:", 2, 2, read_from_conf(conf, ["defaults", "roi_span"], "50k")
         )
 
         self.roi_threshold_entry = EntryWithLabel(
@@ -101,7 +101,7 @@ class ControlFrame(tkinter.Frame):
             "ROI threshold:",
             2,
             3,
-            confreader(conf, ["defaults", "roi_threshold"], "-40"),
+            read_from_conf(conf, ["defaults", "roi_threshold"], "-40"),
         )
 
         self.burst_stride_entry = EntryWithLabel(
@@ -109,7 +109,7 @@ class ControlFrame(tkinter.Frame):
             "Burst stride:",
             2,
             4,
-            confreader(conf, ["defaults", "burst_stride"], "50000"),
+            read_from_conf(conf, ["defaults", "burst_stride"], "50000"),
         )
         self.configure_button = tkinter.Button(
             self, text="Configure", command=self.configure_commands
