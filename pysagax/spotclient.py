@@ -98,7 +98,6 @@ class ClientWindow(tkinter.Frame):
         self.connect_frame = ConnectFrame(
             master=self.left_notebook,
             conf=conf,
-            send_commands_function=self.client.send_commands,
             connect_commands_function=self.connect_commands,
             disconnect_commands_function=self.disconnect_commands,
             logo_image=icon_image,
@@ -127,7 +126,8 @@ class ClientWindow(tkinter.Frame):
         self.plot_settings_frame = PlotSettingsFrame(
             self.left_notebook,
             self.plot_frame,
-            conf,
+            send_commands_function=self.client.send_commands,
+            conf = conf,
             relief=tkinter.RAISED,
             borderwidth=1,
         )
@@ -358,7 +358,7 @@ class ClientWindow(tkinter.Frame):
         self.connect_frame.connect_button.configure(state="disabled")
         self.connect_frame.host_entry.configure(state="disabled")
         self.connect_frame.disconnect_button.configure(state="normal")
-        self.connect_frame.channel_spectrum_combo.configure(state="normal")
+        self.plot_settings_frame.channel_spectrum_combo.configure(state="normal")
 
         self.source_select_frame.configure_button.configure(state="normal")
 
@@ -372,7 +372,7 @@ class ClientWindow(tkinter.Frame):
             self.connect_frame.disconnect_button.configure(state="disabled")
             self.connect_frame.host_entry.configure(state="normal")
             self.connect_frame.connect_button.configure(state="normal")
-            self.connect_frame.channel_spectrum_combo.configure(state="disabled")
+            self.plot_settings_frame.channel_spectrum_combo.configure(state="disabled")
 
             self.source_select_frame.configure_button.configure(state="disabled")
 

@@ -13,7 +13,6 @@ class ConnectFrame(tkinter.Frame):
         self,
         master: tkinter.Misc,
         conf: Optional[dict[str, Any]],
-        send_commands_function: Callable[[str], None],
         connect_commands_function: Callable[[str], None],
         disconnect_commands_function: Callable[[], None],
         logo_image: Optional[PhotoImage] = None,
@@ -22,24 +21,9 @@ class ConnectFrame(tkinter.Frame):
     ) -> None:
         tkinter.Frame.__init__(self, master, *args, **kwargs)
 
-        self.send_commands_function = send_commands_function
-
         self.host_address = tkinter.StringVar(
             value=read_from_conf(conf, ["defaults", "host"], "")
         )
-
-        spectrum_selector_label = tkinter.Label(self, text="Spectrum channel:")
-        spectrum_selector_label.pack(
-            side=tkinter.TOP, fill=tkinter.NONE, padx=(20, 5), pady=10, expand=False
-        )
-
-        self.channel_spectrum_combo = ttk.Combobox(self, width=1)
-        self.channel_spectrum_combo["values"] = [0, 1, 2, 3]
-        self.channel_spectrum_combo.pack(side=tkinter.TOP)
-        self.channel_spectrum_combo.bind(
-            "<<ComboboxSelected>>", self.choose_spectrum_commands
-        )
-        self.channel_spectrum_combo.configure(state="disabled")
 
         host_label = tkinter.Label(self, text="Host:")
         host_label.pack(
@@ -71,8 +55,3 @@ class ConnectFrame(tkinter.Frame):
 
     def connect_commands(self) -> None:
         self.connect_commands_function(self.host_address.get())
-
-    def choose_spectrum_commands(self, event: Any) -> None:
-        self.send_commands_function(
-            f"DEBUG:SpectrumChannel! {self.channel_spectrum_combo.current()};"
-        )

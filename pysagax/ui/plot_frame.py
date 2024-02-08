@@ -1,7 +1,7 @@
 import math
 import tkinter
 from tkinter import ttk
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import matplotlib
 from matplotlib import pyplot
@@ -314,8 +314,12 @@ class PlotFrame(tkinter.Frame):
 
 
 class PlotSettingsFrame(tkinter.Frame):
-    def __init__(self, master, plot_frame, conf, *args, **kwargs):
+    def __init__(self, master, plot_frame,
+        send_commands_function: Callable[[str], None],
+          conf, *args, **kwargs):
         tkinter.Frame.__init__(self, master, *args, **kwargs)
+
+        self.send_commands_function = send_commands_function
 
         self.plot_frame: PlotFrame = plot_frame
         self.conf = conf
@@ -397,6 +401,18 @@ class PlotSettingsFrame(tkinter.Frame):
 
         mean_window_width_label = tkinter.Label(self, text="Rolling avg window (s):")
         mean_window_width_label.grid(column=0, row=6, padx=5, pady=8, sticky=tkinter.S)
+        
+        spectrum_selector_label = tkinter.Label(self, text="Spectrum channel:")
+        spectrum_selector_label.grid(column=0, row=7, padx=5, pady=8, sticky=tkinter.S)
+
+        self.channel_spectrum_combo = ttk.Combobox(self, width=1)
+        self.channel_spectrum_combo["values"] = [0, 1, 2, 3]
+        self.channel_spectrum_combo.grid(column=1, row=7, padx=5, pady=8, sticky=tkinter.S)
+        self.channel_spectrum_combo.bind(
+            "<<ComboboxSelected>>", self.choose_spectrum_commands
+        )
+        self.channel_spectrum_combo.configure(state="disabled")
+
 
     def mean_window_width_slider_commands(self, event: Any) -> None:
         window_size = self.mean_window_width_slider_variable.get()
@@ -439,3 +455,8 @@ class PlotSettingsFrame(tkinter.Frame):
         Turn plotting off
         """
         self.plot_frame.disable_plotting()
+        
+    def choose_spectrum_commands(self, event: Any) -> None:
+        self.send_commands_function(
+            f"DEBUG:SpectrumChannel! {self.channel_spectrum_combo.current()};"
+        )
