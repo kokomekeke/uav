@@ -42,7 +42,7 @@ class ToggleButton(tkinter.Frame):
         on_button.pack(side="left")
 
 
-class EntryWithLabel(ttk.Entry):
+class EntryWithLabel(ttk.Combobox):
     def __init__(
         self,
         master: tkinter.Misc,
@@ -54,6 +54,9 @@ class EntryWithLabel(ttk.Entry):
         width: int = 11,
         padx: int = 5,
         pady: int = 5,
+        value_options: Optional[
+            list
+        ] = None,  # it creates a combobox if a list is provided
     ) -> None:
         """
         tkinter widget of a label, entry box and tkinter variable combined to be used in frames with columnconfigure
@@ -62,8 +65,15 @@ class EntryWithLabel(ttk.Entry):
         self.label = ttk.Label(master, text=labeltext)
         self.label.grid(column=column, row=row, sticky=tkinter.W, padx=padx, pady=pady)
 
-        ttk.Entry.__init__(self, master, textvariable=self.variable, width=width)
-        ttk.Entry.grid(
+        if value_options is None:
+            self.entry_class = (
+                ttk.Entry
+            )  # it gets stored as anrgument so we can check it from the outside
+        else:
+            self.entry_class = ttk.Combobox
+
+        self.entry_class.__init__(self, master, textvariable=self.variable, width=width)
+        self.entry_class.grid(
             self,
             column=column + 1,
             row=row,
@@ -72,8 +82,19 @@ class EntryWithLabel(ttk.Entry):
             pady=pady,
         )
 
+        if value_options is not None:
+            self["values"] = value_options
+
     def get(self) -> Any:
         return self.variable.get()
 
     def set(self, value: Any) -> Any:
         return self.variable.set(value=value)
+
+    def is_combobox(self) -> bool:
+        # True if entry is combobox (aka dropdown list)
+        return self.entry_class is ttk.Combobox
+
+    def destroy(self) -> None:
+        self.label.destroy()
+        return super().destroy()

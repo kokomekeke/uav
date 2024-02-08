@@ -14,6 +14,7 @@ from multiprocessing.managers import ValueProxy
 
 from pysagax.heading.heading_manager import HeadingManager
 from pysagax.heading.queue_collector import QueueValueCollector
+from pysagax.source.source_manager import CoreServiceStatus, SourceManager
 from pysagax.spot.commands_connection_thread import CommandsConnectionThread
 from pysagax.spot.commands_handler_thread import CommandsHandlerThread
 from pysagax.spot.map_server import MapServer
@@ -81,6 +82,7 @@ class ClientWindow(tkinter.Frame):
 
         self.status_frame = StatusFrame(
             master=self,
+            source_manager=self.client.source_manager,
             map_server_start_callable=self.client.start_dfg_map_server,
             map_server_stop_callable=self.client.stop_dfg_map_server,
             relief=tkinter.RAISED,
@@ -110,6 +112,7 @@ class ClientWindow(tkinter.Frame):
         self.source_select_frame = SourceSelectFrame(
             master=self.left_notebook,
             conf=conf,
+            source_manager=self.client.source_manager,
             do_select_source_function=self.client.do_set_source_params,
             relief=tkinter.RAISED,
             borderwidth=1,
@@ -119,6 +122,7 @@ class ClientWindow(tkinter.Frame):
             master=self.left_notebook,
             conf=conf,
             do_configuration_function=self.client.do_configuration_params,
+            source_manager=self.client.source_manager,
             relief=tkinter.RAISED,
             borderwidth=1,
         )
@@ -140,14 +144,12 @@ class ClientWindow(tkinter.Frame):
         self.playback_tab = PlaybackTab(
             master=self.center_notebook,
             send_commands_function=self.client.send_commands,
+            source_manager=self.client.source_manager,
         )
-        self.playback_tab.start_local_recording_function = (
-            self.client.start_local_recording
-        )
-        self.playback_tab.stop_local_recording_function = (
-            self.client.stop_local_recording
-        )
+        self.playback_tab.start_recording_function = self.client.start_recording
+        self.playback_tab.stop_recording_function = self.client.stop_recording
         self.playback_tab.abort_commands_function = self.client.abort_commands
+
         self.status_info_tab = ttk.Frame(self.center_notebook)
         self.stream_packets_tab = ttk.Frame(self.center_notebook)
         self.center_notebook.add(self.playback_tab, text="Playback")
@@ -355,9 +357,7 @@ class ClientWindow(tkinter.Frame):
                     path_list += data
             path_list_split = path_list.decode().split()
             path_list_stripped = sorted([path.strip() for path in path_list_split])
-            self.source_select_frame.source_file_path_combo[
-                "values"
-            ] = path_list_stripped
+            self.client.source_manager.update_recording_paths(path_list_stripped)
         except Exception as e:
             print("[Updating recording paths]", e)
 
@@ -376,10 +376,6 @@ class ClientWindow(tkinter.Frame):
         self.connect_frame.disconnect_button.configure(state="normal")
         self.connect_frame.channel_spectrum_combo.configure(state="normal")
 
-        self.source_select_frame.configure_button.configure(state="normal")
-
-        self.playback_tab.connected = True
-        self.playback_tab.set_buttons_enabled()
         self.plot_frame.start_animation()
 
     def disconnect_action(self) -> None:
@@ -392,11 +388,8 @@ class ClientWindow(tkinter.Frame):
             self.connect_frame.connect_button.configure(state="normal")
             self.connect_frame.channel_spectrum_combo.configure(state="disabled")
 
-            self.control_frame.configure_button.configure(state="disabled")
             self.source_select_frame.configure_button.configure(state="disabled")
 
-            self.playback_tab.connected = False
-            self.playback_tab.set_buttons_enabled()
             self.disconnect_commands()  # to disconnect the other thread
         except:
             pass  # it might happen when closing the window
@@ -446,6 +439,7 @@ class Client:
     def __init__(self, root: Any) -> None:
         self.manager = multiprocessing.get_context("spawn").Manager()
 
+        self.source_manager = SourceManager()
         self.heading_manager = HeadingManager()
         self.stream_to_gui_queue: queue.Queue[Any] = self.manager.Queue(maxsize=100)
         self.stream_to_rec_queue: Optional[queue.Queue[Any]] = None
@@ -566,7 +560,8 @@ class Client:
 
     def command_status_callback(self, working: bool, current_cmd: str) -> None:
         self.command_thread_watcher_queue.put("#action" + "send_commands_finished")
-        self.client_window.playback_tab.command_status_callback(working, current_cmd)
+        self.source_manager.command_status_callback(working, current_cmd)
+        self.client_window.playback_tab.display_command_status(current_cmd)
 
     def start_dfg_map_server(self) -> None:
         global conf
@@ -648,6 +643,8 @@ class Client:
             self.command_thread,
             self.client_window.playback_tab,
             self.client_window.control_frame,
+            self.client_window.status_frame,
+            self.source_manager,
         )
         self.status_query_thread.start()
 
@@ -672,23 +669,12 @@ class Client:
         )
         self.stream_process.start()
 
-    def do_set_source_params(self, params: dict[str, Any]) -> None:
-        self.do_set_source(**params)
+    def do_set_source_params(self, kwargs: dict[str, Any]) -> None:
+        self.do_set_source(**kwargs)
 
-    def do_set_source(
-        self,
-        from_file,
-        source_file_path,
-    ) -> None:
-        if from_file:
-            if source_file_path[-1] != "/":
-                source_file_path = source_file_path + "/"
-            self.send_commands(
-                f"CORE:Version?;"
-                f'SOURCE:Path! SigMF "{source_file_path}recording.sigmf-collection";SOURCE:Path?;'
-            )
-        else:
-            self.send_commands(f"CORE:Version?;" f"SOURCE:Path! UHD;SOURCE:Path?;")
+    def do_set_source(self, source: str, params: str) -> None:
+        cmd = self.source_manager.get_set_source_command(source, params)
+        self.send_commands(f"CORE:Version?;{cmd}SOURCE:Path?;")
 
     def do_configuration_params(self, params: dict[str, Any]) -> None:
         self.do_configuration(**params)
@@ -704,34 +690,17 @@ class Client:
         roi_span,
         roi_threshold,
     ) -> None:
-        if self.status_query_thread.source_type == "UHD":
-            source_dependent_commands = (
-                f"SOURCE:CenterFrequency! {freq:.0f};"
-                f"SOURCE:IqRate! {bw:.0f};"
-                f"SOURCE:ChannelGain! 0 {gain};"
-                f"SOURCE:ChannelGain! 1 {gain};"
-                f"SOURCE:ChannelGain! 2 {gain};"
-                f"SOURCE:ChannelGain! 3 {gain};"
-            )
-        elif self.status_query_thread.source_type == "SigMF":
-            source_dependent_commands = f"SOURCE:Position! 0;"
-        else:
-            raise Exception(
-                f"Unknown source type ({self.status_query_thread.source_type}) is used for by CoreService"
-            )
-        self.send_commands(
-            f"CORE:Version?;"
-            f"{source_dependent_commands}"
-            f"AOA:BinCount! {bin_count};"
-            f"SOURCE:BurstStride! {burst_stride};"
-            f"SOURCE:Configure!;"
-            f"AOA:Configure!;"
-            f"ROI:Enable! 1;"
-            f"ROI:CenterFrequency! {roi_center:.0f};"
-            f"ROI:Span! {roi_span:.0f};"
-            f"ROI:Threshold! {roi_threshold};"
-            f"ROI:Configure!;"
+        cmd = self.source_manager.get_config_commands(
+            freq,
+            bw,
+            gain,
+            bin_count,
+            burst_stride,
+            roi_center,
+            roi_span,
+            roi_threshold,
         )
+        self.send_commands(cmd)
 
     def disconnect_commands(self) -> None:
         """

@@ -1,6 +1,7 @@
 import tkinter
 from tkinter import ttk
 from typing import Any, Callable, Optional
+from pysagax.source.source_manager import SourceManager
 
 from pysagax.ui.custom_widgets import EntryWithLabel
 from pysagax.util.read_from_conf import read_from_conf
@@ -14,12 +15,13 @@ class ControlFrame(tkinter.Frame):
         master: tkinter.Misc,
         conf: Optional[dict[str, Any]],
         do_configuration_function: Callable[[dict[str, Any]], None],
+        source_manager: SourceManager,
         *args: Any,
         **kwargs: Any,
     ):
         tkinter.Frame.__init__(self, master, *args, **kwargs)
 
-        self.path_string = tkinter.StringVar(value="No Source")
+        self.source_manager: SourceManager = source_manager
 
         self.bin_count_string = tkinter.StringVar(
             value=read_from_conf(conf, ["defaults", "bin_count"], 1024)
@@ -29,9 +31,6 @@ class ControlFrame(tkinter.Frame):
         self.columnconfigure(1, weight=1)
         self.columnconfigure(2, weight=2)
         self.columnconfigure(3, weight=1)
-
-        path_label = ttk.Label(self, textvariable=self.path_string)
-        path_label.grid(column=0, row=0, columnspan=4, padx=5, pady=5)
 
         self.freq_entry = EntryWithLabel(
             self,
@@ -57,6 +56,7 @@ class ControlFrame(tkinter.Frame):
         bin_count_combo = ttk.Combobox(
             self, textvariable=self.bin_count_string, width=11
         )
+        # TODO: bin count combo as EntryWithLabel
         bin_count_combo["values"] = [
             # Virgin monetary scale values.
             200,
@@ -120,22 +120,32 @@ class ControlFrame(tkinter.Frame):
         self.configure_button.configure(state="disabled")
         self.do_configuration_function = do_configuration_function
 
-    def path_update(self, path: list[str]) -> None:
-        self.path_string.set(
-            " - ".join(
-                part.replace("recording.sigmf-collection", "") for part in path[1:]
-            )
-        )
-
-        usrp_settings_state = en_if(path[1].strip('"') == "UHD")
-        self.freq_entry.config(state=usrp_settings_state)
-        self.bw_entry.config(state=usrp_settings_state)
-        self.gain_entry.config(state=usrp_settings_state)
-
-        config_btn_state = en_if(
-            path[1] in ["UHD", "SigMF"]
-        )  # only enable the button if the source is known and supported
+    def path_update(self) -> None:
+        self._update_bandwith_entry()
+        tuning_settings_state = en_if(self.source_manager.current_source.is_tunable)
+        self.freq_entry.config(state=tuning_settings_state)
+        self.bw_entry.config(state=tuning_settings_state)
+        self.gain_entry.config(state=tuning_settings_state)
+        config_btn_state = en_if(self.source_manager.is_source_set())
         self.configure_button.configure(state=config_btn_state)
+
+    def _update_bandwith_entry(self):
+        # this could be implemented in EntryWithLabel to make it reusable
+        bw_list = self.source_manager.current_source.bandwith_list
+        if bw_list is None and self.bw_entry.is_combobox():
+            # redraw as text entry
+            self.bw_entry.destroy()
+            self.bw_entry = EntryWithLabel(self, "Bandwidth:", 0, 2)
+        elif bw_list is not None:
+            if not self.bw_entry.is_combobox():
+                # redraw as combobox
+                self.bw_entry.destroy()
+                self.bw_entry = EntryWithLabel(
+                    self, "Bandwidth:", 0, 2, value_options=bw_list
+                )
+            elif self.bw_entry["values"] != bw_list:
+                # update the list of bandwith options
+                self.bw_entry["values"] = bw_list
 
     def configure_commands(self) -> None:
         kwargs = {
