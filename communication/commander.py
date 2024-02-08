@@ -2,7 +2,9 @@ import click
 
 from concurrent.futures import ThreadPoolExecutor
 from logging import basicConfig, getLogger
+from signal import signal, SIGINT, SIGTERM
 from queue import Queue
+from os import kill, getpid
 
 import command_pb2 as proto
 
@@ -14,6 +16,10 @@ class Loop:
     def __init__(self, level: str = "INFO") -> None:
         self._logger = getLogger(self.__class__.__name__)
         self._logger.setLevel(level.upper())
+
+        # Set up terminating signals
+        signal(SIGINT, self._signal_handler)
+        signal(SIGTERM, self._signal_handler)
 
     def __call__(self) -> None:
         """Execute the main logic of the loop"""
@@ -36,6 +42,18 @@ class Loop:
 
         # Override this function
         pass
+
+    def _signal_handler(self, signal, frame):
+        """Handle incoming signals"""
+
+        self._logger.info("Received signal {signal}, exiting...")
+        self._quit()
+    
+    def _quit(self):
+        """Stop execution of loop logic"""
+
+        # Kill loop forcefully
+        kill(getpid(), 9)
 
 
 class Communicator(Loop):
