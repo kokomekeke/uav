@@ -1,7 +1,9 @@
 import click
 
 from concurrent.futures import ThreadPoolExecutor
-from logging import basicConfig, getLogger
+from rich.logging import RichHandler
+from coloredlogs import install
+from logging import basicConfig, getLogger, StreamHandler, root
 from signal import signal, SIGINT, SIGTERM
 from queue import Queue
 from os import kill, getpid
@@ -363,7 +365,7 @@ def main(level: str = "INFO"):
     """Root command of CLI"""
 
     # Set logging display level
-    basicConfig(level=level.upper())
+    setup_logging(level=level)
 
     #TODO: Implement config file
 
@@ -372,6 +374,29 @@ def main(level: str = "INFO"):
 
     while True:
         pass
+
+
+def setup_logging(
+        level: str = None,
+        show_process_name: bool = False,
+        stream_handler: StreamHandler = None
+):
+    # Validate logging level format
+    if level is None:
+        level = "INFO"
+    if isinstance(level, str):
+        level = level.upper()
+    
+    if stream_handler is None:
+        stream_handler = RichHandler(rich_tracebacks=True)
+    
+    # Configure logging format
+    format = "{asctime} {levelname:<5s} {name:<12s} {message}"
+    if show_process_name:
+        format = "[{processName}] "+format
+    install(level=level, fmt=format, style="{")
+
+    #TODO: Implement log files
 
 
 if __name__ == "__main__":
