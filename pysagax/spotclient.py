@@ -376,6 +376,8 @@ class ClientWindow(tkinter.Frame):
         self.connect_frame.disconnect_button.configure(state="normal")
         self.connect_frame.channel_spectrum_combo.configure(state="normal")
 
+        self.source_select_frame.configure_button.configure(state="normal")
+
         self.plot_frame.start_animation()
 
     def disconnect_action(self) -> None:
