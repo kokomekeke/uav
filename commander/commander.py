@@ -1,8 +1,8 @@
 import click
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from rich.logging import RichHandler
 from coloredlogs import install
-from logging import getLogger, StreamHandler, root
+from logging import getLogger, StreamHandler
 from queue import Queue
 
 from communicator import Communicator
@@ -50,8 +50,21 @@ class Commander:
         self._interpreter_futue = self._pool.submit(self._interpreter)
         self._controller_future = self._pool.submit(self._controller)
 
-        #TODO: Implement some form of waiting for threads, e. g. infinite loop
-        #TODO: Catch output of threads to get errors
+        # Periodically checking errors in threads
+        while True:
+            done, running = wait(
+                (
+                    self._communicator_future,
+                    self._interpreter_futue,
+                    self._controller_future
+                ),
+                timeout=1
+            )
+
+            for future in done:
+                if future.exception(0) is not None:
+                    # Trace is lost this way, TODO: fix it
+                    raise future.exception()
 
 
 @click.command()
@@ -73,8 +86,8 @@ def main(level: str = "INFO") -> None:
     commander = Commander(level=level)
     commander.start()
 
-    while True:
-        pass
+    #while True:
+    #    pass
 
 
 def setup_logging(
