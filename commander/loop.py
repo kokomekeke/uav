@@ -1,0 +1,48 @@
+from logging import getLogger
+from signal import signal, SIGINT, SIGTERM
+from os import kill, getpid
+
+class Loop:
+    """Base class for infinitely looping background tasks"""
+
+    def __init__(self, level: str = "INFO") -> None:
+        self._logger = getLogger(self.__class__.__name__)
+        self._logger.setLevel(level.upper())
+
+        # Set up terminating signals
+        signal(SIGINT, self._signal_handler)
+        signal(SIGTERM, self._signal_handler)
+
+    def __call__(self) -> None:
+        """Execute the main logic of the loop"""
+
+        self._logger.debug("Setting up loop")
+        self._pre_loop()
+
+        self._logger.debug("Running main loop")
+        while True:
+            self._loop()
+    
+    def _pre_loop(self) -> None:
+        """Called before main loop starts. Used for initialization"""
+
+        # Override this function
+        pass
+    
+    def _loop(self) -> None:
+        """The main logic of the loop. This method is called inside a while loop"""
+
+        # Override this function
+        pass
+
+    def _signal_handler(self, signal, frame) -> None:
+        """Handle incoming signals"""
+
+        self._logger.info(f"Received signal {signal}, exiting...")
+        self._quit()
+    
+    def _quit(self) -> None:
+        """Stop execution of loop logic"""
+
+        # Kill loop forcefully
+        kill(getpid(), 9)

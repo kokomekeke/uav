@@ -1,8 +1,11 @@
 import random
 
-import command_pb2 as proto
+#TODO: Fix imports with proper package structure
+import sys, os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from req import REQ
+import message.command_pb2 as proto
+from communication.req import REQ
 
 
 instructions = [
