@@ -26,7 +26,7 @@ from pysagax.ui.lena_matplotlib_graphs import (
     MagnitudeSpectrumGraph,
     WaterfallMagnitudeGraph,
 )
-from pysagax.util.confreader import read_from_conf
+from pysagax.util.read_from_conf import read_from_conf
 
 
 class PlotFrame(tkinter.Frame):
