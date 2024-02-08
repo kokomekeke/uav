@@ -30,4 +30,27 @@ lon = 19.33
 
 [compass]
 use_sensor_fusion = false #true: compass.angle (for RAC), false: compass.magnetometer_angle (for aaronia)
-offset=0   #without compass sensor this value will be used as compass heading (in radians). Don't forget to set df_corrected_from_compass = true
+offset=0   #without compass sensor th
+
+[heading]
+    # if also defined for a specific heading source, the following values will be overriden
+    lat = 47.498056
+    lon = 19.04
+    use_magneto = true
+    offset = 90 # in degrees
+    [heading.static]
+        #lat = 
+        #lon = 
+        #angle = 57  # in degrees
+    [heading.encoder]
+        port = "COM6"
+        lat = 47.321013
+        lon = 19.316929
+    [heading.ahrs_socket]
+        #address =  
+        #use_magneto = 
+    [heading.ahrs_usb]
+        #port = 
+        #use_magneto = 
+    [heading.ahrs_ftdi]
+        #use_magneto = 

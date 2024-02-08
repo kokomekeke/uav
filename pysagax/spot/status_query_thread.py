@@ -18,6 +18,7 @@ class StatusQueryThread(threading.Thread):
 
     def source_path_handler(self, cmd: str, resp: list[str]) -> None:
         self.ct_tab.path_update(resp)
+        self.source_type = resp[1]
 
     def source_status_handler(self, cmd: str, resp: list[str]) -> None:
         self.pb_tab.source_configured = True if int(resp[1]) else False
@@ -62,6 +63,8 @@ class StatusQueryThread(threading.Thread):
         self.comm.set_response_handler("SOURCE:Length?", self.source_length_handler)
         self.comm.set_response_handler("SOURCE:Position?", self.source_position_handler)
         self.comm.set_response_handler("SOURCE:Path?", self.source_path_handler)
+
+        self.source_type: str = ""  # used by Client.do_configuration()
 
     def run(self) -> None:
         while self.comm.is_alive():

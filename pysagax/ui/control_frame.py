@@ -3,7 +3,9 @@ from tkinter import ttk
 from typing import Any, Callable, Optional
 
 from pysagax.ui.custom_widgets import EntryWithLabel
+from pysagax.util.read_from_conf import read_from_conf
 from pysagax.util.mat import si_to_float
+from pysagax.ui.ui_helpers import en_if
 
 
 class ControlFrame(tkinter.Frame):
@@ -20,9 +22,8 @@ class ControlFrame(tkinter.Frame):
         self.path_string = tkinter.StringVar(value="No Source")
 
         self.bin_count_string = tkinter.StringVar(
-            value=(conf["defaults"]["bin_count"] if conf else "")
+            value=read_from_conf(conf, ["defaults", "bin_count"], 1024)
         )
-        self.source_file_path_string = tkinter.StringVar(value="")
 
         self.columnconfigure(0, weight=2)
         self.columnconfigure(1, weight=1)
@@ -33,15 +34,19 @@ class ControlFrame(tkinter.Frame):
         path_label.grid(column=0, row=0, columnspan=4, padx=5, pady=5)
 
         self.freq_entry = EntryWithLabel(
-            self, "Frequency:", 0, 1, (conf["defaults"]["center_freq"] if conf else "")
+            self,
+            "Frequency:",
+            0,
+            1,
+            read_from_conf(conf, ["defaults", "center_freq"], "446M"),
         )
 
         self.bw_entry = EntryWithLabel(
-            self, "Bandwidth:", 0, 2, (conf["defaults"]["bandwith"] if conf else "")
+            self, "Bandwidth:", 0, 2, read_from_conf(conf, ["defaults", "bandwith"], "1M")
         )
 
         self.gain_entry = EntryWithLabel(
-            self, "USRP Gain:", 0, 3, (conf["defaults"]["gain"] if conf else "")
+            self, "USRP Gain:", 0, 3, read_from_conf(conf, ["defaults", "gain"], "50")
         )
 
         bin_count_entry_label = ttk.Label(
@@ -84,11 +89,11 @@ class ControlFrame(tkinter.Frame):
             "ROI center freq:",
             2,
             1,
-            (conf["defaults"]["roi_center"] if conf else ""),
+            read_from_conf(conf, ["defaults", "roi_center"], "446.065M"),
         )
 
         self.roi_span_entry = EntryWithLabel(
-            self, "ROI span:", 2, 2, (conf["defaults"]["roi_span"] if conf else "")
+            self, "ROI span:", 2, 2, read_from_conf(conf, ["defaults", "roi_span"], "50k")
         )
 
         self.roi_threshold_entry = EntryWithLabel(
@@ -96,7 +101,7 @@ class ControlFrame(tkinter.Frame):
             "ROI threshold:",
             2,
             3,
-            (conf["defaults"]["roi_threshold"] if conf else ""),
+            read_from_conf(conf, ["defaults", "roi_threshold"], "-40"),
         )
 
         self.burst_stride_entry = EntryWithLabel(
@@ -104,7 +109,7 @@ class ControlFrame(tkinter.Frame):
             "Burst stride:",
             2,
             4,
-            (conf["defaults"]["burst_stride"] if conf else ""),
+            read_from_conf(conf, ["defaults", "burst_stride"], "50000"),
         )
         self.configure_button = tkinter.Button(
             self, text="Configure", command=self.configure_commands
@@ -121,14 +126,16 @@ class ControlFrame(tkinter.Frame):
                 part.replace("recording.sigmf-collection", "") for part in path[1:]
             )
         )
-        if path[1].strip('"') == "UHD":
-            self.freq_entry.config(state="enabled")
-            self.bw_entry.config(state="enabled")
-            self.gain_entry.config(state="enabled")
-        else:
-            self.freq_entry.config(state="disabled")
-            self.bw_entry.config(state="disabled")
-            self.gain_entry.config(state="disabled")
+
+        usrp_settings_state = en_if(path[1].strip('"') == "UHD")
+        self.freq_entry.config(state=usrp_settings_state)
+        self.bw_entry.config(state=usrp_settings_state)
+        self.gain_entry.config(state=usrp_settings_state)
+
+        config_btn_state = en_if(
+            path[1] in ["UHD", "SigMF"]
+        )  # only enable the button if the source is known and supported
+        self.configure_button.configure(state=config_btn_state)
 
     def configure_commands(self) -> None:
         kwargs = {

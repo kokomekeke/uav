@@ -101,16 +101,16 @@ class StreamAndCompassProcess(
                 gps_lat, gps_lon = (
                     self.heading_queue.gps
                     if self.heading_queue.gps is not None
-                    else None,
-                    None,
+                    else (None, None)
                 )
+                compass_offset = self.heading_queue.offset
             else:
                 compass_angle = None
                 gps_lat = None
                 gps_lon = None
 
             compass_heading = (
-                pysagax.normalize_angle(compass_angle - self.compass_offset)
+                pysagax.normalize_angle(compass_angle + compass_offset)
                 if compass_angle is not None
                 else None
             )
@@ -118,17 +118,15 @@ class StreamAndCompassProcess(
             if isinstance(cs_packet, CoreServiceROIResultPacket):
                 try:
                     self.update_aggregated_results(cs_packet)
-                except (
-                    TypeError
-                ) as e:  # TODO: multiprocessing debug (JIRA issue ALTS-150)
-                    print("[MultiprocessingError@aggregating]:", e)
+                except TypeError as e:  # TODO: JIRA issue ALTS-150
+                    pass
 
                 # TODO: if we receive no roi packets for a time then update aggregated results with None
 
             result: dict[str, typing.Any] = {
                 "cs_packet": cs_packet,
                 "aggregated_roi_results": self.aggregated_roi_results,
-                "compass_angle": compass_angle if self.compass is not None else None,
+                "compass_angle": compass_angle,
                 "compass_heading": compass_heading,
                 "gps_lat": gps_lat,
                 "gps_lon": gps_lon,
@@ -154,17 +152,16 @@ class StreamAndCompassProcess(
         try:
             return bool(self.mp_disconnect.value)
         except TypeError as e:  # TODO: multiprocessing debug (JIRA issue ALTS-150)
-            print("[MultiprocessingError]:", e)
-            print("trying to read mp_disconnect.value again")
+            # print("[MultiprocessingError]:", e)
+            # print("trying to read mp_disconnect.value again")
             from time import sleep
 
             sleep(0.1)
             try:
                 return bool(self.mp_disconnect.value)
             except TypeError as e:  # TODO: multiprocessing debug (JIRA issue ALTS-150)
-                print("[MultiprocessingError]:", e)
-                # traceback.print_exception(type(e), e, e.__traceback__)
-                print("Failed to read mp_disconnect.value a second time")
+                # print("Failed to read mp_disconnect.value a second time")
+                pass
             return True
 
     def display_status_callback(self, message: str) -> None:

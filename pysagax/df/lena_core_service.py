@@ -192,17 +192,20 @@ class BaseConnection:
                     self.receive_on_socket(data)
                 except TimeoutError:
                     pass
-                except OSError as e:
-                    self.display_status_callback(
-                        f"Connection error: {e}"
-                    )  # Multiprocessing error on Windows
+                except ConnectionError as e:
+                    """
+                    We have to leave the loop and go to connection broken. 
+                    But ConnectionError is a child of OSError, however a bug in multiprocessing
+                    that we need to ignore (JIRA issue ALTS-150) also gives standard OSError,
+                    therefore we reraise this exception to be caught in the outer try...except
+                    """
+                    raise e
+                except OSError as e:    # JIRA issue ALTS-150
                     pass
         except TimeoutError:
             self.display_status_callback("Connection timed out")
-            pass
         except ConnectionError:
             self.display_status_callback("Connection broken")
-            pass
         self.connected = False
         self.disconnect = True
         if self.client_socket:

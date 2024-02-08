@@ -26,6 +26,7 @@ from pysagax.ui.lena_matplotlib_graphs import (
     MagnitudeSpectrumGraph,
     WaterfallMagnitudeGraph,
 )
+from pysagax.util.confreader import read_from_conf
 
 
 class PlotFrame(tkinter.Frame):
@@ -50,26 +51,24 @@ class PlotFrame(tkinter.Frame):
         Matplotlib FuncAnimation object for animating the graphs
         """
 
-        self.animation_started: bool = False
+        self.redraw_canvas: bool = False
         """
-        Indicates whether the animation and plot objects have been created
+        Indicates to the packet handler whether the canvas needs to be redrawn 
         """
 
-        self.spectrum_graph_min_db = (
-            self.conf["display"]["spectrum_graph_min_db"] if self.conf else -120
+        self.spectrum_graph_min_db = read_from_conf(
+            self.conf, ["display", "spectrum_graph_min_db"], -120
         )
 
-        self.fps = self.conf["display"]["fps"] if self.conf else 25
+        self.fps = read_from_conf(self.conf, ["display", "fps"], 25)
 
-        self.max_bin_count = (
-            self.conf["display"]["max_bin_count"] if self.conf else 1024
-        )
+        self.max_bin_count = read_from_conf(self.conf, ["display", "max_bin_count"], 1024)
 
-        self.params.waterfall_size = (
-            self.conf["display"]["waterfall_size"] if self.conf else 200
+        self.params.waterfall_size = read_from_conf(
+            self.conf, ["display", "waterfall_size"], 200
         )  # Amount of spectrum lines to be displayed on the waterfall diagram.
 
-        self.make_plots = self.conf["display"]["make_plots"] if self.conf else True
+        self.make_plots = read_from_conf(self.conf, ["display", "make_plots"], True)
 
         self.create_canvas()
 
@@ -177,12 +176,14 @@ class PlotFrame(tkinter.Frame):
         ]
 
         self.animation = FuncAnimation(
-            self.fig_ref, self.update_imag, interval=int(1000 / self.fps), blit=True
+            self.fig_ref,
+            self.update_imag,
+            interval=int(1000 / self.fps),
+            blit=True,
+            cache_frame_data=False,
         )
-
         grid_spec.tight_layout(figure=self.fig_ref)
         grid_spec.update()
-        # self.fig_ref.canvas.draw()  # type: ignore
 
     def update_imag(self, frame_number: int) -> list[matplotlib.artist.Artist]:
         self.update_sensors_and_graphs()
@@ -249,10 +250,8 @@ class PlotFrame(tkinter.Frame):
             return
         if packet.bin_count == 0:
             return
-        if (
-            not self.animation_started  # start matplotlib animation if it has not started yet
-            or packet.bin_count
-            != self.params.bin_count  # or restart if the dimensions change
+        if (self.redraw_canvas or
+            packet.bin_count != self.params.bin_count  # or restart if the dimensions change
             or packet.center_frequency
             != self.params.center_frequency  # or restart if the axes change
             or packet.iq_rate != self.params.iq_rate
@@ -263,7 +262,7 @@ class PlotFrame(tkinter.Frame):
             self.params.iq_rate = packet.iq_rate
             self.params.center_frequency = packet.center_frequency
             self.create_anim()
-            self.animation_started = True
+            self.redraw_canvas = False
 
         assert self.magnitude_waterfall_graph is not None
         assert self.magnitude_spectrum_graph is not None
@@ -272,9 +271,7 @@ class PlotFrame(tkinter.Frame):
         self.magnitude_spectrum_graph.signal_lvl = signal_db
         self.magnitude_spectrum_graph.noise_lvl = noise_db
 
-    def destroy_plot(
-        self,
-    ) -> None:
+    def destroy_plot(self) -> None:
         if self.fig is not None:
             self.fig.gca().cla()  # type: ignore
         if self.canvas is not None:  # Remove old widget if there is one
@@ -284,8 +281,39 @@ class PlotFrame(tkinter.Frame):
             self.canvas_toolbar.destroy()
             self.canvas_toolbar = None
 
-        self.animation_started = False
+    def enable_plotting(self) -> None:
+        self.make_plots = True
+        self.redraw_canvas = True
 
+    def disable_plotting(self) -> None:
+        self.make_plots = False
+        self.destroy_plot()
+
+    def reconfigure_plots(self,spectrum_graph_min_db: float,
+                          fps:float,
+                          max_bin_count: int,
+                          waterfall_size: int) -> None:
+        self.spectrum_graph_min_db = spectrum_graph_min_db
+        self.fps = fps
+        self.max_bin_count = max_bin_count
+        self.params.waterfall_size = waterfall_size
+
+        self.redraw_canvas = True
+
+    def start_animation(self) -> None:
+        if self.animation is not None:
+            if self.animation.event_source is not None:
+                self.animation.event_source.start()
+
+    def stop_animation(self) -> None:
+        """
+        Stopping the animation without destroying the canvas to save CPU.
+        Useful when disconnected
+        """
+        if self.animation is not None:
+            if self.animation.event_source is not None:
+                self.animation.event_source.stop()
+        
 
 class PlotSettingsFrame(tkinter.Frame):
     def __init__(self, master, plot_frame, conf, *args, **kwargs):
@@ -300,7 +328,6 @@ class PlotSettingsFrame(tkinter.Frame):
         self.columnconfigure(0, weight=2)
         self.columnconfigure(1, weight=1)
         self.columnconfigure(2, weight=2)
-        self.columnconfigure(3, weight=1)
 
         make_plots_label = ttk.Label(self, text="Make plots:")
         make_plots_label.grid(column=0, row=0, sticky=tkinter.W, padx=5, pady=5)
@@ -317,7 +344,7 @@ class PlotSettingsFrame(tkinter.Frame):
             "Spectrum graph min dB:",
             0,
             1,
-            (conf["display"]["spectrum_graph_min_db"] if conf else -80),
+            read_from_conf(conf, ["display", "spectrum_graph_min_db"], -80),
             tkinter.DoubleVar,
         )
 
@@ -326,7 +353,7 @@ class PlotSettingsFrame(tkinter.Frame):
             "FPS:",
             0,
             2,
-            (conf["display"]["fps"] if conf else -25),
+            read_from_conf(conf, ["display", "fps"], -25),
             tkinter.DoubleVar,
         )
 
@@ -335,7 +362,7 @@ class PlotSettingsFrame(tkinter.Frame):
             "Waterfall bin count:",
             0,
             3,
-            (conf["display"]["max_bin_count"] if conf else 1024),
+            read_from_conf(conf, ["display", "max_bin_count"], 1024),
             tkinter.IntVar,
         )
 
@@ -344,7 +371,7 @@ class PlotSettingsFrame(tkinter.Frame):
             "Waterfall size:",
             0,
             4,
-            (conf["display"]["waterfall_size"] if conf else 200),
+            read_from_conf(conf, ["display", "waterfall_size"], 200),
             tkinter.IntVar,
         )
 
@@ -352,10 +379,10 @@ class PlotSettingsFrame(tkinter.Frame):
             self, text="Configure Plot", command=self.configure_plot_commands
         )
         self.configure_plot_button.grid(
-            column=3, row=5, padx=10, pady=5, sticky=tkinter.E + tkinter.W
+            column=2, row=5, padx=10, pady=5, sticky=tkinter.E + tkinter.W
         )
         self.mean_window_width_slider_variable = tkinter.DoubleVar(
-            value=conf["stats"]["mean_window_width_seconds"] if conf else 0
+            value=read_from_conf(conf, ["stats", "mean_window_width_seconds"], 0)
         )
         self.mean_window_width_slider = tkinter.Scale(
             self,
@@ -367,50 +394,48 @@ class PlotSettingsFrame(tkinter.Frame):
             command=self.mean_window_width_slider_commands,
         )
         self.mean_window_width_slider.grid(
-            column=0, row=6, sticky=tkinter.E + tkinter.W, padx=5, pady=5, columnspan=2
+            column=1, row=6, sticky=tkinter.E + tkinter.W, padx=5, pady=5, columnspan=2
         )
+
+        mean_window_width_label = tkinter.Label(self, text="Rolling avg window (s):")
+        mean_window_width_label.grid(column=0, row=6, padx=5, pady=8, sticky=tkinter.S)
 
     def mean_window_width_slider_commands(self, event: Any) -> None:
         window_size = self.mean_window_width_slider_variable.get()
         self.client.mean_window_width_value.value = window_size
 
-    def configure_plot_commands(self):
-        self.plot_frame.spectrum_graph_min_db = self.spectrum_graph_min_entry.get()
-
+    def configure_plot_commands(self) -> None:
+        """
+        validate the parameters (and display on GUI) then hand them to PlotFrame
+        """
         fps = self.fps_entry.get()
         if fps <= 0:
-            fps = self.conf["display"]["fps"]
+            fps = read_from_conf(self.conf, ["display", "fps"], 25)
             self.fps_entry.set(fps)
-        self.plot_frame.fps = fps
 
         max_bin_count = self.max_bin_count_entry.get()
         if max_bin_count <= 0:
-            max_bin_count = self.conf["display"]["max_bin_count"]
+            max_bin_count = read_from_conf(self.conf, ["display", "max_bin_count"], 1024)
             self.max_bin_count_entry.set(max_bin_count)
-        self.plot_frame.max_bin_count = max_bin_count
 
         waterfall_size = self.waterfall_size_entry.get()
         if waterfall_size <= 0:
-            waterfall_size = self.conf["display"]["waterfall_size"]
+            waterfall_size = read_from_conf(self.conf, ["display", "waterfall_size"], 200)
             self.waterfall_size_entry.set(waterfall_size)
-        self.plot_frame.params.waterfall_size = waterfall_size
 
-        self.plot_frame.animation_started = False  # Forces the redrawing of plots
+        self.plot_frame.reconfigure_plots(spectrum_graph_min_db=self.spectrum_graph_min_entry.get(),
+                                          fps=fps,
+                                          max_bin_count=max_bin_count,
+                                          waterfall_size=waterfall_size)
 
     def on_action(self) -> None:
         """
         Turn on plotting
         """
-        self.plot_frame.make_plots = True
+        self.plot_frame.enable_plotting()
 
     def off_action(self) -> None:
         """
         Turn plotting off
         """
-        self.plot_frame.make_plots = False
-        self.plot_frame.animation_started = False
-        try:
-            self.plot_frame.animation.event_source.stop()
-        except:
-            pass
-        self.plot_frame.destroy_plot()
+        self.plot_frame.disable_plotting()

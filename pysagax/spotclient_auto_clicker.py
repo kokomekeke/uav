@@ -83,7 +83,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="SPOTClient")
     parser.add_argument("config", nargs="?", default="spotclient.toml")
     args = parser.parse_args()
-    conf = None
+    conf = {}
     if os.path.isfile(args.config):
         print("Config file found")
         with open(args.config, "rb") as f:
