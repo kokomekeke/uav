@@ -1,6 +1,9 @@
-def confreader(conf: dict, keys: list, default_value=None):
+from typing import Any
+
+
+def confreader(conf: dict[str, Any], keys: list[str], default_value: Any =None):
     """
-    Recursively find an element in a nested list.
+    Recursively find an element in a nested dictionary.
     Return a default value instead of an exception if the keys don't point to an existing element.
     """
     assert type(conf) is dict

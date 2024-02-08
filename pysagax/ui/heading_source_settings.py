@@ -73,6 +73,10 @@ class HeadingSourceFrame(tkinter.Frame):
         self.config_frame.destroy()
         self.config_frame = self.construct_settings_frame()
         self.config_frame.pack(fill=tkinter.BOTH, expand=True)
+        
+        self.offset_frame.destroy()
+        self.offset_frame = self.construct_offset_frame()
+        self.offset_frame.pack(side=tkinter.RIGHT, fill=tkinter.NONE, expand=False, padx=5, pady=5)
 
     def construct_settings_frame(self) -> tkinter.Frame:
         new_frame = tkinter.Frame(self)
