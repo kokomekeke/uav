@@ -72,8 +72,6 @@ class ClientWindow(tkinter.Frame):
         }
         self.compass_angle = None
         self.compass_heading = None  # compass angle corrected with offset
-        self.encoder_angle = None
-        self.encoder_heading = None  # encoder angle corrected with offset
 
         tkinter.Frame.__init__(self, root)
         self.pack(side="top", fill=tkinter.BOTH, expand=True)
@@ -90,8 +88,15 @@ class ClientWindow(tkinter.Frame):
         )
         self.status_frame.pack(fill=tkinter.BOTH, side=tkinter.BOTTOM, expand=False)
 
+        self.plot_frame = PlotFrame(self, conf, root)
+
+        self.bottom_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
+        self.bottom_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.BOTTOM)
+
+        self.plot_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
+        self.left_notebook = ttk.Notebook(self.bottom_frame)
         self.connect_frame = ConnectFrame(
-            master=self,
+            master=self.left_notebook,
             conf=conf,
             send_commands_function=self.client.send_commands,
             connect_commands_function=self.connect_commands,
@@ -100,15 +105,7 @@ class ClientWindow(tkinter.Frame):
             relief=tkinter.RAISED,
             borderwidth=1,
         )
-        self.connect_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
-
-        self.plot_frame = PlotFrame(self, conf, root)
-
-        self.bottom_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
-        self.bottom_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.BOTTOM)
-
-        self.plot_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
-        self.left_notebook = ttk.Notebook(self.bottom_frame)
+        self.left_notebook.add(self.connect_frame, text="Connect")
         self.source_select_frame = SourceSelectFrame(
             master=self.left_notebook,
             conf=conf,
@@ -201,14 +198,12 @@ class ClientWindow(tkinter.Frame):
                 self.aggregated_roi_results = data["aggregated_roi_results"]
                 self.compass_angle = data["compass_angle"]
                 self.compass_heading = data["compass_heading"]
-                self.encoder_angle = data["encoder_angle"]
-                self.encoder_heading = data["encoder_heading"]
 
                 try:
                     ts = datetime.fromtimestamp(packet.time_ns / 1e9, tz=None)
                     packet_string = (
                         f"[{packet.stream_id}] {ts.strftime('%H:%M:%S')}.{int((packet.time_ns % 1e9) / 1e6):03d} - "
-                        f"{str(packet)} - c_angle={self.compass_angle}; e_angle={self.encoder_angle}"
+                        f"{str(packet)} - c_angle={self.compass_angle}"
                     )
                     self.stream_packets_lb.insert(tkinter.END, packet_string)
                     self.stream_packets_lb.delete(
@@ -287,17 +282,8 @@ class ClientWindow(tkinter.Frame):
         self.info_update_handler(message, "Command Thread")
 
     def stream_status_msg_handler(self, message: str) -> None:
-        if message.startswith("#encoder"):
-            message = message[len("#encoder") :]
-            self.info_update_handler(message, source="Encoder")
-        elif message.startswith("#compass"):
-            message = message[len("#compass") :]
-            self.info_update_handler(message, source="Compass")
-            self.client.client_window.status_frame.status_compass_string.set(message)
-        else:  # status updates have no prefix, these should also be shown on status_frame
-            self.set_stream_status(message)
-            self.info_update_handler(message, source="Stream Process")
-        # TODO: update compass end map server in status_frame
+        self.set_stream_status(message)
+        self.info_update_handler(message, source="Stream Process")
 
     def recording_status_msg_handler(self, message: str) -> None:
         # if message.startswith("#info"):
@@ -330,13 +316,11 @@ class ClientWindow(tkinter.Frame):
 
     def connect_commands(self, host_address: str) -> None:
         host_address = self.connect_frame.host_address.get()
-        encoder_port = self.connect_frame.encoder_port_string.get()
         self.client.connect_commands(
             self.connect_action,
             self.connected_action,
             self.disconnect_action,
             host_address,
-            encoder_port,
         )
 
     def disconnect_commands(self) -> None:
@@ -591,7 +575,6 @@ class Client:
         connected_action: Optional[Callable[[], None]],
         disconnect_action: Optional[Callable[[], None]],
         host_address: str,
-        encoder_port: str = "",
     ) -> None:
         """
         Action of the "Connect" button
@@ -660,15 +643,7 @@ class Client:
             self.heading_manager.mp_values, conf
         )
         self.stream_process.host_port = f"{host_address}:12937"
-        self.stream_process.compass_host_port = f"{host_address}:12938"
-        self.stream_process.encoder_port = encoder_port
         self.stream_process.mean_window_seconds = self.mean_window_width_value
-        self.stream_process.use_sensor_fusion = read_from_conf(
-            conf, ["compass", "use_sensor_fusion"], False
-        )
-        self.stream_process.compass_offset = (
-            read_from_conf(conf, ["compass", "offset"], 0) * np.pi / 180
-        )
         self.stream_process.start()
 
     def do_set_source_params(self, kwargs: dict[str, Any]) -> None:

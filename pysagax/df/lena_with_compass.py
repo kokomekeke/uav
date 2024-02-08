@@ -16,7 +16,6 @@ import serial
 import pysagax
 from pysagax import (
     BaseConnection,
-    CompassSensor,
     CoreServicePacket,
     CoreServiceParser,
     CoreServiceROIResultPacket,
@@ -53,20 +52,6 @@ class StreamAndCompassProcess(
         """
         Disconnect signal for multiprocessing process
         """
-
-        self.compass_host_port: Optional[str] = None
-
-        self.encoder_port: Optional[str] = None
-
-        self.compass = None
-
-        self.heading_queue: Optional[QueueValueCollector] = None
-
-        self.compass_offset = 0.0
-
-        self.encoder_offset = 0.0
-
-        self.use_sensor_fusion: bool = False
 
         self.mean_window_seconds: Optional[
             multiprocessing.managers.ValueProxy[float]
@@ -130,8 +115,6 @@ class StreamAndCompassProcess(
                 "compass_heading": compass_heading,
                 "gps_lat": gps_lat,
                 "gps_lon": gps_lon,
-                "encoder_angle": None,
-                "encoder_heading": None,
             }
 
             self.queues.put(result)

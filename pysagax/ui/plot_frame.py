@@ -155,10 +155,6 @@ class PlotFrame(tkinter.Frame):
             .make_plot()
         )
 
-        self.encoder_graph = CompassGraph(self.compass_plot, self.params).initialize(
-            "green", "Encoder Heading"
-        )
-
         self.compass_plot.legend(loc="upper left", bbox_to_anchor=(1, 1.1))
         self.df_plot.legend(loc="upper left", bbox_to_anchor=(1, 1))
 
@@ -170,7 +166,6 @@ class PlotFrame(tkinter.Frame):
                 self.df_graph,
                 self.compass_graph,
                 self.compass_df_graph,
-                self.encoder_graph,
             ]
             if graph is not None
         ]
@@ -230,12 +225,10 @@ class PlotFrame(tkinter.Frame):
             self.master.aggregated_roi_results["df_value_std"],
         )
         self.compass_graph.add_point(self.master.compass_heading)
-        self.encoder_graph.add_point(self.master.encoder_heading)
 
         df_corrected = calculate_df_corrected(
             df_value=self.master.aggregated_roi_results["df_value_mean"],
             compass_heading=self.master.compass_heading,
-            # encoder_heading=self.master.encoder_heading,
         )
 
         self.compass_df_graph.add_point(df_corrected)
@@ -250,8 +243,10 @@ class PlotFrame(tkinter.Frame):
             return
         if packet.bin_count == 0:
             return
-        if (self.redraw_canvas or
-            packet.bin_count != self.params.bin_count  # or restart if the dimensions change
+        if (
+            self.redraw_canvas
+            or packet.bin_count
+            != self.params.bin_count  # or restart if the dimensions change
             or packet.center_frequency
             != self.params.center_frequency  # or restart if the axes change
             or packet.iq_rate != self.params.iq_rate
@@ -289,10 +284,13 @@ class PlotFrame(tkinter.Frame):
         self.make_plots = False
         self.destroy_plot()
 
-    def reconfigure_plots(self,spectrum_graph_min_db: float,
-                          fps:float,
-                          max_bin_count: int,
-                          waterfall_size: int) -> None:
+    def reconfigure_plots(
+        self,
+        spectrum_graph_min_db: float,
+        fps: float,
+        max_bin_count: int,
+        waterfall_size: int,
+    ) -> None:
         self.spectrum_graph_min_db = spectrum_graph_min_db
         self.fps = fps
         self.max_bin_count = max_bin_count
@@ -313,7 +311,7 @@ class PlotFrame(tkinter.Frame):
         if self.animation is not None:
             if self.animation.event_source is not None:
                 self.animation.event_source.stop()
-        
+
 
 class PlotSettingsFrame(tkinter.Frame):
     def __init__(self, master, plot_frame, conf, *args, **kwargs):
@@ -423,10 +421,12 @@ class PlotSettingsFrame(tkinter.Frame):
             waterfall_size = read_from_conf(self.conf, ["display", "waterfall_size"], 200)
             self.waterfall_size_entry.set(waterfall_size)
 
-        self.plot_frame.reconfigure_plots(spectrum_graph_min_db=self.spectrum_graph_min_entry.get(),
-                                          fps=fps,
-                                          max_bin_count=max_bin_count,
-                                          waterfall_size=waterfall_size)
+        self.plot_frame.reconfigure_plots(
+            spectrum_graph_min_db=self.spectrum_graph_min_entry.get(),
+            fps=fps,
+            max_bin_count=max_bin_count,
+            waterfall_size=waterfall_size,
+        )
 
     def on_action(self) -> None:
         """
