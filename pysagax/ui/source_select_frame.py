@@ -2,19 +2,23 @@ import tkinter
 from tkinter import ttk
 from typing import Any, Callable, Optional
 
+from pysagax.source.source_manager import SourceManager
+
 
 class SourceSelectFrame(tkinter.Frame):
     def __init__(
         self,
         master: tkinter.Misc,
         conf: Optional[dict[str, Any]],
+        source_manager: SourceManager,
         do_select_source_function: Callable[[dict[str, Any]], None],
         *args: Any,
         **kwargs: Any,
     ) -> None:
         tkinter.Frame.__init__(self, master, *args, **kwargs)
         self.do_select_source_function = do_select_source_function
-        # self.client: Client = self.master.master.master.client  ##??? todo
+        self.source_manager = source_manager
+
         self.source_file_path_string = tkinter.StringVar(value="")
 
         self.columnconfigure(0, weight=2)
@@ -22,7 +26,7 @@ class SourceSelectFrame(tkinter.Frame):
         self.columnconfigure(2, weight=2)
         self.columnconfigure(3, weight=1)
         self.source_combo = ttk.Combobox(self, width=12)
-        self.source_combo["values"] = ["USRP", "Generator", "Recording"]
+        self.source_combo["values"] = self.source_manager.get_source_display_names()
         self.source_combo.current(0)
         self.source_combo.grid(
             column=0, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5
@@ -45,20 +49,25 @@ class SourceSelectFrame(tkinter.Frame):
         self.configure_button.configure(state="disabled")
 
     def configure_commands(self) -> None:
-        default_source_file_path = "/home/sagax/Generator/"
-        if self.source_combo.current() == 1:
-            source_file_path = default_source_file_path
-        else:
-            source_file_path = self.source_file_path_string.get()
-
         kwargs = {
-            "from_file": self.source_combo.current() != 0,
-            "source_file_path": source_file_path,
+            "source": self.source_combo.get(),
+            "params": self.source_file_path_string.get(),
         }
         self.do_select_source_function(kwargs)
 
     def source_combo_update(self, event: Any) -> None:
-        if self.source_combo.current() == 2:
+        """when changing the source combobox, this method updates the parameters combobox
+        with the values provided by the source manager
+        if no optional parameters are provided, then the combobox is disabled
+        """
+        params, default = self.source_manager.get_source_params(self.source_combo.get())
+        if params is not None:
+            self.source_file_path_combo["values"] = params
             self.source_file_path_combo.config(state="enabled")
         else:
+            self.source_file_path_combo["values"] = []
             self.source_file_path_combo.config(state="disabled")
+        if default is not None:
+            self.source_file_path_combo.current(default)
+        else:
+            self.source_file_path_combo.set("")
