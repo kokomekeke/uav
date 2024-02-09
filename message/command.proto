@@ -1,0 +1,227 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+import "data.proto";
+
+enum Instruction {
+    // Types of instructions that can be sent
+
+    // Send a string, receive it back
+    //   parameter: ping_data [string]
+    //   response:  ping_data [string]
+    PING = 0;
+
+    // Set and query config information
+    //   parameter: config [Config]
+    //   response:  config [Config]
+    CONFIG = 1;
+
+    // Query telemetry information
+    //   response:  telemetry [Telemetry]
+    TELEMETRY = 2;
+
+    // Query system information
+    //   response:  info [Info]
+    INFO = 3;
+
+
+    // Start CoreService
+    //   response:  success [bool]
+    CS_START = 9;
+
+    // Stop CoreService
+    //   response:  success [bool]
+    CS_STOP = 10;
+
+    // Restart CoreService
+    //   response:  success [bool]
+    CS_RESTART = 11;
+
+
+    // Start playback from source
+    //   response:  success [bool]
+    SOURCE_START = 13;
+
+    // Stop playback from source
+    //   response:  success [bool]
+    SOURCE_STOP = 14;
+
+    // Set playback position
+    //   parameter: position [uint64]
+    //   response:  position [uint64]
+    POSITION = 15;
+
+
+    // Start recording
+    //   response:  success [bool]
+    REC_START = 17;
+
+    // Stop recording
+    //   response:  success [bool]
+    REC_STOP = 18;
+
+
+    // Start Heading service
+    //   response:  success [bool]
+    HEADING_START = 21;
+
+    // Stop Heading service
+    //   response: success [bool]
+    HEADING_STOP = 22;
+
+    // Restart Heading service
+    //   response: success [bool]
+    HEADING_RESTART = 23;
+}
+
+message ROIMask {
+    // A single Region of Interest
+
+    // ID for associating with Detections
+    int32 roi_id = 1;
+
+    // ROI parameters
+    float center_frequency = 5;
+    float span = 6;
+    float treshold = 7;
+}
+
+message Heading {
+    // A single Heading source
+
+    // ID of 
+    string type = 1;
+
+    // Commands and their descriptions/values
+    map<string, string> parameters = 2;
+}
+
+message Config {
+    // Increments with every change. Used to validate streamed data against config
+    uint32 config_id = 1;
+
+    // CoreService parameters
+    float center_frequency = 5;
+    uint32 iq_rate = 6;
+    float playback_speed = 7;
+    uint64 bin_count = 8;
+    uint64 burst_stride = 9;
+    repeated int32 channel_gain = 10;
+
+    // Source parameters
+    string source_path = 17;
+
+    // Type of source
+    enum Type {
+        LIVE = 0;
+        RECORDED = 1;
+    }
+    Type type = 18;
+
+
+    // ROI mask, made up of individual regions
+    repeated ROIMask roi = 21;
+
+    // Heading source selection
+    Heading heading = 25;
+
+    // PostProcessing parameters
+    float mean_window = 29;
+}
+
+message SystemInfo {
+    // General system information
+
+    // Information about general hardware components
+    message Hardware {
+        int64 disk = 1;
+    }
+    Hardware hardware = 1;
+
+    // Information about software stack
+    message Software {
+        string cs_version = 1;
+        string pysagax_version = 2;
+    }
+    Software software = 2;
+
+    // Information about available Heading sources
+    repeated Heading headings = 3;
+
+    // Information about available SDR sources
+    message SDR {
+        // A single SDR source
+        string model = 1;
+    }
+    repeated SDR radios = 4;
+}
+
+message CommandError {
+    // Error during execution of command
+
+    enum ErrorType {
+        // Possible error types
+        UNKNOWN = 0;
+    }
+
+    // Basic error information
+    google.protobuf.Timestamp time = 1;
+    ErrorType type = 2;
+
+    // Detailed error message
+    string description = 5;
+}
+
+message Command {
+    // Common message encapsulating all possible commands
+
+    // Unique ID of command
+    int32 id = 1;
+
+    // Type of instruction
+    Instruction instruction = 2;
+
+    // Parameter
+    oneof parameter {
+        // Ping data
+        string ping_data = 5;
+
+        // Config information
+        Config config = 6;
+
+        // Playback position
+        uint64 position = 7;
+    }
+}
+
+message Response {
+    // Common message encapsulating all possible responses
+
+    // Unique ID of command
+    int32 id = 1;
+
+    // Type of instruction
+    Instruction instruction = 2;
+    CommandError error = 3;
+
+    // Response data
+    oneof data {
+        // Basic response indicating success of instruction
+        bool success = 5;
+
+        // Ping data
+        string ping_data = 6;
+
+        // Config information
+        Config config = 7;
+
+        // Telemetry information
+        Telemetry telemetry = 8;
+
+        // System information
+        SystemInfo info = 9;
+
+        // Playback position
+        uint64 position = 10;
+    }
+}
