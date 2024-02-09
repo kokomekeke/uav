@@ -51,7 +51,7 @@ class MultiQueue:
             except queue.Full:  # multiprocessing.queues.Full:
                 pass  # we ignore full queues for now, since multiprocessing queues can't be used similarly to collections.Deque objects or be cleared easily.
             except TypeError as e:  # TODO: multiprocessing debug (JIRA issue ALTS-150)
-                print("[MultiQueue]:", e)
+                pass
                 # Maybe setting a maxsize to all queues would solve this?
 
     def empty(self) -> bool:

@@ -39,8 +39,6 @@ class RecordingThread(threading.Thread):
             "df_corrected": [],
             "compass_angle": [],
             "compass_heading": [],
-            "encoder_angle": [],
-            "encoder_heading": [],
             "df_elevation": [],
             "quality": [],
             "peak0": [],
@@ -95,8 +93,6 @@ class RecordingThread(threading.Thread):
             if isinstance(packet, CoreServiceROIResultPacket):
                 compass_angle = data["compass_angle"]
                 compass_heading = data["compass_heading"]
-                # encoder_angle = data["encoder_angle"]
-                # encoder_heading = data["encoder_heading"]
 
                 df_angle = packet.roi_azimuth
                 df_elevation = packet.roi_elevation
@@ -109,8 +105,6 @@ class RecordingThread(threading.Thread):
                 self.buffer["df_corrected"].append(df_corrected)
                 self.buffer["compass_angle"].append(compass_angle)
                 self.buffer["compass_heading"].append(compass_heading)
-                # self.buffer["encoder_angle"].append(encoder_angle)
-                # self.buffer["encoder_heading"].append(encoder_heading)
                 self.buffer["df_elevation"].append(df_elevation)
                 self.buffer["quality"].append(self.latest_quality)
                 self.buffer["peak0"].append(self.latest_peaks[0])

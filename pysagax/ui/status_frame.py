@@ -2,22 +2,27 @@ import tkinter
 import tkinter.font
 from typing import Any, Callable, Optional
 
+from pysagax.source.source_manager import SourceManager
+
 
 class StatusFrame(tkinter.Frame):
     def __init__(
         self,
         master: tkinter.Misc,
+        source_manager: SourceManager,
         map_server_start_callable: Optional[Callable[[], None]] = None,
         map_server_stop_callable: Optional[Callable[[], None]] = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
         tkinter.Frame.__init__(self, master, *args, **kwargs)
+        self.source_manager = source_manager
 
         self.status_command_string = tkinter.StringVar(value="Not connected")
         self.status_stream_string = tkinter.StringVar(value="Not connected")
         self.status_compass_string = tkinter.StringVar(value="Not connected")
         self.status_map_server_string = tkinter.StringVar(value="Down")
+        self.status_path_string = tkinter.StringVar(value="No Source")
 
         status_command_label_label = tkinter.Label(
             self,
@@ -61,6 +66,17 @@ class StatusFrame(tkinter.Frame):
         )
         self.status_compass_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
 
+        status_source_label_label = tkinter.Label(
+            self,
+            text="Source:",
+            font=tkinter.font.Font(weight=tkinter.font.BOLD, size=10),
+        )
+        status_source_label_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
+        self.status_path_label = tkinter.Label(
+            self, textvariable=self.status_path_string
+        )
+        self.status_path_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
+
         status_map_server_label_label = tkinter.Label(
             self,
             text="Map server:",
@@ -98,3 +114,9 @@ class StatusFrame(tkinter.Frame):
         else:
             self.map_server_button.config(relief="sunken")
             self.map_server_start_callable()
+
+    def path_update(self):
+        self.status_path_string.set(
+            self.source_manager.get_current_source_path_str()
+            + f" [{self.source_manager.source_status.name}]"
+        )

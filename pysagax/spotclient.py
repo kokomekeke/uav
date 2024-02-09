@@ -14,6 +14,7 @@ from multiprocessing.managers import ValueProxy
 
 from pysagax.heading.heading_manager import HeadingManager
 from pysagax.heading.queue_collector import QueueValueCollector
+from pysagax.source.source_manager import CoreServiceStatus, SourceManager
 from pysagax.spot.commands_connection_thread import CommandsConnectionThread
 from pysagax.spot.commands_handler_thread import CommandsHandlerThread
 from pysagax.spot.map_server import MapServer
@@ -41,11 +42,16 @@ from typing import Any, Callable, Literal, Optional
 import numpy as np
 
 import pysagax
-from pysagax import (CoreServiceDebugPacket, CoreServiceEOFPacket,
-                     CoreServiceROIResultPacket, CoreServiceSpectrumPacket,
-                     StreamAndCompassProcess)
+from pysagax import (
+    CoreServiceDebugPacket,
+    CoreServiceEOFPacket,
+    CoreServiceROIResultPacket,
+    CoreServiceSpectrumPacket,
+    StreamAndCompassProcess,
+)
 from pysagax.ui.plot_frame import PlotFrame, PlotSettingsFrame
 from pysagax.util.multiqueue import MultiQueue
+from pysagax.util.read_from_conf import read_from_conf
 
 conf: Optional[dict[str, Any]] = None
 icon_image: Optional[tkinter.PhotoImage] = None
@@ -64,14 +70,8 @@ class ClientWindow(tkinter.Frame):
             "df_elevation_mean": None,
             "df_elevation_std": None,
         }
-        self.latest_roi_resutls: dict[str, Optional[float]] = {
-            "df_value": None,
-            "df_elevation": None,
-        }
         self.compass_angle = None
         self.compass_heading = None  # compass angle corrected with offset
-        self.encoder_angle = None
-        self.encoder_heading = None  # encoder angle corrected with offset
 
         tkinter.Frame.__init__(self, root)
         self.pack(side="top", fill=tkinter.BOTH, expand=True)
@@ -80,24 +80,13 @@ class ClientWindow(tkinter.Frame):
 
         self.status_frame = StatusFrame(
             master=self,
+            source_manager=self.client.source_manager,
             map_server_start_callable=self.client.start_dfg_map_server,
             map_server_stop_callable=self.client.stop_dfg_map_server,
             relief=tkinter.RAISED,
             borderwidth=1,
         )
         self.status_frame.pack(fill=tkinter.BOTH, side=tkinter.BOTTOM, expand=False)
-
-        self.connect_frame = ConnectFrame(
-            master=self,
-            conf=conf,
-            send_commands_function=self.client.send_commands,
-            connect_commands_function=self.connect_commands,
-            disconnect_commands_function=self.disconnect_commands,
-            logo_image=icon_image,
-            relief=tkinter.RAISED,
-            borderwidth=1,
-        )
-        self.connect_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
 
         self.plot_frame = PlotFrame(self, conf, root)
 
@@ -106,9 +95,20 @@ class ClientWindow(tkinter.Frame):
 
         self.plot_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
         self.left_notebook = ttk.Notebook(self.bottom_frame)
+        self.connect_frame = ConnectFrame(
+            master=self.left_notebook,
+            conf=conf,
+            connect_commands_function=self.connect_commands,
+            disconnect_commands_function=self.disconnect_commands,
+            logo_image=icon_image,
+            relief=tkinter.RAISED,
+            borderwidth=1,
+        )
+        self.left_notebook.add(self.connect_frame, text="Connect")
         self.source_select_frame = SourceSelectFrame(
             master=self.left_notebook,
             conf=conf,
+            source_manager=self.client.source_manager,
             do_select_source_function=self.client.do_set_source_params,
             relief=tkinter.RAISED,
             borderwidth=1,
@@ -118,6 +118,7 @@ class ClientWindow(tkinter.Frame):
             master=self.left_notebook,
             conf=conf,
             do_configuration_function=self.client.do_configuration_params,
+            source_manager=self.client.source_manager,
             relief=tkinter.RAISED,
             borderwidth=1,
         )
@@ -125,13 +126,14 @@ class ClientWindow(tkinter.Frame):
         self.plot_settings_frame = PlotSettingsFrame(
             self.left_notebook,
             self.plot_frame,
-            conf,
+            send_commands_function=self.client.send_commands,
+            conf = conf,
             relief=tkinter.RAISED,
             borderwidth=1,
         )
         self.left_notebook.add(self.plot_settings_frame, text="Plot Settings")
         self.heading_source_frame = HeadingSourceFrame(
-            self.left_notebook, self.client.heading_manager
+            self.left_notebook, self.client.heading_manager, conf
         )
         self.left_notebook.add(self.heading_source_frame, text="Heading&GPS")
         self.left_notebook.pack(fill=tkinter.BOTH, expand=False, side=tkinter.LEFT)
@@ -139,14 +141,12 @@ class ClientWindow(tkinter.Frame):
         self.playback_tab = PlaybackTab(
             master=self.center_notebook,
             send_commands_function=self.client.send_commands,
+            source_manager=self.client.source_manager,
         )
-        self.playback_tab.start_local_recording_function = (
-            self.client.start_local_recording
-        )
-        self.playback_tab.stop_local_recording_function = (
-            self.client.stop_local_recording
-        )
+        self.playback_tab.start_recording_function = self.client.start_recording
+        self.playback_tab.stop_recording_function = self.client.stop_recording
         self.playback_tab.abort_commands_function = self.client.abort_commands
+
         self.status_info_tab = ttk.Frame(self.center_notebook)
         self.stream_packets_tab = ttk.Frame(self.center_notebook)
         self.center_notebook.add(self.playback_tab, text="Playback")
@@ -156,7 +156,7 @@ class ClientWindow(tkinter.Frame):
             side=tkinter.LEFT, fill=tkinter.BOTH, padx=6, expand=True
         )
 
-        center_box_width = conf["display"]["center_box_width"] if conf else 60
+        center_box_width = read_from_conf(conf, ["display", "center_box_width"], 60)
         self.status_info_lb = tkinter.Listbox(
             self.status_info_tab, height=4, width=center_box_width
         )
@@ -198,14 +198,12 @@ class ClientWindow(tkinter.Frame):
                 self.aggregated_roi_results = data["aggregated_roi_results"]
                 self.compass_angle = data["compass_angle"]
                 self.compass_heading = data["compass_heading"]
-                self.encoder_angle = data["encoder_angle"]
-                self.encoder_heading = data["encoder_heading"]
 
                 try:
                     ts = datetime.fromtimestamp(packet.time_ns / 1e9, tz=None)
                     packet_string = (
                         f"[{packet.stream_id}] {ts.strftime('%H:%M:%S')}.{int((packet.time_ns % 1e9) / 1e6):03d} - "
-                        f"{str(packet)} - c_angle={self.compass_angle}; e_angle={self.encoder_angle}"
+                        f"{str(packet)} - c_angle={self.compass_angle}"
                     )
                     self.stream_packets_lb.insert(tkinter.END, packet_string)
                     self.stream_packets_lb.delete(
@@ -229,17 +227,26 @@ class ClientWindow(tkinter.Frame):
                                 regex, str(packet)
                             )  # creating a list of (ChannelID, PeakValue) tuples from the debug message
                             peaks = [peak[1] for peak in matches]
-                            self.stat_frame.update_peak_plot(peaks)
+                            try:
+                                self.stat_frame.update_peak_plot(peaks)
+                            except IndexError:
+                                """
+                                During changing center freq, the CoreService sometiomes sends negative peak values.
+                                This behaviour has not been investigated on the CS side, only handled here
+                                """
+                                pass
                         elif packet.title == "q":
                             quality = float(packet.contents.decode().strip())
                             self.stat_frame.quality_value_string.set(f"{quality:.2f}")
 
                     if isinstance(packet, CoreServiceROIResultPacket):
-                        self.latest_roi_resutls["df_value"] = packet.roi_azimuth
-                        self.latest_roi_resutls["df_elevation"] = packet.roi_elevation
+                        latest_roi_resutls = {
+                            "df_value": packet.roi_azimuth,
+                            "df_elevation": packet.roi_elevation,
+                        }
 
                         self.stat_frame.update_stats(
-                            self.latest_roi_resutls, self.aggregated_roi_results
+                            latest_roi_resutls, self.aggregated_roi_results
                         )
 
                     if isinstance(packet, CoreServiceEOFPacket):
@@ -275,17 +282,8 @@ class ClientWindow(tkinter.Frame):
         self.info_update_handler(message, "Command Thread")
 
     def stream_status_msg_handler(self, message: str) -> None:
-        if message.startswith("#encoder"):
-            message = message[len("#encoder") :]
-            self.info_update_handler(message, source="Encoder")
-        elif message.startswith("#compass"):
-            message = message[len("#compass") :]
-            self.info_update_handler(message, source="Compass")
-            self.client.client_window.status_frame.status_compass_string.set(message)
-        else:  # status updates have no prefix, these should also be shown on status_frame
-            self.set_stream_status(message)
-            self.info_update_handler(message, source="Stream Process")
-        # TODO: update compass end map server in status_frame
+        self.set_stream_status(message)
+        self.info_update_handler(message, source="Stream Process")
 
     def recording_status_msg_handler(self, message: str) -> None:
         # if message.startswith("#info"):
@@ -318,13 +316,11 @@ class ClientWindow(tkinter.Frame):
 
     def connect_commands(self, host_address: str) -> None:
         host_address = self.connect_frame.host_address.get()
-        encoder_port = self.connect_frame.encoder_port_string.get()
         self.client.connect_commands(
             self.connect_action,
             self.connected_action,
             self.disconnect_action,
             host_address,
-            encoder_port,
         )
 
     def disconnect_commands(self) -> None:
@@ -345,9 +341,7 @@ class ClientWindow(tkinter.Frame):
                     path_list += data
             path_list_split = path_list.decode().split()
             path_list_stripped = sorted([path.strip() for path in path_list_split])
-            self.source_select_frame.source_file_path_combo[
-                "values"
-            ] = path_list_stripped
+            self.client.source_manager.update_recording_paths(path_list_stripped)
         except Exception as e:
             print("[Updating recording paths]", e)
 
@@ -364,14 +358,11 @@ class ClientWindow(tkinter.Frame):
         self.connect_frame.connect_button.configure(state="disabled")
         self.connect_frame.host_entry.configure(state="disabled")
         self.connect_frame.disconnect_button.configure(state="normal")
-        self.connect_frame.channel_spectrum_combo.configure(state="normal")
+        self.plot_settings_frame.channel_spectrum_combo.configure(state="normal")
 
-        self.control_frame.configure_button.configure(state="normal")
         self.source_select_frame.configure_button.configure(state="normal")
 
-        self.playback_tab.connected = True
-        self.playback_tab.set_buttons_enabled()
-        # self.control_frame.rec_button.configure(state="normal")
+        self.plot_frame.start_animation()
 
     def disconnect_action(self) -> None:
         """
@@ -381,21 +372,14 @@ class ClientWindow(tkinter.Frame):
             self.connect_frame.disconnect_button.configure(state="disabled")
             self.connect_frame.host_entry.configure(state="normal")
             self.connect_frame.connect_button.configure(state="normal")
-            self.connect_frame.channel_spectrum_combo.configure(state="disabled")
+            self.plot_settings_frame.channel_spectrum_combo.configure(state="disabled")
 
-            self.control_frame.configure_button.configure(state="disabled")
             self.source_select_frame.configure_button.configure(state="disabled")
 
-            self.playback_tab.connected = False
-            self.playback_tab.set_buttons_enabled()
             self.disconnect_commands()  # to disconnect the other thread
         except:
             pass  # it might happen when closing the window
-        try:
-            if self.plot_frame.animation is not None:
-                self.plot_frame.animation.event_source.stop()
-        except Exception as e:
-            pass
+        self.plot_frame.stop_animation()
 
     def info_update_handler(
         self, update_string: str | list[str], source: Optional[str] = None
@@ -441,6 +425,7 @@ class Client:
     def __init__(self, root: Any) -> None:
         self.manager = multiprocessing.get_context("spawn").Manager()
 
+        self.source_manager = SourceManager()
         self.heading_manager = HeadingManager()
         self.stream_to_gui_queue: queue.Queue[Any] = self.manager.Queue(maxsize=100)
         self.stream_to_rec_queue: Optional[queue.Queue[Any]] = None
@@ -478,7 +463,7 @@ class Client:
 
         self.mean_window_width_value: ValueProxy[float] = self.manager.Value(
             "float",
-            conf["stats"]["mean_window_width_seconds"] if conf is not None else 0,
+            read_from_conf(conf, ["stats", "mean_window_width_seconds"], 0),
         )
 
         self.recording_started = False
@@ -561,7 +546,8 @@ class Client:
 
     def command_status_callback(self, working: bool, current_cmd: str) -> None:
         self.command_thread_watcher_queue.put("#action" + "send_commands_finished")
-        self.client_window.playback_tab.command_status_callback(working, current_cmd)
+        self.source_manager.command_status_callback(working, current_cmd)
+        self.client_window.playback_tab.display_command_status(current_cmd)
 
     def start_dfg_map_server(self) -> None:
         global conf
@@ -570,13 +556,9 @@ class Client:
         )
         self.stream_process_multiqueue.add_queue(self.stream_to_map_queue)
 
-        self.dfg_map_server.host = conf["map_server"]["host"] if conf else "0.0.0.0"
-        self.dfg_map_server.port = conf["map_server"]["port"] if conf else 20000
-        if (
-            conf is not None
-            and "lat" in conf["map_server"]
-            and "lon" in conf["map_server"]
-        ):
+        self.dfg_map_server.host = read_from_conf(conf, ["map_server", "host"], "0.0.0.0")
+        self.dfg_map_server.port = read_from_conf(conf, ["map_server", "port"], 20000)
+        if "lat" in conf["map_server"] and "lon" in conf["map_server"]:
             self.dfg_map_server.predefined_coords = (
                 conf["map_server"]["lat"],
                 conf["map_server"]["lon"],
@@ -593,7 +575,6 @@ class Client:
         connected_action: Optional[Callable[[], None]],
         disconnect_action: Optional[Callable[[], None]],
         host_address: str,
-        encoder_port: str = "",
     ) -> None:
         """
         Action of the "Connect" button
@@ -647,6 +628,8 @@ class Client:
             self.command_thread,
             self.client_window.playback_tab,
             self.client_window.control_frame,
+            self.client_window.status_frame,
+            self.source_manager,
         )
         self.status_query_thread.start()
 
@@ -657,37 +640,18 @@ class Client:
             self.stream_process_watcher_queue,
         )
         self.stream_process.heading_queue = QueueValueCollector(
-            self.heading_manager.mp_values
+            self.heading_manager.mp_values, conf
         )
         self.stream_process.host_port = f"{host_address}:12937"
-        self.stream_process.compass_host_port = f"{host_address}:12938"
-        self.stream_process.encoder_port = encoder_port
         self.stream_process.mean_window_seconds = self.mean_window_width_value
-        self.stream_process.use_sensor_fusion = (
-            conf["compass"]["use_sensor_fusion"] if conf else False
-        )
-        self.stream_process.compass_offset = (
-            conf["compass"]["offset"] * np.pi / 180 if conf else 0
-        )
         self.stream_process.start()
 
-    def do_set_source_params(self, params: dict[str, Any]) -> None:
-        self.do_set_source(**params)
+    def do_set_source_params(self, kwargs: dict[str, Any]) -> None:
+        self.do_set_source(**kwargs)
 
-    def do_set_source(
-        self,
-        from_file,
-        source_file_path,
-    ) -> None:
-        if from_file:
-            if source_file_path[-1] != "/":
-                source_file_path = source_file_path + "/"
-            self.send_commands(
-                f"CORE:Version?;"
-                f'SOURCE:Path! SigMF "{source_file_path}recording.sigmf-collection";SOURCE:Path?;'
-            )
-        else:
-            self.send_commands(f"CORE:Version?;" f"SOURCE:Path! UHD;SOURCE:Path?;")
+    def do_set_source(self, source: str, params: str) -> None:
+        cmd = self.source_manager.get_set_source_command(source, params)
+        self.send_commands(f"CORE:Version?;{cmd}SOURCE:Path?;")
 
     def do_configuration_params(self, params: dict[str, Any]) -> None:
         self.do_configuration(**params)
@@ -703,25 +667,17 @@ class Client:
         roi_span,
         roi_threshold,
     ) -> None:
-        self.send_commands(
-            f"CORE:Version?;"
-            f"SOURCE:Position! 0;"
-            f"SOURCE:CenterFrequency! {freq:.0f};"
-            f"SOURCE:IqRate! {bw:.0f};"
-            f"SOURCE:ChannelGain! 0 {gain};"
-            f"SOURCE:ChannelGain! 1 {gain};"
-            f"SOURCE:ChannelGain! 2 {gain};"
-            f"SOURCE:ChannelGain! 3 {gain};"
-            f"AOA:BinCount! {bin_count};"
-            f"SOURCE:BurstStride! {burst_stride};"
-            f"SOURCE:Configure!;"
-            f"AOA:Configure!;"
-            f"ROI:Enable! 1;"
-            f"ROI:CenterFrequency! {roi_center:.0f};"
-            f"ROI:Span! {roi_span:.0f};"
-            f"ROI:Threshold! {roi_threshold};"
-            f"ROI:Configure!;"
+        cmd = self.source_manager.get_config_commands(
+            freq,
+            bw,
+            gain,
+            bin_count,
+            burst_stride,
+            roi_center,
+            roi_span,
+            roi_threshold,
         )
+        self.send_commands(cmd)
 
     def disconnect_commands(self) -> None:
         """
@@ -785,6 +741,7 @@ def on_close() -> None:
     # dfg_map_server.run_thread = False
     ex.do_stop = True
     ex.client_window.do_stop = True
+    ex.heading_manager.stop()
     ex.disconnect_commands()
     ex.client_window.quit()
     if root is not None:
@@ -799,7 +756,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="SPOTClient")
     parser.add_argument("config", nargs="?", default="spotclient.toml")
     args = parser.parse_args()
-    conf = None
+    conf = {}
     if os.path.isfile(args.config):
         print("Config file found")
         with open(args.config, "rb") as f:

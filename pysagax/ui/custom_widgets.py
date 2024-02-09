@@ -1,6 +1,6 @@
 import tkinter
 from tkinter import ttk
-from typing import Any, Callable, Optional, Type
+from typing import Any, Callable, Optional, Sequence, Type
 
 
 class ToggleButton(tkinter.Frame):
@@ -62,9 +62,8 @@ class EntryWithLabel(ttk.Entry):
         self.label = ttk.Label(master, text=labeltext)
         self.label.grid(column=column, row=row, sticky=tkinter.W, padx=padx, pady=pady)
 
-        ttk.Entry.__init__(self, master, textvariable=self.variable, width=width)
-        ttk.Entry.grid(
-            self,
+        super().__init__(master, textvariable=self.variable, width=width)
+        self.grid(
             column=column + 1,
             row=row,
             sticky=tkinter.E + tkinter.W,
@@ -77,3 +76,36 @@ class EntryWithLabel(ttk.Entry):
 
     def set(self, value: Any) -> Any:
         return self.variable.set(value=value)
+
+    def destroy(self) -> None:
+        self.label.destroy()
+        return super().destroy()
+
+
+class ComboboxWithLabel(EntryWithLabel, ttk.Combobox):
+    def __init__(
+        self,
+        master: tkinter.Misc,
+        labeltext: str,
+        column: int,
+        row: int,
+        default_value: str = "",
+        variable_type: Type[Any] = tkinter.StringVar,
+        width: int = 11,
+        padx: int = 5,
+        pady: int = 5,
+        value_options: Sequence[str] =[],
+    ) -> None:
+        super().__init__(
+            master,
+            labeltext,
+            column,
+            row,
+            default_value,
+            variable_type,
+            width,
+            padx,
+            pady,
+        )
+
+        self["values"] = value_options
