@@ -2,7 +2,7 @@ from queue import Queue
 
 #TODO: Fix imports with proper package structure
 import sys, os
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+# sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 
 from communication.rep import REP
 from loop import Loop

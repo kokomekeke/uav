@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import click
 from concurrent.futures import ThreadPoolExecutor, wait
 from rich.logging import RichHandler
