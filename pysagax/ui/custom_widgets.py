@@ -1,6 +1,6 @@
 import tkinter
 from tkinter import ttk
-from typing import Any, Callable, Optional, Type
+from typing import Any, Callable, Optional, Sequence, Type
 
 
 class ToggleButton(tkinter.Frame):
@@ -42,7 +42,7 @@ class ToggleButton(tkinter.Frame):
         on_button.pack(side="left")
 
 
-class EntryWithLabel(ttk.Combobox):
+class EntryWithLabel(ttk.Entry):
     def __init__(
         self,
         master: tkinter.Misc,
@@ -54,9 +54,6 @@ class EntryWithLabel(ttk.Combobox):
         width: int = 11,
         padx: int = 5,
         pady: int = 5,
-        value_options: Optional[
-            list
-        ] = None,  # it creates a combobox if a list is provided
     ) -> None:
         """
         tkinter widget of a label, entry box and tkinter variable combined to be used in frames with columnconfigure
@@ -65,16 +62,8 @@ class EntryWithLabel(ttk.Combobox):
         self.label = ttk.Label(master, text=labeltext)
         self.label.grid(column=column, row=row, sticky=tkinter.W, padx=padx, pady=pady)
 
-        if value_options is None:
-            self.entry_class = (
-                ttk.Entry
-            )  # it gets stored as anrgument so we can check it from the outside
-        else:
-            self.entry_class = ttk.Combobox
-
-        self.entry_class.__init__(self, master, textvariable=self.variable, width=width)
-        self.entry_class.grid(
-            self,
+        super().__init__(master, textvariable=self.variable, width=width)
+        self.grid(
             column=column + 1,
             row=row,
             sticky=tkinter.E + tkinter.W,
@@ -82,19 +71,41 @@ class EntryWithLabel(ttk.Combobox):
             pady=pady,
         )
 
-        if value_options is not None:
-            self["values"] = value_options
-
     def get(self) -> Any:
         return self.variable.get()
 
     def set(self, value: Any) -> Any:
         return self.variable.set(value=value)
 
-    def is_combobox(self) -> bool:
-        # True if entry is combobox (aka dropdown list)
-        return self.entry_class is ttk.Combobox
-
     def destroy(self) -> None:
         self.label.destroy()
         return super().destroy()
+
+
+class ComboboxWithLabel(EntryWithLabel, ttk.Combobox):
+    def __init__(
+        self,
+        master: tkinter.Misc,
+        labeltext: str,
+        column: int,
+        row: int,
+        default_value: str = "",
+        variable_type: Type[Any] = tkinter.StringVar,
+        width: int = 11,
+        padx: int = 5,
+        pady: int = 5,
+        value_options: Sequence[str] =[],
+    ) -> None:
+        super().__init__(
+            master,
+            labeltext,
+            column,
+            row,
+            default_value,
+            variable_type,
+            width,
+            padx,
+            pady,
+        )
+
+        self["values"] = value_options

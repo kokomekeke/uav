@@ -52,7 +52,7 @@ class CoreServiceStatus(Enum):
     WORKING = 2
 
 
-sidekiq_bw_list = [
+sidekiq_bw_tuple = (
     "541.667k",
     "1.920M",
     "2.4576M",
@@ -74,7 +74,7 @@ sidekiq_bw_list = [
     "30.72M",
     "40M",
     "61.44M",
-]
+)
 
 
 class Sources(Enum):
@@ -87,7 +87,7 @@ class Sources(Enum):
     # Source = name, display_name, is_tunable, params, default_param_index, bandwith list
     NOT_SET = "NULL", None, False, None, None, None
     UHD = "UHD", "USRP", True, None, None, None
-    Sidekiq = "Sidekiq", "Sidekiq", True, ["Single", "Dual"], 0, sidekiq_bw_list
+    Sidekiq = "Sidekiq", "Sidekiq", True, ["Single", "Dual"], 0, sidekiq_bw_tuple
     SigMF = (
         "SigMF",
         "Recording",
@@ -99,7 +99,7 @@ class Sources(Enum):
     Generator = "Generator", "Generator", False, None, None, None
 
     def __new__(
-        cls, name, display_name, is_tunable, params, default_param_index, bandwith_list
+        cls, name, display_name, is_tunable, params, default_param_index, bandwith_tuple
     ):
         member = object.__new__(cls)
         member._value_ = name  # len(cls._member_names_) + 1
@@ -107,7 +107,7 @@ class Sources(Enum):
         object.__setattr__(member, "is_tunable", is_tunable)
         object.__setattr__(member, "params", params)
         object.__setattr__(member, "default_param_index", default_param_index)
-        object.__setattr__(member, "bandwith_list", bandwith_list)
+        object.__setattr__(member, "bandwith_tuple", bandwith_tuple)
         return member
 
     def __setattr__(self, name, value):
@@ -122,7 +122,7 @@ class Sources(Enum):
 
 
 class SourceManager:
-    def __init__(self):
+    def __init__(self) -> None:
         """
         Keeps track of current source properties in the CoreService.
         Most of the source-dependent checks and functions needed in the GUI
@@ -143,7 +143,7 @@ class SourceManager:
         else:
             self.cs_status = CoreServiceStatus.WORKING
 
-    def source_path_handler(self, resp):
+    def source_path_handler(self, resp) -> None:
         self.current_source_path = resp
         try:
             self.current_source = Sources(resp[1])
@@ -158,10 +158,10 @@ class SourceManager:
         started = bool(int(resp[2]))
         self.source_status = SourceStatus([ready, started])
 
-    def update_recording_paths(self, path_list):
+    def update_recording_paths(self, path_list: list[str]) -> None:
         Sources.SigMF.params = path_list
 
-    def get_current_source_path_str(self) -> list[str]:
+    def get_current_source_path_str(self) -> Optional[str]:
         if self.current_source_path == None:
             return None
         return " - ".join(
@@ -169,12 +169,14 @@ class SourceManager:
             for part in self.current_source_path[1:]
         )
 
-    def get_source_display_names(self):
+    def get_source_display_names(self) -> list[str]:
         # returns the display names for defined sources
         source_list = [s.display_name for s in Sources if s is not Sources.NOT_SET]
         return source_list
 
-    def get_source_params(self, source_str) -> (list, int):
+    def get_source_params(
+        self, source_str: str
+    ) -> tuple[Optional[list[str]], Optional[int]]:
         # returns the list of possible parameters (paths for sigmf, single/double mode for sidekiq)
         # also returns the default parameter's index
         queried_source = [s for s in Sources if s.display_name == source_str][0]
@@ -193,7 +195,7 @@ class SourceManager:
         roi_center,
         roi_span,
         roi_threshold,
-    ) -> None:
+    ) -> str:
         if self.current_source is Sources.NOT_SET:
             raise Exception(f"Source is not intilialized for CoreService")
 

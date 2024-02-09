@@ -3,7 +3,7 @@ from tkinter import ttk
 from typing import Any, Callable, Optional
 from pysagax.source.source_manager import SourceManager
 
-from pysagax.ui.custom_widgets import EntryWithLabel
+from pysagax.ui.custom_widgets import ComboboxWithLabel, EntryWithLabel
 from pysagax.util.read_from_conf import read_from_conf
 from pysagax.util.mat import si_to_float
 from pysagax.ui.ui_helpers import en_if
@@ -131,21 +131,21 @@ class ControlFrame(tkinter.Frame):
 
     def _update_bandwith_entry(self):
         # this could be implemented in EntryWithLabel to make it reusable
-        bw_list = self.source_manager.current_source.bandwith_list
-        if bw_list is None and self.bw_entry.is_combobox():
+        bw_tuple = self.source_manager.current_source.bandwith_tuple
+        if bw_tuple is None and isinstance(self.bw_entry, ComboboxWithLabel):
             # redraw as text entry
             self.bw_entry.destroy()
             self.bw_entry = EntryWithLabel(self, "Bandwidth:", 0, 2)
-        elif bw_list is not None:
-            if not self.bw_entry.is_combobox():
+        elif bw_tuple is not None:
+            if not isinstance(self.bw_entry, ComboboxWithLabel):
                 # redraw as combobox
                 self.bw_entry.destroy()
-                self.bw_entry = EntryWithLabel(
-                    self, "Bandwidth:", 0, 2, value_options=bw_list
+                self.bw_entry = ComboboxWithLabel(
+                    self, "Bandwidth:", 0, 2, value_options=bw_tuple
                 )
-            elif self.bw_entry["values"] != bw_list:
+            elif self.bw_entry["values"] != bw_tuple:
                 # update the list of bandwith options
-                self.bw_entry["values"] = bw_list
+                self.bw_entry["values"] = bw_tuple
 
     def configure_commands(self) -> None:
         kwargs = {
