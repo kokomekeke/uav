@@ -2,6 +2,7 @@ from logging import getLogger
 from signal import signal, SIGINT, SIGTERM
 from os import kill, getpid
 
+
 class Loop:
     """Base class for infinitely looping background tasks"""
 
@@ -22,13 +23,13 @@ class Loop:
         self._logger.debug("Running main loop")
         while True:
             self._loop()
-    
+
     def _pre_loop(self) -> None:
         """Called before main loop starts. Used for initialization"""
 
         # Override this function
         pass
-    
+
     def _loop(self) -> None:
         """The main logic of the loop. This method is called inside a while loop"""
 
@@ -40,7 +41,7 @@ class Loop:
 
         self._logger.info(f"Received signal {signal}, exiting...")
         self._quit()
-    
+
     def _quit(self) -> None:
         """Stop execution of loop logic"""
 

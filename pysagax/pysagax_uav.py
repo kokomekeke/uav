@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# Created by aron.szabo@sagaxcommunications.com on 09.02.2024.
+#
+
 import click
 from concurrent.futures import ThreadPoolExecutor, wait
 from rich.logging import RichHandler
@@ -6,9 +10,9 @@ from coloredlogs import install
 from logging import getLogger, StreamHandler
 from queue import Queue
 
-from communicator import Communicator
-from interpreter import Interpreter
-from controller import CSController
+from field.communicator import Communicator
+from field.interpreter import Interpreter
+from field.controller import CSController, CSReceiveTask
 
 
 class Commander:
@@ -25,22 +29,19 @@ class Commander:
         self._cs_responses = Queue()
 
         self._communicator = Communicator(
-            queue_in=self._responses,
-            queue_out=self._commands,
-            level=level
+            queue_in=self._responses, queue_out=self._commands, level=level
         )
         self._interpreter = Interpreter(
             comm_queue_in=self._commands,
             comm_queue_out=self._responses,
             cs_queue_in=self._cs_responses,
             cs_queue_out=self._cs_commands,
-            level=level
+            level=level,
         )
         self._controller = CSController(
-            queue_in=self._cs_commands,
-            queue_out=self._cs_responses,
-            level=level
+            queue_in=self._cs_commands, queue_out=self._cs_responses, level=level
         )
+        self._controller_recv = CSReceiveTask(self._controller)
 
     def start(self) -> None:
         """Start all background processes"""
@@ -48,18 +49,20 @@ class Commander:
         self._logger.debug("Starting Commander")
 
         self._communicator_future = self._pool.submit(self._communicator)
-        self._interpreter_futue = self._pool.submit(self._interpreter)
+        self._interpreter_future = self._pool.submit(self._interpreter)
         self._controller_future = self._pool.submit(self._controller)
+        self._controller_recv_future = self._pool.submit(self._controller_recv)
 
         # Periodically checking errors in threads
         while True:
             done, running = wait(
                 (
                     self._communicator_future,
-                    self._interpreter_futue,
-                    self._controller_future
+                    self._interpreter_future,
+                    self._controller_future,
+                    self._controller_recv_future,
                 ),
-                timeout=1
+                timeout=1,
             )
 
             for future in done:
@@ -82,34 +85,33 @@ def main(level: str = "INFO") -> None:
     # Configure logging format
     setup_logging(level=level)
 
-    #TODO: Implement config file
+    # TODO: Implement config file
 
     commander = Commander(level=level)
     commander.start()
 
-    #while True:
+    # while True:
     #    pass
 
 
 def setup_logging(
-        level: str = "INFO",
-        show_process_name: bool = False,
-        stream_handler: StreamHandler = None
+    level: str = "INFO",
+    show_process_name: bool = False,
+    stream_handler: StreamHandler = None,
 ) -> None:
     """Configure logging parameters"""
-    
+
     if stream_handler is None:
         stream_handler = RichHandler(rich_tracebacks=True)
-    
+
     # Configure logging format
     format = "{asctime} {levelname:<5s} {name:<12s} {message}"
     if show_process_name:
-        format = "[{processName}] "+format
+        format = "[{processName}] " + format
     install(level=level, fmt=format, style="{")
 
-    #TODO: Implement log files
+    # TODO: Implement log files
 
 
 if __name__ == "__main__":
     main()
-

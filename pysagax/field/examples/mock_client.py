@@ -28,6 +28,7 @@ while True:
     command = proto.Command()
     command.id = id
     command.instruction = instruction
+
     match instruction:
         case proto.PING:
             command.ping_data = "PING"
