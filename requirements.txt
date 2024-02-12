@@ -11,3 +11,7 @@ Pillow~=9.5.0
 pyquaternion~=0.9.9
 pandas~=1.5.3
 tomli~=2.0.1
+rich~=13.6.0
+coloredlogs~=15.0.1
+pyzmq~=25.1.2
+protobuf~=4.25.2

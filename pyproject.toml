@@ -25,6 +25,10 @@ dependencies = [
     "pyquaternion",
     "pandas",
     "tomli",
+    "rich",
+    "coloredlogs",
+    "protobuf",
+    "pyzmq",
 ]
 
 [tool.versioneer]
