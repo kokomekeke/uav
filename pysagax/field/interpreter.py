@@ -1,12 +1,8 @@
 import queue
 from queue import Queue
 
-# TODO: Fix imports with proper package structure
-import sys, os
 import shlex
 from typing import Optional
-
-# sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 
 import pysagax.message.command_pb2 as proto
 from pysagax.field.loop import Loop

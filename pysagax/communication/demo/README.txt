@@ -1,0 +1,1 @@
+This demo is for raw ZeroMQ and Protobuf. For communication classes developed by SAGAX, see communication/examples

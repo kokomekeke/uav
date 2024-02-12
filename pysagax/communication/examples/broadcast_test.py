@@ -5,11 +5,7 @@ import random
 import logging
 import time
 
-#TODO: Fix imports with proper package structure
-import sys, os
-sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
-
-import communication.broadcast as broadcast
+from pysagax.communication.broadcast import TX, RX
 
 
 INDEX_SIZE = 4
@@ -24,7 +20,7 @@ def tx(
         timeout: int | None = 0.1
     ):
     print("Transmitting")
-    server = broadcast.TX(address=address, port=port)
+    server = TX(address=address, port=port)
     server.connect()
 
     i = 0
@@ -49,7 +45,7 @@ def rx(
         number: int | None = 1000
     ):
     print("Receiving")
-    client = broadcast.RX(port=port, groups=["b"])
+    client = RX(port=port, groups=["b"])
     client.connect()
 
     i = 1

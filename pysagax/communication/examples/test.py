@@ -1,7 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor, wait
 
-from req import REQ
-from rep import REP
+from pysagax.communication.req_rep import REQ, REP
 
 client = REQ()
 server = REP()
