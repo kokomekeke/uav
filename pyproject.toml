@@ -38,7 +38,7 @@ versionfile_source = "pysagax/_version.py"
 tag_prefix = "v"
 
 [build-system]
-requires = ["setuptools", "wheel", "versioneer"]
+requires = ["setuptools", "wheel", "versioneer", "protoletariat"]
 build-backend = "setuptools.build_meta"
 
 [project.scripts]

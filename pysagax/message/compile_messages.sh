@@ -1,4 +1,5 @@
 #!/bin/bash
+# Requires protoc and protoletariat
 
 sources=("command.proto" "data.proto")
 target=$(dirname "${BASH_SOURCE[0]}")
