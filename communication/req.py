@@ -19,7 +19,7 @@ class REQ:
         self._radio = self._context.socket(zmq.RADIO)
         self._dish = self._context.socket(zmq.DISH)
 
-    def connect(self):
+    def connect(self) -> None:
         """Connect and bind up- and downstream sockets"""
 
         self._radio.connect(f"udp://{self._address}:{self._port_out}")
