@@ -218,13 +218,17 @@ class VerticalScrolledFrame(
 
 
 class PropSetter:
-    def __init__(self, msg, field, descriptor, var):
+    def __init__(self, msg, field, descriptor, var, lambdas=[]):
         self.msg = msg
         self.field = field
         self.var = var
         self.descriptor = descriptor
+        self.lambdas = lambdas
 
     def __call__(self):
+        if not all([l() for l in self.lambdas]):
+            # it is a part of a 'oneof', only include if that tab is selected
+            return
         # print(f"{self.field}={self.var.get()}")
         val = self.var.get()
         type = self.descriptor.type
@@ -252,6 +256,12 @@ class PropSetter:
                 self.msg.ClearField(self.field)
         except ValueError:
             pass
+
+
+class FakeDescriptor:
+    def __init__(self, fields) -> None:
+        self.fields = fields
+        self.oneofs = []
 
 
 class ClientWindow(tkinter.Frame):
@@ -345,14 +355,24 @@ class ClientWindow(tkinter.Frame):
             side=tkinter.LEFT, fill=tkinter.BOTH, padx=6, expand=False
         )
 
-    def build_pb_frame(self, master, command, descriptor, fieldname=""):
+    def build_pb_frame(
+        self, master, command, descriptor, fieldname="", selected_lambdas=[]
+    ):
         if not hasattr(command, "DESCRIPTOR"):
             return
+        row_i = 0
+
+        all_oneof_fields = []
+        for oneof in descriptor.oneofs:
+            all_oneof_fields.extend([field.name for field in oneof.fields])
+
         for i, field in enumerate(descriptor.fields):
+            if field.name in all_oneof_fields:
+                continue
             this_fn = f"{fieldname}.{field.name}" if fieldname else field.name
             variable = tkinter.StringVar(value="")
             label = tkinter.Label(master, text=field.name)
-            label.grid(column=0, row=i, sticky=tkinter.W, padx=2, pady=2)
+            label.grid(column=0, row=row_i, sticky=tkinter.W, padx=2, pady=2)
             if field.enum_type is not None:
                 combo = ttk.Combobox(
                     master,
@@ -361,21 +381,25 @@ class ClientWindow(tkinter.Frame):
                 )
                 combo.grid(
                     column=1,
-                    row=i,
+                    row=row_i,
                     sticky=tkinter.E + tkinter.W,
                     padx=2,
                     pady=2,
                 )
                 variable.set(field.enum_type.values[0].name)
-                self.prop_setters.append(PropSetter(command, this_fn, field, variable))
+                self.prop_setters.append(
+                    PropSetter(command, this_fn, field, variable, selected_lambdas)
+                )
             elif (
                 field.message_type is not None and field.label != 3
             ):  # LABEL_REPEATED == 3
                 frame = tkinter.Frame(master)
-                self.build_pb_frame(frame, command, field.message_type, this_fn)
+                self.build_pb_frame(
+                    frame, command, field.message_type, this_fn, selected_lambdas
+                )
                 frame.grid(
                     column=1,
-                    row=i,
+                    row=row_i,
                     sticky=tkinter.E + tkinter.W,
                     padx=2,
                     pady=2,
@@ -384,12 +408,44 @@ class ClientWindow(tkinter.Frame):
                 entry = tkinter.Entry(master, textvariable=variable)
                 entry.grid(
                     column=1,
-                    row=i,
+                    row=row_i,
                     sticky=tkinter.E + tkinter.W,
                     padx=2,
                     pady=2,
                 )
-                self.prop_setters.append(PropSetter(command, this_fn, field, variable))
+                self.prop_setters.append(
+                    PropSetter(command, this_fn, field, variable, selected_lambdas)
+                )
+            row_i += 1
+
+        for oneof in descriptor.oneofs:
+            label = tkinter.Label(master, text=oneof.name)
+            label.grid(column=0, row=row_i, sticky=tkinter.W, padx=2, pady=2)
+            tabControl = ttk.Notebook(master)
+            for i, oneof_field in enumerate(oneof.fields):
+                sel_lambdas = selected_lambdas.copy()
+                sel_lambdas.append(
+                    (lambda final_i: (lambda: tabControl.index("current") == final_i))(
+                        i
+                    )
+                )
+                frame = tkinter.Frame(master)
+                self.build_pb_frame(
+                    frame,
+                    command,
+                    FakeDescriptor([oneof_field]),
+                    fieldname,
+                    selected_lambdas=sel_lambdas,
+                )
+                tabControl.add(frame, text=oneof_field.name)
+            tabControl.grid(
+                column=1,
+                row=row_i,
+                sticky=tkinter.E + tkinter.W,
+                padx=2,
+                pady=2,
+            )
+            row_i += 1
 
     def show_console(self, message: str, tag: str):
         self.console_textarea.configure(
@@ -403,6 +459,7 @@ class ClientWindow(tkinter.Frame):
         self.console_textarea.configure(state="disabled")  # Block user editing
 
     def send_commands(self, *args: Any) -> None:
+        self.sample_command.Clear()
         for setter in self.prop_setters:
             setter()
         to_print = str(self.sample_command)
