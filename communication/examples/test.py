@@ -1,4 +1,4 @@
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 
 from req import REQ
 from rep import REP
@@ -31,4 +31,13 @@ def reply():
 p = pool.submit(reply)
 q = pool.submit(request)
 
-p.result()
+while True:
+    done, running = wait((p, q), timeout=1)
+
+    print(f"Done: {done}")
+    print(f"Running: {running}")
+
+    for future in done:
+        if future.exception(0) is not None:
+            raise future.exception()
+
