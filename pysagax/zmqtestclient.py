@@ -10,6 +10,7 @@ import shlex
 import zmq
 from google.protobuf import json_format
 
+import re
 import pysagax.message.command_pb2 as proto
 import argparse
 import math
@@ -26,24 +27,80 @@ from time import sleep
 from tkinter import messagebox, ttk
 from typing import Any, Callable, Optional
 
-from matplotlib.backend_bases import KeyEvent, key_press_handler  # type: ignore
-from matplotlib.backends.backend_tkagg import (  # type: ignore
-    FigureCanvasTkAgg,
-    NavigationToolbar2Tk,
-)
+keys_cache = {"": []}
+
+
+def is_indexing(identifier: str) -> Optional[tuple[str, int]]:
+    result = re.search(r"(\w*)\[(\d+)\]$", identifier)
+    if result:
+        return result.group(1), int(result.group(2))
+    else:
+        return None
+
+
+def strip_indexing(identifier):
+    return re.sub(r"\[\d+\]$", "", identifier)
 
 
 def rsetattr(obj, attr, val):
+    global keys_cache
     pre, _, post = attr.rpartition(".")
-    return setattr(rgetattr(obj, pre) if pre else obj, post, val)
+    indexing = is_indexing(post)
+    if indexing is not None:
+        attr_got = rgetattr(rgetattr(obj, pre) if pre else obj, indexing[0])
+        if callable(getattr(attr_got, "add", None)):
+            while len(attr_got) <= indexing[1]:
+                attr_got.add()
+        elif callable(getattr(attr_got, "append", None)):
+            while len(attr_got) <= indexing[1]:
+                attr_got.append(0)
+        attr_got[indexing[1]] = val
+        return
+    pre_without_indexing = strip_indexing(pre)
+    obj_ret = rgetattr(obj, pre) if pre else obj
+    if callable(getattr(obj_ret, "setdefault", None)):
+        if post == "key":
+            if pre_without_indexing not in keys_cache:
+                keys_cache[pre_without_indexing] = []
+            keys_cache[pre_without_indexing].append(val)
+            return obj_ret.setdefault(val)
+        elif post == "value":
+            if pre_without_indexing in keys_cache:
+                indexing = is_indexing(pre)
+                obj_ret[keys_cache[pre_without_indexing][indexing[1]]] = val
+                return
+    return setattr(obj_ret, post, val)
 
 
 # using wonder's beautiful simplification: https://stackoverflow.com/questions/31174295/getattr-and-setattr-on-nested-objects/31174427?noredirect=1#comment86638618_31174427
 
 
 def rgetattr(obj, attr, *args):
+    global keys_cache
+    glob_attr = strip_indexing(attr)
+
     def _getattr(obj, attr):
-        return getattr(obj, attr, *args)
+        indexing = is_indexing(attr)
+        if indexing is not None:
+            attr_got = getattr(obj, indexing[0], *args)
+            if (
+                callable(getattr(attr_got, "get_or_create", None))
+                and glob_attr in keys_cache
+                and len(keys_cache[glob_attr]) > indexing[1]
+            ):
+                return keys_cache[glob_attr][indexing[1]]
+            elif callable(getattr(attr_got, "setdefault", None)):
+                return attr_got  # rsetattr takes care of that
+            elif callable(getattr(attr_got, "add", None)):
+                while len(attr_got) <= indexing[1]:
+                    attr_got.add()
+            elif callable(getattr(attr_got, "append", None)):
+                while len(attr_got) <= indexing[1]:
+                    attr_got.append(0)
+
+            return attr_got[indexing[1]]
+        else:
+            return getattr(obj, attr, *args)
 
     return functools.reduce(_getattr, [obj] + attr.split("."))
 
@@ -229,22 +286,22 @@ class PropSetter:
         if not all([l() for l in self.lambdas]):
             # it is a part of a 'oneof', only include if that tab is selected
             return
-        # print(f"{self.field}={self.var.get()}")
+        print(f"{self.field}={self.var.get()}")
         val = self.var.get()
         type = self.descriptor.type
         label = self.descriptor.label
         try:
-            if label == 3:  # repeated
-                if type in [3, 4, 5, 6, 7, 13, 15, 16, 17, 18]:  # types of int
-                    val = [int(x.strip()) for x in val.split(",")]
-                elif type == 2:  # float
-                    val = [float(x.strip()) for x in val.split(",")]
-                else:
-                    val = [x.strip() for x in shlex.split(val)]
-                for x in val:
-                    rgetattr(self.msg, self.field).append(x)
-                return
-            elif type in [3, 4, 5, 6, 7, 13, 15, 16, 17, 18]:  # types of int
+            # if label == 3:  # repeated
+            #     if type in [3, 4, 5, 6, 7, 13, 15, 16, 17, 18]:  # types of int
+            #         val = [int(x.strip()) for x in val.split(",")]
+            #     elif type == 2:  # float
+            #         val = [float(x.strip()) for x in val.split(",")]
+            #     else:
+            #         val = [x.strip() for x in shlex.split(val)]
+            #     for x in val:
+            #         rgetattr(self.msg, self.field).append(x)
+            #     return
+            if type in [3, 4, 5, 6, 7, 13, 15, 16, 17, 18]:  # types of int
                 val = int(val)
             elif type == 2:  # float
                 val = float(val)
@@ -355,6 +412,140 @@ class ClientWindow(tkinter.Frame):
             side=tkinter.LEFT, fill=tkinter.BOTH, padx=6, expand=False
         )
 
+    def build_inner_control(
+        self,
+        master,
+        command,
+        descriptor,
+        fieldname,
+        selected_lambdas,
+        field,
+        row_i,
+        draw_label=True,
+    ):
+        variable = tkinter.StringVar(value="")
+        if draw_label:
+            label = tkinter.Label(master, text=field.name)
+            label.grid(column=0, row=row_i, sticky=tkinter.W, padx=2, pady=2)
+
+        if field.enum_type is not None:
+            combo = ttk.Combobox(
+                master,
+                values=list(val.name for val in field.enum_type.values),
+                textvariable=variable,
+            )
+            combo.grid(
+                column=1,
+                row=row_i,
+                sticky=tkinter.E + tkinter.W,
+                padx=2,
+                pady=2,
+            )
+            variable.set(field.enum_type.values[0].name)
+            self.prop_setters.append(
+                PropSetter(command, fieldname, field, variable, selected_lambdas)
+            )
+        elif field.message_type is not None:  # LABEL_REPEATED == 3
+            frame = tkinter.Frame(master)
+            self.build_pb_frame(
+                frame, command, field.message_type, fieldname, selected_lambdas
+            )
+            frame.grid(
+                column=1,
+                row=row_i,
+                sticky=tkinter.E + tkinter.W,
+                padx=2,
+                pady=2,
+            )
+        else:
+            entry = tkinter.Entry(master, textvariable=variable)
+            entry.grid(
+                column=1,
+                row=row_i,
+                sticky=tkinter.E + tkinter.W,
+                padx=2,
+                pady=2,
+            )
+            self.prop_setters.append(
+                PropSetter(command, fieldname, field, variable, selected_lambdas)
+            )
+
+    def repeated_field_minus(
+        self,
+        master,
+        command,
+        descriptor,
+        fieldname,
+        selected_lambdas,
+        field,
+        tabControl,
+    ):
+        i = tabControl.index(tkinter.END)
+
+        if i > 1:
+            print(f"removed {fieldname}[{i-2}]")
+            self.prop_setters = list(
+                filter(
+                    lambda prop: not prop.field.startswith(f"{fieldname}[{i-2}]"),
+                    self.prop_setters,
+                )
+            )
+            tabControl.forget(tabControl.tabs()[-1])
+
+    def repeated_field_plus_lambda(
+        self,
+        master,
+        command,
+        descriptor,
+        fieldname,
+        selected_lambdas,
+        field,
+        tabControl,
+    ):
+        return lambda: self.repeated_field_plus(
+            master, command, descriptor, fieldname, selected_lambdas, field, tabControl
+        )
+
+    def repeated_field_plus(
+        self,
+        master,
+        command,
+        descriptor,
+        fieldname,
+        selected_lambdas,
+        field,
+        tabControl,
+    ):
+        i = tabControl.index(tkinter.END)
+        frame = tkinter.Frame(master)
+        this_fn = f"{fieldname}.{field.name}[{i-1}]" if fieldname else field.name
+        self.build_inner_control(
+            frame,
+            command,
+            FakeDescriptor([field]),
+            this_fn,
+            selected_lambdas,
+            field,
+            0,
+            draw_label=False,
+        )
+        tabControl.add(frame, text=f"[{i-1}]")
+
+    def repeated_field_minus_lambda(
+        self,
+        master,
+        command,
+        descriptor,
+        fieldname,
+        selected_lambdas,
+        field,
+        tabControl,
+    ):
+        this_fn = f"{fieldname}.{field.name}" if fieldname else field.name
+        return lambda: self.repeated_field_minus(
+            master, command, descriptor, this_fn, selected_lambdas, field, tabControl
+        )
+
     def build_pb_frame(
         self, master, command, descriptor, fieldname="", selected_lambdas=[]
     ):
@@ -369,52 +560,59 @@ class ClientWindow(tkinter.Frame):
         for i, field in enumerate(descriptor.fields):
             if field.name in all_oneof_fields:
                 continue
-            this_fn = f"{fieldname}.{field.name}" if fieldname else field.name
-            variable = tkinter.StringVar(value="")
-            label = tkinter.Label(master, text=field.name)
-            label.grid(column=0, row=row_i, sticky=tkinter.W, padx=2, pady=2)
-            if field.enum_type is not None:
-                combo = ttk.Combobox(
-                    master,
-                    values=list(val.name for val in field.enum_type.values),
-                    textvariable=variable,
+            if field.label == 3:  # repeated
+                tabControl = ttk.Notebook(master)
+                frame_count_controls = tkinter.Frame(tabControl)
+                plus_button = tkinter.Button(
+                    frame_count_controls,
+                    text="+",
+                    command=self.repeated_field_plus_lambda(
+                        master,
+                        command,
+                        descriptor,
+                        fieldname,
+                        selected_lambdas,
+                        field,
+                        tabControl,
+                    ),
                 )
-                combo.grid(
-                    column=1,
+                plus_button.grid(row=0, sticky="news")
+                minus_button = tkinter.Button(
+                    frame_count_controls,
+                    text="-",
+                    command=self.repeated_field_minus_lambda(
+                        master,
+                        command,
+                        descriptor,
+                        fieldname,
+                        selected_lambdas,
+                        field,
+                        tabControl,
+                    ),
+                )
+                minus_button.grid(row=1, sticky="news")
+
+                tabControl.add(frame_count_controls, text=field.name)
+
+                tabControl.grid(
+                    column=0,
+                    columnspan=2,
                     row=row_i,
-                    sticky=tkinter.E + tkinter.W,
+                    sticky="news",
                     padx=2,
                     pady=2,
                 )
-                variable.set(field.enum_type.values[0].name)
-                self.prop_setters.append(
-                    PropSetter(command, this_fn, field, variable, selected_lambdas)
-                )
-            elif (
-                field.message_type is not None and field.label != 3
-            ):  # LABEL_REPEATED == 3
-                frame = tkinter.Frame(master)
-                self.build_pb_frame(
-                    frame, command, field.message_type, this_fn, selected_lambdas
-                )
-                frame.grid(
-                    column=1,
-                    row=row_i,
-                    sticky=tkinter.E + tkinter.W,
-                    padx=2,
-                    pady=2,
-                )
+
             else:
-                entry = tkinter.Entry(master, textvariable=variable)
-                entry.grid(
-                    column=1,
-                    row=row_i,
-                    sticky=tkinter.E + tkinter.W,
-                    padx=2,
-                    pady=2,
-                )
-                self.prop_setters.append(
-                    PropSetter(command, this_fn, field, variable, selected_lambdas)
+                this_fn = f"{fieldname}.{field.name}" if fieldname else field.name
+                self.build_inner_control(
+                    master,
+                    command,
+                    descriptor,
+                    this_fn,
+                    selected_lambdas,
+                    field,
+                    row_i,
                 )
             row_i += 1
 
@@ -459,6 +657,8 @@ class ClientWindow(tkinter.Frame):
         self.console_textarea.configure(state="disabled")  # Block user editing
 
     def send_commands(self, *args: Any) -> None:
+        global keys_cache
+        keys_cache = {"": []}
         self.sample_command.Clear()
         for setter in self.prop_setters:
             setter()
