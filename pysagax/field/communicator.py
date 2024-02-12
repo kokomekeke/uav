@@ -1,13 +1,7 @@
 from queue import Queue
 
-# TODO: Fix imports with proper package structure
-import sys, os
-
-# sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
-
-
 from pysagax.field.loop import Loop
-from pysagax.field.zmq_server import ZmqFieldServer
+from pysagax.communication.req_rep import REP
 
 
 class Communicator(Loop):
@@ -17,7 +11,7 @@ class Communicator(Loop):
         super().__init__(*args, **kwargs)
 
         # Set up command channel
-        self._server = ZmqFieldServer()
+        self._server = REP()
         self._queue_in = queue_in
         self._queue_out = queue_out
 

@@ -9,8 +9,8 @@ DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\ndata.proto\x1a\x
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'data_pb2', _globals)
-if _descriptor._USE_C_DESCRIPTORS == False:
-    DESCRIPTOR._options = None
+if not _descriptor._USE_C_DESCRIPTORS:
+    DESCRIPTOR._loaded_options = None
     _globals['_TELEMETRY']._serialized_start = 48
     _globals['_TELEMETRY']._serialized_end = 587
     _globals['_TELEMETRY_HARDWARE']._serialized_start = 237
