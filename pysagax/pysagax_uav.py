@@ -13,6 +13,7 @@ from queue import Queue
 from field.communicator import Communicator
 from field.interpreter import Interpreter
 from field.controller import CSController, CSReceiveTask
+from pysagax.field.streamer import Streamer
 
 
 class Commander:
@@ -25,12 +26,15 @@ class Commander:
 
         self._commands = Queue(maxsize=1)
         self._responses = Queue(maxsize=1)
+        self._stream_packets = Queue(maxsize=1)
         self._cs_commands = Queue()
         self._cs_responses = Queue()
 
         self._communicator = Communicator(
             queue_in=self._responses, queue_out=self._commands, level=level
         )
+        self._streamer = Streamer(queue_in=self._stream_packets)
+
         self._interpreter = Interpreter(
             comm_queue_in=self._commands,
             comm_queue_out=self._responses,
