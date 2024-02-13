@@ -17,8 +17,8 @@ def tx(
         port: int = 5050,
         number: int | None = 1000,
         size: int = 4048,
-        timeout: int | None = 0.1
-    ):
+        sleep: float | None = 0.1
+):
     print("Transmitting")
     server = TX(address=address, port=port)
     server.connect()
@@ -36,14 +36,14 @@ def tx(
 
         i += 1
 
-        if timeout is not None:
-            time.sleep(timeout)
+        if sleep is not None:
+            time.sleep(sleep)
 
 
 def rx(
         port: int = 5050,
         number: int | None = 1000
-    ):
+):
     print("Receiving")
     client = RX(port=port, groups=["b"])
     client.connect()
