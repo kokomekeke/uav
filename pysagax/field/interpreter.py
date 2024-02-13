@@ -1,8 +1,9 @@
+from __future__ import annotations
 import queue
 from queue import Queue
 
 import shlex
-from typing import Optional
+from typing import Any, Optional
 
 import pysagax.message.command_pb2 as proto
 from pysagax.field.loop import Loop
@@ -28,27 +29,27 @@ class Interpreter(Loop):
         ("SOURCE:PlaybackSpeed! {:.2f};", lambda config: config.playback_speed),
         (
             "SOURCE:ChannelGain! 0 {};",
-            lambda config: config.channel_gain[0]
-            if len(config.channel_gain) >= 1
-            else 0,
+            lambda config: (
+                config.channel_gain[0] if len(config.channel_gain) >= 1 else 0
+            ),
         ),
         (
             "SOURCE:ChannelGain! 1 {};",
-            lambda config: config.channel_gain[1]
-            if len(config.channel_gain) >= 1
-            else 0,
+            lambda config: (
+                config.channel_gain[1] if len(config.channel_gain) >= 1 else 0
+            ),
         ),
         (
             "SOURCE:ChannelGain! 2 {};",
-            lambda config: config.channel_gain[2]
-            if len(config.channel_gain) >= 1
-            else 0,
+            lambda config: (
+                config.channel_gain[2] if len(config.channel_gain) >= 1 else 0
+            ),
         ),
         (
             "SOURCE:ChannelGain! 3 {};",
-            lambda config: config.channel_gain[3]
-            if len(config.channel_gain) >= 1
-            else 0,
+            lambda config: (
+                config.channel_gain[3] if len(config.channel_gain) >= 1 else 0
+            ),
         ),
         ("SOURCE:Configure!;", lambda config: ""),
         ("AOA:BinCount! {};", lambda config: config.bin_count),
@@ -57,21 +58,32 @@ class Interpreter(Loop):
 
     def __init__(
         self,
-        comm_queue_in: Queue,
-        comm_queue_out: Queue,
+        *args,
+        **kwargs,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self._cmd_timeout_seconds = 30.0
+        self.config_id = 0
+        self._comm_queue_in: Optional[Queue] = None
+        self._comm_queue_out: Optional[Queue] = None
+        self._cs_queue_in: Optional[Queue] = None
+        self._cs_queue_out: Optional[Queue] = None
+
+    def __call__(
+        self,
+        comm_queue_in: Queue[Any],
+        comm_queue_out: Queue[Any],
         cs_queue_in: Queue[str],
         cs_queue_out: Queue[str],
         *args,
         **kwargs,
     ) -> None:
-        super().__init__(*args, **kwargs)
-
         self._comm_queue_in = comm_queue_in
         self._comm_queue_out = comm_queue_out
         self._cs_queue_in = cs_queue_in
         self._cs_queue_out = cs_queue_out
-        self._cmd_timeout_seconds = 30.0
-        self.config_id = 0
+
+        return super()._call(*args, **kwargs)
 
     def _loop(self) -> None:
         # Hang until a new command is received
@@ -139,7 +151,12 @@ class Interpreter(Loop):
             case proto.HEADING_STOP:
                 pass
 
-            case proto.SOURCE_START | proto.SOURCE_STOP | proto.REC_START | proto.REC_STOP:
+            case (
+                proto.SOURCE_START
+                | proto.SOURCE_STOP
+                | proto.REC_START
+                | proto.REC_STOP
+            ):
                 self._cs_control(response, command.instruction)
 
             case _:

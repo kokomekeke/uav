@@ -2,17 +2,18 @@
 #
 # Created by aron.szabo@sagaxcommunications.com on 09.02.2024.
 #
-
+from __future__ import annotations
+import multiprocessing
 import click
-from concurrent.futures import ThreadPoolExecutor, wait
+import traceback
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, wait
 from rich.logging import RichHandler
 from coloredlogs import install
 from logging import getLogger, StreamHandler
-from queue import Queue
 
 from field.communicator import Communicator
 from field.interpreter import Interpreter
-from field.controller import CSController, CSReceiveTask
+from field.controller import CSController
 from pysagax.field.streamer import Streamer
 
 
@@ -21,41 +22,42 @@ class Commander:
 
     def __init__(self, level: str = "INFO") -> None:
         self._logger = getLogger("Commander")
+        self._manager = multiprocessing.Manager()
+        self._pool = ProcessPoolExecutor()
 
-        self._pool = ThreadPoolExecutor()
+        self._commands = self._manager.Queue(maxsize=1)
+        self._responses = self._manager.Queue(maxsize=1)
+        self._stream_packets = self._manager.Queue(maxsize=1)
+        self._cs_commands = self._manager.Queue()
+        self._cs_responses = self._manager.Queue()
 
-        self._commands = Queue(maxsize=1)
-        self._responses = Queue(maxsize=1)
-        self._stream_packets = Queue(maxsize=1)
-        self._cs_commands = Queue()
-        self._cs_responses = Queue()
-
-        self._communicator = Communicator(
-            queue_in=self._responses, queue_out=self._commands, level=level
-        )
-        self._streamer = Streamer(queue_in=self._stream_packets)
+        self._communicator = Communicator(level=level)
+        self._streamer = Streamer()
 
         self._interpreter = Interpreter(
-            comm_queue_in=self._commands,
-            comm_queue_out=self._responses,
-            cs_queue_in=self._cs_responses,
-            cs_queue_out=self._cs_commands,
             level=level,
         )
-        self._controller = CSController(
-            queue_in=self._cs_commands, queue_out=self._cs_responses, level=level
-        )
-        self._controller_recv = CSReceiveTask(self._controller)
+        self._controller = CSController(level=level)
 
     def start(self) -> None:
         """Start all background processes"""
 
         self._logger.debug("Starting Commander")
 
-        self._communicator_future = self._pool.submit(self._communicator)
-        self._interpreter_future = self._pool.submit(self._interpreter)
-        self._controller_future = self._pool.submit(self._controller)
-        self._controller_recv_future = self._pool.submit(self._controller_recv)
+        self._communicator_future = self._pool.submit(
+            self._communicator, self._responses, self._commands
+        )
+        self._interpreter_future = self._pool.submit(
+            self._interpreter,
+            self._commands,
+            self._responses,
+            self._cs_responses,
+            self._cs_commands,
+        )
+        self._controller_future = self._pool.submit(
+            self._controller, self._cs_commands, self._cs_responses
+        )
+        self._streamer_future = self._pool.submit(self._streamer, self._stream_packets)
 
         # Periodically checking errors in threads
         while True:
@@ -64,7 +66,7 @@ class Commander:
                     self._communicator_future,
                     self._interpreter_future,
                     self._controller_future,
-                    self._controller_recv_future,
+                    self._streamer_future,
                 ),
                 timeout=1,
             )
@@ -72,7 +74,8 @@ class Commander:
             for future in done:
                 if future.exception(0) is not None:
                     # Trace is lost this way, TODO: fix it
-                    raise future.exception()
+                    traceback.print_exception(future.exception(0))
+                    raise Exception()
 
 
 @click.command()

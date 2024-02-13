@@ -14,7 +14,7 @@ class Loop:
         signal(SIGINT, self._signal_handler)
         signal(SIGTERM, self._signal_handler)
 
-    def __call__(self) -> None:
+    def _call(self, *args, **kwargs) -> None:
         """Execute the main logic of the loop"""
 
         self._logger.debug("Setting up loop")
