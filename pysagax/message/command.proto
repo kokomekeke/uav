@@ -72,6 +72,17 @@ enum Instruction {
     // Restart Heading service
     //   response: success [bool]
     HEADING_RESTART = 23;
+
+
+    // Start streaming to target
+    //   parameter: target [StreamTarget]
+    //   response:  success [bool]
+    STREAM_START = 25;
+
+    // Stop streaming to target, or to all targets if not specified
+    //   parameter: target [StreamTarget] - level parameter will be ignored
+    //   response:  success [bool]
+    STREAM_STOP = 26;
 }
 
 message ROIMask {
@@ -156,6 +167,30 @@ message SystemInfo {
     repeated SDR radios = 4;
 }
 
+message StreamTarget {
+    // Target address and general stream information
+
+    enum StreamLevel{
+        HEARTBEAT = 0;
+        TELEMETRY = 1;
+        DETECTION = 2;
+        SPECTRUM = 3;
+    }
+
+    // Crucial stream parameters
+    int32 id = 1;
+    StreamLevel level = 2;
+
+    // Target address
+    string address = 5;
+    int32 port = 6;
+
+    // Secondary stream parameters
+    int32 heartbeat_timeout = 9;
+    int32 telemetry_timeout = 10;
+
+}
+
 message CommandError {
     // Error during execution of command
 
@@ -191,6 +226,9 @@ message Command {
 
         // Playback position
         uint64 position = 7;
+
+        // Stream target
+        StreamTarget target = 8;
     }
 }
 

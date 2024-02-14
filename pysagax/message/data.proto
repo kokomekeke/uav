@@ -153,25 +153,3 @@ message OperationalError {
     // Detailed error message
     string description = 5;
 }
-
-message Packet {
-    // High-level message encapsulating all possible streaming message types
-
-    // treaming message type
-    enum PacketType {
-        // Possible types
-        MEASUREMENT = 0;
-        TELEMETRY = 1;
-        EVENT = 2;
-        ERROR = 8;
-    }
-    PacketType type = 1;
-
-    // Data
-    oneof data {
-        Measurement measurement = 5;
-        Telemetry telemetry = 6;
-        Event event = 7;
-        OperationalError error = 13;
-    }
-}

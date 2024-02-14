@@ -4,8 +4,8 @@ from logging import getLogger
 
 
 # Empirical size limit of messages, based on local testing
-MESSAGE_LIMIT = 16301 # This much can be sent
-#MESSAGE_LIMIT = 8101  # This much can be received
+#MESSAGE_LIMIT = 16301 # This much can be sent
+MESSAGE_LIMIT = 8101  # This much can be received
 
 
 class RX:
