@@ -253,7 +253,7 @@ class VerticalScrolledFrame(
         self.canvas.yview_moveto(0)
 
         # Create a frame inside the canvas which will be scrolled with it.
-        self.interior = ttk.Frame(self.canvas)
+        self.interior = ttk.Frame(self.canvas, relief="groove")
         self.interior.bind("<Configure>", self._configure_interior)
         self.canvas.bind("<Configure>", self._configure_canvas)
         self.interior_id = self.canvas.create_window(
@@ -394,6 +394,7 @@ class ClientWindow(tkinter.Frame):
         self.console_textarea.tag_configure("i", foreground="blue")
         self.console_textarea.tag_configure("j", foreground="red")
         self.prop_setters: list[PropSetter] = []
+
         self.command_builder_frame = VerticalScrolledFrame(messages_frame)
         self.command_builder_frame_inner = self.command_builder_frame.interior
 
@@ -405,9 +406,9 @@ class ClientWindow(tkinter.Frame):
         )
 
         self.send_button = tkinter.Button(
-            self.command_builder_frame, text="Send", command=self.send_commands
+            messages_frame, text="Send", command=self.send_commands
         )
-        self.send_button.pack(side=tkinter.RIGHT, padx=5, pady=5)
+        self.send_button.pack(side=tkinter.BOTTOM, padx=5, pady=5, fill=tkinter.X)
         self.command_builder_frame.pack(
             side=tkinter.LEFT, fill=tkinter.BOTH, padx=6, expand=False
         )
@@ -425,8 +426,8 @@ class ClientWindow(tkinter.Frame):
     ):
         variable = tkinter.StringVar(value="")
         if draw_label:
-            label = tkinter.Label(master, text=field.name)
-            label.grid(column=0, row=row_i, sticky=tkinter.W, padx=2, pady=2)
+            label = tkinter.Label(master, text=field.name, bd=1, relief="solid")
+            label.grid(column=0, row=row_i, sticky="nesw", ipadx=2, ipady=2)
 
         if field.enum_type is not None:
             combo = ttk.Combobox(
@@ -438,33 +439,35 @@ class ClientWindow(tkinter.Frame):
                 column=1,
                 row=row_i,
                 sticky=tkinter.E + tkinter.W,
-                padx=2,
-                pady=2,
+                padx=0,
+                pady=0,
             )
             variable.set(field.enum_type.values[0].name)
             self.prop_setters.append(
                 PropSetter(command, fieldname, field, variable, selected_lambdas)
             )
         elif field.message_type is not None:  # LABEL_REPEATED == 3
-            frame = tkinter.Frame(master)
+            frame = tkinter.Frame(
+                master, highlightbackground="gray", highlightthickness=1
+            )
             self.build_pb_frame(
                 frame, command, field.message_type, fieldname, selected_lambdas
             )
             frame.grid(
                 column=1,
                 row=row_i,
-                sticky=tkinter.E + tkinter.W,
-                padx=2,
-                pady=2,
+                sticky="news",
+                padx=0,
+                pady=0,
             )
         else:
             entry = tkinter.Entry(master, textvariable=variable)
             entry.grid(
                 column=1,
                 row=row_i,
-                sticky=tkinter.E + tkinter.W,
-                padx=2,
-                pady=2,
+                sticky="news",
+                padx=0,
+                pady=0,
             )
             self.prop_setters.append(
                 PropSetter(command, fieldname, field, variable, selected_lambdas)
@@ -517,7 +520,7 @@ class ClientWindow(tkinter.Frame):
         tabControl,
     ):
         i = tabControl.index(tkinter.END)
-        frame = tkinter.Frame(master)
+        frame = tkinter.Frame(master, highlightbackground="gray", highlightthickness=1)
         this_fn = f"{fieldname}.{field.name}[{i-1}]" if fieldname else field.name
         self.build_inner_control(
             frame,
@@ -599,8 +602,8 @@ class ClientWindow(tkinter.Frame):
                     columnspan=2,
                     row=row_i,
                     sticky="news",
-                    padx=2,
-                    pady=2,
+                    padx=0,
+                    pady=0,
                 )
 
             else:
@@ -617,8 +620,8 @@ class ClientWindow(tkinter.Frame):
             row_i += 1
 
         for oneof in descriptor.oneofs:
-            label = tkinter.Label(master, text=oneof.name)
-            label.grid(column=0, row=row_i, sticky=tkinter.W, padx=2, pady=2)
+            label = tkinter.Label(master, text=oneof.name, bd=1, relief="solid")
+            label.grid(column=0, row=row_i, sticky="news", ipadx=2, ipady=2)
             tabControl = ttk.Notebook(master)
             for i, oneof_field in enumerate(oneof.fields):
                 sel_lambdas = selected_lambdas.copy()
@@ -627,7 +630,9 @@ class ClientWindow(tkinter.Frame):
                         i
                     )
                 )
-                frame = tkinter.Frame(master)
+                frame = tkinter.Frame(
+                    master, highlightbackground="gray", highlightthickness=1
+                )
                 self.build_pb_frame(
                     frame,
                     command,
@@ -639,9 +644,9 @@ class ClientWindow(tkinter.Frame):
             tabControl.grid(
                 column=1,
                 row=row_i,
-                sticky=tkinter.E + tkinter.W,
-                padx=2,
-                pady=2,
+                sticky="nesw",
+                padx=0,
+                pady=0,
             )
             row_i += 1
 
@@ -662,6 +667,7 @@ class ClientWindow(tkinter.Frame):
         self.sample_command.Clear()
         for setter in self.prop_setters:
             setter()
+        print()  # newline
         to_print = str(self.sample_command)
         self.console_textarea.configure(
             state="normal"
