@@ -68,6 +68,7 @@ class Interpreter(Loop):
         self._comm_queue_out: Optional[Queue] = None
         self._cs_queue_in: Optional[Queue] = None
         self._cs_queue_out: Optional[Queue] = None
+        self._stream_conf_queue_out: Optional[Queue] = None
 
     def __call__(
         self,
@@ -75,6 +76,7 @@ class Interpreter(Loop):
         comm_queue_out: Queue[Any],
         cs_queue_in: Queue[str],
         cs_queue_out: Queue[str],
+        stream_conf_queue_out: Queue[Any],
         *args,
         **kwargs,
     ) -> None:
@@ -82,10 +84,15 @@ class Interpreter(Loop):
         self._comm_queue_out = comm_queue_out
         self._cs_queue_in = cs_queue_in
         self._cs_queue_out = cs_queue_out
+        self._stream_conf_queue_out = stream_conf_queue_out
 
         return super()._call(*args, **kwargs)
 
     def _loop(self) -> None:
+        assert self._comm_queue_in is not None
+        assert self._comm_queue_out is not None
+        assert self._cs_queue_in is not None
+        assert self._cs_queue_out is not None
         # Hang until a new command is received
         command = self._comm_queue_in.get()
 
@@ -95,12 +102,13 @@ class Interpreter(Loop):
         # Send response to Communicator
         self._comm_queue_out.put(response)
 
-    def _process(self, raw_command: bytes) -> bytes:
+    def _process(self, command: Any) -> bytes:
         """Interpret, route and execute incoming commands"""
 
         # Parse command to Protobuf format
-        command = proto.Command()
-        command.ParseFromString(raw_command)
+        assert isinstance(command, proto.Command)
+        # command = proto.Command()
+        # command.ParseFromString(raw_command)
         self._logger.debug(
             f"Instruction: {proto.Instruction.Name(command.instruction)}"
         )
@@ -158,12 +166,14 @@ class Interpreter(Loop):
                 | proto.REC_STOP
             ):
                 self._cs_control(response, command.instruction)
-
+            case proto.STREAM_START | proto.STREAM_STOP:
+                assert self._stream_conf_queue_out is not None
+                self._stream_conf_queue_out.put(command)
             case _:
                 response.error.description = "Unknown command"
 
         # Send response to Communicator
-        return response.SerializeToString()
+        return response  # .SerializeToString()
 
     def _cs_execute(self, command: str) -> Optional[list[str]]:
         """Send a list of commands to CoreService, return the result."""

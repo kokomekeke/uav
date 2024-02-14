@@ -13,7 +13,7 @@ from logging import getLogger, StreamHandler
 
 from field.communicator import Communicator
 from field.interpreter import Interpreter
-from field.controller import CSController
+from field.cscontroller import CSController
 from pysagax.field.streamer import Streamer
 
 

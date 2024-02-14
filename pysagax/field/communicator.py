@@ -4,6 +4,8 @@ from typing import Any, Optional
 from pysagax.field.loop import Loop
 from pysagax.communication.req_rep import REP
 
+import pysagax.message.command_pb2 as proto
+
 
 class Communicator(Loop):
     """Background process receiving commands and pushing then to internal queue"""
@@ -35,16 +37,17 @@ class Communicator(Loop):
         assert self._queue_in is not None
         assert self._queue_out is not None
         # Hang until a new command is received
-        command = self._server.recv()
+        raw_command = self._server.recv()
         self._logger.debug("Command received")
-
+        command = proto.Command()
+        command.ParseFromString(raw_command)
         # Send command to Interpreter
         self._queue_out.put(command)
 
         # Wait for response from Interpreter
         self._logger.debug("==========")
         response = self._queue_in.get()
-
+        raw_response = response.SerializeToString()
         # Send response to remote client
         self._server.resp(response)
         self._logger.debug("Response sent")

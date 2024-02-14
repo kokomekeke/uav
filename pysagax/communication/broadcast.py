@@ -51,6 +51,9 @@ class TX:
     def connect(self) -> None:
         self._radio.connect(f"udp://{self._address}:{self._port}")
 
+    def disconnect(self) -> None:
+        self._radio.disconnect(f"udp://{self._address}:{self._port}")
+
     def send(self, data: bytes, group="*") -> None:
         if len(data) > MESSAGE_LIMIT:
             raise BufferError(f"Data too large. Keep it under {MESSAGE_LIMIT}.")
