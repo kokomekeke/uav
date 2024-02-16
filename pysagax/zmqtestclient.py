@@ -114,7 +114,7 @@ class ZMQConnectionThread(threading.Thread):
         self.address = address
 
         # Define up- and downstream channels
-        self._zmq = REQ(address_server=address, port_server=5556, port_client=5555)
+        self._zmq = REQ(address_server=address, port_server=5556)
         self.disconnect: bool = False
 
         self.console_textarea_ref: Optional[tkinter.Text] = None
