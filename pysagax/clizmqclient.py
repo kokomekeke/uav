@@ -13,7 +13,7 @@ def main(
 ):
     logging.basicConfig(level="DEBUG")
     logging.getLogger("main")
-    client = RX(port=port, groups=["*"])
+    client = RX(port=port, groups=["*", "Measurement"])
     client.connect()
 
     while True:

@@ -70,9 +70,9 @@ class Streamer(Loop):
             # Send response to remote client
             for host_port, server in self._servers.items():
                 stream_packet = packet.SerializeToString()
-                server.server.send(stream_packet)
+                server.server.send(stream_packet, packet.DESCRIPTOR.name)
                 self._logger.debug(
-                    f"{type(packet).__name__} packet sent to {host_port}"
+                    f"{packet.DESCRIPTOR.name}) packet sent to {host_port}"
                 )
         except queue.Empty:
             pass
