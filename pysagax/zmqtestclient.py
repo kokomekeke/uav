@@ -164,7 +164,9 @@ class ZMQConnectionThread(threading.Thread):
         while not self.disconnect:
             try:
                 command = self.send_queue.get(timeout=2)
-                raw_response = self._zmq.send(command.SerializeToString())
+                raw_response = self._zmq.send(
+                    command.SerializeToString(), timeout=20000
+                )
                 if raw_response is not None:
                     response = proto.Response()
                     response.ParseFromString(raw_response)

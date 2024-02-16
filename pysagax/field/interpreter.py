@@ -122,7 +122,9 @@ class Interpreter(Loop):
         #   response is always passed as a reference
         match command.instruction:
             case proto.PING:
-                self._ping(response, command.ping_data)
+                response.ping_data = command.ping_data
+            case proto.CS_PING:
+                self._cs_ping(response, command.ping_data)
 
             case proto.CONFIG:
                 # Check whether command is a query or a setting
@@ -175,14 +177,17 @@ class Interpreter(Loop):
         # Send response to Communicator
         return response  # .SerializeToString()
 
-    def _cs_execute(self, command: str) -> Optional[list[str]]:
+    def _cs_execute(
+        self, command: str, timeout: Optional[float] = None
+    ) -> Optional[list[str]]:
         """Send a list of commands to CoreService, return the result."""
-
+        if timeout is None:
+            timeout = self._cmd_timeout_seconds
         if command[-1:] != ";":
             command += ";"
         self._cs_queue_out.put(command)
         try:
-            response = self._cs_queue_in.get(timeout=self._cmd_timeout_seconds)
+            response = self._cs_queue_in.get(timeout=timeout)
 
             if response is None:
                 return None
@@ -195,12 +200,12 @@ class Interpreter(Loop):
         except queue.Empty:
             return None
 
-    def _ping(self, response: proto.Response, ping_data: str) -> None:
+    def _cs_ping(self, response: proto.Response, ping_data: str) -> None:
         """Send a Ping command to CoreService"""
 
         # Generate and execute appropriate CoreService command
         cs_command = self._CS_COMMANDS[proto.PING].format(value=ping_data)
-        cs_response = self._cs_execute(cs_command)
+        cs_response = self._cs_execute(cs_command, timeout=1.0)
 
         # Check for response validity
         if cs_response is not None:
