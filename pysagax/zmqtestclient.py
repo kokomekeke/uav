@@ -5,29 +5,20 @@
 from __future__ import annotations
 
 import functools
-import shlex
 
-import zmq
 from google.protobuf import json_format
 
 import re
 import pysagax.message.command_pb2 as proto
-import argparse
-import math
 import multiprocessing
 import os
 import queue
-import struct
 import threading
-import time
 import tkinter
-import typing
-from datetime import datetime
-from time import sleep
 from tkinter import messagebox, ttk
 from typing import Any, Callable, Optional
 
-from pysagax.communication.req_rep import REQ
+from pysagax.communication.req_rep_tcp import REQ
 
 keys_cache = {"": []}
 

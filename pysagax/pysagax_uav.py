@@ -4,12 +4,13 @@
 #
 from __future__ import annotations
 import multiprocessing
+from typing import Any, Optional
 import click
 import traceback
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, wait
 from rich.logging import RichHandler
 from coloredlogs import install
-from logging import getLogger, StreamHandler
+from logging import Handler, getLogger, StreamHandler
 
 from field.communicator import Communicator
 from field.interpreter import Interpreter
@@ -134,7 +135,7 @@ def main(level: str = "INFO") -> None:
 def setup_logging(
     level: str = "INFO",
     show_process_name: bool = False,
-    stream_handler: StreamHandler = None,
+    stream_handler: Optional[Handler] = None,
 ) -> None:
     """Configure logging parameters"""
 

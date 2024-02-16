@@ -2,7 +2,7 @@ from queue import Queue
 from typing import Any, Optional
 
 from pysagax.field.loop import Loop
-from pysagax.communication.req_rep import REP
+from pysagax.communication.req_rep_tcp import REP
 
 import pysagax.message.command_pb2
 
