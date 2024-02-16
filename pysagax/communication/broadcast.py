@@ -1,6 +1,7 @@
 import zmq
 
 from logging import getLogger
+from typing import Tuple
 
 
 # Empirical size limit of messages, based on local testing
@@ -27,9 +28,10 @@ class RX:
         for group in self._groups:
             self._dish.join(group)
     
-    def recv(self, timeout: int | None = None) -> bytes:
+    def recv(self, timeout: int | None = None) -> Tuple[bytes, str] | None:
         if self._dish.poll(timeout=timeout):
-            return self._dish.recv()
+            frame = self._dish.recv(copy=False)
+            return frame.bytes, frame.group
         else:
             return None
 

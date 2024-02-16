@@ -5,7 +5,7 @@ import click
 import random
 import logging
 
-from pysagax.communication.req_rep import REQ, REP
+from pysagax.communication.req_rep_tcp import REQ, REP
 
 
 INDEX_SIZE = 4
