@@ -13,7 +13,7 @@ class CSController(Loop, BaseConnection):
     def __init__(
         self,
         # TODO: Define useful defaults
-        address: str = "10.1.1.139",
+        address: str = "127.0.0.1",
         port: int = 12936,
         *args,
         **kwargs,

@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+package pysagax.message;
 import "google/protobuf/timestamp.proto";
 
 message Telemetry {
