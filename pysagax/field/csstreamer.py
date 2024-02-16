@@ -13,7 +13,7 @@ class CSStreamer(Loop, BaseConnection):
 
     def __init__(
         self,
-        address: str = "10.1.1.139",
+        address: str = "127.0.0.1",
         port: int = 12937,
         *args,
         **kwargs,
@@ -39,6 +39,9 @@ class CSStreamer(Loop, BaseConnection):
                 "Connection to CS Stream lost, reconnecting in 3 seconds"
             )
             time.sleep(3.0)
+
+    def display_status_callback(self, message: str) -> None:
+        self._logger.info(message)
 
     def receive_on_socket(self, data: bytes) -> None:
         """

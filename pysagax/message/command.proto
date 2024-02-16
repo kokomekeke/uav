@@ -1,7 +1,7 @@
 syntax = "proto3";
-
+package pysagax.message;
 import "google/protobuf/timestamp.proto";
-import "data.proto";
+import "pysagax/message/data.proto";
 
 enum Instruction {
     // Types of instructions that can be sent

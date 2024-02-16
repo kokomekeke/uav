@@ -4,7 +4,7 @@ from typing import Any, Optional
 from pysagax.field.loop import Loop
 from pysagax.communication.req_rep import REP
 
-import pysagax.message.command_pb2 as proto
+import pysagax.message.command_pb2
 
 
 class Communicator(Loop):
@@ -23,8 +23,8 @@ class Communicator(Loop):
     ) -> None:
         self._queue_in = queue_in
         self._queue_out = queue_out
-        self._server = REP()
-
+        self._server = REP(address_client="127.0.0.1", port_client=5555)
+        # self._logger.debug(vars(self._server))
         return super()._call(*args, **kwargs)
 
     def _pre_loop(self) -> None:
@@ -39,7 +39,7 @@ class Communicator(Loop):
         # Hang until a new command is received
         raw_command = self._server.recv()
         self._logger.debug("Command received")
-        command = proto.Command()
+        command = pysagax.message.command_pb2.Command()
         command.ParseFromString(raw_command)
         # Send command to Interpreter
         self._queue_out.put(command)
@@ -49,5 +49,5 @@ class Communicator(Loop):
         response = self._queue_in.get()
         raw_response = response.SerializeToString()
         # Send response to remote client
-        self._server.resp(response)
+        self._server.resp(raw_response)
         self._logger.debug("Response sent")

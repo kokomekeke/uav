@@ -14,6 +14,9 @@ from logging import getLogger, StreamHandler
 from field.communicator import Communicator
 from field.interpreter import Interpreter
 from field.cscontroller import CSController
+from pysagax.field.csparser import CSParser
+from pysagax.field.csstreamer import CSStreamer
+from pysagax.field.postproc import PostProc
 from pysagax.field.streamer import Streamer
 
 
@@ -23,21 +26,30 @@ class Commander:
     def __init__(self, level: str = "INFO") -> None:
         self._logger = getLogger("Commander")
         self._manager = multiprocessing.Manager()
-        self._pool = ProcessPoolExecutor()
+        self._pool = ProcessPoolExecutor(max_workers=10)
 
-        self._commands = self._manager.Queue(maxsize=1)
-        self._responses = self._manager.Queue(maxsize=1)
-        self._stream_packets = self._manager.Queue(maxsize=1)
-        self._cs_commands = self._manager.Queue()
-        self._cs_responses = self._manager.Queue()
+        self._commands_q = self._manager.Queue(maxsize=1)
+        self._responses_q = self._manager.Queue(maxsize=1)
+        self._stream_packets_q = self._manager.Queue(maxsize=1)
+        self._cs_commands_q = self._manager.Queue()
+        self._cs_responses_q = self._manager.Queue()
+        self._stream_conf_q = self._manager.Queue()
+        self._post_proc_commands_q = self._manager.Queue()
+        self._post_proc_responses_q = self._manager.Queue()
+        self._post_proc_input_q = self._manager.Queue()
+        self._raw_cs_stream_q = self._manager.Queue()
 
         self._communicator = Communicator(level=level)
-        self._streamer = Streamer()
+        self._streamer = Streamer(level=level)
 
         self._interpreter = Interpreter(
             level=level,
         )
         self._controller = CSController(level=level)
+
+        self._post_proc = PostProc(level=level)
+        self._cs_parser = CSParser(level=level)
+        self._cs_streamer = CSStreamer(level=level)
 
     def start(self) -> None:
         """Start all background processes"""
@@ -45,20 +57,35 @@ class Commander:
         self._logger.debug("Starting Commander")
 
         self._communicator_future = self._pool.submit(
-            self._communicator, self._responses, self._commands
+            self._communicator, self._responses_q, self._commands_q
         )
         self._interpreter_future = self._pool.submit(
             self._interpreter,
-            self._commands,
-            self._responses,
-            self._cs_responses,
-            self._cs_commands,
+            self._commands_q,
+            self._responses_q,
+            self._cs_responses_q,
+            self._cs_commands_q,
+            self._stream_conf_q,
         )
         self._controller_future = self._pool.submit(
-            self._controller, self._cs_commands, self._cs_responses
+            self._controller, self._cs_commands_q, self._cs_responses_q
         )
-        self._streamer_future = self._pool.submit(self._streamer, self._stream_packets)
-
+        self._streamer_future = self._pool.submit(
+            self._streamer, self._stream_packets_q, self._stream_conf_q
+        )
+        self._post_proc_future = self._pool.submit(
+            self._post_proc,
+            self._stream_packets_q,
+            self._post_proc_input_q,
+            self._post_proc_commands_q,
+            self._post_proc_responses_q,
+        )
+        self._cs_parser_future = self._pool.submit(
+            self._cs_parser, self._raw_cs_stream_q, self._post_proc_input_q
+        )
+        self._cs_streamer_future = self._pool.submit(
+            self._cs_streamer, self._raw_cs_stream_q
+        )
         # Periodically checking errors in threads
         while True:
             done, running = wait(
@@ -67,6 +94,9 @@ class Commander:
                     self._interpreter_future,
                     self._controller_future,
                     self._streamer_future,
+                    self._post_proc_future,
+                    self._cs_parser_future,
+                    self._cs_streamer_future,
                 ),
                 timeout=1,
             )

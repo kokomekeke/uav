@@ -27,6 +27,8 @@ from time import sleep
 from tkinter import messagebox, ttk
 from typing import Any, Callable, Optional
 
+from pysagax.communication.req_rep import REQ
+
 keys_cache = {"": []}
 
 
@@ -106,19 +108,13 @@ def rgetattr(obj, attr, *args):
 
 
 class ZMQConnectionThread(threading.Thread):
-    def __init__(
-        self, address: str = "127.0.0.1", port_in: int = 5556, port_out: int = 5555
-    ) -> None:
+    def __init__(self, address: str = "127.0.0.1") -> None:
         super().__init__(daemon=True)
 
         self.address = address
-        self._port_in = port_in
-        self._port_out = port_out
 
         # Define up- and downstream channels
-        self._context = zmq.Context()
-        self._radio = self._context.socket(zmq.RADIO)
-        self._dish = self._context.socket(zmq.DISH)
+        self._zmq = REQ(address_server=address, port_server=5556, port_client=5555)
         self.disconnect: bool = False
 
         self.console_textarea_ref: Optional[tkinter.Text] = None
@@ -156,27 +152,11 @@ class ZMQConnectionThread(threading.Thread):
 
         if self.connect_callback is not None:
             self.connect_callback()
-        self._radio.connect(f"udp://{self.address}:{self._port_out}")
-        self._dish.bind(f"udp://*:{self._port_in}")
-        self._dish.join("response")
+        self._zmq.connect()
         self.display_status_callback("ZMQ Connected")
         self.connected = True
         if self.connected_callback is not None:
             self.connected_callback()
-
-    def send(self, message: bytes, timeout: int = 1000) -> bytes:
-        """Send request. Hang until response arrives or timeout is reached"""
-
-        # Make sure incoming buffer is empty
-        while self._dish.poll(timeout=0):
-            self._dish.recv()
-
-        self._radio.send(message, group="command")
-
-        if self._dish.poll(timeout=timeout):
-            return self._dish.recv()
-        else:
-            return None
 
     def display_status_callback(self, message: str) -> None:
         assert self.status_label_ref
@@ -193,7 +173,7 @@ class ZMQConnectionThread(threading.Thread):
         while not self.disconnect:
             try:
                 command = self.send_queue.get(timeout=2)
-                raw_response = self.send(command.SerializeToString(), timeout=30000)
+                raw_response = self._zmq.send(command.SerializeToString())
                 if raw_response is not None:
                     response = proto.Response()
                     response.ParseFromString(raw_response)
