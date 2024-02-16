@@ -50,7 +50,7 @@ def rx(
 
     i = 1
     while number is None or i < number:
-        data = client.recv()
+        data, group = client.recv()
 
         index = int.from_bytes(
             data[:INDEX_SIZE], byteorder="little"
@@ -62,7 +62,7 @@ def rx(
 
         delay = (time.time_ns()-timestamp)/1e6
 
-        print(f"Received data    index: {index:<6}    data: {len(data)} bytes    delay: {delay:<02.4f} ms")
+        print(f"Received data    index: {index:<6}    group: {group}    data: {len(data)} bytes    delay: {delay:<02.4f} ms")
 
         i += 1
 
