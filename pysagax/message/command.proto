@@ -37,6 +37,11 @@ enum Instruction {
     //   response:  success [bool]
     CS_RESTART = 11;
 
+    // Ping CoreService
+    //   parameter: ping_data [string]
+    //   response:  ping_data [string]
+    CS_PING = 12;
+
 
     // Start playback from source
     //   response:  success [bool]

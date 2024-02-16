@@ -56,6 +56,11 @@ class _InstructionEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._En
     """Restart CoreService
       response:  success [bool]
     """
+    CS_PING: _Instruction.ValueType  # 12
+    """Ping CoreService
+      parameter: ping_data [string]
+      response:  ping_data [string]
+    """
     SOURCE_START: _Instruction.ValueType  # 13
     """Start playback from source
       response:  success [bool]
@@ -132,6 +137,11 @@ CS_STOP: Instruction.ValueType  # 10
 CS_RESTART: Instruction.ValueType  # 11
 """Restart CoreService
   response:  success [bool]
+"""
+CS_PING: Instruction.ValueType  # 12
+"""Ping CoreService
+  parameter: ping_data [string]
+  response:  ping_data [string]
 """
 SOURCE_START: Instruction.ValueType  # 13
 """Start playback from source

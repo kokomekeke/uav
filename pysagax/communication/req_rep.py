@@ -18,7 +18,7 @@ class REQ:
     def __init__(
             self,
             address_client: str = "127.0.0.1",
-            address_server: str = "127.0.0.1",
+            address_server: str = None,
             port_client: int = 5555,
             port_server: int = 5556,
             group_request: str = "q",
