@@ -17,13 +17,13 @@ def main(
     client.connect()
 
     while True:
-        data = client.recv()
+        data, data_type = client.recv()
         meas_packet = proto_data.Measurement()
         meas_packet.ParseFromString(data)
         for data in meas_packet.data:
             data.data = f"({len(data.data)} bytes)".encode()
+        print(f"---{data_type}")
         print(meas_packet)
-        print("---")
 
 
 if __name__ == "__main__":

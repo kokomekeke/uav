@@ -64,10 +64,10 @@ class PostProc(Loop):
 
     def _handle_spectrum_packet(self, cs_packet: CoreServiceSpectrumPacket) -> None:
         spectrum = proto_data.Spectrum()
-        spectrum.spectrum_type = proto_data.Spectrum.SpectrumType.AZIMUTH
+        spectrum.spectrum_type = proto_data.Spectrum.SpectrumType.MAGNITUDE
         spectrum.data_type = self._data_type
         spectrum.channel_id = cs_packet.stream_id
-        spectrum.data = cs_packet.azimuth_spectrum.astype(self._np_data_type).tobytes()
+        spectrum.data = cs_packet.magnitude_spectrum.astype(self._np_data_type).tobytes()
         self._measurement_packet.data.append(spectrum)
 
     def _handle_roi_packet(self, cs_packet: CoreServiceROIResultPacket) -> None:
