@@ -1,9 +1,11 @@
 from __future__ import annotations
+from multiprocessing.managers import DictProxy
 from queue import Empty, Queue
 import queue
 import shlex
 import time
 import shutil
+import pickle
 
 from typing import Any, Generator, Iterable, Optional
 import pysagax
@@ -22,6 +24,7 @@ class Telemetry(Loop):
         self._comm_queue_out: Optional[Queue] = None
         self._cs_commands_queue: Optional[Queue] = None
         self._cs_responses_queue: Optional[Queue] = None
+        self._latest_packets_proxy: Optional[DictProxy] = None
         self._telemetry_packet = proto_data.Telemetry()
         self._sysinfo_packet = proto_cmd.SystemInfo()
         self._data_partition_path = data_partition_path
@@ -33,6 +36,7 @@ class Telemetry(Loop):
         cs_queue_in: Queue[Any],
         cs_commands_queue: Queue[Any],
         cs_responses_queue: Queue[Any],
+        latest_packets_proxy: Optional[DictProxy] = None,
         *args,
         **kwargs,
     ) -> None:
@@ -40,6 +44,7 @@ class Telemetry(Loop):
         self._cs_queue_in = cs_queue_in
         self._cs_commands_queue = cs_commands_queue
         self._cs_responses_queue = cs_responses_queue
+        self._latest_packets_proxy = latest_packets_proxy
         return super()._call(*args, **kwargs)
 
     def _cs_execute(
@@ -123,6 +128,8 @@ class Telemetry(Loop):
         self._sysinfo_packet.hardware.disk = total // (2**20)  # MiB
         self._sysinfo_packet.software.pysagax_version = pysagax.__version__  # type: ignore
         self._logger.debug("SystemInfo packet ready")
+        if self._latest_packets_proxy is not None:
+            self._latest_packets_proxy["SystemInfo"] = pickle.dumps(self._sysinfo_packet)
         self._comm_queue_out.put(self._sysinfo_packet)
 
     def _measure_hardware_stats(self) -> None:
@@ -141,6 +148,9 @@ class Telemetry(Loop):
         self._logger.debug(
             f"Telemetry packet ready {self._telemetry_packet.time.ToJsonString()}"
         )
+        if self._latest_packets_proxy is not None:
+            self._latest_packets_proxy["Telemetry"] = pickle.dumps(self._telemetry_packet)
+
         self._comm_queue_out.put(self._telemetry_packet)
         self._telemetry_packet = proto_data.Telemetry()
 

@@ -1,11 +1,15 @@
 from __future__ import annotations
+from multiprocessing.managers import DictProxy
+import pickle
 import queue
 from queue import Queue
 
+import subprocess
 import shlex
 from typing import Any, Optional
 
-import pysagax.message.command_pb2 as proto
+import pysagax.message.command_pb2 as proto_cmd
+import pysagax.message.data_pb2 as proto_data
 from pysagax.field.loop import Loop
 
 
@@ -14,12 +18,12 @@ class Interpreter(Loop):
 
     # CoreService commands matching protobuf Instructions
     _CS_COMMANDS = {
-        proto.PING: "CORE:Ping! {value}",
-        proto.POSITION: "SOURCE:Position{mode} {value}",
-        proto.SOURCE_START: "SOURCE:Start!",
-        proto.SOURCE_STOP: "SOURCE:Stop!",
-        proto.REC_START: "RECORDING:Start!",
-        proto.REC_STOP: "RECORDING:Stop!",
+        proto_cmd.PING: "CORE:Ping! {value}",
+        proto_cmd.POSITION: "SOURCE:Position{mode} {value}",
+        proto_cmd.SOURCE_START: "SOURCE:Start!",
+        proto_cmd.SOURCE_STOP: "SOURCE:Stop!",
+        proto_cmd.REC_START: "RECORDING:Start!",
+        proto_cmd.REC_STOP: "RECORDING:Stop!",
     }
     _CONFIG_COMMANDS = [
         ("SOURCE:Path! {};", lambda config: config.source_path),
@@ -69,6 +73,7 @@ class Interpreter(Loop):
         self._cs_queue_in: Optional[Queue] = None
         self._cs_queue_out: Optional[Queue] = None
         self._stream_conf_queue_out: Optional[Queue] = None
+        self._latest_telemetry_proxy: Optional[DictProxy] = None
 
     def __call__(
         self,
@@ -77,6 +82,7 @@ class Interpreter(Loop):
         cs_queue_in: Queue[str],
         cs_queue_out: Queue[str],
         stream_conf_queue_out: Queue[Any],
+        latest_telemetry_proxy: Optional[DictProxy] = None,
         *args,
         **kwargs,
     ) -> None:
@@ -85,7 +91,7 @@ class Interpreter(Loop):
         self._cs_queue_in = cs_queue_in
         self._cs_queue_out = cs_queue_out
         self._stream_conf_queue_out = stream_conf_queue_out
-
+        self._latest_telemetry_proxy = latest_telemetry_proxy
         return super()._call(*args, **kwargs)
 
     def _loop(self) -> None:
@@ -102,73 +108,74 @@ class Interpreter(Loop):
         # Send response to Communicator
         self._comm_queue_out.put(response)
 
-    def _process(self, command: Any) -> proto.Response:
+    def _process(self, command: Any) -> proto_cmd.Response:
         """Interpret, route and execute incoming commands"""
 
         # Parse command to Protobuf format
-        assert isinstance(command, proto.Command)
+        assert isinstance(command, proto_cmd.Command)
         # command = proto.Command()
         # command.ParseFromString(raw_command)
         self._logger.debug(
-            f"Instruction: {proto.Instruction.Name(command.instruction)}"
+            f"Instruction: {proto_cmd.Instruction.Name(command.instruction)}"
         )
 
         # Prepare appropriate response
-        response = proto.Response()
+        response = proto_cmd.Response()
         response.id = command.id
         response.instruction = command.instruction
 
         # Route command based on the given Instruction
         #   response is always passed as a reference
         match command.instruction:
-            case proto.PING:
+            case proto_cmd.PING:
                 response.ping_data = command.ping_data
-            case proto.CS_PING:
+            case proto_cmd.CS_PING:
                 self._cs_ping(response, command.ping_data)
 
-            case proto.CONFIG:
+            case proto_cmd.CONFIG:
                 # Check whether command is a query or a setting
                 if command.HasField("parameter"):
                     self._config(response, command.config)
                 else:
                     self._config(response, None)
 
-            case proto.TELEMETRY:
+            case proto_cmd.TELEMETRY:
                 self._telemetry(response)
 
-            case proto.INFO:
+            case proto_cmd.INFO:
                 self._info(response)
 
-            case proto.POSITION:
+            case proto_cmd.POSITION:
                 # Check whether command is a query or a setting
                 if command.HasField("parameter"):
                     self._position(response, command.position)
                 else:
                     self._position(response, None)
 
-            case proto.CS_START:
-                pass
+            case proto_cmd.CS_START:
+                subprocess.run(["sudo", "StartCoreService"], shell=True)
 
-            case proto.CS_STOP:
-                pass
+            case proto_cmd.CS_STOP:
+                subprocess.run(["sudo", "StopCoreService"], shell=True)
 
-            case proto.CS_RESTART:
-                pass
+            case proto_cmd.CS_RESTART:
+                subprocess.run(["sudo", "StopCoreService"], shell=True)
+                subprocess.run(["sudo", "StartCoreService"], shell=True)
 
-            case proto.HEADING_START:
-                pass
+            case proto_cmd.HEADING_START:
+                response.error.description = "Not yet implemented"
 
-            case proto.HEADING_STOP:
-                pass
+            case proto_cmd.HEADING_STOP:
+                response.error.description = "Not yet implemented"
 
             case (
-                proto.SOURCE_START
-                | proto.SOURCE_STOP
-                | proto.REC_START
-                | proto.REC_STOP
+                proto_cmd.SOURCE_START
+                | proto_cmd.SOURCE_STOP
+                | proto_cmd.REC_START
+                | proto_cmd.REC_STOP
             ):
                 self._cs_control(response, command.instruction)
-            case proto.STREAM_START | proto.STREAM_STOP:
+            case proto_cmd.STREAM_START | proto_cmd.STREAM_STOP:
                 assert self._stream_conf_queue_out is not None
                 self._stream_conf_queue_out.put(command)
             case _:
@@ -202,11 +209,11 @@ class Interpreter(Loop):
         except queue.Empty:
             return None
 
-    def _cs_ping(self, response: proto.Response, ping_data: str) -> None:
+    def _cs_ping(self, response: proto_cmd.Response, ping_data: str) -> None:
         """Send a Ping command to CoreService"""
 
         # Generate and execute appropriate CoreService command
-        cs_command = self._CS_COMMANDS[proto.PING].format(value=ping_data)
+        cs_command = self._CS_COMMANDS[proto_cmd.PING].format(value=ping_data)
         cs_response = self._cs_execute(cs_command, timeout=1.0)
 
         # Check for response validity
@@ -231,7 +238,7 @@ class Interpreter(Loop):
                 return " ".join(cs_response[1:])
         return ""
 
-    def _config(self, response: proto.Response, config: proto.Config | None) -> None:
+    def _config(self, response: proto_cmd.Response, config: proto_cmd.Config | None) -> None:
         """Set of query system configuration"""
         if config is not None:
             for config_command, proto_lambda in self._CONFIG_COMMANDS:
@@ -263,26 +270,33 @@ class Interpreter(Loop):
         # except ValueError:
         #    response.error.description = "Invalid config on query"
 
-    def _telemetry(self, response: proto.Response) -> None:
+    def _telemetry(self, response: proto_cmd.Response) -> None:
         """Query system telemetry"""
+        if self._latest_telemetry_proxy is None or "Telemetry" not in self._latest_telemetry_proxy:
+            response.error.description = "Telemetry not available")
+            return
+        telemetry_object: proto_data.Telemetry = pickle.loads(self._latest_telemetry_proxy["Telemetry"]) 
+        response.telemetry.MergeFrom(telemetry_object)
 
-        pass
 
-    def _info(self, response: proto.Response) -> None:
+    def _info(self, response: proto_cmd.Response) -> None:
         """Query system info"""
+        if self._latest_telemetry_proxy is None or "SystemInfo" not in self._latest_telemetry_proxy:
+            response.error.description = "SystemInfo not available"
+            return
+        system_info_object: proto_cmd.SystemInfo = pickle.loads(self._latest_telemetry_proxy["SystemInfo"]) 
+        response.info.MergeFrom(system_info_object)
 
-        pass
-
-    def _position(self, response: proto.Response, position: int | None) -> None:
+    def _position(self, response: proto_cmd.Response, position: int | None) -> None:
         """Set or query source position"""
 
         # Generate and execute appropriate CoreService command
         if position is not None:
-            cs_command = self._CS_COMMANDS[proto.POSITION].format(
+            cs_command = self._CS_COMMANDS[proto_cmd.POSITION].format(
                 mode="!", value=position
             )
         else:
-            cs_command = self._CS_COMMANDS[proto.POSITION].format(mode="?", value="")
+            cs_command = self._CS_COMMANDS[proto_cmd.POSITION].format(mode="?", value="")
         cs_response = self._cs_execute(cs_command)
 
         # Check for response validity
@@ -296,7 +310,7 @@ class Interpreter(Loop):
             response.error.description = "CoreService not responding"
 
     def _cs_control(
-        self, response: proto.Response, instruction: proto.Instruction
+        self, response: proto_cmd.Response, instruction: proto_cmd.Instruction
     ) -> None:
         """Send control commands (no parameters) to CoreService"""
 

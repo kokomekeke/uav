@@ -45,6 +45,8 @@ class Commander:
         self._telemetry_cs_commands_q = self._manager.Queue()
         self._telemetry_cs_responses_q = self._manager.Queue()
 
+        self._latest_telemetry_proxy = self._manager.dict()
+
         self._communicator = Communicator(level=level)
         self._streamer = Streamer(level=level)
 
@@ -74,6 +76,7 @@ class Commander:
             self._cs_responses_q,
             self._cs_commands_q,
             self._stream_conf_q,
+            self._latest_telemetry_proxy,
         )
         self._cs_controller_future = self._pool.submit(
             self._cs_controller,
@@ -104,6 +107,7 @@ class Commander:
             self._telemetry_in_q,
             self._telemetry_cs_commands_q,
             self._telemetry_cs_responses_q,
+            self._latest_telemetry_proxy,
         )
         # Periodically checking errors in threads
         while True:
