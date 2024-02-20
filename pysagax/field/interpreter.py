@@ -273,7 +273,7 @@ class Interpreter(Loop):
     def _telemetry(self, response: proto_cmd.Response) -> None:
         """Query system telemetry"""
         if self._latest_telemetry_proxy is None or "Telemetry" not in self._latest_telemetry_proxy:
-            response.error.description = "Telemetry not available")
+            response.error.description = "Telemetry not available"
             return
         telemetry_object: proto_data.Telemetry = pickle.loads(self._latest_telemetry_proxy["Telemetry"]) 
         response.telemetry.MergeFrom(telemetry_object)
