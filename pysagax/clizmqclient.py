@@ -13,11 +13,11 @@ def main(
 ):
     logging.basicConfig(level="DEBUG")
     logging.getLogger("main")
-    client = RX(port=port, groups=["*", "Measurement"])
+    client = RX(port=port, groups=["*", "Measurement", "Telemetry"])
     client.connect()
 
     while True:
-        data, data_type = client.recv()
+        data, data_type = client.recv() or (b"", "")
         meas_packet = proto_data.Measurement()
         meas_packet.ParseFromString(data)
         for data in meas_packet.data:

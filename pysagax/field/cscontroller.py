@@ -3,7 +3,7 @@ import time
 from queue import Queue
 from typing import Any, Optional
 
-from pysagax import BaseConnection
+from pysagax.df.lena_core_service import BaseConnection
 from pysagax.field.loop import Loop
 
 
@@ -25,13 +25,34 @@ class CSController(Loop, BaseConnection):
         # TODO: Set up control channel to CoreService here
         self._queue_in: Optional[Queue] = None
         self._queue_out: Optional[Queue] = None
+        self._queue_in_status: Optional[Queue] = None
+        self._queue_out_status: Optional[Queue] = None
+
+        self._queue_of_resp_queues: Optional[Queue[tuple[Queue[Any], str]]] = None
+        self._merged_queue: Optional[Queue[tuple[str, Queue[Any], str]]] = None
+
         self._sock_thread: Optional[threading.Thread] = None
+        self._queue_primary_thread: Optional[threading.Thread] = None
+        self._queue_status_thread: Optional[threading.Thread] = None
+        self.response_buffer: str = ""
 
     def __call__(
-        self, queue_in: Queue[Any], queue_out: Queue[Any], *args, **kwargs
+        self,
+        queue_in_primary: Queue[Any],
+        queue_out_primary: Queue[Any],
+        queue_in_status: Optional[Queue[Any]] = None,
+        queue_out_status: Optional[Queue[Any]] = None,
+        *args,
+        **kwargs,
     ) -> None:
-        self._queue_in = queue_in
-        self._queue_out = queue_out
+        self._queue_in = queue_in_primary
+        self._queue_out = queue_out_primary
+        self._queue_in_status = queue_in_status
+        self._queue_out_status = queue_out_status
+
+        self._queue_of_resp_queues = Queue()
+        self._merged_queue = Queue()
+
         return super()._call(*args, **kwargs)
 
     def display_status_callback(self, message: str) -> None:
@@ -40,27 +61,58 @@ class CSController(Loop, BaseConnection):
     def _pre_loop(self) -> None:
         self.disconnect = False
         self._sock_thread = threading.Thread(target=self._run_socket)
+        self._queue_primary_thread = threading.Thread(
+            target=self._queue_watcher,
+            args=(self._queue_in, self._queue_out, "primary"),
+        )
+        self._queue_status_thread = threading.Thread(
+            target=self._queue_watcher,
+            args=(self._queue_in_status, self._queue_out_status, "status"),
+        )
         self._sock_thread.start()
+        self._queue_primary_thread.start()
+        self._queue_status_thread.start()
         # TODO: Connect to CoreService here
+
+    def _queue_watcher(
+        self, input_queue: Queue[Any], output_queue: Queue[Any], label: str = "queue"
+    ) -> None:
+        assert self._merged_queue is not None
+        while True:
+            command: str = input_queue.get()
+            for single_command in command.split(";"):
+                single_command = single_command.strip()
+                if single_command:
+                    self._logger.debug(f"Command {single_command} on {label}")
+                    self._merged_queue.put((single_command + ";", output_queue, label))
 
     def receive_on_socket(self, data: bytes) -> None:
         """
         When text is received on the command socket, send it over in the queue.
         """
         assert self._queue_out is not None
+        assert self._queue_of_resp_queues is not None
         data_str = data.decode()
-        self._logger.debug(data_str)
-
-        self._queue_out.put(data_str)
+        self.response_buffer += data_str
+        index = self.response_buffer.find(";")
+        while -1 < index:
+            resp = self.response_buffer[: index + 1]
+            # self._logger.debug(resp)
+            resp_queue, label = self._queue_of_resp_queues.get()
+            self._logger.debug(f"Response {resp} to {label}")
+            resp_queue.put(resp)
+            # self._queue_out.put(resp)
+            self.response_buffer = self.response_buffer[index + 1 :]
+            index = self.response_buffer.find(";")
 
     def _loop(self) -> None:
-        assert self._queue_in is not None
-        assert self._queue_out is not None
+        assert self._merged_queue is not None
+        assert self._queue_of_resp_queues is not None
         # Hang until a new command is received
-        command = self._queue_in.get()
-
+        command, out_queue, label = self._merged_queue.get()
+        self._queue_of_resp_queues.put((out_queue, label))
         self.send_on_socket(command.encode())
-        self._logger.debug(command)
+        # self._logger.debug(command)
         # response = "132"
 
         # Send response to Interpreter

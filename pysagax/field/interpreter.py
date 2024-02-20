@@ -102,7 +102,7 @@ class Interpreter(Loop):
         # Send response to Communicator
         self._comm_queue_out.put(response)
 
-    def _process(self, command: Any) -> bytes:
+    def _process(self, command: Any) -> proto.Response:
         """Interpret, route and execute incoming commands"""
 
         # Parse command to Protobuf format
@@ -181,6 +181,8 @@ class Interpreter(Loop):
         self, command: str, timeout: Optional[float] = None
     ) -> Optional[list[str]]:
         """Send a list of commands to CoreService, return the result."""
+        assert self._cs_queue_in is not None
+        assert self._cs_queue_out is not None
         if timeout is None:
             timeout = self._cmd_timeout_seconds
         if command[-1:] != ";":

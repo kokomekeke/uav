@@ -72,7 +72,7 @@ class Streamer(Loop):
                 stream_packet = packet.SerializeToString()
                 server.server.send(stream_packet, packet.DESCRIPTOR.name)
                 self._logger.debug(
-                    f"{packet.DESCRIPTOR.name}) packet sent to {host_port}"
+                    f"{packet.DESCRIPTOR.name} packet sent to {host_port} {str(packet)}"
                 )
         except queue.Empty:
             pass

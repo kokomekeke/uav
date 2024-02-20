@@ -27,10 +27,8 @@ class PostProc(Loop):
         self, data_type=proto_data.Spectrum.DataType.INT16, *args, **kwargs
     ) -> None:
         super().__init__(*args, **kwargs)
-        self._cmd_timeout_seconds = 30.0
-        self.config_id = 0
-        self._comm_queue_in: Optional[Queue] = None
-        self._comm_queue_out: Optional[Queue] = None
+        self._conf_queue_in: Optional[Queue] = None
+        self._conf_queue_out: Optional[Queue] = None
         self._cs_queue_in: Optional[Queue] = None
         self._comm_queue_out: Optional[Queue] = None
         self._np_data_type: Optional[numpy.dtype] = None
@@ -67,7 +65,9 @@ class PostProc(Loop):
         spectrum.spectrum_type = proto_data.Spectrum.SpectrumType.MAGNITUDE
         spectrum.data_type = self._data_type
         spectrum.channel_id = cs_packet.stream_id
-        spectrum.data = cs_packet.magnitude_spectrum.astype(self._np_data_type).tobytes()
+        spectrum.data = cs_packet.magnitude_spectrum.astype(
+            self._np_data_type
+        ).tobytes()
         self._measurement_packet.data.append(spectrum)
 
     def _handle_roi_packet(self, cs_packet: CoreServiceROIResultPacket) -> None:

@@ -12,13 +12,14 @@ from rich.logging import RichHandler
 from coloredlogs import install
 from logging import Handler, getLogger, StreamHandler
 
-from field.communicator import Communicator
-from field.interpreter import Interpreter
-from field.cscontroller import CSController
+from pysagax.field.communicator import Communicator
+from pysagax.field.interpreter import Interpreter
+from pysagax.field.cscontroller import CSController
 from pysagax.field.csparser import CSParser
 from pysagax.field.csstreamer import CSStreamer
 from pysagax.field.postproc import PostProc
 from pysagax.field.streamer import Streamer
+from pysagax.field.telemetry import Telemetry
 
 
 class Commander:
@@ -39,6 +40,10 @@ class Commander:
         self._post_proc_responses_q = self._manager.Queue()
         self._post_proc_input_q = self._manager.Queue()
         self._raw_cs_stream_q = self._manager.Queue()
+        self._telemetry_in_q = self._manager.Queue()
+
+        self._telemetry_cs_commands_q = self._manager.Queue()
+        self._telemetry_cs_responses_q = self._manager.Queue()
 
         self._communicator = Communicator(level=level)
         self._streamer = Streamer(level=level)
@@ -46,11 +51,13 @@ class Commander:
         self._interpreter = Interpreter(
             level=level,
         )
-        self._controller = CSController(level=level)
+        self._cs_controller = CSController(level=level)
 
         self._post_proc = PostProc(level=level)
         self._cs_parser = CSParser(level=level)
         self._cs_streamer = CSStreamer(level=level)
+
+        self._telemetry = Telemetry(level=level)
 
     def start(self) -> None:
         """Start all background processes"""
@@ -68,8 +75,12 @@ class Commander:
             self._cs_commands_q,
             self._stream_conf_q,
         )
-        self._controller_future = self._pool.submit(
-            self._controller, self._cs_commands_q, self._cs_responses_q
+        self._cs_controller_future = self._pool.submit(
+            self._cs_controller,
+            self._cs_commands_q,
+            self._cs_responses_q,
+            self._telemetry_cs_commands_q,
+            self._telemetry_cs_responses_q,
         )
         self._streamer_future = self._pool.submit(
             self._streamer, self._stream_packets_q, self._stream_conf_q
@@ -87,13 +98,20 @@ class Commander:
         self._cs_streamer_future = self._pool.submit(
             self._cs_streamer, self._raw_cs_stream_q
         )
+        self._telemetry_future = self._pool.submit(
+            self._telemetry,
+            self._stream_packets_q,
+            self._telemetry_in_q,
+            self._telemetry_cs_commands_q,
+            self._telemetry_cs_responses_q,
+        )
         # Periodically checking errors in threads
         while True:
             done, running = wait(
                 (
                     self._communicator_future,
                     self._interpreter_future,
-                    self._controller_future,
+                    self._cs_controller_future,
                     self._streamer_future,
                     self._post_proc_future,
                     self._cs_parser_future,
