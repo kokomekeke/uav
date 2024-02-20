@@ -16,7 +16,7 @@ from pysagax.field.loop import Loop
 
 class Telemetry(Loop):
 
-    def __init__(self, data_partition_path: str = "/", *args, **kwargs) -> None:
+    def __init__(self, data_partition_path: str = "/", interval: float = 0.25, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._cs_queue_in: Optional[Queue] = None
         self._comm_queue_out: Optional[Queue] = None
@@ -25,6 +25,7 @@ class Telemetry(Loop):
         self._telemetry_packet = proto_data.Telemetry()
         self._sysinfo_packet = proto_cmd.SystemInfo()
         self._data_partition_path = data_partition_path
+        self._interval = interval
 
     def __call__(
         self,
@@ -161,5 +162,5 @@ class Telemetry(Loop):
         self._measure_hardware_stats()
         self._get_from_cs()
         self._push_finished_packet()
-        time.sleep(5.0)
+        time.sleep(self._interval)
         # Send response to Communicator

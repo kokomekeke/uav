@@ -10,10 +10,20 @@ from pysagax.message.data_types import DataType
 
 
 class StreamerServer:
-    def __init__(self, server: TX, level: int, timeout: int) -> None:
+    def __init__(
+        self, server: TX, level: int, timeout: int, telemetry_packet_period: int = 1
+    ) -> None:
         self.server = server
         self.level = level
         self.timeout = timeout
+        if telemetry_packet_period == 0:
+            telemetry_packet_period = 1
+        self.packet_period = {
+            DataType.ERROR: 1,
+            DataType.EVENT: 1,
+            DataType.MEASUREMENT: 1,
+            DataType.TELEMETRY: telemetry_packet_period,
+        }
 
 
 class Streamer(Loop):
@@ -38,6 +48,13 @@ class Streamer(Loop):
                 DataType.MEASUREMENT,
             ],
         }
+        self._known_intervals: dict[DataType, float] = {DataType.TELEMETRY: 0.25}
+        self._total_packets: dict[DataType, int] = {
+            DataType.TELEMETRY: 0,
+            DataType.EVENT: 0,
+            DataType.ERROR: 0,
+            DataType.MEASUREMENT: 0,
+        }
 
     def __call__(
         self, queue_in: Queue[Any], conf_in: Queue[Any], *args, **kwargs
@@ -52,7 +69,10 @@ class Streamer(Loop):
 
     def add_stream_client(self, target: proto_cmd.StreamTarget) -> None:
         self._servers[f"{target.address}:{target.port}"] = StreamerServer(
-            TX(target.address, port=target.port), int(target.level), 0
+            TX(target.address, port=target.port),
+            int(target.level),
+            0,
+            target.telemetry_timeout,
         )
         self._servers[f"{target.address}:{target.port}"].server.connect()
         self._logger.info(f"Stream client {target.address}:{target.port} added")
@@ -90,16 +110,28 @@ class Streamer(Loop):
                 )
                 return
             type_field = DataType(type_field_enum)
+            self._total_packets[type_field] += 1
             for host_port, server in self._servers.items():
-                if type_field not in self._levels[server.level]:
+                if type_field not in self._levels[server.level] or (
+                    server.packet_period[type_field] > 1
+                    and (
+                        self._total_packets[type_field]
+                        % server.packet_period[type_field]
+                        != 0
+                    )
+                ):
                     self._logger.debug(
-                        f"{packet.DESCRIPTOR.name} ({type_field.name} -> {type_field.value}) packet not sent to {host_port} level {server.level}"
+                        f"{packet.DESCRIPTOR.name} ({type_field.name} -> {type_field.value}) "
+                        f"#{self._total_packets[type_field]} /{server.packet_period[type_field]}"
+                        f" packet not sent to {host_port} level {server.level}"
                     )
                     continue
 
                 server.server.send(stream_packet, type_field.value)
                 self._logger.debug(
-                    f"{packet.DESCRIPTOR.name} ({type_field.name} -> {type_field.value}) packet sent to {host_port} level {server.level}"
+                    f"{packet.DESCRIPTOR.name} ({type_field.name} -> {type_field.value}) "
+                    f"#{self._total_packets[type_field]} /{server.packet_period[type_field]}"
+                    f" packet sent to {host_port} level {server.level}"
                 )
         except queue.Empty:
             pass
