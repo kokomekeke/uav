@@ -1,10 +1,12 @@
 from queue import Queue
 import queue
-from typing import Any, Optional
+from typing import Any, Optional, Type
 from pysagax.communication.broadcast import TX
 
 from pysagax.field.loop import Loop
 import pysagax.message.command_pb2 as proto_cmd
+import pysagax.message.data_pb2 as proto_data
+from pysagax.message.data_types import DataType
 
 
 class StreamerServer:
@@ -24,6 +26,18 @@ class Streamer(Loop):
         self._servers: dict[str, StreamerServer] = {}
         self._queue_in: Optional[Queue[Any]] = None
         self._conf_in: Optional[Queue[Any]] = None
+
+        self._levels: dict[int, list[DataType]] = {
+            0: [],  # TODO Heartbeat
+            1: [DataType.TELEMETRY],  # Telemetry
+            2: [DataType.TELEMETRY, DataType.EVENT, DataType.ERROR],
+            3: [
+                DataType.TELEMETRY,
+                DataType.EVENT,
+                DataType.ERROR,
+                DataType.MEASUREMENT,
+            ],
+        }
 
     def __call__(
         self, queue_in: Queue[Any], conf_in: Queue[Any], *args, **kwargs
@@ -66,13 +80,26 @@ class Streamer(Loop):
             pass
         try:
             packet = self._queue_in.get(block=True, timeout=1)
-            self._logger.debug("Got stream packet")
+            self._logger.debug(f"Got {type(packet).__name__} stream packet")
             # Send response to remote client
+            stream_packet = packet.SerializeToString()
+            type_field_enum = DataType.from_message(packet)
+            if type_field_enum is None:
+                self._logger.warning(
+                    f"Cannot send packet type {type(packet).__name__} on Stream"
+                )
+                return
+            type_field = DataType(type_field_enum)
             for host_port, server in self._servers.items():
-                stream_packet = packet.SerializeToString()
-                server.server.send(stream_packet, packet.DESCRIPTOR.name)
+                if type_field not in self._levels[server.level]:
+                    self._logger.debug(
+                        f"{packet.DESCRIPTOR.name} ({type_field.name} -> {type_field.value}) packet not sent to {host_port} level {server.level}"
+                    )
+                    continue
+
+                server.server.send(stream_packet, type_field.value)
                 self._logger.debug(
-                    f"{packet.DESCRIPTOR.name} packet sent to {host_port} {str(packet)}"
+                    f"{packet.DESCRIPTOR.name} ({type_field.name} -> {type_field.value}) packet sent to {host_port} level {server.level}"
                 )
         except queue.Empty:
             pass
