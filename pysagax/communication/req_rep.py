@@ -18,7 +18,7 @@ class REQ:
     def __init__(
             self,
             address_client: str = "127.0.0.1",
-            address_server: str = None,
+            address_server: str = "127.0.0.1",
             port_client: int = 5555,
             port_server: int = 5556,
             group_request: str = "q",
@@ -66,9 +66,6 @@ class REQ:
         else:
             return True
     
-    def disconnect(self):
-        self._radio.disconnect(f"udp://{self._address_server}:{self._port_server}")
-    
     def _init(self, timeout: int = 10000) -> bool:
         """Send init message to server and return whether it succeeded"""
 
@@ -93,6 +90,10 @@ class REQ:
 
     def send(self, message: bytes, timeout: int = 1000) -> bytes:
         """Send request. Hang until response arrives or timeout is reached"""
+
+        # Make sure incoming buffer is empty
+        #while self._dish.poll(timeout=0):
+        #    self._dish.recv()
         
         # Send message
         id = self._message_id.to_bytes(_ID_LENGTH, _ID_ENCODING)
