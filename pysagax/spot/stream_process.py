@@ -7,6 +7,7 @@ import typing
 from typing import Optional
 from pysagax.communication.broadcast import RX
 import pysagax.message.data_pb2 as proto_data
+from pysagax.message.data_types import DataType
 
 from pysagax.util import MultiQueue
 
@@ -33,6 +34,8 @@ class StreamProcess(multiprocessing.Process):
         # connection deemed broken if nothing is received for this much time:
         self.heartbeat_timeout_ns: int = 10e9
 
+        self._idle_status_sent = False  # used for announcing idle status only once
+
     def _connect(self) -> bool:
         self._connection = RX(port=self._connection_port)
         self._display_connection_status_callback("Connecting...")
@@ -45,9 +48,13 @@ class StreamProcess(multiprocessing.Process):
 
     def _is_disconnect(self) -> bool:
         if time.time_ns() - self._last_heartbeat_time > self.heartbeat_timeout_ns:
-            self._display_connection_status_callback("Idle (timeout)")
-            # self._display_connection_status_callback("Disconnected (timeout)")
-            # return True #TODO: try to reconnect?
+            if not self._idle_status_sent:
+                self._display_connection_status_callback("Idle (timeout)")
+                self._idle_status_sent = True
+        else:
+            if self._idle_status_sent:
+                self._display_connection_status_callback("Connected")
+                self._idle_status_sent = False
 
         try:  # (JIRA issue ALTS-150)
             do_disconnect = bool(self._do_disconnect_value.value)
@@ -72,12 +79,11 @@ class StreamProcess(multiprocessing.Process):
             if raw_data is None:  # recv timeout
                 continue
             self._last_heartbeat_time = time.time_ns()
-            if group != "Measurement":
-                print(f"Handling stream packet type {group} is not implemented")
-                continue
-            data = proto_data.Measurement()
-            data.ParseFromString(raw_data)
-            self._queues.put(data)
+
+            data_type_object = DataType(group)
+            stream_packet = DataType.to_message(data_type_object)
+            stream_packet.ParseFromString(raw_data)
+            self._queues.put(stream_packet)
 
     def _display_connection_status_callback(self, message: str) -> None:
         self._status_queue.put(message)

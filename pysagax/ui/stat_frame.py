@@ -163,6 +163,8 @@ class StatFrame(tkinter.Frame):
         """
         Updates the bar plots for peak values.
         """
+        if len(peaks) != 4:
+            return
         max_width = self.peak_chart.winfo_width()
         adc_resolution = 2**15 - 1
 

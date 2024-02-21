@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pysagax.communication.req_rep_tcp import REQ
 import threading
-import pysagax.message.command_pb2 as proto
+import pysagax.message.command_pb2 as proto_cmd
 import time
 from typing import Callable, Iterable, Optional, Any
 
@@ -116,7 +116,7 @@ class CommandThread(threading.Thread):
                 self._timeout_handler(command)
                 continue
             self._last_heartbeat_time = time.time_ns()
-            response = proto.Response()
+            response = proto_cmd.Response()
             response.ParseFromString(raw_response)
             if response.error.description:
                 print(
@@ -151,8 +151,8 @@ class CommandThread(threading.Thread):
         return command
 
     def ping(self, ping_data: str = "ping"):
-        ping_cmd = proto.Command()
-        ping_cmd.instruction = proto.PING
+        ping_cmd = proto_cmd.Command()
+        ping_cmd.instruction = proto_cmd.PING
         ping_cmd.ping_data = ping_data
         self.enqueue_commands(ping_cmd)
 

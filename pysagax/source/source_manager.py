@@ -2,10 +2,10 @@ from enum import Enum
 from typing import Optional
 import warnings
 
-import pysagax.message.command_pb2 as proto
+import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.data_pb2 as proto_data
 
-# RecordingStatus = Enum("RecordingStatus", ["DISABLED", "ENABLED", "RUNNING", "ERROR"])
+
 class RecordingStatus(Enum):
     """
     Enum for recording statuses.
@@ -14,10 +14,10 @@ class RecordingStatus(Enum):
     """
 
     # STATUS = icon, color, cs_response[is_activated, is_running]
-    DISABLED = "🟣", "Aqua", [False, False]
-    ENABLED = "🟢", "LimeGreen", [True, False]
-    RUNNING = "🟠", "Red", [True, True]
-    ERROR = "❓", "Red", [False, True]
+    DISABLED = "🟣", "Aqua", proto_data.Telemetry.Recording.Status.DISABLED
+    ENABLED = "🟢", "LimeGreen", proto_data.Telemetry.Recording.Status.ENABLED
+    RUNNING = "🟠", "Red", proto_data.Telemetry.Recording.Status.RUNNING
+    UNKNOWN = "❓", "Red", 0
 
     def __new__(cls, icon, color, cs_response):
         member = object.__new__(cls)
@@ -42,10 +42,10 @@ class SourceStatus(Enum):
     Each member's value is based on the possible CS responses for SOURCE:Status!
     """
 
-    NOT_READY = [False, False]
-    READY = [True, False]
-    STARTED = [True, True]
-    ERROR = [False, True]
+    DISABLED = proto_data.Telemetry.Source.Status.DISABLED
+    ENABLED = proto_data.Telemetry.Source.Status.ENABLED
+    RUNNING = proto_data.Telemetry.Source.Status.RUNNING
+    UNKNOWN = 0
 
 
 class CoreServiceStatus(Enum):
@@ -133,9 +133,11 @@ class SourceManager:
         self.current_source: Sources = Sources.NOT_SET
         self.current_source_path: Optional[list[str]] = None
 
-        self.recording_status: RecordingStatus = RecordingStatus.ERROR
-        self.source_status: SourceStatus = SourceStatus.ERROR
+        self.recording_status: RecordingStatus = RecordingStatus.UNKNOWN
+        self.source_status: SourceStatus = SourceStatus.UNKNOWN
         self.cs_status: CoreServiceStatus = CoreServiceStatus.DISCONNECTED
+
+        self.latest_telemetry: Optional[proto_data.Telemetry] = None
 
         self.default_source_file_path = "/home/sagax/Generator/"
 
@@ -154,23 +156,14 @@ class SourceManager:
                 f"Unknown source type ({self.current_source_path}) is used by CoreService"
             )
 
-    def source_telemetry_handler(self, resp) -> None:
+    def source_telemetry_handler(self, packet: proto_data.Telemetry) -> None:
         # updates the source status based on the response from CoreService
-        return #TODO when telemetry response is implemented in pysagaxUAV
-        #TODO: delete SourceStatus enum and keep the last telemetry  message
-        if resp.telemetry.source.status == proto_data.Telemetry.Source.Status.DISABLED:
-            print("asdfDISABLED")
-            self.source_status = SourceStatus([ready, started])
-        if resp.telemetry.source.status == proto_data.Telemetry.Source.Status.ENABLED:
-            print("asdfENABLED")
-        if resp.telemetry.source.status == proto_data.Telemetry.Source.Status.RUNNING:
-            print("asdfRUNNING")
-        #TODO: remove set_recording_status and redefine its possible value from telemetry
-        self.recording_status = RecordingStatus(proto_data.Telemetry.Recording.Status.DISABLED)
-
-        # ready = bool(int(resp[1]))
-        # started = bool(int(resp[2]))
-        # self.source_status = SourceStatus([ready, started])
+        # TODO when telemetry response is implemented in pysagaxUAV
+        # TODO: delete SourceStatus enum and keep the last telemetry  message
+        self.source_status = SourceStatus(packet.source.status)
+        self.recording_status = RecordingStatus(packet.recording.status)
+        self.latest_telemetry = packet
+        # TODO: remove set_recording_status and redefine its possible value from telemetry
 
     def update_recording_paths(self, path_list: list[str]) -> None:
         Sources.SigMF.params = path_list
@@ -209,30 +202,37 @@ class SourceManager:
         roi_center,
         roi_span,
         roi_threshold,
-    ) -> str:
+    ) -> list[proto_cmd.Command]:
         if self.current_source is Sources.NOT_SET:
             raise Exception(f"Source is not intilialized for CoreService")
 
-        cmd = proto.Command()
-        cmd.instruction = proto.CONFIG
+        cmd = proto_cmd.Command()
+        cmd.instruction = proto_cmd.CONFIG
         cmd.config.center_frequency = float(freq)
         cmd.config.iq_rate = int(bw)
         # cmd.config.playback_speed = 1
         cmd.config.bin_count = int(bin_count)
         cmd.config.burst_stride = int(burst_stride)
-        cmd.config.channel_gain[:] = 4*[int(gain)]
-        cmd.config.roi.append(self.get_single_roi_mask(roi_center, roi_span, roi_threshold))
-        #TODO: roi
-        #TODO: heading?
-        #TODO: mean_window
-        #TODO: cmd.config.type = LIVE/RECORDED #why is it needed???
-        return cmd
-    
-    def get_single_roi_mask(self, center_frequency: float, span: float, threshold: float, roi_id: int=0):
-        roi_mask = proto.ROIMask()
+        cmd.config.channel_gain[:] = 4 * [int(gain)]
+        cmd.config.roi.append(
+            self.get_single_roi_mask(roi_center, roi_span, roi_threshold)
+        )
+        # TODO: roi
+        # TODO: heading?
+        # TODO: mean_window
+        # TODO: cmd.config.type = LIVE/RECORDED #why is it needed???
+        position_cmd = proto_cmd.Command()
+        position_cmd.instruction = proto_cmd.POSITION
+        position_cmd.position = 0
+        return [cmd, position_cmd]
+
+    def get_single_roi_mask(
+        self, center_frequency: float, span: float, threshold: float, roi_id: int = 0
+    ):
+        roi_mask = proto_cmd.ROIMask()
         roi_mask.center_frequency = float(center_frequency)
         roi_mask.span = float(span)
-        roi_mask.treshold = float(threshold)   #typo in protobuf definition
+        roi_mask.treshold = float(threshold)  # typo in protobuf definition
         roi_mask.roi_id = roi_id
         return roi_mask
 
@@ -240,20 +240,22 @@ class SourceManager:
         """
         Contructs a the command for pysagaxUAV based on the display name provided by the GUI
         """
-        cmd = proto.Command()
-        cmd.instruction = proto.CONFIG
+        cmd = proto_cmd.Command()
+        cmd.instruction = proto_cmd.CONFIG
         print("SOURCE_STRING:", source_str)
         if source_str == Sources.SigMF.display_name:
             if params[-1] != "/":
                 params = params + "/"
-            source_path = f'SigMF {params}recording.sigmf-collection'
+            source_path = f"SigMF {params}recording.sigmf-collection"
         elif source_str == Sources.Generator.display_name:
-            source_path = f'SigMF {self.default_source_file_path}recording.sigmf-collections'
+            source_path = (
+                f"SigMF {self.default_source_file_path}recording.sigmf-collections"
+            )
         elif source_str == Sources.Sidekiq.display_name:
             p = 1  # for single radio
             if params == "Dual":
                 p = 2
-            source_path = f'Sidekiq {p}'
+            source_path = f"Sidekiq {p}"
         elif source_str == Sources.UHD.display_name:
             source_path = f"UHD"
         cmd.config.source_path = source_path

@@ -57,8 +57,9 @@ from pysagax.ui.plot_frame import PlotFrame, PlotSettingsFrame
 from pysagax.util.multiqueue import MultiQueue
 from pysagax.util.read_from_conf import read_from_conf
 
-import pysagax.message.command_pb2 as proto
-import pysagax.message.command_pb2 as proto_data
+import pysagax.message.command_pb2 as proto_cmd
+import pysagax.message.data_pb2 as proto_data
+from pysagax.message.data_types import DataType
 
 conf: Optional[dict[str, Any]] = None
 icon_image: Optional[tkinter.PhotoImage] = None
@@ -200,61 +201,14 @@ class ClientWindow(tkinter.Frame):
         while not self.do_stop:
             try:
                 packet = self.client.stream_to_gui_queue.get(timeout=0.2)
-                self.update_stream_packet_lb(packet)
-
-                # TODO: signal_db, noise_db = self.calculate_snr(packet)
-                signal_db, noise_db = 0, 0
-                # TODO: where are we supposed to get info on bin_count, center_freq and iq_rate
-                from pysagax import si_to_float
-
-                bin_count = 1024
-                center_frequency = si_to_float(self.control_frame.freq_entry.get())
-                iq_rate = si_to_float(self.control_frame.bw_entry.get())
-                self.plot_frame.plot_spectrum_packet(
-                    packet.data[0],
-                    bin_count,
-                    center_frequency,
-                    iq_rate,
-                    signal_db,
-                    noise_db,
-                )
-
-                self.stat_frame.update_peak_plot(packet.peaks)
-
-                # TODO: remove compass heading/angle
-                self.compass_angle = packet.heading
-                self.compass_heading = packet.heading
-
-                # TODO: rethink roi results
-                latest_roi_resutls = {"df_value": 0, "df_elevation": 0}
-                self.aggregated_roi_results = {
-                    "df_value_mean": 0,
-                    "df_value_std": 0,
-                    "df_elevation_mean": 0,
-                    "df_elevation_std": 0,
-                }
-                if len(packet.detection):
-                    self.aggregated_roi_results["df_value_std"] = packet.detection[
-                        0
-                    ].deviation
-                    latest_roi_resutls = {
-                        "df_value": packet.detection[0].azimuth,
-                        "df_elevation": packet.detection[0].elevation,
-                    }
-                self.stat_frame.update_stats(
-                    latest_roi_resutls, self.aggregated_roi_results
-                )
-
-                # if isinstance(packet, CoreServiceEOFPacket):
-                #         self.info_update_handler(
-                #             "End of file reached for Sigmf recording",
-                #             source="GUI packet handler",
-                #         )
-                #         if self.client.repeat_playback:
-                #             pass  # TODO: implement repeat using protobuf
-                #             # self.client.send_commands(
-                #             #     "SOURCE:Position! 0;SOURCE:Start!;"
-                #             # )
+                if isinstance(packet, proto_data.Measurement):
+                    self.measurement_packet_handler(packet)
+                elif isinstance(packet, proto_data.Telemetry):
+                    self.telemetry_packet_handler(packet)
+                else:
+                    print(
+                        f"Handling stream packet type {type(packet)} is not implemented"
+                    )
 
             except queue.Empty:
                 pass
@@ -262,6 +216,68 @@ class ClientWindow(tkinter.Frame):
                 print("[GUI packet handler]", e)
                 traceback.print_tb(e.__traceback__)
                 return
+
+    def measurement_packet_handler(self, packet: proto_data.Measurement) -> None:
+        self.update_stream_packet_lb(packet)
+
+        # TODO: signal_db, noise_db = self.calculate_snr(packet)
+        signal_db, noise_db = 0, 0
+        # TODO: where are we supposed to get info on bin_count, center_freq and iq_rate
+        from pysagax import si_to_float
+
+        bin_count = 1024
+        center_frequency = si_to_float(self.control_frame.freq_entry.get())
+        iq_rate = si_to_float(self.control_frame.bw_entry.get())
+        self.plot_frame.plot_spectrum_packet(
+            packet.data[0],
+            bin_count,
+            center_frequency,
+            iq_rate,
+            signal_db,
+            noise_db,
+        )
+
+        self.stat_frame.update_peak_plot(packet.peaks)
+
+        # TODO: remove compass heading/angle
+        self.compass_angle = packet.heading
+        self.compass_heading = packet.heading
+
+        # TODO: rethink roi results
+        latest_roi_resutls = {"df_value": 0, "df_elevation": 0}
+        self.aggregated_roi_results = {
+            "df_value_mean": 0,
+            "df_value_std": 0,
+            "df_elevation_mean": 0,
+            "df_elevation_std": 0,
+        }
+        if len(packet.detection):
+            self.aggregated_roi_results["df_value_std"] = packet.detection[0].deviation
+            latest_roi_resutls = {
+                "df_value": packet.detection[0].azimuth,
+                "df_elevation": packet.detection[0].elevation,
+            }
+        self.stat_frame.update_stats(latest_roi_resutls, self.aggregated_roi_results)
+
+        # if isinstance(packet, CoreServiceEOFPacket):
+        #         self.info_update_handler(
+        #             "End of file reached for Sigmf recording",
+        #             source="GUI packet handler",
+        #         )
+        #         if self.client.repeat_playback:
+        #             pass  # TODO: implement repeat using protobuf
+        #             # self.client.send_commands(
+        #             #     "SOURCE:Position! 0;SOURCE:Start!;"
+        #             # )
+
+    def telemetry_packet_handler(self, packet: proto_data.Telemetry):
+        # Processes telemetry packets that arrived through stream or command connection
+        self.client.source_manager.source_telemetry_handler(packet)
+        source_length = packet.source.length
+        current_position = packet.source.position
+        self.playback_tab.update(
+            current_position=current_position, source_length=source_length
+        )
 
     def update_stream_packet_lb(self, packet):
         ts = datetime.fromtimestamp(packet.time.seconds, tz=None)
@@ -606,23 +622,17 @@ class Client:
 
         # TODO: port and groups to config
         stream_connection_port = 4242
-        stream_connection_subscribed_groups = ["*", "Measurement"]
+        all_groups = [group.value for group in DataType]
         self.stream_process = StreamProcess(
             stream_connection_port,
-            stream_connection_subscribed_groups,
+            all_groups,
             self.stream_process_multiqueue,
             self.disconnect_value,
             self.stream_process_watcher_queue,
         )
         self.stream_process.start()
 
-        self.status_query_thread = StatusQueryThread(
-            self.command_thread,
-            self.client_window.playback_tab,
-            self.client_window.control_frame,
-            self.client_window.status_frame,
-            self.source_manager,
-        )
+        self.status_query_thread = StatusQueryThread(client=self)
         self.status_query_thread.start()
 
         return
@@ -672,7 +682,7 @@ class Client:
         roi_span,
         roi_threshold,
     ) -> None:
-        cmd = self.source_manager.get_config_commands(
+        cmd_list = self.source_manager.get_config_commands(
             freq,
             bw,
             gain,
@@ -682,7 +692,7 @@ class Client:
             roi_span,
             roi_threshold,
         )
-        self.send_commands(cmd)
+        self.send_commands(cmd_list)
 
     def disconnect_commands(self) -> None:
         """
@@ -704,8 +714,8 @@ class Client:
         self.stream_thread.join() """
 
     def update_roi_settings(self, roi_center, roi_span, roi_threshold) -> None:
-        cmd = proto.Command()
-        cmd.instruction = proto.CONFIG
+        cmd = proto_cmd.Command()
+        cmd.instruction = proto_cmd.CONFIG
         roi_mask = self.source_manager.get_single_roi_mask(
             roi_center, roi_span, roi_threshold
         )
@@ -714,8 +724,8 @@ class Client:
 
     def start_recording(self) -> None:
         self.start_local_recording()
-        cmd = proto.Command()
-        cmd.instruction = proto.REC_START
+        cmd = proto_cmd.Command()
+        cmd.instruction = proto_cmd.REC_START
         self.send_commands(cmd)
         self.recording_started = (
             True  # TODO: this is depracated (source_manager.recording_status)
@@ -724,8 +734,8 @@ class Client:
 
     def stop_recording(self) -> None:
         self.stop_local_recording()
-        cmd = proto.Command()
-        cmd.instruction = proto.REC_STOP
+        cmd = proto_cmd.Command()
+        cmd.instruction = proto_cmd.REC_STOP
         self.send_commands(cmd)
         self.recording_started = False
 
