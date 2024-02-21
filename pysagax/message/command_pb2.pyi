@@ -44,6 +44,7 @@ class _InstructionEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._En
     """Query system information
       response:  info [Info]
     """
+    PY_RESET: _Instruction.ValueType  # 8
     CS_START: _Instruction.ValueType  # 9
     """Start CoreService
       response:  success [bool]
@@ -126,6 +127,7 @@ INFO: Instruction.ValueType  # 3
 """Query system information
   response:  info [Info]
 """
+PY_RESET: Instruction.ValueType  # 8
 CS_START: Instruction.ValueType  # 9
 """Start CoreService
   response:  success [bool]

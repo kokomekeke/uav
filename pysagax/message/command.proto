@@ -24,6 +24,8 @@ enum Instruction {
     //   response:  info [Info]
     INFO = 3;
 
+	
+	PY_RESET = 8;
 
     // Start CoreService
     //   response:  success [bool]

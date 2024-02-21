@@ -1,10 +1,12 @@
 from queue import Queue
+import sys
 from typing import Any, Optional
 
 from pysagax.field.loop import Loop
 from pysagax.communication.req_rep_tcp import REP
 
-import pysagax.message.command_pb2
+import pysagax.message.command_pb2 as proto_cmd
+import google.protobuf.message
 
 
 class Communicator(Loop):
@@ -38,9 +40,21 @@ class Communicator(Loop):
         assert self._queue_out is not None
         # Hang until a new command is received
         raw_command = self._server.recv()
+        if raw_command is None:
+            self._logger.warning("Empty received on ZMQ Command")
+            return
         self._logger.debug("Command received")
-        command = pysagax.message.command_pb2.Command()
-        command.ParseFromString(raw_command)
+        command = proto_cmd.Command()
+        try:
+            command.ParseFromString(raw_command)
+        except google.protobuf.message.DecodeError:
+            self._logger.warning("Malformed Protobuf message on ZMQ Command")
+            return
+
+        if command.instruction == proto_cmd.PY_RESET:
+            self._logger.critical("Received PY_RESET, exiting...")
+            self._quit()
+            return
         # Send command to Interpreter
         self._queue_out.put(command)
 

@@ -4,6 +4,7 @@
 #
 from __future__ import annotations
 import multiprocessing
+import sys
 from typing import Any, Optional
 import click
 import traceback
@@ -128,7 +129,10 @@ class Commander:
                 if future.exception(0) is not None:
                     # Trace is lost this way, TODO: fix it
                     traceback.print_exception(future.exception(0))
-                    raise Exception()
+                    self._logger.critical("Terminating all processes")
+                    self._pool.shutdown()
+                    self._logger.critical("All processes terminated")
+                    sys.exit(0)
 
 
 @click.command()
