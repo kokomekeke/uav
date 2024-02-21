@@ -51,24 +51,24 @@ class Interpreter(Loop):
         (
             "SOURCE:ChannelGain! 1 {};",
             lambda config: (
-                config.channel_gain[1] if len(config.channel_gain) >= 1 else 0
+                config.channel_gain[1] if len(config.channel_gain) >= 2 else 0
             ),
         ),
         (
             "SOURCE:ChannelGain! 2 {};",
             lambda config: (
-                config.channel_gain[2] if len(config.channel_gain) >= 1 else 0
+                config.channel_gain[2] if len(config.channel_gain) >= 3 else 0
             ),
         ),
         (
             "SOURCE:ChannelGain! 3 {};",
             lambda config: (
-                config.channel_gain[3] if len(config.channel_gain) >= 1 else 0
+                config.channel_gain[3] if len(config.channel_gain) >= 4 else 0
             ),
         ),
-        ("SOURCE:Configure!;", lambda config: ""),
+        ("SOURCE:Configure!;", lambda config: " "),
         ("AOA:BinCount! {};", lambda config: config.bin_count),
-        ("AOA:Configure!;", lambda config: ""),
+        ("AOA:Configure!;", lambda config: " "),
     ]
 
     def __init__(
@@ -267,7 +267,10 @@ class Interpreter(Loop):
         """Set of query system configuration"""
         if config is not None:
             for config_command, proto_lambda in self._CONFIG_COMMANDS:
-                cs_command = config_command.format(proto_lambda(config))
+                command_arg = proto_lambda(config)
+                if not command_arg:
+                    continue
+                cs_command = config_command.format(command_arg)
                 cs_response = self._cs_execute(cs_command)
                 if cs_response is not None:
                     error_code = int(cs_response[0])
