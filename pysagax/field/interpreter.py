@@ -243,22 +243,24 @@ class Interpreter(Loop):
         else:
             response.error.description = "CoreService not responding"
 
-    def _cs_query(self, query_cmd: str) -> str:
+    def _cs_query(self, query_cmd: str) -> Optional[str]:
         cs_response = self._cs_execute(query_cmd)
         if cs_response is not None:
             error_code = int(cs_response[0])
             if error_code == 0:
                 return cs_response[1]
-            raise CSErrorException(error_code, cs_response[1])
+            self._logger.warning(f"Could not query {query_cmd}, CS{error_code}{cs_response[1]}")
+            return None
         raise CSTimeoutException()
 
-    def _cs_query_multiple(self, query_cmd: str) -> str:
+    def _cs_query_multiple(self, query_cmd: str) -> Optional[str]:
         cs_response = self._cs_execute(query_cmd)
         if cs_response is not None:
             error_code = int(cs_response[0])
             if error_code == 0:
                 return " ".join(cs_response[1:])
-            raise CSErrorException(error_code, cs_response[1])
+            self._logger.warning(f"Could not query {query_cmd}, CS{error_code}{cs_response[1]}")
+            return None
         raise CSTimeoutException()
 
     def _config(
@@ -283,19 +285,20 @@ class Interpreter(Loop):
                     response.error.description = "CoreService not responding"
                     raise CSTimeoutException()
         # try:
+        defaults = lambda val, defa: defa if val is None else val
         response.config.config_id = self.config_id
         response.config.center_frequency = float(
-            self._cs_query("SOURCE:CenterFrequency?;")
+            defaults(self._cs_query("SOURCE:CenterFrequency?;"), 0)
         )
-        response.config.iq_rate = int(float(self._cs_query("SOURCE:IqRate?;")))
-        response.config.playback_speed = float(self._cs_query("SOURCE:PlaybackSpeed?;"))
-        response.config.bin_count = int(self._cs_query("AOA:BinCount?;"))
-        response.config.burst_stride = int(self._cs_query("SOURCE:BurstStride?;"))
+        response.config.iq_rate = int(float(defaults(self._cs_query("SOURCE:IqRate?;"), 0)))
+        response.config.playback_speed = float(defaults(self._cs_query("SOURCE:PlaybackSpeed?;"), 0))
+        response.config.bin_count = int(defaults(self._cs_query("AOA:BinCount?;"), 0))
+        response.config.burst_stride = int(defaults(self._cs_query("SOURCE:BurstStride?;"), 0))
         for gain_index in range(4):
             response.config.channel_gain.append(
-                int(float(self._cs_query(f"SOURCE:ChannelGain? {gain_index};")))
+                int(float(defaults(self._cs_query(f"SOURCE:ChannelGain? {gain_index};"), 0)))
             )
-        response.config.source_path = self._cs_query_multiple("SOURCE:Path?;")
+        response.config.source_path = defaults(self._cs_query_multiple("SOURCE:Path?;"), "UNKNOWN")
         # except ValueError:
         #    response.error.description = "Invalid config on query"
 
