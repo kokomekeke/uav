@@ -53,7 +53,7 @@ class SourceSelectFrame(tkinter.Frame):
             "source": self.source_combo.get(),
             "params": self.source_file_path_string.get(),
         }
-        self.do_select_source_function(kwargs)
+        self.do_select_source_function(**kwargs)
 
     def source_combo_update(self, event: Any) -> None:
         """when changing the source combobox, this method updates the parameters combobox

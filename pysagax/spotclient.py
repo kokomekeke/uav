@@ -11,10 +11,12 @@ import socket
 import threading
 import tkinter
 from multiprocessing.managers import ValueProxy
+from pysagax.communication.req_rep import REQ
 
 from pysagax.heading.heading_manager import HeadingManager
 from pysagax.heading.queue_collector import QueueValueCollector
 from pysagax.source.source_manager import CoreServiceStatus, SourceManager
+from pysagax.spot.command_connection import CommandThread
 from pysagax.spot.commands_connection_thread import CommandsConnectionThread
 from pysagax.spot.commands_handler_thread import CommandsHandlerThread
 from pysagax.spot.map_server import MapServer
@@ -52,6 +54,8 @@ from pysagax import (
 from pysagax.ui.plot_frame import PlotFrame, PlotSettingsFrame
 from pysagax.util.multiqueue import MultiQueue
 from pysagax.util.read_from_conf import read_from_conf
+
+import pysagax.message.command_pb2 as proto
 
 conf: Optional[dict[str, Any]] = None
 icon_image: Optional[tkinter.PhotoImage] = None
@@ -109,7 +113,7 @@ class ClientWindow(tkinter.Frame):
             master=self.left_notebook,
             conf=conf,
             source_manager=self.client.source_manager,
-            do_select_source_function=self.client.do_set_source_params,
+            do_select_source_function=self.client.do_set_source,
             relief=tkinter.RAISED,
             borderwidth=1,
         )
@@ -117,7 +121,7 @@ class ClientWindow(tkinter.Frame):
         self.control_frame = ControlFrame(
             master=self.left_notebook,
             conf=conf,
-            do_configuration_function=self.client.do_configuration_params,
+            do_configuration_function=self.client.do_configuration,
             source_manager=self.client.source_manager,
             relief=tkinter.RAISED,
             borderwidth=1,
@@ -127,7 +131,7 @@ class ClientWindow(tkinter.Frame):
             self.left_notebook,
             self.plot_frame,
             send_commands_function=self.client.send_commands,
-            conf = conf,
+            conf=conf,
             relief=tkinter.RAISED,
             borderwidth=1,
         )
@@ -255,9 +259,10 @@ class ClientWindow(tkinter.Frame):
                             source="GUI packet handler",
                         )
                         if self.client.repeat_playback:
-                            self.client.send_commands(
-                                "SOURCE:Position! 0;SOURCE:Start!;"
-                            )
+                            pass  # TODO: implement repeat using protobuf
+                            # self.client.send_commands(
+                            #     "SOURCE:Position! 0;SOURCE:Start!;"
+                            # )
                 except Exception as e:
                     if not self.do_stop:
                         print("[GUI packet handler]", e)
@@ -274,9 +279,6 @@ class ClientWindow(tkinter.Frame):
             message = message[len("#info") :]
         elif message.startswith("#action"):
             message = message[len("#action") :]
-            if message == "send_commands_finished":
-                # self.decrease_unfinished_send_commands()
-                return
         else:  # status updates have no prefix, these should also be shown on status_frame
             self.set_command_status(message)
         self.info_update_handler(message, "Command Thread")
@@ -286,13 +288,6 @@ class ClientWindow(tkinter.Frame):
         self.info_update_handler(message, source="Stream Process")
 
     def recording_status_msg_handler(self, message: str) -> None:
-        # if message.startswith("#info"):
-        #     message = message[len("#info") :]
-        # elif message.startswith("#action"):
-        #     message = message[len("#action") :]
-        #     if message == "send_commands_finished":
-        #         self.decrease_unfinished_send_commands()
-        #         return
         self.info_update_handler(message, "Recording Thread")
 
     def map_server_status_msg_handler(self, message: str) -> None:
@@ -434,7 +429,7 @@ class Client:
         self.stream_process_multiqueue = MultiQueue([self.stream_to_gui_queue])
 
         self.client_window = ClientWindow(self, root)
-        self.command_connection_thread: Optional[CommandsConnectionThread] = None
+        self.command_connection: Optional[REQ] = None
         self.command_thread: Optional[CommandsHandlerThread] = None
         self.status_query_thread: Optional[StatusQueryThread] = None
         self.stream_process: Optional[StreamAndCompassProcess] = None
@@ -442,18 +437,21 @@ class Client:
         self.dfg_map_server: Optional[MapServer] = None
         self.repeat_playback: bool = False
 
-        self.stream_process_watcher_queue: multiprocessing.Queue[
-            str
-        ] = multiprocessing.Queue()
-        self.command_thread_watcher_queue: multiprocessing.Queue[
-            str
-        ] = multiprocessing.Queue()
-        self.recording_thread_watcher_queue: multiprocessing.Queue[
-            str
-        ] = multiprocessing.Queue()
-        self.map_server_thread_watcher_queue: multiprocessing.Queue[
-            str
-        ] = multiprocessing.Queue()
+        self.stream_process_watcher_queue: multiprocessing.Queue[str] = (
+            multiprocessing.Queue()
+        )
+        self.command_connection_status_watcher_queue: multiprocessing.Queue[str] = (
+            multiprocessing.Queue()
+        )
+        self.command_thread_watcher_queue: multiprocessing.Queue[str] = (
+            multiprocessing.Queue()
+        )
+        self.recording_thread_watcher_queue: multiprocessing.Queue[str] = (
+            multiprocessing.Queue()
+        )
+        self.map_server_thread_watcher_queue: multiprocessing.Queue[str] = (
+            multiprocessing.Queue()
+        )
 
         self.disconnect_value = self.manager.Value("i", 0)
         """
@@ -486,8 +484,21 @@ class Client:
 
                 if self.command_thread is not None:
                     try:
-                        msg = self.command_thread_watcher_queue.get_nowait()
+                        msg = self.command_connection_status_watcher_queue.get_nowait()
                         self.client_window.command_status_msg_handler(msg)
+                        do_sleep = False
+                    except queue.Empty:
+                        pass
+                    try:
+                        working, current_cmd = (
+                            self.command_thread_watcher_queue.get_nowait()
+                        )
+                        self.source_manager.command_status_callback(
+                            working, current_cmd
+                        )
+                        self.client_window.playback_tab.display_command_status(
+                            current_cmd
+                        )
                         do_sleep = False
                     except queue.Empty:
                         pass
@@ -528,26 +539,21 @@ class Client:
         """
         assert self.command_thread is not None
         if (
-            self.command_connection_thread is None
+            self.command_connection is None
         ):  ##TODO: After disconnecting command_thread should be None
             return
         self.command_thread.abort_commands()
 
-    def send_commands(self, cmd: str) -> None:
+    def send_commands(self, cmd) -> None:
         """
         Send the command from the command entry box to the client. Called on pressing the Return key in the autocomplete box.
         """
         assert self.command_thread is not None
         if (
-            self.command_connection_thread is None
+            self.command_connection is None
         ):  ##TODO: After disconnecting command_thread should be None
             return
         self.command_thread.enqueue_commands(cmd)
-
-    def command_status_callback(self, working: bool, current_cmd: str) -> None:
-        self.command_thread_watcher_queue.put("#action" + "send_commands_finished")
-        self.source_manager.command_status_callback(working, current_cmd)
-        self.client_window.playback_tab.display_command_status(current_cmd)
 
     def start_dfg_map_server(self) -> None:
         global conf
@@ -556,7 +562,9 @@ class Client:
         )
         self.stream_process_multiqueue.add_queue(self.stream_to_map_queue)
 
-        self.dfg_map_server.host = read_from_conf(conf, ["map_server", "host"], "0.0.0.0")
+        self.dfg_map_server.host = read_from_conf(
+            conf, ["map_server", "host"], "0.0.0.0"
+        )
         self.dfg_map_server.port = read_from_conf(conf, ["map_server", "port"], 20000)
         if "lat" in conf["map_server"] and "lon" in conf["map_server"]:
             self.dfg_map_server.predefined_coords = (
@@ -579,59 +587,21 @@ class Client:
         """
         Action of the "Connect" button
         """
-        self.command_connection_thread = CommandsConnectionThread(
-            self.command_thread_watcher_queue
-        )
-        self.command_connection_thread.connect_callback = connect_action
-        self.command_connection_thread.connected_callback = connected_action
-        self.command_connection_thread.disconnect_callback = disconnect_action
-        self.command_connection_thread.host_port = f"{host_address}:12936"
-        self.command_connection_thread.start()
 
-        self.command_thread = CommandsHandlerThread(
-            conn=self.command_connection_thread,
-            status_callback=self.command_status_callback,
-            status_queue=self.command_thread_watcher_queue,
+        self.command_connection = REQ(
+            address_server=host_address
+        )  # , address_client=None, port_client=5556, port_server=5555)
+
+        self.command_thread = CommandThread(
+            connection=self.command_connection,
+            thread_status_queue=self.command_thread_watcher_queue,
+            connection_status_queue=self.command_connection_status_watcher_queue,
         )
+        self.command_thread.connect_callback = connect_action
+        self.command_thread.connected_callback = connected_action
+        self.command_thread.disconnect_callback = disconnect_action
 
         self.command_thread.start()
-        self.command_thread.set_response_handler(
-            "CORE:Version?",
-            lambda cmd, resp: self.command_thread_watcher_queue.put(
-                f"#infoCS Version {resp[1]}.{resp[2]}.{resp[3]}"
-                f"-{resp[4]}+{resp[5]} VCS:{resp[6]}"
-            ),
-        )
-        self.command_thread.set_response_handler(
-            "SOURCE:Configure!",
-            lambda cmd, resp: self.command_thread_watcher_queue.put(
-                "#infoCore Service configured"
-                if int(resp[0]) == 0
-                else "#infoCore Service conf failed"
-            ),
-        )
-        self.command_thread.set_response_handler(
-            "ROI:Configure!",
-            lambda cmd, resp: self.command_thread_watcher_queue.put(
-                "#infoCore Service ROI configured"
-                if int(resp[0]) == 0
-                else "#infoCore Service ROI failed"
-            ),
-        )
-        self.command_thread.set_response_handler(
-            "RECORDING:Stop!",
-            lambda cmd, resp: self.command_thread_watcher_queue.put(
-                f"#infoCS Recordings done: {', '.join(resp)}"
-            ),
-        )
-        self.status_query_thread = StatusQueryThread(
-            self.command_thread,
-            self.client_window.playback_tab,
-            self.client_window.control_frame,
-            self.client_window.status_frame,
-            self.source_manager,
-        )
-        self.status_query_thread.start()
 
         self.disconnect_value.value = False
         self.stream_process = StreamAndCompassProcess(
@@ -642,19 +612,56 @@ class Client:
         self.stream_process.heading_queue = QueueValueCollector(
             self.heading_manager.mp_values, conf
         )
-        self.stream_process.host_port = f"{host_address}:12937"
+        self.stream_process.host_port = (
+            "10.1.1.96:12937"  # TODO:f"{host_address}:12937"
+        )
         self.stream_process.mean_window_seconds = self.mean_window_width_value
         self.stream_process.start()
 
-    def do_set_source_params(self, kwargs: dict[str, Any]) -> None:
-        self.do_set_source(**kwargs)
+        self.status_query_thread = StatusQueryThread(
+            self.command_thread,
+            self.client_window.playback_tab,
+            self.client_window.control_frame,
+            self.client_window.status_frame,
+            self.source_manager,
+        )
+        self.status_query_thread.start()
+
+        return
+        # TODO: the following response hanlder using protobuf
+        self.command_thread.set_response_handler(
+            "CORE:Version?",
+            lambda cmd, resp: self.command_connection_status_watcher_queue.put(
+                f"#infoCS Version {resp[1]}.{resp[2]}.{resp[3]}"
+                f"-{resp[4]}+{resp[5]} VCS:{resp[6]}"
+            ),
+        )
+        self.command_thread.set_response_handler(
+            "SOURCE:Configure!",
+            lambda cmd, resp: self.command_connection_status_watcher_queue.put(
+                "#infoCore Service configured"
+                if int(resp[0]) == 0
+                else "#infoCore Service conf failed"
+            ),
+        )
+        self.command_thread.set_response_handler(
+            "ROI:Configure!",
+            lambda cmd, resp: self.command_connection_status_watcher_queue.put(
+                "#infoCore Service ROI configured"
+                if int(resp[0]) == 0
+                else "#infoCore Service ROI failed"
+            ),
+        )
+        self.command_thread.set_response_handler(
+            "RECORDING:Stop!",
+            lambda cmd, resp: self.command_connection_status_watcher_queue.put(
+                f"#infoCS Recordings done: {', '.join(resp)}"
+            ),
+        )
 
     def do_set_source(self, source: str, params: str) -> None:
         cmd = self.source_manager.get_set_source_command(source, params)
-        self.send_commands(f"CORE:Version?;{cmd}SOURCE:Path?;")
-
-    def do_configuration_params(self, params: dict[str, Any]) -> None:
-        self.do_configuration(**params)
+        self.command_thread.enqueue_commands(cmd)
 
     def do_configuration(
         self,
@@ -683,8 +690,8 @@ class Client:
         """
         Action of the "Disconnect" button
         """
-        if self.command_connection_thread is not None:
-            self.command_connection_thread.disconnect = True
+        if self.command_thread is not None:
+            self.command_thread.do_disconnect = True
 
         if self.stream_process is not None:
             if self.disconnect_value is not None:
@@ -696,22 +703,29 @@ class Client:
         self.stream_thread.join() """
 
     def update_roi_settings(self, roi_center, roi_span, roi_threshold) -> None:
-        self.send_commands(
-            f"ROI:CenterFrequency! {roi_center:.0f};"
-            f"ROI:Span! {roi_span:.0f};"
-            f"ROI:Threshold! {roi_threshold:.0f};"
-            f"ROI:Configure!;"
+        cmd = proto.Command()
+        cmd.instruction = proto.CONFIG
+        roi_mask = self.source_manager.get_single_roi_mask(
+            roi_center, roi_span, roi_threshold
         )
+        cmd.config.roi.append(roi_mask)
+        self.send_commands(cmd)
 
     def start_recording(self) -> None:
         self.start_local_recording()
-        self.send_commands("RECORDING:Start!;")
-        self.recording_started = True
+        cmd = proto.Command()
+        cmd.instruction = proto.REC_START
+        self.send_commands(cmd)
+        self.recording_started = (
+            True  # TODO: this is depracated (source_manager.recording_status)
+        )
         ##TODO: start local recording if CS is also recording when connecting to it
 
     def stop_recording(self) -> None:
         self.stop_local_recording()
-        self.send_commands("RECORDING:Stop!;")
+        cmd = proto.Command()
+        cmd.instruction = proto.REC_STOP
+        self.send_commands(cmd)
         self.recording_started = False
 
     def start_local_recording(self) -> None:

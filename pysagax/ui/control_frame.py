@@ -158,4 +158,4 @@ class ControlFrame(tkinter.Frame):
             "roi_span": si_to_float(self.roi_span_entry.get()),
             "roi_threshold": self.roi_threshold_entry.get(),
         }
-        self.do_configuration_function(kwargs)
+        self.do_configuration_function(**kwargs)

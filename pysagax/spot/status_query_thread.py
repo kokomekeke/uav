@@ -6,6 +6,7 @@ from pysagax.source.source_manager import (
     SourceStatus,
     Sources,
 )
+import pysagax.message.command_pb2 as proto
 
 from pysagax.spot.commands_handler_thread import CommandsHandlerThread
 from pysagax.ui.control_frame import ControlFrame
@@ -14,26 +15,20 @@ from pysagax.ui.status_frame import StatusFrame
 
 
 class StatusQueryThread(threading.Thread):
-    def source_length_handler(self, cmd: str, resp: list[str]) -> None:
-        if resp[0] == "0":
-            source_length = int(resp[1])
-            self.pb_tab.position_slider.configure(to=source_length)
+    def source_position_handler(self, resp) -> None:    
+        #telemetry also contains this info (once implemented in pysagaxUAV)
+        self.pb_tab.position_variable.set(int(resp.position))
 
-    def source_position_handler(self, cmd: str, resp: list[str]) -> None:
-        if resp[0] == "0":
-            self.pb_tab.position_variable.set(int(resp[1]))
-
-    def source_path_handler(self, cmd: str, resp: list[str]) -> None:
-        self.source_manager.source_path_handler(resp)
+    def source_config_handler(self, resp) -> None:
+        self.source_manager.source_config_handler(resp)
         self.ct_tab.path_update()
         self.status_frame.path_update()
 
-    def source_status_handler(self, cmd: str, resp: list[str]) -> None:
-        self.source_manager.source_status_handler(resp)
+    def source_telemetry_handler(self, resp) -> None:
+        self.source_manager.source_telemetry_handler(resp)
+        source_length = resp.telemetry.source.length
+        self.pb_tab.position_slider.configure(to=source_length)
         self.pb_tab.update_buttons()
-
-    def recording_status_handler(self, cmd: str, resp: list[str]) -> None:
-        self.source_manager.set_source_recording_status(resp)
         self.pb_tab.update_recording_status()
 
     def __init__(
@@ -49,23 +44,25 @@ class StatusQueryThread(threading.Thread):
         self.pb_tab = pb_tab
         self.ct_tab = ct_tab
         self.status_frame = status_frame
-        self.comm.set_response_handler("SOURCE:Status?", self.source_status_handler)
-        self.comm.set_response_handler(
-            "RECORDING:Status?", self.recording_status_handler
-        )
-        self.comm.set_response_handler("SOURCE:Length?", self.source_length_handler)
-        self.comm.set_response_handler("SOURCE:Position?", self.source_position_handler)
-        self.comm.set_response_handler("SOURCE:Path?", self.source_path_handler)
+        self.comm.set_response_handler(proto.TELEMETRY, self.source_telemetry_handler)
+        self.comm.set_response_handler(proto.POSITION, self.source_position_handler)
+        self.comm.set_response_handler(proto.CONFIG, self.source_config_handler)
 
         self.source_manager = source_manager
+
+        # instructions for continous querying the status of pysagaxUAV
+        self.instruction_list = [proto.CONFIG, proto.POSITION, proto.TELEMETRY]
+        self.commands = []
+        for i in self.instruction_list:
+            cmd = proto.Command()
+            cmd.instruction = i
+            self.commands.append(cmd)
 
     def run(self) -> None:
         while self.comm.is_alive():
             if self.source_manager.cs_status is not CoreServiceStatus.WORKING:
-                self.comm.enqueue_commands(
-                    "SOURCE:Status?;RECORDING:Status?;SOURCE:Length?;SOURCE:Position?;SOURCE:Path?;"
-                )
-            time.sleep(0.2)
+                self.comm.enqueue_commands(self.commands)
+            time.sleep(0.5)   #TODO: define a value for it in config
         self._disconnect_actions()
 
     def _disconnect_actions(self) -> None:

@@ -15,6 +15,7 @@ from matplotlib.backends.backend_tkagg import (  # type: ignore
 
 import pysagax
 from pysagax.df.lena_core_service import CoreServiceSpectrumPacket
+from pysagax.source.source_manager import CoreServiceStatus
 from pysagax.spot.calculate_df_corrected import calculate_df_corrected
 
 # from pysagax.spotclient import Client, conf, calculate_df_corrected
@@ -189,7 +190,7 @@ class PlotFrame(tkinter.Frame):
         return image_list
 
     def click_handler(self, event: Any) -> None:
-        if self.master.status_frame.status_command_string.get() != "Connected":
+        if self.master.client.source_manager.cs_status == CoreServiceStatus.DISCONNECTED:
             return
         control_frame_ref = self.master.control_frame  ##Could be better?
         ##TODO: set roi span from graph
@@ -457,6 +458,7 @@ class PlotSettingsFrame(tkinter.Frame):
         self.plot_frame.disable_plotting()
         
     def choose_spectrum_commands(self, event: Any) -> None:
-        self.send_commands_function(
-            f"DEBUG:SpectrumChannel! {self.channel_spectrum_combo.current()};"
-        )
+        pass #TODO: implement using protobuf
+        # self.send_commands_function(
+        #     f"DEBUG:SpectrumChannel! {self.channel_spectrum_combo.current()};"
+        # )

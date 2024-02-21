@@ -5,27 +5,33 @@ from typing import Any, Callable, Optional
 from pysagax.source.source_manager import CoreServiceStatus, SourceStatus, SourceManager
 
 from pysagax.ui.ui_helpers import en_if
+import pysagax.message.command_pb2 as proto
 
 
 class PlaybackTab(ttk.Frame):
     def update_buttons(self) -> None:
         self.start_button.configure(
             state=en_if(
-                self.source_manager.cs_status is CoreServiceStatus.CONNECTED
-                and self.source_manager.source_status is SourceStatus.READY
+                self.source_manager.cs_status
+                in [CoreServiceStatus.CONNECTED, CoreServiceStatus.WORKING]
+                # and self.source_manager.source_status is SourceStatus.READY
+                # TODO: when Telemetry response is implented uncomment
             )
         )
 
         self.rec_button.configure(
             state=en_if(
-                self.source_manager.cs_status is CoreServiceStatus.CONNECTED
-                and self.source_manager.source_status
-                in [SourceStatus.READY, SourceStatus.STARTED]
+                self.source_manager.cs_status
+                in [CoreServiceStatus.CONNECTED, CoreServiceStatus.WORKING]
+                # and self.source_manager.source_status
+                # in [SourceStatus.READY, SourceStatus.STARTED]
+                # TODO: when Telemetry response is implented uncomment
             )
         )
         self.stop_button.configure(
             state=en_if(
-                self.source_manager.cs_status is CoreServiceStatus.CONNECTED
+                self.source_manager.cs_status
+                in [CoreServiceStatus.CONNECTED, CoreServiceStatus.WORKING]
                 and self.source_manager.source_status
                 in [SourceStatus.STARTED, SourceStatus.ERROR]
             )
@@ -98,16 +104,20 @@ class PlaybackTab(ttk.Frame):
         self.set_repeat_function: Optional[Callable[[bool], None]] = None
         self.abort_commands_function: Optional[Callable[[], None]] = None
 
-    def display_command_status(self, current_cmd: str) -> None:
+    def display_command_status(self, current_cmd) -> None:
         self.update_buttons()
-        self.status_string.set(current_cmd)
+        self.status_string.set(current_cmd)  # .instruction)
 
     def position_commands(self, event: Any) -> None:
-        self.send_commands_function(f"SOURCE:Position! {self.position_variable.get()}")
+        cmd = proto.Command()
+        cmd.instruction = proto.POSITION
+        cmd.position = int(self.position_variable.get())
+        self.send_commands_function(cmd)
 
     def start_commands(self) -> None:
-        # self.client.command_thread.enqueue_commands("SOURCE:Start!")
-        self.send_commands_function("SOURCE:Start!")
+        cmd = proto.Command()
+        cmd.instruction = proto.SOURCE_START
+        self.send_commands_function(cmd)
 
     def rec_commands(self) -> None:
         if self.rec_button.config("relief")[-1] == "sunken":
@@ -120,7 +130,9 @@ class PlaybackTab(ttk.Frame):
             self.rec_button.config(relief="sunken")
 
     def stop_commands(self) -> None:
-        self.send_commands_function("SOURCE:Stop!")
+        cmd = proto.Command()
+        cmd.instruction = proto.SOURCE_STOP
+        self.send_commands_function(cmd)
 
     def repeat_commands(self) -> None:
         if self.set_repeat_function is None:

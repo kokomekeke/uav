@@ -116,7 +116,10 @@ class StatusFrame(tkinter.Frame):
             self.map_server_start_callable()
 
     def path_update(self):
-        self.status_path_string.set(
-            self.source_manager.get_current_source_path_str()
-            + f" [{self.source_manager.source_status.name}]"
-        )
+        src_path = self.source_manager.get_current_source_path_str()
+        if src_path is None:
+            self.status_path_string.set("")
+        else:
+            self.status_path_string.set(
+                src_path + f" [{self.source_manager.source_status.name}]"
+            )
