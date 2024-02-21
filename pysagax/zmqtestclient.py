@@ -103,9 +103,11 @@ class ZMQConnectionThread(threading.Thread):
         super().__init__(daemon=True)
 
         self.address = address
-
+        
+        port_s = 5556
+        print(f"Connecting to {address}:{port_s}")
         # Define up- and downstream channels
-        self._zmq = REQ(address_server=address, port_server=5556)
+        self._zmq = REQ(address_server=address, port_server=port_s)
         self.disconnect: bool = False
 
         self.console_textarea_ref: Optional[tkinter.Text] = None
@@ -682,11 +684,10 @@ class ClientWindow(tkinter.Frame):
         """
         Action of the "Connect" button
         """
-        self.zmq_thread = ZMQConnectionThread()
+        self.zmq_thread = ZMQConnectionThread(self.host_command.get().split(":")[0])
         self.zmq_thread.console_textarea_ref = self.console_textarea
         self.zmq_thread.connect_callback = self.connect_action
         self.zmq_thread.disconnect_callback = self.disconnect_action
-        self.zmq_thread.address = self.host_command.get().split(":")[0]
         self.zmq_thread.status_label_ref = self.status_command_label
         self.zmq_thread.start()
 

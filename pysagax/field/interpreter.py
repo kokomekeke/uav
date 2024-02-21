@@ -13,6 +13,17 @@ import pysagax.message.data_pb2 as proto_data
 from pysagax.field.loop import Loop
 
 
+class CSErrorException(Exception):
+    def __init__(self, error_code: int, error_description: str, *args: object) -> None:
+        super().__init__(*args)
+        self.error_code = error_code
+        self.error_description = error_description
+
+
+class CSTimeoutException(Exception):
+    pass
+
+
 class Interpreter(Loop):
     """Main coordinator process for the sensor software stack"""
 
@@ -101,10 +112,20 @@ class Interpreter(Loop):
         assert self._cs_queue_out is not None
         # Hang until a new command is received
         command = self._comm_queue_in.get()
-
+        response = proto_cmd.Response()
         # Execute command
-        response = self._process(command)
-
+        try:
+            response = self._process(command)
+        except CSErrorException as cs_err:
+            response.id = command.id
+            response.instruction = command.instruction
+            response.error.description = (
+                f"CS{cs_err.error_code}: {cs_err.error_description}"
+            )
+        except CSTimeoutException:
+            response.id = command.id
+            response.instruction = command.instruction
+            response.error.description = f"CS not responding"
         # Send response to Communicator
         self._comm_queue_out.put(response)
 
@@ -153,14 +174,14 @@ class Interpreter(Loop):
                     self._position(response, None)
 
             case proto_cmd.CS_START:
-                subprocess.run(["sudo", "StartCoreService"], shell=True)
+                subprocess.run(["sudo", "StartCoreService"])
 
             case proto_cmd.CS_STOP:
-                subprocess.run(["sudo", "StopCoreService"], shell=True)
+                subprocess.run(["sudo", "StopCoreService"])
 
             case proto_cmd.CS_RESTART:
-                subprocess.run(["sudo", "StopCoreService"], shell=True)
-                subprocess.run(["sudo", "StartCoreService"], shell=True)
+                subprocess.run(["sudo", "StopCoreService"])
+                subprocess.run(["sudo", "StartCoreService"])
 
             case proto_cmd.HEADING_START:
                 response.error.description = "Not yet implemented"
@@ -228,7 +249,8 @@ class Interpreter(Loop):
             error_code = int(cs_response[0])
             if error_code == 0:
                 return cs_response[1]
-        return ""
+            raise CSErrorException(error_code, cs_response[1])
+        raise CSTimeoutException()
 
     def _cs_query_multiple(self, query_cmd: str) -> str:
         cs_response = self._cs_execute(query_cmd)
@@ -236,9 +258,12 @@ class Interpreter(Loop):
             error_code = int(cs_response[0])
             if error_code == 0:
                 return " ".join(cs_response[1:])
-        return ""
+            raise CSErrorException(error_code, cs_response[1])
+        raise CSTimeoutException()
 
-    def _config(self, response: proto_cmd.Response, config: proto_cmd.Config | None) -> None:
+    def _config(
+        self, response: proto_cmd.Response, config: proto_cmd.Config | None
+    ) -> None:
         """Set of query system configuration"""
         if config is not None:
             for config_command, proto_lambda in self._CONFIG_COMMANDS:
@@ -248,11 +273,12 @@ class Interpreter(Loop):
                     error_code = int(cs_response[0])
                     if error_code != 0:
                         self._logger.error(f"Cannot set {cs_command}")
+                        raise CSErrorException(error_code, cs_response[1])
                     else:
                         self.config_id += 1
                 else:
                     response.error.description = "CoreService not responding"
-                    return
+                    raise CSTimeoutException()
         # try:
         response.config.config_id = self.config_id
         response.config.center_frequency = float(
@@ -272,19 +298,28 @@ class Interpreter(Loop):
 
     def _telemetry(self, response: proto_cmd.Response) -> None:
         """Query system telemetry"""
-        if self._latest_telemetry_proxy is None or "Telemetry" not in self._latest_telemetry_proxy:
+        if (
+            self._latest_telemetry_proxy is None
+            or "Telemetry" not in self._latest_telemetry_proxy
+        ):
             response.error.description = "Telemetry not available"
             return
-        telemetry_object: proto_data.Telemetry = pickle.loads(self._latest_telemetry_proxy["Telemetry"]) 
+        telemetry_object: proto_data.Telemetry = pickle.loads(
+            self._latest_telemetry_proxy["Telemetry"]
+        )
         response.telemetry.MergeFrom(telemetry_object)
-
 
     def _info(self, response: proto_cmd.Response) -> None:
         """Query system info"""
-        if self._latest_telemetry_proxy is None or "SystemInfo" not in self._latest_telemetry_proxy:
+        if (
+            self._latest_telemetry_proxy is None
+            or "SystemInfo" not in self._latest_telemetry_proxy
+        ):
             response.error.description = "SystemInfo not available"
             return
-        system_info_object: proto_cmd.SystemInfo = pickle.loads(self._latest_telemetry_proxy["SystemInfo"]) 
+        system_info_object: proto_cmd.SystemInfo = pickle.loads(
+            self._latest_telemetry_proxy["SystemInfo"]
+        )
         response.info.MergeFrom(system_info_object)
 
     def _position(self, response: proto_cmd.Response, position: int | None) -> None:
@@ -296,7 +331,9 @@ class Interpreter(Loop):
                 mode="!", value=position
             )
         else:
-            cs_command = self._CS_COMMANDS[proto_cmd.POSITION].format(mode="?", value="")
+            cs_command = self._CS_COMMANDS[proto_cmd.POSITION].format(
+                mode="?", value=""
+            )
         cs_response = self._cs_execute(cs_command)
 
         # Check for response validity
@@ -305,9 +342,9 @@ class Interpreter(Loop):
             if error_code == 0:
                 if cs_response[1].isdigit():
                     response.position = int(cs_response[1])
-            # TODO: Check response for error messages
+            raise CSErrorException(error_code, cs_response[1])
         else:
-            response.error.description = "CoreService not responding"
+            raise CSTimeoutException()
 
     def _cs_control(
         self, response: proto_cmd.Response, instruction: proto_cmd.Instruction
@@ -315,7 +352,7 @@ class Interpreter(Loop):
         """Send control commands (no parameters) to CoreService"""
 
         # Obtain appropriate CoreService command
-        cs_command = self._CS_COMMANDS[instruction]
+        cs_command = self._CS_COMMANDS[instruction]  # type: ignore
         cs_response = self._cs_execute(cs_command)
 
         # Check for response validity
@@ -327,6 +364,7 @@ class Interpreter(Loop):
                 response.success = True
             else:
                 response.success = False
+                raise CSErrorException(error_code, cs_response[1])
         else:
             response.success = False
-            response.error.description = "CoreService not responding"
+            raise CSTimeoutException()

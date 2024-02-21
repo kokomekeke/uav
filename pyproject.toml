@@ -1,6 +1,5 @@
 [project]
 name = "pysagax"
-version = "0.1.24"
 authors = [
   { name="Peter Rigo", email="peter.rigo@sagaxcommunications.com" },
   { name="Aron Szabo", email="aron.szabo@sagaxcommunications.com" },
@@ -29,6 +28,7 @@ dependencies = [
     "coloredlogs",
     "protobuf",
     "pyzmq",
+    "click",
 ]
 
 [tool.versioneer]
