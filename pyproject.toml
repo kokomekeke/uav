@@ -3,6 +3,7 @@ name = "pysagax"
 authors = [
   { name="Peter Rigo", email="peter.rigo@sagaxcommunications.com" },
   { name="Aron Szabo", email="aron.szabo@sagaxcommunications.com" },
+  { name="Benedek Szakali", email="benedek.szakali@sagaxcommunications.com" },
 ]
 description = "Python helper libraries for Sagax DF products"
 readme = "README.md"
