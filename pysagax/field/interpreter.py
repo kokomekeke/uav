@@ -282,7 +282,8 @@ class Interpreter(Loop):
                     error_code = int(cs_response[0])
                     if error_code != 0:
                         self._logger.error(f"Cannot set {cs_command}")
-                        raise CSErrorException(error_code, cs_response[1])
+                        # try to set the remaining values
+                        # raise CSErrorException(error_code, cs_response[1])
                     else:
                         self.config_id += 1
                 else:
