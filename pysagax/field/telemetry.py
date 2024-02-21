@@ -78,6 +78,8 @@ class Telemetry(Loop):
                 yield command, response_parts
         except queue.Empty:
             self._logger.error(f"CS not responding to {last_command}")
+            while not self._cs_commands_queue.empty():
+                self._cs_commands_queue.get()
 
     def _get_from_cs(self) -> None:
         for command, response in self._cs_execute(

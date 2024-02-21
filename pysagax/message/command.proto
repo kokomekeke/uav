@@ -24,6 +24,9 @@ enum Instruction {
     //   response:  info [Info]
     INFO = 3;
 
+	// Status of Async config
+	CONFIG_STATUS = 4;
+
 	
 	PY_RESET = 8;
 
@@ -239,6 +242,19 @@ message Command {
     }
 }
 
+message ConfigStatus {
+	bool success = 1;
+
+	map<string, string> responses = 2;
+	map<string, int32> queue = 3;
+
+	int32 error_code = 4;
+	string error_description = 5;
+
+	google.protobuf.Timestamp start_time = 6;
+	google.protobuf.Timestamp finish_time = 7;
+}
+
 message Response {
     // Common message encapsulating all possible responses
 
@@ -268,5 +284,8 @@ message Response {
 
         // Playback position
         uint64 position = 10;
+
+		// Config Status
+		ConfigStatus config_status = 11;
     }
 }

@@ -44,6 +44,8 @@ class _InstructionEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._En
     """Query system information
       response:  info [Info]
     """
+    CONFIG_STATUS: _Instruction.ValueType  # 4
+    """Status of Async config"""
     PY_RESET: _Instruction.ValueType  # 8
     CS_START: _Instruction.ValueType  # 9
     """Start CoreService
@@ -127,6 +129,8 @@ INFO: Instruction.ValueType  # 3
 """Query system information
   response:  info [Info]
 """
+CONFIG_STATUS: Instruction.ValueType  # 4
+"""Status of Async config"""
 PY_RESET: Instruction.ValueType  # 8
 CS_START: Instruction.ValueType  # 9
 """Start CoreService
@@ -546,6 +550,76 @@ class Command(google.protobuf.message.Message):
 global___Command = Command
 
 @typing_extensions.final
+class ConfigStatus(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    @typing_extensions.final
+    class ResponsesEntry(google.protobuf.message.Message):
+        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+        KEY_FIELD_NUMBER: builtins.int
+        VALUE_FIELD_NUMBER: builtins.int
+        key: builtins.str
+        value: builtins.str
+        def __init__(
+            self,
+            *,
+            key: builtins.str = ...,
+            value: builtins.str = ...,
+        ) -> None: ...
+        def ClearField(self, field_name: typing_extensions.Literal["key", b"key", "value", b"value"]) -> None: ...
+
+    @typing_extensions.final
+    class QueueEntry(google.protobuf.message.Message):
+        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+        KEY_FIELD_NUMBER: builtins.int
+        VALUE_FIELD_NUMBER: builtins.int
+        key: builtins.str
+        value: builtins.int
+        def __init__(
+            self,
+            *,
+            key: builtins.str = ...,
+            value: builtins.int = ...,
+        ) -> None: ...
+        def ClearField(self, field_name: typing_extensions.Literal["key", b"key", "value", b"value"]) -> None: ...
+
+    SUCCESS_FIELD_NUMBER: builtins.int
+    RESPONSES_FIELD_NUMBER: builtins.int
+    QUEUE_FIELD_NUMBER: builtins.int
+    ERROR_CODE_FIELD_NUMBER: builtins.int
+    ERROR_DESCRIPTION_FIELD_NUMBER: builtins.int
+    START_TIME_FIELD_NUMBER: builtins.int
+    FINISH_TIME_FIELD_NUMBER: builtins.int
+    success: builtins.bool
+    @property
+    def responses(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]: ...
+    @property
+    def queue(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.int]: ...
+    error_code: builtins.int
+    error_description: builtins.str
+    @property
+    def start_time(self) -> google.protobuf.timestamp_pb2.Timestamp: ...
+    @property
+    def finish_time(self) -> google.protobuf.timestamp_pb2.Timestamp: ...
+    def __init__(
+        self,
+        *,
+        success: builtins.bool = ...,
+        responses: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
+        queue: collections.abc.Mapping[builtins.str, builtins.int] | None = ...,
+        error_code: builtins.int = ...,
+        error_description: builtins.str = ...,
+        start_time: google.protobuf.timestamp_pb2.Timestamp | None = ...,
+        finish_time: google.protobuf.timestamp_pb2.Timestamp | None = ...,
+    ) -> None: ...
+    def HasField(self, field_name: typing_extensions.Literal["finish_time", b"finish_time", "start_time", b"start_time"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing_extensions.Literal["error_code", b"error_code", "error_description", b"error_description", "finish_time", b"finish_time", "queue", b"queue", "responses", b"responses", "start_time", b"start_time", "success", b"success"]) -> None: ...
+
+global___ConfigStatus = ConfigStatus
+
+@typing_extensions.final
 class Response(google.protobuf.message.Message):
     """Common message encapsulating all possible responses"""
 
@@ -560,6 +634,7 @@ class Response(google.protobuf.message.Message):
     TELEMETRY_FIELD_NUMBER: builtins.int
     INFO_FIELD_NUMBER: builtins.int
     POSITION_FIELD_NUMBER: builtins.int
+    CONFIG_STATUS_FIELD_NUMBER: builtins.int
     id: builtins.int
     """Unique ID of command"""
     instruction: global___Instruction.ValueType
@@ -581,6 +656,9 @@ class Response(google.protobuf.message.Message):
         """System information"""
     position: builtins.int
     """Playback position"""
+    @property
+    def config_status(self) -> global___ConfigStatus:
+        """Config Status"""
     def __init__(
         self,
         *,
@@ -593,9 +671,10 @@ class Response(google.protobuf.message.Message):
         telemetry: pysagax.message.data_pb2.Telemetry | None = ...,
         info: global___SystemInfo | None = ...,
         position: builtins.int = ...,
+        config_status: global___ConfigStatus | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing_extensions.Literal["config", b"config", "data", b"data", "error", b"error", "info", b"info", "ping_data", b"ping_data", "position", b"position", "success", b"success", "telemetry", b"telemetry"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing_extensions.Literal["config", b"config", "data", b"data", "error", b"error", "id", b"id", "info", b"info", "instruction", b"instruction", "ping_data", b"ping_data", "position", b"position", "success", b"success", "telemetry", b"telemetry"]) -> None: ...
-    def WhichOneof(self, oneof_group: typing_extensions.Literal["data", b"data"]) -> typing_extensions.Literal["success", "ping_data", "config", "telemetry", "info", "position"] | None: ...
+    def HasField(self, field_name: typing_extensions.Literal["config", b"config", "config_status", b"config_status", "data", b"data", "error", b"error", "info", b"info", "ping_data", b"ping_data", "position", b"position", "success", b"success", "telemetry", b"telemetry"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing_extensions.Literal["config", b"config", "config_status", b"config_status", "data", b"data", "error", b"error", "id", b"id", "info", b"info", "instruction", b"instruction", "ping_data", b"ping_data", "position", b"position", "success", b"success", "telemetry", b"telemetry"]) -> None: ...
+    def WhichOneof(self, oneof_group: typing_extensions.Literal["data", b"data"]) -> typing_extensions.Literal["success", "ping_data", "config", "telemetry", "info", "position", "config_status"] | None: ...
 
 global___Response = Response
