@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pysagax.communication.req_rep import REQ
+from pysagax.communication.req_rep_tcp import REQ
 import threading
 import pysagax.message.command_pb2 as proto
 import time
@@ -74,14 +74,11 @@ class CommandThread(threading.Thread):
             self.connect_callback()
         connected = self.connection.connect()
 
-        # TODO?: adding client_ddress to connection is necessary to monitor connected status
-        # TODO: pysagaxUAV only returns true for the first connection,
-        #        and for 10 seconds after launching. (because of REP._init())
-        #        We don't check for success until it's fixed
-        # if not connected:
-        #    self.disconnect_callback() #disconnect callback?
-        #    self.display_connection_status_callback("Connection failed")
-        #    return False
+        # TODO: REP.connect() always retuns True
+        if not connected:
+           self.disconnect_callback() #disconnect callback?
+           self.display_connection_status_callback("Connection failed")
+           return False
 
         if self.connected_callback is not None:
             self.connected_callback()
@@ -119,10 +116,10 @@ class CommandThread(threading.Thread):
             raw_response = self.connection.send(
                 command.SerializeToString(), timeout=30000
             )
-            self._last_heartbeat_time = time.time_ns()
             if raw_response is None:
                 self._timeout_handler(command)
                 continue
+            self._last_heartbeat_time = time.time_ns()
             response = proto.Response()
             response.ParseFromString(raw_response)
             if response.error.description:

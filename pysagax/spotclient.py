@@ -11,7 +11,7 @@ import socket
 import threading
 import tkinter
 from multiprocessing.managers import ValueProxy
-from pysagax.communication.req_rep import REQ
+from pysagax.communication.req_rep_tcp import REQ
 
 from pysagax.heading.heading_manager import HeadingManager
 from pysagax.heading.queue_collector import QueueValueCollector
@@ -692,6 +692,9 @@ class Client:
         """
         if self.command_thread is not None:
             self.command_thread.do_disconnect = True
+        if self.command_connection is not None:
+            self.command_connection.disconnect()
+            self.command_connection = None
 
         if self.stream_process is not None:
             if self.disconnect_value is not None:
