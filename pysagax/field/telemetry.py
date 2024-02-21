@@ -18,7 +18,9 @@ from pysagax.field.loop import Loop
 
 class Telemetry(Loop):
 
-    def __init__(self, data_partition_path: str = "/", interval: float = 0.25, *args, **kwargs) -> None:
+    def __init__(
+        self, data_partition_path: str = "/", interval: float = 0.25, *args, **kwargs
+    ) -> None:
         super().__init__(*args, **kwargs)
         self._cs_queue_in: Optional[Queue] = None
         self._comm_queue_out: Optional[Queue] = None
@@ -129,16 +131,20 @@ class Telemetry(Loop):
         self._sysinfo_packet.software.pysagax_version = pysagax.__version__  # type: ignore
         _, resp = next(self._cs_execute(["CORE:Version?"]))
         if resp[0] == "0":
-            self._sysinfo_packet.software.cs_version = f"{resp[1]}.{resp[2]}.{resp[3]}"  # major.minor.patch
+            self._sysinfo_packet.software.cs_version = (
+                f"{resp[1]}.{resp[2]}.{resp[3]}"  # major.minor.patch
+            )
             if resp[4]:
-                self._sysinfo_packet.software.cs_version += f"-{resp[4]}"  #-prerelease
+                self._sysinfo_packet.software.cs_version += f"-{resp[4]}"  # -prerelease
             if resp[5]:
-                self._sysinfo_packet.software.cs_version += f"+{resp[5]}"  #+build
+                self._sysinfo_packet.software.cs_version += f"+{resp[5]}"  # +build
             if resp[6]:
                 self._sysinfo_packet.software.cs_version += f" ({resp[6]})"  # (vcs tag)
         self._logger.debug("SystemInfo packet ready")
         if self._latest_packets_proxy is not None:
-            self._latest_packets_proxy["SystemInfo"] = pickle.dumps(self._sysinfo_packet)
+            self._latest_packets_proxy["SystemInfo"] = pickle.dumps(
+                self._sysinfo_packet
+            )
         self._comm_queue_out.put(self._sysinfo_packet)
 
     def _measure_hardware_stats(self) -> None:
@@ -158,7 +164,9 @@ class Telemetry(Loop):
             f"Telemetry packet ready {self._telemetry_packet.time.ToJsonString()}"
         )
         if self._latest_packets_proxy is not None:
-            self._latest_packets_proxy["Telemetry"] = pickle.dumps(self._telemetry_packet)
+            self._latest_packets_proxy["Telemetry"] = pickle.dumps(
+                self._telemetry_packet
+            )
 
         self._comm_queue_out.put(self._telemetry_packet)
         self._telemetry_packet = proto_data.Telemetry()
