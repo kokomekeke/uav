@@ -7,6 +7,8 @@ from pysagax.source.source_manager import CoreServiceStatus, SourceStatus, Sourc
 from pysagax.ui.ui_helpers import en_if
 import pysagax.message.command_pb2 as proto_cmd
 
+from pysagax.util.get_ip import get_ip
+
 
 class PlaybackTab(ttk.Frame):
     def update(
@@ -166,7 +168,7 @@ class PlaybackTab(ttk.Frame):
         # TODO: target address and port dinamically?
         cmd_stream_start.target.id = 1
         cmd_stream_start.target.level = proto_cmd.StreamTarget.StreamLevel.SPECTRUM
-        cmd_stream_start.target.address = "127.0.0.1"  # TODO: find own IP address
+        cmd_stream_start.target.address = get_ip()
         cmd_stream_start.target.port = 4242
 
         # TODO: think about ideal timeout values, move to config
