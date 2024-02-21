@@ -58,6 +58,12 @@ class PlaybackTab(ttk.Frame):
         self.status_string = tkinter.StringVar(value="Idle")
         self.rec_status_string = tkinter.StringVar(value="🟣️")
 
+        self.status_label = tkinter.Label(
+            self,
+            textvariable=self.status_string,
+            font=tkinter.font.Font(size=8),
+        )
+        self.status_label.pack(side=tkinter.TOP, anchor="w")
         self.position_slider = tkinter.Scale(
             self,
             from_=0,
@@ -66,32 +72,26 @@ class PlaybackTab(ttk.Frame):
             orient=tkinter.HORIZONTAL,
             command=self.position_commands,
         )
-        self.position_slider.pack(side=tkinter.TOP, expand=True, fill=tkinter.X)
+        self.position_slider.pack(side=tkinter.BOTTOM, fill=tkinter.X)
         self.start_button = tkinter.Button(self, text="▶️", command=self.start_commands)
-        self.start_button.pack(side=tkinter.LEFT)
+        self.start_button.pack(side=tkinter.LEFT, anchor="s")
         self.rec_button = tkinter.Button(self, text="⏺️️", command=self.rec_commands)
-        self.rec_button.pack(side=tkinter.LEFT)
+        self.rec_button.pack(side=tkinter.LEFT, anchor="s")
         self.rec_status_label = tkinter.Label(
             self,
             textvariable=self.rec_status_string,
             font=tkinter.font.Font(size=16),
             fg="#ccc",
         )
-        self.rec_status_label.pack(side=tkinter.LEFT, expand=False)
+        self.rec_status_label.pack(side=tkinter.LEFT, anchor="s", expand=False)
         self.stop_button = tkinter.Button(self, text="⏹️", command=self.stop_commands)
-        self.stop_button.pack(side=tkinter.LEFT)
+        self.stop_button.pack(side=tkinter.LEFT, anchor="s")
         self.repeat_button = tkinter.Button(
             self, text="⟲", command=self.repeat_commands
         )
-        self.repeat_button.pack(side=tkinter.LEFT)
-        self.status_label = tkinter.Label(
-            self,
-            textvariable=self.status_string,
-            font=tkinter.font.Font(size=8),
-        )
-        self.status_label.pack(side=tkinter.LEFT)
+        self.repeat_button.pack(side=tkinter.LEFT, anchor="s")
         self.abort_button = tkinter.Button(self, text="⛔", command=self.abort_commands)
-        self.abort_button.pack(side=tkinter.RIGHT)
+        self.abort_button.pack(side=tkinter.RIGHT, anchor="s")
 
         self.start_button.configure(state="disabled")
         self.rec_button.configure(state="disabled")
@@ -117,17 +117,17 @@ class PlaybackTab(ttk.Frame):
     def start_commands(self) -> None:
         cmd_source_start = proto.Command()
         cmd_source_start.instruction = proto.SOURCE_START
-        
+
         cmd_stream_start = proto.Command()
         cmd_stream_start.instruction = proto.STREAM_START
-        #TODO: customazible stream levels
-        #TODO: target address and port dinamically?
-        cmd_stream_start.target.id = 1 
+        # TODO: customazible stream levels
+        # TODO: target address and port dinamically?
+        cmd_stream_start.target.id = 1
         cmd_stream_start.target.level = proto.StreamTarget.StreamLevel.SPECTRUM
         cmd_stream_start.target.address = "127.0.0.1"
         cmd_stream_start.target.port = 4242
-        
-        #TODO: think about ideal timeout values
+
+        # TODO: think about ideal timeout values
         cmd_stream_start.target.heartbeat_timeout = 60
         cmd_stream_start.target.telemetry_timeout = 60
 
