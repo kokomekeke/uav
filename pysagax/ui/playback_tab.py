@@ -29,8 +29,7 @@ class PlaybackTab(ttk.Frame):
             state=en_if(
                 self.source_manager.cs_status
                 in [CoreServiceStatus.CONNECTED, CoreServiceStatus.WORKING]
-                # and self.source_manager.source_status is SourceStatus.ENABLED
-                # TODO: when Telemetry response is implented uncomment
+                and self.source_manager.source_status is SourceStatus.ENABLED
             )
         )
 
@@ -38,9 +37,8 @@ class PlaybackTab(ttk.Frame):
             state=en_if(
                 self.source_manager.cs_status
                 in [CoreServiceStatus.CONNECTED, CoreServiceStatus.WORKING]
-                # and self.source_manager.source_status
-                # in [SourceStatus.ENABLED, SourceStatus.RUNNING]
-                # TODO: when Telemetry response is implented uncomment
+                and self.source_manager.source_status
+                in [SourceStatus.ENABLED, SourceStatus.RUNNING]
             )
         )
         self.stop_button.configure(

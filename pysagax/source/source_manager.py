@@ -158,12 +158,9 @@ class SourceManager:
 
     def source_telemetry_handler(self, packet: proto_data.Telemetry) -> None:
         # updates the source status based on the response from CoreService
-        # TODO when telemetry response is implemented in pysagaxUAV
-        # TODO: delete SourceStatus enum and keep the last telemetry  message
         self.source_status = SourceStatus(packet.source.status)
         self.recording_status = RecordingStatus(packet.recording.status)
         self.latest_telemetry = packet
-        # TODO: remove set_recording_status and redefine its possible value from telemetry
 
     def update_recording_paths(self, path_list: list[str]) -> None:
         Sources.SigMF.params = path_list
