@@ -80,6 +80,15 @@ class PostProc(Loop):
         detection.elevation = cs_packet.roi_elevation
         self._measurement_packet.detection.append(detection)
 
+    def _decode_iso_datetime(self, isoformat: str) -> Optional[datetime.datetime]:
+        try:
+            return datetime.datetime.fromisoformat(isoformat)
+        except ValueError:
+            try:
+                return datetime.datetime.strptime(isoformat, "%Y-%m-%dT%H:%M:%S.%f%z")
+            except ValueError:
+                return None
+
     def _handle_debug_packet(self, cs_packet: CoreServiceDebugPacket) -> None:
         if cs_packet.title == "peaks":
             regex = r"peak(\d+)=(\d+)"
@@ -89,7 +98,12 @@ class PostProc(Loop):
             peaks = [int(peak[1]) for peak in matches]
             self._measurement_packet.peaks.extend(peaks)
         elif cs_packet.title == "t":
-            dt = datetime.datetime.fromisoformat(cs_packet.contents.decode())
+            dt = self._decode_iso_datetime(cs_packet.contents.decode())
+            if dt is None:
+                self._logger.warning(
+                    f"Cannot decode timestamp {cs_packet.contents.decode()} "
+                )
+                return
             self._measurement_packet.time.FromDatetime(dt)
             self._logger.debug(
                 f"Timestamp {cs_packet.contents.decode()} = {self._measurement_packet.time.ToJsonString()}"
