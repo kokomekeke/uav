@@ -1,6 +1,8 @@
 from queue import Queue
 import queue
 from typing import Any, Optional, Type
+
+import zmq
 from pysagax.communication.broadcast import TX
 
 from pysagax.field.loop import Loop
@@ -68,14 +70,17 @@ class Streamer(Loop):
         pass
 
     def add_stream_client(self, target: proto_cmd.StreamTarget) -> None:
-        self._servers[f"{target.address}:{target.port}"] = StreamerServer(
-            TX(target.address, port=target.port),
-            int(target.level),
-            0,
-            target.telemetry_timeout,
-        )
-        self._servers[f"{target.address}:{target.port}"].server.connect()
-        self._logger.info(f"Stream client {target.address}:{target.port} added")
+        try:
+            self._servers[f"{target.address}:{target.port}"] = StreamerServer(
+                TX(target.address, port=target.port),
+                int(target.level),
+                0,
+                target.telemetry_timeout,
+            )
+            self._servers[f"{target.address}:{target.port}"].server.connect()
+            self._logger.info(f"Stream client {target.address}:{target.port} added")
+        except zmq.ZMQError as zmqe:
+            self._logger.error(f"ZMQError{zmqe.errno}: {str(zmqe)}")
 
     def remove_stream_client(self, target: proto_cmd.StreamTarget) -> None:
         self._servers[f"{target.address}:{target.port}"].server.disconnect()
@@ -135,3 +140,5 @@ class Streamer(Loop):
                 )
         except queue.Empty:
             pass
+        except zmq.ZMQError as zmqe:
+            self._logger.error(f"ZMQError{zmqe.errno}: {str(zmqe)}")
