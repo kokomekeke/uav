@@ -19,9 +19,9 @@ class CommandThread(threading.Thread):
         connection_status_queue: queue.Queue[str] | multiprocessing.Queue[str] | None,
     ) -> None:
         super().__init__(daemon=True, name="CommandThread")
-        self.connection = connection
-        self.thread_status_queue = thread_status_queue
-        self.connection_status_queue = connection_status_queue
+        self._connection = connection
+        self._thread_status_queue = thread_status_queue
+        self._connection_status_queue = connection_status_queue
 
         # This function handle is called when the socket is initiating connection.
         self.connect_callback: Optional[Callable[[], None]] = None
@@ -43,32 +43,32 @@ class CommandThread(threading.Thread):
         # last outgoing request timestamp:
         self._last_command_time: int = 0
 
-        self.command_queue: queue.Queue = queue.Queue()
-        self.do_abort: bool = False
-        self.response_handlers: dict[Any, Callable[[Any], None]] = {}
+        self._command_queue: queue.Queue = queue.Queue()
+        self._do_abort: bool = False
+        self._response_handlers: dict[Any, Callable[[Any], None]] = {}
 
     def enqueue_commands(self, commands: list) -> None:
-        self.do_abort = False
+        self._do_abort = False
         if not isinstance(commands, list):
             commands = [commands]
         for cmd in commands:
             cmd.id = self.command_id % 2**31 #staying in the range of int32
             self.command_id += 1
-            self.command_queue.put(cmd)
+            self._command_queue.put(cmd)
             # if cmd not in self.command_queue.queue:
             #     self.command_queue.put(cmd)
 
     def abort_commands(self) -> None:
-        self.do_abort = True
-        while not self.command_queue.empty():
-            self.command_queue.get()  # clear queue
+        self._do_abort = True
+        while not self._command_queue.empty():
+            self._command_queue.get()  # clear queue
         self._display_thread_status_callback(False, "")
 
-    def connect(self) -> bool:
+    def _connect(self) -> bool:
         self._display_connection_status_callback("Connecting...")
         if self.connect_callback is not None:
             self.connect_callback()
-        connected = self.connection.connect()
+        connected = self._connection.connect()
 
         # TODO: REP.connect() always retuns True
         if not connected:
@@ -82,10 +82,10 @@ class CommandThread(threading.Thread):
         self._display_connection_status_callback("Connected")
         return True
 
-    def disconnect(self):
+    def _disconnect(self):
         self.disconnect_callback()
 
-    def is_disconnect(self) -> bool:
+    def _is_disconnect(self) -> bool:
         if self.do_disconnect:
             self._display_connection_status_callback("Disconnected")
             return True
@@ -95,21 +95,21 @@ class CommandThread(threading.Thread):
         return False
 
     def run(self) -> None:
-        if not self.connect():
+        if not self._connect():
             return
-        self.loop()
-        self.disconnect()
+        self._loop()
+        self._disconnect()
 
-    def loop(self):
-        while not self.is_disconnect():
-            if self.do_abort:
+    def _loop(self):
+        while not self._is_disconnect():
+            if self._do_abort:
                 continue
             command = self._get_next_command()
             if command is None:
                 time.sleep(0.1)
                 continue
             # print("COMMAND:\n", command)  ####
-            raw_response = self.connection.send(
+            raw_response = self._connection.send(
                 command.SerializeToString(), timeout=60000
             )
             if raw_response is None:
@@ -138,14 +138,14 @@ class CommandThread(threading.Thread):
         self._display_thread_status_callback(False, "")
 
     def _get_next_command(self):
-        if self.command_queue.empty():
+        if self._command_queue.empty():
             if time.time_ns() - self._last_command_time > self.heartbeat_timeout_ns / 2:
                 # send PING if no communication for a long time
                 self.ping("heartbeat")
             else:
                 self._display_thread_status_callback(False, "")
                 return None
-        command = self.command_queue.get(block=True, timeout=1)
+        command = self._command_queue.get(block=True, timeout=1)
         self._display_thread_status_callback(True, command)
         self._last_command_time = time.time_ns()
         return command
@@ -166,11 +166,11 @@ class CommandThread(threading.Thread):
         :return:
         """
         # use command instructions as handles?
-        self.response_handlers[command_instruction] = handler
+        self._response_handlers[command_instruction] = handler
 
     def _response_handler(self, response) -> None:
 
-        for key, handler in self.response_handlers.items():
+        for key, handler in self._response_handlers.items():
             if key == response.instruction:
                 handler(response)
         pass
@@ -186,10 +186,10 @@ class CommandThread(threading.Thread):
         :param message: text to display on the GUI
         :return:
         """
-        if self.connection_status_queue is not None:
-            self.connection_status_queue.put(message)
+        if self._connection_status_queue is not None:
+            self._connection_status_queue.put(message)
 
     def _display_thread_status_callback(self, working: bool, command) -> None:
-        if self.thread_status_queue is not None:
-            self.thread_status_queue.put([working, str(command)])
+        if self._thread_status_queue is not None:
+            self._thread_status_queue.put([working, str(command)])
             # TODO: put the actual commands in the queue (it gives error now)

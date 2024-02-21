@@ -17,7 +17,7 @@ from pysagax.communication.req_rep_tcp import REQ
 from pysagax.heading.heading_manager import HeadingManager
 from pysagax.heading.queue_collector import QueueValueCollector
 from pysagax.source.source_manager import CoreServiceStatus, SourceManager
-from pysagax.spot.command_connection import CommandThread
+from pysagax.spot.command_thread import CommandThread
 from pysagax.spot.commands_connection_thread import CommandsConnectionThread
 from pysagax.spot.commands_handler_thread import CommandsHandlerThread
 from pysagax.spot.map_server import MapServer
