@@ -11,6 +11,7 @@ import socket
 import threading
 import tkinter
 from multiprocessing.managers import ValueProxy
+from pysagax.communication.broadcast import RX
 from pysagax.communication.req_rep_tcp import REQ
 
 from pysagax.heading.heading_manager import HeadingManager
@@ -22,6 +23,7 @@ from pysagax.spot.commands_handler_thread import CommandsHandlerThread
 from pysagax.spot.map_server import MapServer
 from pysagax.spot.recording_thread import RecordingThread
 from pysagax.spot.status_query_thread import StatusQueryThread
+from pysagax.spot.stream_process import StreamProcess
 from pysagax.ui import HeadingSourceFrame
 from pysagax.ui.connect_frame import ConnectFrame
 from pysagax.ui.control_frame import ControlFrame
@@ -56,6 +58,7 @@ from pysagax.util.multiqueue import MultiQueue
 from pysagax.util.read_from_conf import read_from_conf
 
 import pysagax.message.command_pb2 as proto
+import pysagax.message.command_pb2 as proto_data
 
 conf: Optional[dict[str, Any]] = None
 icon_image: Optional[tkinter.PhotoImage] = None
@@ -196,83 +199,79 @@ class ClientWindow(tkinter.Frame):
     def gui_packet_handler(self) -> None:
         while not self.do_stop:
             try:
-                data = self.client.stream_to_gui_queue.get(timeout=0.2)
+                packet = self.client.stream_to_gui_queue.get(timeout=0.2)
+                self.update_stream_packet_lb(packet)
 
-                packet = data["cs_packet"]
-                self.aggregated_roi_results = data["aggregated_roi_results"]
-                self.compass_angle = data["compass_angle"]
-                self.compass_heading = data["compass_heading"]
+                # TODO: signal_db, noise_db = self.calculate_snr(packet)
+                signal_db, noise_db = 0, 0
+                # TODO: where are we supposed to get info on bin_count, center_freq and iq_rate
+                from pysagax import si_to_float
 
-                try:
-                    ts = datetime.fromtimestamp(packet.time_ns / 1e9, tz=None)
-                    packet_string = (
-                        f"[{packet.stream_id}] {ts.strftime('%H:%M:%S')}.{int((packet.time_ns % 1e9) / 1e6):03d} - "
-                        f"{str(packet)} - c_angle={self.compass_angle}"
-                    )
-                    self.stream_packets_lb.insert(tkinter.END, packet_string)
-                    self.stream_packets_lb.delete(
-                        0, self.stream_packets_lb.size() - 1000
-                    )
-                    self.stream_packets_lb.see(tkinter.END)
+                bin_count = 1024
+                center_frequency = si_to_float(self.control_frame.freq_entry.get())
+                iq_rate = si_to_float(self.control_frame.bw_entry.get())
+                self.plot_frame.plot_spectrum_packet(
+                    packet.data[0],
+                    bin_count,
+                    center_frequency,
+                    iq_rate,
+                    signal_db,
+                    noise_db,
+                )
 
-                    if isinstance(packet, CoreServiceSpectrumPacket):
-                        signal_db, noise_db = self.calculate_snr(packet)
-                        self.stat_frame.snr_string.set(f"{signal_db-noise_db:.1f}dB")
-                        self.plot_frame.plot_spectrum_packet(
-                            packet, signal_db, noise_db
-                        )
+                self.stat_frame.update_peak_plot(packet.peaks)
 
-                    if isinstance(
-                        packet, CoreServiceDebugPacket
-                    ):  # updating peak plots
-                        if packet.title == "peaks":
-                            regex = r"peak(\d+)=(\d+)"
-                            matches = re.findall(
-                                regex, str(packet)
-                            )  # creating a list of (ChannelID, PeakValue) tuples from the debug message
-                            peaks = [peak[1] for peak in matches]
-                            try:
-                                self.stat_frame.update_peak_plot(peaks)
-                            except IndexError:
-                                """
-                                During changing center freq, the CoreService sometiomes sends negative peak values.
-                                This behaviour has not been investigated on the CS side, only handled here
-                                """
-                                pass
-                        elif packet.title == "q":
-                            quality = float(packet.contents.decode().strip())
-                            self.stat_frame.quality_value_string.set(f"{quality:.2f}")
+                # TODO: remove compass heading/angle
+                self.compass_angle = packet.heading
+                self.compass_heading = packet.heading
 
-                    if isinstance(packet, CoreServiceROIResultPacket):
-                        latest_roi_resutls = {
-                            "df_value": packet.roi_azimuth,
-                            "df_elevation": packet.roi_elevation,
-                        }
+                # TODO: rethink roi results
+                latest_roi_resutls = {"df_value": 0, "df_elevation": 0}
+                self.aggregated_roi_results = {
+                    "df_value_mean": 0,
+                    "df_value_std": 0,
+                    "df_elevation_mean": 0,
+                    "df_elevation_std": 0,
+                }
+                if len(packet.detection):
+                    self.aggregated_roi_results["df_value_std"] = packet.detection[
+                        0
+                    ].deviation
+                    latest_roi_resutls = {
+                        "df_value": packet.detection[0].azimuth,
+                        "df_elevation": packet.detection[0].elevation,
+                    }
+                self.stat_frame.update_stats(
+                    latest_roi_resutls, self.aggregated_roi_results
+                )
 
-                        self.stat_frame.update_stats(
-                            latest_roi_resutls, self.aggregated_roi_results
-                        )
+                # if isinstance(packet, CoreServiceEOFPacket):
+                #         self.info_update_handler(
+                #             "End of file reached for Sigmf recording",
+                #             source="GUI packet handler",
+                #         )
+                #         if self.client.repeat_playback:
+                #             pass  # TODO: implement repeat using protobuf
+                #             # self.client.send_commands(
+                #             #     "SOURCE:Position! 0;SOURCE:Start!;"
+                #             # )
 
-                    if isinstance(packet, CoreServiceEOFPacket):
-                        self.info_update_handler(
-                            "End of file reached for Sigmf recording",
-                            source="GUI packet handler",
-                        )
-                        if self.client.repeat_playback:
-                            pass  # TODO: implement repeat using protobuf
-                            # self.client.send_commands(
-                            #     "SOURCE:Position! 0;SOURCE:Start!;"
-                            # )
-                except Exception as e:
-                    if not self.do_stop:
-                        print("[GUI packet handler]", e)
-                        traceback.print_tb(e.__traceback__)
             except queue.Empty:
                 pass
             except Exception as e:
                 print("[GUI packet handler]", e)
                 traceback.print_tb(e.__traceback__)
                 return
+
+    def update_stream_packet_lb(self, packet):
+        ts = datetime.fromtimestamp(packet.time.seconds, tz=None)
+        packet_string = (
+            f"[{packet.stream_id}] {ts.strftime('%H:%M:%S')}.{int((packet.time.nanos % 1e9) / 1e6):03d} - "
+            f"detection: {packet.detection}"
+        )
+        self.stream_packets_lb.insert(tkinter.END, packet_string)
+        self.stream_packets_lb.delete(0, self.stream_packets_lb.size() - 1000)
+        self.stream_packets_lb.see(tkinter.END)
 
     def command_status_msg_handler(self, message: str) -> None:
         if message.startswith("#info"):
@@ -422,9 +421,9 @@ class Client:
 
         self.source_manager = SourceManager()
         self.heading_manager = HeadingManager()
-        self.stream_to_gui_queue: queue.Queue[Any] = self.manager.Queue(maxsize=100)
+        self.stream_to_gui_queue: queue.Queue[Any] = self.manager.Queue(maxsize=1)
         self.stream_to_rec_queue: Optional[queue.Queue[Any]] = None
-        self.stream_to_map_queue: queue.Queue[Any] = self.manager.Queue(maxsize=10)
+        self.stream_to_map_queue: queue.Queue[Any] = self.manager.Queue(maxsize=1)
 
         self.stream_process_multiqueue = MultiQueue([self.stream_to_gui_queue])
 
@@ -604,18 +603,17 @@ class Client:
         self.command_thread.start()
 
         self.disconnect_value.value = False
-        self.stream_process = StreamAndCompassProcess(
+
+        # TODO: port and groups to config
+        stream_connection_port = 4242
+        stream_connection_subscribed_groups = ["*", "Measurement"]
+        self.stream_process = StreamProcess(
+            stream_connection_port,
+            stream_connection_subscribed_groups,
             self.stream_process_multiqueue,
             self.disconnect_value,
             self.stream_process_watcher_queue,
         )
-        self.stream_process.heading_queue = QueueValueCollector(
-            self.heading_manager.mp_values, conf
-        )
-        self.stream_process.host_port = (
-            "10.1.1.96:12937"  # TODO:f"{host_address}:12937"
-        )
-        self.stream_process.mean_window_seconds = self.mean_window_width_value
         self.stream_process.start()
 
         self.status_query_thread = StatusQueryThread(

@@ -115,9 +115,23 @@ class PlaybackTab(ttk.Frame):
         self.send_commands_function(cmd)
 
     def start_commands(self) -> None:
-        cmd = proto.Command()
-        cmd.instruction = proto.SOURCE_START
-        self.send_commands_function(cmd)
+        cmd_source_start = proto.Command()
+        cmd_source_start.instruction = proto.SOURCE_START
+        
+        cmd_stream_start = proto.Command()
+        cmd_stream_start.instruction = proto.STREAM_START
+        #TODO: customazible stream levels
+        #TODO: target address and port dinamically?
+        cmd_stream_start.target.id = 1 
+        cmd_stream_start.target.level = proto.StreamTarget.StreamLevel.SPECTRUM
+        cmd_stream_start.target.address = "127.0.0.1"
+        cmd_stream_start.target.port = 4242
+        
+        #TODO: think about ideal timeout values
+        cmd_stream_start.target.heartbeat_timeout = 60
+        cmd_stream_start.target.telemetry_timeout = 60
+
+        self.send_commands_function([cmd_source_start, cmd_stream_start])
 
     def rec_commands(self) -> None:
         if self.rec_button.config("relief")[-1] == "sunken":

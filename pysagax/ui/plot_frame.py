@@ -1,5 +1,6 @@
 import math
 import tkinter
+import numpy as np
 from tkinter import ttk
 from typing import Any, Callable, Optional
 
@@ -17,6 +18,7 @@ import pysagax
 from pysagax.df.lena_core_service import CoreServiceSpectrumPacket
 from pysagax.source.source_manager import CoreServiceStatus
 from pysagax.spot.calculate_df_corrected import calculate_df_corrected
+import pysagax.message.data_pb2 as proto_data
 
 # from pysagax.spotclient import Client, conf, calculate_df_corrected
 from pysagax.ui.custom_widgets import EntryWithLabel, ToggleButton
@@ -236,34 +238,46 @@ class PlotFrame(tkinter.Frame):
 
     def plot_spectrum_packet(
         self,
-        packet: CoreServiceSpectrumPacket,
+        spectrum,
+        bin_count: int,
+        center_frequency: float,
+        iq_rate: float,
         signal_db: float = 0.0,
         noise_db: float = 0.0,
     ) -> None:
         if self.make_plots == False:
             return
-        if packet.bin_count == 0:
+        if bin_count == 0:
             return
         if (
             self.redraw_canvas
-            or packet.bin_count
+            or bin_count
             != self.params.bin_count  # or restart if the dimensions change
-            or packet.center_frequency
+            or center_frequency
             != self.params.center_frequency  # or restart if the axes change
-            or packet.iq_rate != self.params.iq_rate
+            or iq_rate != self.params.iq_rate
         ):
             # Animation can be created, because at this point we know bin count and other properties
             # Also restart when bin count or any other parameter has changed
-            self.params.bin_count = packet.bin_count
-            self.params.iq_rate = packet.iq_rate
-            self.params.center_frequency = packet.center_frequency
+            self.params.bin_count = bin_count
+            self.params.iq_rate = iq_rate
+            self.params.center_frequency = center_frequency
             self.create_anim()
             self.redraw_canvas = False
 
         assert self.magnitude_waterfall_graph is not None
         assert self.magnitude_spectrum_graph is not None
-        self.magnitude_waterfall_graph.add_data(packet.magnitude_spectrum)
-        self.magnitude_spectrum_graph.add_data(packet.magnitude_spectrum)
+        data_type = spectrum.data_type
+        np_data_type = {
+            proto_data.Spectrum.DataType.INT16: np.dtype(np.int16),
+            proto_data.Spectrum.DataType.INT8: np.dtype(np.int8),
+            proto_data.Spectrum.DataType.FLOAT32: np.dtype(np.float32),
+        }[data_type]
+
+
+        spectrum_data = np.frombuffer(spectrum.data, np_data_type)
+        self.magnitude_waterfall_graph.add_data(spectrum_data)
+        self.magnitude_spectrum_graph.add_data(spectrum_data)
         self.magnitude_spectrum_graph.signal_lvl = signal_db
         self.magnitude_spectrum_graph.noise_lvl = noise_db
 

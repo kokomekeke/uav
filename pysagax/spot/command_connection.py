@@ -11,10 +11,6 @@ import multiprocessing
 import queue
 
 
-class CommandConnection(REQ):
-    pass
-
-
 class CommandThread(threading.Thread):
     def __init__(
         self,
@@ -43,7 +39,7 @@ class CommandThread(threading.Thread):
         # timestamp for last received message:
         self._last_heartbeat_time: int = 0
         # connection deemed broken if nothing is received for this much time:
-        self.heartbeat_timeout_ns: int = 60e9
+        self.heartbeat_timeout_ns: int = 120e9
         # last outgoing request timestamp:
         self._last_command_time: int = 0
 
@@ -56,7 +52,7 @@ class CommandThread(threading.Thread):
         if not isinstance(commands, list):
             commands = [commands]
         for cmd in commands:
-            cmd.id = self.command_id
+            cmd.id = self.command_id % 2**31 #staying in the range of int32
             self.command_id += 1
             self.command_queue.put(cmd)
             # if cmd not in self.command_queue.queue:
@@ -112,9 +108,9 @@ class CommandThread(threading.Thread):
             if command is None:
                 time.sleep(0.1)
                 continue
-            print("COMMAND:\n", command)  ####
+            # print("COMMAND:\n", command)  ####
             raw_response = self.connection.send(
-                command.SerializeToString(), timeout=30000
+                command.SerializeToString(), timeout=60000
             )
             if raw_response is None:
                 self._timeout_handler(command)
@@ -128,7 +124,10 @@ class CommandThread(threading.Thread):
                     f"\n#############\n"
                 )
                 # raise Exception(f"Error in command response: {response.error.description}")
-            print("RESPONSE:\n", response, "\n================\n")  ####
+                #TODO: dont run response handlers if error in response, 
+                #      OR make response handlers that check the error field
+                continue #skipping response handler
+            # print("RESPONSE:\n", response, "\n================\n")  ####
             try:
                 self._response_handler(response)
             except Exception as e:
