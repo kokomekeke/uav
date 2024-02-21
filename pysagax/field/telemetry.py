@@ -127,6 +127,15 @@ class Telemetry(Loop):
         total, used, free = shutil.disk_usage(self._data_partition_path)
         self._sysinfo_packet.hardware.disk = total // (2**20)  # MiB
         self._sysinfo_packet.software.pysagax_version = pysagax.__version__  # type: ignore
+        _, resp = next(self._cs_execute(["CORE:Version?"]))
+        if resp[0] == "0":
+            self._sysinfo_packet.software.cs_version = f"{resp[1]}.{resp[2]}.{resp[3]}"  # major.minor.patch
+            if resp[4]:
+                self._sysinfo_packet.software.cs_version += f"-{resp[4]}"  #-prerelease
+            if resp[5]:
+                self._sysinfo_packet.software.cs_version += f"+{resp[5]}"  #+build
+            if resp[6]:
+                self._sysinfo_packet.software.cs_version += f" ({resp[6]})"  # (vcs tag)
         self._logger.debug("SystemInfo packet ready")
         if self._latest_packets_proxy is not None:
             self._latest_packets_proxy["SystemInfo"] = pickle.dumps(self._sysinfo_packet)
