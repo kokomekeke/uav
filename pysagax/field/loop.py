@@ -1,6 +1,7 @@
 from logging import getLogger
 from signal import signal, SIGINT, SIGTERM
 from os import kill, getpid
+import traceback
 
 
 class Loop:
@@ -16,13 +17,16 @@ class Loop:
 
     def _call(self, *args, **kwargs) -> None:
         """Execute the main logic of the loop"""
+        try:
+            self._logger.debug("Setting up loop")
+            self._pre_loop()
 
-        self._logger.debug("Setting up loop")
-        self._pre_loop()
-
-        self._logger.debug("Running main loop")
-        while True:
-            self._loop()
+            self._logger.debug("Running main loop")
+            while True:
+                self._loop()
+        except Exception as e:
+            self._logger.critical(" / ".join(traceback.format_exception(e)))
+            raise
 
     def _pre_loop(self) -> None:
         """Called before main loop starts. Used for initialization"""
