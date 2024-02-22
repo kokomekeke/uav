@@ -513,8 +513,24 @@ class Command(google.protobuf.message.Message):
 
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
+    class _CommandKind:
+        ValueType = typing.NewType("ValueType", builtins.int)
+        V: typing_extensions.TypeAlias = ValueType
+
+    class _CommandKindEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[Command._CommandKind.ValueType], builtins.type):
+        DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+        UNDEFINED: Command._CommandKind.ValueType  # 0
+        READ: Command._CommandKind.ValueType  # 1
+        WRITE: Command._CommandKind.ValueType  # 2
+
+    class CommandKind(_CommandKind, metaclass=_CommandKindEnumTypeWrapper): ...
+    UNDEFINED: Command.CommandKind.ValueType  # 0
+    READ: Command.CommandKind.ValueType  # 1
+    WRITE: Command.CommandKind.ValueType  # 2
+
     ID_FIELD_NUMBER: builtins.int
     INSTRUCTION_FIELD_NUMBER: builtins.int
+    KIND_FIELD_NUMBER: builtins.int
     PING_DATA_FIELD_NUMBER: builtins.int
     CONFIG_FIELD_NUMBER: builtins.int
     POSITION_FIELD_NUMBER: builtins.int
@@ -523,6 +539,7 @@ class Command(google.protobuf.message.Message):
     """Unique ID of command"""
     instruction: global___Instruction.ValueType
     """Type of instruction"""
+    kind: global___Command.CommandKind.ValueType
     ping_data: builtins.str
     """Ping data"""
     @property
@@ -538,13 +555,14 @@ class Command(google.protobuf.message.Message):
         *,
         id: builtins.int = ...,
         instruction: global___Instruction.ValueType = ...,
+        kind: global___Command.CommandKind.ValueType = ...,
         ping_data: builtins.str = ...,
         config: global___Config | None = ...,
         position: builtins.int = ...,
         target: global___StreamTarget | None = ...,
     ) -> None: ...
     def HasField(self, field_name: typing_extensions.Literal["config", b"config", "parameter", b"parameter", "ping_data", b"ping_data", "position", b"position", "target", b"target"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing_extensions.Literal["config", b"config", "id", b"id", "instruction", b"instruction", "parameter", b"parameter", "ping_data", b"ping_data", "position", b"position", "target", b"target"]) -> None: ...
+    def ClearField(self, field_name: typing_extensions.Literal["config", b"config", "id", b"id", "instruction", b"instruction", "kind", b"kind", "parameter", b"parameter", "ping_data", b"ping_data", "position", b"position", "target", b"target"]) -> None: ...
     def WhichOneof(self, oneof_group: typing_extensions.Literal["parameter", b"parameter"]) -> typing_extensions.Literal["ping_data", "config", "position", "target"] | None: ...
 
 global___Command = Command

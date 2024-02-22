@@ -1,5 +1,7 @@
 from __future__ import annotations
 import datetime
+import multiprocessing
+from multiprocessing.managers import ValueProxy
 from queue import Empty, Queue
 import queue
 import re
@@ -35,6 +37,7 @@ class PostProc(Loop):
         self._data_type = data_type
         self._measurement_packet = proto_data.Measurement()
         self._packet_id_counter: int = 0
+        self._latest_config_id_value: Optional[ValueProxy[int]] = None
 
     def __call__(
         self,
@@ -42,6 +45,7 @@ class PostProc(Loop):
         cs_queue_in: Queue[Any],
         conf_queue_in: Queue[Any],
         conf_queue_out: Queue[Any],
+        latest_config_id_value: Optional[ValueProxy[int]] = None,
         *args,
         **kwargs,
     ) -> None:
@@ -49,6 +53,7 @@ class PostProc(Loop):
         self._cs_queue_in = cs_queue_in
         self._conf_queue_in = conf_queue_in
         self._conf_queue_out = conf_queue_out
+        self._latest_config_id_value = latest_config_id_value
         self._np_data_type = {
             proto_data.Spectrum.DataType.INT16: numpy.dtype(numpy.int16),
             proto_data.Spectrum.DataType.INT8: numpy.dtype(numpy.int8),
@@ -68,6 +73,8 @@ class PostProc(Loop):
         spectrum.data = cs_packet.magnitude_spectrum.astype(
             self._np_data_type
         ).tobytes()
+        spectrum.center_frequency = cs_packet.center_frequency
+        spectrum.bandwidth = cs_packet.iq_rate
         self._measurement_packet.data.append(spectrum)
 
     def _handle_roi_packet(self, cs_packet: CoreServiceROIResultPacket) -> None:
@@ -114,6 +121,8 @@ class PostProc(Loop):
         self._measurement_packet.stream_id = 0
         self._packet_id_counter += 1
         self._measurement_packet.packet_id = self._packet_id_counter
+        if self._latest_config_id_value is not None:
+            self._measurement_packet.config_id = self._latest_config_id_value.get()
         self._logger.debug(f"PostProc finished on packet {self._packet_id_counter}")
         self._comm_queue_out.put(self._measurement_packet)
         self._measurement_packet = proto_data.Measurement()

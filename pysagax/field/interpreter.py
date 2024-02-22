@@ -1,5 +1,5 @@
 from __future__ import annotations
-from multiprocessing.managers import DictProxy
+from multiprocessing.managers import DictProxy, ValueProxy
 import pickle
 import queue
 from queue import Queue
@@ -95,6 +95,7 @@ class Interpreter(Loop):
         self._cs_lock: Optional[threading.Lock] = None
         self._currently_running_cs_command = ""
         self._config_status_message: Optional[proto_cmd.ConfigStatus] = None
+        self._latest_config_id_value: Optional[ValueProxy[int]] = None
 
     def __call__(
         self,
@@ -104,6 +105,7 @@ class Interpreter(Loop):
         cs_queue_out: Queue[str],
         stream_conf_queue_out: Queue[Any],
         latest_telemetry_proxy: Optional[DictProxy] = None,
+        latest_config_id_value: Optional[ValueProxy[int]] = None,
         *args,
         **kwargs,
     ) -> None:
@@ -113,6 +115,7 @@ class Interpreter(Loop):
         self._cs_queue_out = cs_queue_out
         self._stream_conf_queue_out = stream_conf_queue_out
         self._latest_telemetry_proxy = latest_telemetry_proxy
+        self._latest_config_id_value = latest_config_id_value
         self._cs_lock = threading.Lock()
         return super()._call(*args, **kwargs)
 
@@ -174,7 +177,10 @@ class Interpreter(Loop):
 
             case proto_cmd.CONFIG:
                 # Check whether command is a query or a setting
-                if command.HasField("parameter"):
+                if (
+                    command.HasField("parameter")
+                    or command.kind == proto_cmd.Command.WRITE
+                ) and command.kind != proto_cmd.Command.READ:
                     conf_thread = threading.Thread(
                         target=self._config, args=(response, command.config)
                     )
@@ -192,7 +198,10 @@ class Interpreter(Loop):
 
             case proto_cmd.POSITION:
                 # Check whether command is a query or a setting
-                if command.HasField("parameter"):
+                if (
+                    command.HasField("parameter")
+                    or command.kind == proto_cmd.Command.WRITE
+                ) and command.kind != proto_cmd.Command.READ:
                     self._position(response, command.position)
                 else:
                     self._position(response, None)
@@ -341,6 +350,8 @@ class Interpreter(Loop):
                         )
                     else:
                         self.config_id += 1
+                        if self._latest_config_id_value is not None:
+                            self._latest_config_id_value.set(self.config_id)
                 else:
                     self._config_status_message.responses[command_arg] = "TIMED OUT"
                     self._config_status_message.error_code = -1
@@ -429,6 +440,10 @@ class Interpreter(Loop):
             if error_code == 0:
                 if cs_response[1].isdigit():
                     response.position = int(cs_response[1])
+                    return
+                elif position is not None:
+                    response.position = position
+                    return
             raise CSErrorException(error_code, cs_response[1])
         else:
             raise CSTimeoutException()
