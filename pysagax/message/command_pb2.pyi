@@ -569,50 +569,34 @@ class ConfigStatus(google.protobuf.message.Message):
         ) -> None: ...
         def ClearField(self, field_name: typing_extensions.Literal["key", b"key", "value", b"value"]) -> None: ...
 
-    @typing_extensions.final
-    class QueueEntry(google.protobuf.message.Message):
-        DESCRIPTOR: google.protobuf.descriptor.Descriptor
-
-        KEY_FIELD_NUMBER: builtins.int
-        VALUE_FIELD_NUMBER: builtins.int
-        key: builtins.str
-        value: builtins.int
-        def __init__(
-            self,
-            *,
-            key: builtins.str = ...,
-            value: builtins.int = ...,
-        ) -> None: ...
-        def ClearField(self, field_name: typing_extensions.Literal["key", b"key", "value", b"value"]) -> None: ...
-
     SUCCESS_FIELD_NUMBER: builtins.int
     RESPONSES_FIELD_NUMBER: builtins.int
-    QUEUE_FIELD_NUMBER: builtins.int
     ERROR_CODE_FIELD_NUMBER: builtins.int
     ERROR_DESCRIPTION_FIELD_NUMBER: builtins.int
     START_TIME_FIELD_NUMBER: builtins.int
     FINISH_TIME_FIELD_NUMBER: builtins.int
+    QUEUE_FIELD_NUMBER: builtins.int
     success: builtins.bool
     @property
     def responses(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]: ...
-    @property
-    def queue(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.int]: ...
     error_code: builtins.int
     error_description: builtins.str
     @property
     def start_time(self) -> google.protobuf.timestamp_pb2.Timestamp: ...
     @property
     def finish_time(self) -> google.protobuf.timestamp_pb2.Timestamp: ...
+    @property
+    def queue(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]: ...
     def __init__(
         self,
         *,
         success: builtins.bool = ...,
         responses: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
-        queue: collections.abc.Mapping[builtins.str, builtins.int] | None = ...,
         error_code: builtins.int = ...,
         error_description: builtins.str = ...,
         start_time: google.protobuf.timestamp_pb2.Timestamp | None = ...,
         finish_time: google.protobuf.timestamp_pb2.Timestamp | None = ...,
+        queue: collections.abc.Iterable[builtins.str] | None = ...,
     ) -> None: ...
     def HasField(self, field_name: typing_extensions.Literal["finish_time", b"finish_time", "start_time", b"start_time"]) -> builtins.bool: ...
     def ClearField(self, field_name: typing_extensions.Literal["error_code", b"error_code", "error_description", b"error_description", "finish_time", b"finish_time", "queue", b"queue", "responses", b"responses", "start_time", b"start_time", "success", b"success"]) -> None: ...

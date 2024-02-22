@@ -315,10 +315,9 @@ class Interpreter(Loop):
                 command_arg = proto_lambda(config)
                 if not command_arg:
                     continue
-                self._config_status_message.queue[
+                self._config_status_message.queue.append(
                     str(config_command.format(command_arg))
-                ] = count
-                count += 1
+                )
 
             for config_command, proto_lambda in self._CONFIG_COMMANDS:
                 command_arg = proto_lambda(config)

@@ -26,6 +26,7 @@ class Loop:
                 self._loop()
         except Exception as e:
             self._logger.critical(" / ".join(traceback.format_exception(e)))
+            self._quit()
             raise
 
     def _pre_loop(self) -> None:
