@@ -116,11 +116,11 @@ class PlaybackTab(ttk.Frame):
         )
         self.position_slider.pack(side=tkinter.BOTTOM, fill=tkinter.X)
         self.start_button = tkinter.Button(
-            self.playback_control_frame, text="▶️", command=self.start_commands
+            self.playback_control_frame, text="play", command=self.start_commands
         )
         self.start_button.pack(side=tkinter.LEFT, anchor="s")
         self.rec_button = tkinter.Button(
-            self.playback_control_frame, text="⏺️️", command=self.rec_commands
+            self.playback_control_frame, text="rec", command=self.rec_commands
         )
         self.rec_button.pack(side=tkinter.LEFT, anchor="s")
         self.rec_status_label = tkinter.Label(
@@ -131,15 +131,15 @@ class PlaybackTab(ttk.Frame):
         )
         self.rec_status_label.pack(side=tkinter.LEFT, anchor="s", expand=False)
         self.stop_button = tkinter.Button(
-            self.playback_control_frame, text="⏹️", command=self.stop_commands
+            self.playback_control_frame, text="stop", command=self.stop_commands
         )
         self.stop_button.pack(side=tkinter.LEFT, anchor="s")
         self.repeat_button = tkinter.Button(
-            self.playback_control_frame, text="⟲", command=self.repeat_commands
+            self.playback_control_frame, text="replay", command=self.repeat_commands
         )
         self.repeat_button.pack(side=tkinter.LEFT, anchor="s")
         self.abort_button = tkinter.Button(
-            self.playback_control_frame, text="⛔", command=self.abort_commands
+            self.playback_control_frame, text="abort", command=self.abort_commands
         )
         self.abort_button.pack(side=tkinter.RIGHT, anchor="s")
 

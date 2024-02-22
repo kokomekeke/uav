@@ -120,7 +120,7 @@ class CommandThread(threading.Thread):
             response.ParseFromString(raw_response)
             if response.error.description:
                 print(
-                    f"\n#############\nERROR IN COMMAND RESPONSE: {response.error.description}"
+                    f"\n#############\nERROR IN '{proto_cmd.Instruction.Name(command.instruction)}' COMMAND RESPONSE: {response.error.description}"
                     f"\n#############\n"
                 )
                 # raise Exception(f"Error in command response: {response.error.description}")

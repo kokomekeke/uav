@@ -222,17 +222,9 @@ class ClientWindow(tkinter.Frame):
 
         # TODO: signal_db, noise_db = self.calculate_snr(packet)
         signal_db, noise_db = 0, 0
-        # TODO: where are we supposed to get info on bin_count, center_freq and iq_rate
-        from pysagax import si_to_float
 
-        bin_count = 1024
-        center_frequency = si_to_float(self.control_frame.freq_entry.get())
-        iq_rate = si_to_float(self.control_frame.bw_entry.get())
         self.plot_frame.plot_spectrum_packet(
             packet.data[0],
-            bin_count,
-            center_frequency,
-            iq_rate,
             signal_db,
             noise_db,
         )

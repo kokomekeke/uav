@@ -152,9 +152,8 @@ class SourceManager:
         try:
             self.current_source = Sources(self.current_source_path[0])
         except:
-            raise Exception(
-                f"Unknown source type ({self.current_source_path}) is used by CoreService"
-            )
+            self.current_source = Sources.NOT_SET
+            
 
     def source_telemetry_handler(self, packet: proto_data.Telemetry) -> None:
         # updates the source status based on the response from CoreService

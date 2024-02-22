@@ -239,15 +239,25 @@ class PlotFrame(tkinter.Frame):
     def plot_spectrum_packet(
         self,
         spectrum,
-        bin_count: int,
-        center_frequency: float,
-        iq_rate: float,
         signal_db: float = 0.0,
         noise_db: float = 0.0,
     ) -> None:
         if self.make_plots == False:
             return
-        if bin_count == 0:
+        
+        #Decoding spectrum data
+        data_type = spectrum.data_type
+        np_data_type = {
+            proto_data.Spectrum.DataType.INT16: np.dtype(np.int16),
+            proto_data.Spectrum.DataType.INT8: np.dtype(np.int8),
+            proto_data.Spectrum.DataType.FLOAT32: np.dtype(np.float32),
+        }[data_type]
+        spectrum_data = np.frombuffer(spectrum.data, np_data_type)
+        bin_count = len(spectrum_data)
+        center_frequency = spectrum.center_frequency
+        iq_rate = spectrum.bandwidth
+
+        if bin_count == 0 or iq_rate == 0:
             return
         if (
             self.redraw_canvas
@@ -267,15 +277,6 @@ class PlotFrame(tkinter.Frame):
 
         assert self.magnitude_waterfall_graph is not None
         assert self.magnitude_spectrum_graph is not None
-        data_type = spectrum.data_type
-        np_data_type = {
-            proto_data.Spectrum.DataType.INT16: np.dtype(np.int16),
-            proto_data.Spectrum.DataType.INT8: np.dtype(np.int8),
-            proto_data.Spectrum.DataType.FLOAT32: np.dtype(np.float32),
-        }[data_type]
-
-
-        spectrum_data = np.frombuffer(spectrum.data, np_data_type)
         self.magnitude_waterfall_graph.add_data(spectrum_data)
         self.magnitude_spectrum_graph.add_data(spectrum_data)
         self.magnitude_spectrum_graph.signal_lvl = signal_db
