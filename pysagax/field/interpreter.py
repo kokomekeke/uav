@@ -1,11 +1,12 @@
 from __future__ import annotations
-from multiprocessing.managers import DictProxy
+from multiprocessing.managers import DictProxy, ValueProxy
 import pickle
 import queue
 from queue import Queue
 
 import subprocess
 import shlex
+import threading
 from typing import Any, Optional
 
 import pysagax.message.command_pb2 as proto_cmd
@@ -22,6 +23,12 @@ class CSErrorException(Exception):
 
 class CSTimeoutException(Exception):
     pass
+
+
+class CSThreadOccupied(Exception):
+    def __init__(self, running_command: str, *args: object) -> None:
+        super().__init__(*args)
+        self.running_command = running_command
 
 
 class Interpreter(Loop):
@@ -85,6 +92,10 @@ class Interpreter(Loop):
         self._cs_queue_out: Optional[Queue] = None
         self._stream_conf_queue_out: Optional[Queue] = None
         self._latest_telemetry_proxy: Optional[DictProxy] = None
+        self._cs_lock: Optional[threading.Lock] = None
+        self._currently_running_cs_command = ""
+        self._config_status_message: Optional[proto_cmd.ConfigStatus] = None
+        self._latest_config_id_value: Optional[ValueProxy[int]] = None
 
     def __call__(
         self,
@@ -94,6 +105,7 @@ class Interpreter(Loop):
         cs_queue_out: Queue[str],
         stream_conf_queue_out: Queue[Any],
         latest_telemetry_proxy: Optional[DictProxy] = None,
+        latest_config_id_value: Optional[ValueProxy[int]] = None,
         *args,
         **kwargs,
     ) -> None:
@@ -103,6 +115,8 @@ class Interpreter(Loop):
         self._cs_queue_out = cs_queue_out
         self._stream_conf_queue_out = stream_conf_queue_out
         self._latest_telemetry_proxy = latest_telemetry_proxy
+        self._latest_config_id_value = latest_config_id_value
+        self._cs_lock = threading.Lock()
         return super()._call(*args, **kwargs)
 
     def _loop(self) -> None:
@@ -123,9 +137,17 @@ class Interpreter(Loop):
                 f"CS{cs_err.error_code}: {cs_err.error_description}"
             )
         except CSTimeoutException:
+            self._logger.error("CS not responding")
             response.id = command.id
             response.instruction = command.instruction
             response.error.description = f"CS not responding"
+        except CSThreadOccupied as cs_occ:
+            self._logger.error(f"CS is occupied by command {cs_occ.running_command}")
+            response.id = command.id
+            response.instruction = command.instruction
+            response.error.description = (
+                f"CS is occupied by command {cs_occ.running_command}"
+            )
         # Send response to Communicator
         self._comm_queue_out.put(response)
 
@@ -155,8 +177,16 @@ class Interpreter(Loop):
 
             case proto_cmd.CONFIG:
                 # Check whether command is a query or a setting
-                if command.HasField("parameter"):
-                    self._config(response, command.config)
+                if (
+                    command.HasField("parameter")
+                    or command.kind == proto_cmd.Command.WRITE
+                ) and command.kind != proto_cmd.Command.READ:
+                    conf_thread = threading.Thread(
+                        target=self._config, args=(response, command.config)
+                    )
+                    conf_thread.start()
+                    response.success = True
+                    # self._config(response, command.config)
                 else:
                     self._config(response, None)
 
@@ -168,7 +198,10 @@ class Interpreter(Loop):
 
             case proto_cmd.POSITION:
                 # Check whether command is a query or a setting
-                if command.HasField("parameter"):
+                if (
+                    command.HasField("parameter")
+                    or command.kind == proto_cmd.Command.WRITE
+                ) and command.kind != proto_cmd.Command.READ:
                     self._position(response, command.position)
                 else:
                     self._position(response, None)
@@ -199,6 +232,11 @@ class Interpreter(Loop):
             case proto_cmd.STREAM_START | proto_cmd.STREAM_STOP:
                 assert self._stream_conf_queue_out is not None
                 self._stream_conf_queue_out.put(command)
+            case proto_cmd.CONFIG_STATUS:
+                if self._config_status_message is None:
+                    response.error.description = "No available config status"
+                else:
+                    response.config_status.CopyFrom(self._config_status_message)
             case _:
                 response.error.description = "Unknown command"
 
@@ -206,29 +244,36 @@ class Interpreter(Loop):
         return response  # .SerializeToString()
 
     def _cs_execute(
-        self, command: str, timeout: Optional[float] = None
+        self, command: str, timeout: Optional[float] = None, important: bool = False
     ) -> Optional[list[str]]:
         """Send a list of commands to CoreService, return the result."""
         assert self._cs_queue_in is not None
         assert self._cs_queue_out is not None
+        assert self._cs_lock is not None
         if timeout is None:
             timeout = self._cmd_timeout_seconds
         if command[-1:] != ";":
             command += ";"
-        self._cs_queue_out.put(command)
-        try:
-            response = self._cs_queue_in.get(timeout=timeout)
+        if self._cs_lock.locked() and not important:
+            raise CSThreadOccupied(self._currently_running_cs_command)
+        with self._cs_lock:
+            self._cs_queue_out.put(command)
+            self._currently_running_cs_command = command
+            try:
+                response = self._cs_queue_in.get(timeout=timeout)
 
-            if response is None:
+                if response is None:
+                    return None
+                response = response.strip("\r\n\t ;")
+                response_parts = shlex.split(response)
+                error_code = int(response_parts[0])
+                if error_code > 0:
+                    self._logger.warning(f"Error {response} for cmd {command}")
+                self._currently_running_cs_command = ""
+                return response_parts
+            except queue.Empty:
+                self._currently_running_cs_command = ""
                 return None
-            response = response.strip("\r\n\t ;")
-            response_parts = shlex.split(response)
-            error_code = int(response_parts[0])
-            if error_code > 0:
-                self._logger.warning(f"Error {response} for cmd {command}")
-            return response_parts
-        except queue.Empty:
-            return None
 
     def _cs_ping(self, response: proto_cmd.Response, ping_data: str) -> None:
         """Send a Ping command to CoreService"""
@@ -272,23 +317,51 @@ class Interpreter(Loop):
     ) -> None:
         """Set of query system configuration"""
         if config is not None:
+            self._config_status_message = proto_cmd.ConfigStatus()
+            self._config_status_message.start_time.GetCurrentTime()
+            count = 0
+            for config_command, proto_lambda in self._CONFIG_COMMANDS:
+                command_arg = proto_lambda(config)
+                if not command_arg:
+                    continue
+                self._config_status_message.queue.append(
+                    str(config_command.format(command_arg))
+                )
+
             for config_command, proto_lambda in self._CONFIG_COMMANDS:
                 command_arg = proto_lambda(config)
                 if not command_arg:
                     continue
                 cs_command = config_command.format(command_arg)
-                cs_response = self._cs_execute(cs_command)
+                cs_response = self._cs_execute(cs_command, important=True)
+
                 if cs_response is not None:
+                    self._config_status_message.responses[cs_command] = "; ".join(
+                        cs_response
+                    )
                     error_code = int(cs_response[0])
                     if error_code != 0:
                         self._logger.error(f"Cannot set {cs_command}")
                         # try to set the remaining values
                         # raise CSErrorException(error_code, cs_response[1])
+                        self._config_status_message.error_code = error_code
+                        self._config_status_message.error_description = (
+                            cs_response[1] if len(cs_response) > 1 else "Unknown"
+                        )
                     else:
                         self.config_id += 1
+                        if self._latest_config_id_value is not None:
+                            self._latest_config_id_value.set(self.config_id)
                 else:
+                    self._config_status_message.responses[command_arg] = "TIMED OUT"
+                    self._config_status_message.error_code = -1
+
                     response.error.description = "CoreService not responding"
-                    raise CSTimeoutException()
+                    self._logger.error(f"Config timed out on command {cs_command}")
+                    # raise CSTimeoutException()
+            self._logger.info("Configuration finished")
+            self._config_status_message.finish_time.GetCurrentTime()
+            self._config_status_message.success = True
         # try:
         defaults = lambda val, defa: defa if val is None else val
         response.config.config_id = self.config_id
@@ -367,6 +440,10 @@ class Interpreter(Loop):
             if error_code == 0:
                 if cs_response[1].isdigit():
                     response.position = int(cs_response[1])
+                    return
+                elif position is not None:
+                    response.position = position
+                    return
             raise CSErrorException(error_code, cs_response[1])
         else:
             raise CSTimeoutException()

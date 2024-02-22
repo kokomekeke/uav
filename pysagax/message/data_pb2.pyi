@@ -242,10 +242,14 @@ class Spectrum(google.protobuf.message.Message):
     SPECTRUM_TYPE_FIELD_NUMBER: builtins.int
     DATA_TYPE_FIELD_NUMBER: builtins.int
     DATA_FIELD_NUMBER: builtins.int
+    CENTER_FREQUENCY_FIELD_NUMBER: builtins.int
+    BANDWIDTH_FIELD_NUMBER: builtins.int
     channel_id: builtins.int
     spectrum_type: global___Spectrum.SpectrumType.ValueType
     data_type: global___Spectrum.DataType.ValueType
     data: builtins.bytes
+    center_frequency: builtins.float
+    bandwidth: builtins.float
     def __init__(
         self,
         *,
@@ -253,8 +257,10 @@ class Spectrum(google.protobuf.message.Message):
         spectrum_type: global___Spectrum.SpectrumType.ValueType = ...,
         data_type: global___Spectrum.DataType.ValueType = ...,
         data: builtins.bytes = ...,
+        center_frequency: builtins.float = ...,
+        bandwidth: builtins.float = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing_extensions.Literal["channel_id", b"channel_id", "data", b"data", "data_type", b"data_type", "spectrum_type", b"spectrum_type"]) -> None: ...
+    def ClearField(self, field_name: typing_extensions.Literal["bandwidth", b"bandwidth", "center_frequency", b"center_frequency", "channel_id", b"channel_id", "data", b"data", "data_type", b"data_type", "spectrum_type", b"spectrum_type"]) -> None: ...
 
 global___Spectrum = Spectrum
 

@@ -78,6 +78,8 @@ class Telemetry(Loop):
                 yield command, response_parts
         except queue.Empty:
             self._logger.error(f"CS not responding to {last_command}")
+            while not self._cs_commands_queue.empty():
+                self._cs_commands_queue.get()
 
     def _get_from_cs(self) -> None:
         for command, response in self._cs_execute(
@@ -91,6 +93,11 @@ class Telemetry(Loop):
             self._logger.debug(f" * {command} * {str(response)} *")
             match command:
                 case "SOURCE:Status?":
+                    if len(response) < 3:
+                        self._logger.warning(
+                            f"Invalid CS response for Status?: {str(response)}"
+                        )
+                        return
                     ready = bool(int(response[1]))
                     started = bool(int(response[2]))
                     self._telemetry_packet.source.status = (
@@ -103,6 +110,11 @@ class Telemetry(Loop):
                         )
                     )
                 case "RECORDING:Status?":
+                    if len(response) < 3:
+                        self._logger.warning(
+                            f"Invalid CS response for Recording?: {str(response)}"
+                        )
+                        return
                     enabled = bool(int(response[1]))
                     running = bool(int(response[2]))
                     self._telemetry_packet.recording.status = (
@@ -129,17 +141,24 @@ class Telemetry(Loop):
         total, used, free = shutil.disk_usage(self._data_partition_path)
         self._sysinfo_packet.hardware.disk = total // (2**20)  # MiB
         self._sysinfo_packet.software.pysagax_version = pysagax.__version__  # type: ignore
-        _, resp = next(self._cs_execute(["CORE:Version?"]))
-        if resp[0] == "0":
-            self._sysinfo_packet.software.cs_version = (
-                f"{resp[1]}.{resp[2]}.{resp[3]}"  # major.minor.patch
-            )
-            if resp[4]:
-                self._sysinfo_packet.software.cs_version += f"-{resp[4]}"  # -prerelease
-            if resp[5]:
-                self._sysinfo_packet.software.cs_version += f"+{resp[5]}"  # +build
-            if resp[6]:
-                self._sysinfo_packet.software.cs_version += f" ({resp[6]})"  # (vcs tag)
+        try:
+            _, resp = next(self._cs_execute(["CORE:Version?"]))
+            if resp[0] == "0":
+                self._sysinfo_packet.software.cs_version = (
+                    f"{resp[1]}.{resp[2]}.{resp[3]}"  # major.minor.patch
+                )
+                if resp[4]:
+                    self._sysinfo_packet.software.cs_version += (
+                        f"-{resp[4]}"  # -prerelease
+                    )
+                if resp[5]:
+                    self._sysinfo_packet.software.cs_version += f"+{resp[5]}"  # +build
+                if resp[6]:
+                    self._sysinfo_packet.software.cs_version += (
+                        f" ({resp[6]})"  # (vcs tag)
+                    )
+        except StopIteration:  # CS not responding
+            self._sysinfo_packet.software.cs_version = "N/A"
         self._logger.debug("SystemInfo packet ready")
         if self._latest_packets_proxy is not None:
             self._latest_packets_proxy["SystemInfo"] = pickle.dumps(

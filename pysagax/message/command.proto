@@ -24,8 +24,11 @@ enum Instruction {
     //   response:  info [Info]
     INFO = 3;
 
-	
-	PY_RESET = 8;
+    // Status of Async config
+    CONFIG_STATUS = 4;
+
+    
+    PY_RESET = 8;
 
     // Start CoreService
     //   response:  success [bool]
@@ -222,7 +225,12 @@ message Command {
 
     // Type of instruction
     Instruction instruction = 2;
-
+    enum CommandKind {
+        UNDEFINED = 0;
+        READ = 1;
+        WRITE = 2;
+    }
+    CommandKind kind = 3;
     // Parameter
     oneof parameter {
         // Ping data
@@ -237,6 +245,19 @@ message Command {
         // Stream target
         StreamTarget target = 8;
     }
+}
+
+message ConfigStatus {
+    bool success = 1;
+
+    map<string, string> responses = 2;
+
+    int32 error_code = 4;
+    string error_description = 5;
+
+    google.protobuf.Timestamp start_time = 6;
+    google.protobuf.Timestamp finish_time = 7;
+    repeated string queue = 8;
 }
 
 message Response {
@@ -268,5 +289,8 @@ message Response {
 
         // Playback position
         uint64 position = 10;
+
+        // Config Status
+        ConfigStatus config_status = 11;
     }
 }

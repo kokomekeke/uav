@@ -47,6 +47,7 @@ class Commander:
         self._telemetry_cs_responses_q = self._manager.Queue()
 
         self._latest_telemetry_proxy = self._manager.dict()
+        self._latest_config_id_value = self._manager.Value("i", 0)
 
         self._communicator = Communicator(level=level)
         self._streamer = Streamer(level=level)
@@ -78,6 +79,7 @@ class Commander:
             self._cs_commands_q,
             self._stream_conf_q,
             self._latest_telemetry_proxy,
+            self._latest_config_id_value,
         )
         self._cs_controller_future = self._pool.submit(
             self._cs_controller,
@@ -95,6 +97,7 @@ class Commander:
             self._post_proc_input_q,
             self._post_proc_commands_q,
             self._post_proc_responses_q,
+            self._latest_config_id_value,
         )
         self._cs_parser_future = self._pool.submit(
             self._cs_parser, self._raw_cs_stream_q, self._post_proc_input_q

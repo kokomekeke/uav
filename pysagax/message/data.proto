@@ -93,8 +93,11 @@ message Spectrum {
         FLOAT32 = 5;
     }
     DataType data_type = 3;
-
+    
     bytes data = 5;
+
+    float center_frequency = 7;
+    float bandwidth = 8;
 }
 
 message Measurement {
