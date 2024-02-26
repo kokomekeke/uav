@@ -104,7 +104,7 @@ message ROIMask {
     // ROI parameters
     float center_frequency = 5;
     float span = 6;
-    float treshold = 7;
+    float threshold = 7;
 }
 
 message Heading {

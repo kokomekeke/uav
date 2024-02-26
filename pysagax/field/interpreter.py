@@ -76,6 +76,20 @@ class Interpreter(Loop):
         ("SOURCE:Configure!;", lambda config: " "),
         ("AOA:BinCount! {};", lambda config: config.bin_count),
         ("AOA:Configure!;", lambda config: " "),
+        ("ROI:Enable! {};", lambda config: "1" if len(config.roi) else "0"),
+        (
+            "ROI:CenterFrequency! {:.0f};",
+            lambda config: (config.roi[0].center_frequency if len(config.roi) else 0.0),
+        ),
+        (
+            "ROI:Span! {:.0f};",
+            lambda config: config.roi[0].span if len(config.roi) else 0.0,
+        ),
+        (
+            "ROI:Threshold! {:.0f};",
+            lambda config: config.roi[0].threshold if len(config.roi) else 0.0,
+        ),
+        ("ROI:Configure!;", lambda config: " "),
     ]
 
     def __init__(
@@ -391,6 +405,8 @@ class Interpreter(Loop):
         response.config.source_path = defaults(
             self._cs_query_multiple("SOURCE:Path?;"), "UNKNOWN"
         )
+        # TODO no ROI query methods implemented in CS
+
         # except ValueError:
         #    response.error.description = "Invalid config on query"
 

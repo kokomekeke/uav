@@ -203,22 +203,22 @@ class ROIMask(google.protobuf.message.Message):
     ROI_ID_FIELD_NUMBER: builtins.int
     CENTER_FREQUENCY_FIELD_NUMBER: builtins.int
     SPAN_FIELD_NUMBER: builtins.int
-    TRESHOLD_FIELD_NUMBER: builtins.int
+    THRESHOLD_FIELD_NUMBER: builtins.int
     roi_id: builtins.int
     """ID for associating with Detections"""
     center_frequency: builtins.float
     """ROI parameters"""
     span: builtins.float
-    treshold: builtins.float
+    threshold: builtins.float
     def __init__(
         self,
         *,
         roi_id: builtins.int = ...,
         center_frequency: builtins.float = ...,
         span: builtins.float = ...,
-        treshold: builtins.float = ...,
+        threshold: builtins.float = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing_extensions.Literal["center_frequency", b"center_frequency", "roi_id", b"roi_id", "span", b"span", "treshold", b"treshold"]) -> None: ...
+    def ClearField(self, field_name: typing_extensions.Literal["center_frequency", b"center_frequency", "roi_id", b"roi_id", "span", b"span", "threshold", b"threshold"]) -> None: ...
 
 global___ROIMask = ROIMask
 
