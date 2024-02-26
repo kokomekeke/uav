@@ -56,6 +56,7 @@ from pysagax import (
 from pysagax.ui.plot_frame import PlotFrame, PlotSettingsFrame
 from pysagax.util.multiqueue import MultiQueue
 from pysagax.util.read_from_conf import read_from_conf
+from pysagax.util.get_ip import get_ip
 
 import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.data_pb2 as proto_data
@@ -627,6 +628,20 @@ class Client:
         self.status_query_thread = StatusQueryThread(client=self)
         self.status_query_thread.start()
 
+
+        cmd_stream_start = proto_cmd.Command()
+        cmd_stream_start.instruction = proto_cmd.STREAM_START
+        # TODO: customazible stream levels
+        cmd_stream_start.target.id = 1
+        cmd_stream_start.target.level = proto_cmd.StreamTarget.StreamLevel.SPECTRUM
+        cmd_stream_start.target.address = get_ip()
+        cmd_stream_start.target.port = 4242
+
+        # TODO: think about ideal timeout values, move to config
+        cmd_stream_start.target.heartbeat_timeout = 1
+        cmd_stream_start.target.telemetry_timeout = 1
+
+        self.command_thread.enqueue_commands(cmd_stream_start)
         return
         # TODO: the following response hanlder using protobuf
         self.command_thread.set_response_handler(

@@ -178,7 +178,7 @@ class CommandThread(threading.Thread):
 
     def _timeout_handler(self, command) -> None:
         self._display_connection_status_callback(
-            f"Command {command.instruction} timed out."
+            f"Command {proto_cmd.Instruction.Name(command.instruction)} timed out."
         )
 
     def _display_connection_status_callback(self, message: str) -> None:

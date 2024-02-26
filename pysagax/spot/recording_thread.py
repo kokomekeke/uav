@@ -74,6 +74,7 @@ class RecordingThread(threading.Thread):
 
     def handle_packet(self, data: dict[str, Any]) -> None:
         ##TODO: many similarities with client window packet handler. Maybe export those to a single function?
+        return
         packet = data["cs_packet"]
         try:
             time_ns = packet.time_ns

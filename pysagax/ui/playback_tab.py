@@ -7,7 +7,6 @@ from pysagax.source.source_manager import CoreServiceStatus, SourceStatus, Sourc
 from pysagax.ui.ui_helpers import en_if
 import pysagax.message.command_pb2 as proto_cmd
 
-from pysagax.util.get_ip import get_ip
 
 
 class PlaybackTab(ttk.Frame):
@@ -162,20 +161,7 @@ class PlaybackTab(ttk.Frame):
         cmd_source_start = proto_cmd.Command()
         cmd_source_start.instruction = proto_cmd.SOURCE_START
 
-        cmd_stream_start = proto_cmd.Command()
-        cmd_stream_start.instruction = proto_cmd.STREAM_START
-        # TODO: customazible stream levels
-        # TODO: target address and port dinamically?
-        cmd_stream_start.target.id = 1
-        cmd_stream_start.target.level = proto_cmd.StreamTarget.StreamLevel.SPECTRUM
-        cmd_stream_start.target.address = get_ip()
-        cmd_stream_start.target.port = 4242
-
-        # TODO: think about ideal timeout values, move to config
-        cmd_stream_start.target.heartbeat_timeout = 1
-        cmd_stream_start.target.telemetry_timeout = 1
-
-        self.send_commands_function([cmd_source_start, cmd_stream_start])
+        self.send_commands_function([cmd_source_start])
 
     def rec_commands(self) -> None:
         if self.rec_button.config("relief")[-1] == "sunken":
