@@ -39,7 +39,7 @@ class CommandThread(threading.Thread):
         # timestamp for last received message:
         self._last_heartbeat_time: int = 0
         # connection deemed broken if nothing is received for this much time:
-        self.heartbeat_timeout_ns: int = 120e9
+        self.heartbeat_timeout_ns: int = 10e9
         # last outgoing request timestamp:
         self._last_command_time: int = 0
 
@@ -110,7 +110,7 @@ class CommandThread(threading.Thread):
                 continue
             # print("COMMAND:\n", command)  ####
             raw_response = self._connection.send(
-                command.SerializeToString(), timeout=60000
+                command.SerializeToString(), timeout=2000
             )
             if raw_response is None:
                 self._timeout_handler(command)
@@ -123,7 +123,8 @@ class CommandThread(threading.Thread):
                     f"\n#############\nERROR IN '{proto_cmd.Instruction.Name(command.instruction)}' COMMAND RESPONSE: {response.error.description}"
                     f"\n#############\n"
                 )
-                # raise Exception(f"Error in command response: {response.error.description}")
+                cmd = proto_cmd.Command(instruction=proto_cmd.CONFIG_STATUS)
+                self.enqueue_commands(cmd)
                 #TODO: dont run response handlers if error in response, 
                 #      OR make response handlers that check the error field
                 continue #skipping response handler

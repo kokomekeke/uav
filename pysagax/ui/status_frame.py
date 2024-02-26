@@ -117,9 +117,10 @@ class StatusFrame(tkinter.Frame):
 
     def config_update(self):
         src_path = self.source_manager.get_current_source_path_str()
-        if src_path is None:
-            self.status_path_string.set("")
-        else:
-            self.status_path_string.set(
-                src_path + f" [{self.source_manager.source_status.name}]"
-            )
+        status_path_string = ""
+        if src_path is not None:
+            status_path_string = src_path + f" [{self.source_manager.source_status.name}]"
+            
+        status_path_string = status_path_string + f" [{self.source_manager.config_status['responses']}/{self.source_manager.config_status['queue']}]"
+
+        self.status_path_string.set(status_path_string)

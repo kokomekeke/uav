@@ -136,6 +136,8 @@ class SourceManager:
         self.recording_status: RecordingStatus = RecordingStatus.UNKNOWN
         self.source_status: SourceStatus = SourceStatus.UNKNOWN
         self.cs_status: CoreServiceStatus = CoreServiceStatus.DISCONNECTED
+        self.is_cs_configuring: bool = False 
+        self.config_status: dict[int, int] = {"responses": 0, "queue": 0}
 
         self.latest_telemetry: Optional[proto_data.Telemetry] = None
 
@@ -148,12 +150,20 @@ class SourceManager:
             self.cs_status = CoreServiceStatus.CONNECTED
 
     def source_config_handler(self, resp) -> None:
+        if resp.success: # CONFIG commands are being processed by pysagaxUAV
+            self.is_cs_configuring = True
+            return
         self.current_source_path = str(resp.config.source_path).strip().split(" ")
         try:
             self.current_source = Sources(self.current_source_path[0])
         except:
             self.current_source = Sources.NOT_SET
-            
+
+    def source_config_status_handler(self, resp) -> None:
+        if bool(resp.config_status.finish_time.ToSeconds()):
+            self.is_cs_configuring = False
+        self.config_status["responses"] = len(resp.config_status.responses)
+        self.config_status["queue"] = len(resp.config_status.queue)
 
     def source_telemetry_handler(self, packet: proto_data.Telemetry) -> None:
         # updates the source status based on the response from CoreService
@@ -213,14 +223,10 @@ class SourceManager:
         cmd.config.roi.append(
             self.get_single_roi_mask(roi_center, roi_span, roi_threshold)
         )
-        # TODO: roi
         # TODO: heading?
         # TODO: mean_window
         # TODO: cmd.config.type = LIVE/RECORDED #why is it needed???
-        position_cmd = proto_cmd.Command()
-        position_cmd.instruction = proto_cmd.POSITION
-        position_cmd.position = 0
-        return [cmd, position_cmd]
+        return [cmd]
 
     def get_single_roi_mask(
         self, center_frequency: float, span: float, threshold: float, roi_id: int = 0
@@ -228,7 +234,7 @@ class SourceManager:
         roi_mask = proto_cmd.ROIMask()
         roi_mask.center_frequency = float(center_frequency)
         roi_mask.span = float(span)
-        roi_mask.treshold = float(threshold)  # typo in protobuf definition
+        roi_mask.threshold = float(threshold)
         roi_mask.roi_id = roi_id
         return roi_mask
 

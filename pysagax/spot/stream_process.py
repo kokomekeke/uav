@@ -74,7 +74,7 @@ class StreamProcess(multiprocessing.Process):
     def _loop(self) -> None:
         while not self._is_disconnect():
             raw_data, group = self._connection.recv(
-                timeout=200
+                timeout=50
             )  # raw_data: either None or [packe, type]
             if raw_data is None:  # recv timeout
                 continue
