@@ -348,6 +348,7 @@ class Interpreter(Loop):
                     continue
                 cs_command = config_command.format(command_arg)
                 cs_response = self._cs_execute(cs_command, important=True)
+                self._config_status_message.success = True
 
                 if cs_response is not None:
                     self._config_status_message.responses[cs_command] = "; ".join(
@@ -362,6 +363,7 @@ class Interpreter(Loop):
                         self._config_status_message.error_description = (
                             cs_response[1] if len(cs_response) > 1 else "Unknown"
                         )
+                        self._config_status_message.success = False
                     else:
                         self.config_id += 1
                         if self._latest_config_id_value is not None:
@@ -375,7 +377,6 @@ class Interpreter(Loop):
                     # raise CSTimeoutException()
             self._logger.info("Configuration finished")
             self._config_status_message.finish_time.GetCurrentTime()
-            self._config_status_message.success = True
         # try:
         defaults = lambda val, defa: defa if val is None else val
         response.config.config_id = self.config_id
