@@ -35,6 +35,7 @@ class CSController(Loop, BaseConnection):
         self._queue_primary_thread: Optional[threading.Thread] = None
         self._queue_status_thread: Optional[threading.Thread] = None
         self.response_buffer: str = ""
+        self.allowed_to_send: bool = False
 
     def __call__(
         self,
@@ -72,7 +73,19 @@ class CSController(Loop, BaseConnection):
         self._sock_thread.start()
         self._queue_primary_thread.start()
         self._queue_status_thread.start()
-        # TODO: Connect to CoreService here
+        self.connected_callback = self._connected_callback
+        while not self.allowed_to_send:
+            self._logger.info("Waiting for CS command...")
+            time.sleep(0.5)
+        self._logger.info("CoreService command operational")
+
+    def _connected_callback(self) -> None:
+        self._logger.info("Timeout for flushing CoreService socket.")
+        time.sleep(
+            1.5
+        )  # Flush any incoming data from coreservice before sending commands
+        self.allowed_to_send = True
+        self._logger.info("Allowed to send commands.")
 
     def _queue_watcher(
         self, input_queue: Queue[Any], output_queue: Queue[Any], label: str = "queue"
@@ -92,6 +105,12 @@ class CSController(Loop, BaseConnection):
         """
         assert self._queue_out is not None
         assert self._queue_of_resp_queues is not None
+
+        if self._queue_of_resp_queues.empty():
+            self._logger.error(
+                f'No command in the queue, still got a response on the socket: "{data.decode()}"'
+            )
+            return
         data_str = data.decode()
         self.response_buffer += data_str
         index = self.response_buffer.find(";")
@@ -111,7 +130,11 @@ class CSController(Loop, BaseConnection):
         # Hang until a new command is received
         command, out_queue, label = self._merged_queue.get()
         self._queue_of_resp_queues.put((command, out_queue, label))
-        self.send_on_socket(command.encode())
+        success = self.send_on_socket(command.encode())
+        if not success:
+            self._logger.warning(
+                f"Tried to send command {command} ({label}). Socket error."
+            )
         # self._logger.debug(command)
         # response = "132"
 
