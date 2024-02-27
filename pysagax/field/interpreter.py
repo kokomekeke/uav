@@ -377,6 +377,7 @@ class Interpreter(Loop):
                     # raise CSTimeoutException()
             self._logger.info("Configuration finished")
             self._config_status_message.finish_time.GetCurrentTime()
+            return
         # try:
         defaults = lambda val, defa: defa if val is None else val
         response.config.config_id = self.config_id
