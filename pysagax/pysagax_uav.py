@@ -26,7 +26,7 @@ from pysagax.field.telemetry import Telemetry
 class Commander:
     """Main process of the service. Holds and controls necessary concurrent tasks"""
 
-    def __init__(self, level: str = "INFO") -> None:
+    def __init__(self, level: str = "INFO", disk_path: str = "/") -> None:
         self._logger = getLogger("Commander")
         self._manager = multiprocessing.Manager()
         self._pool = ProcessPoolExecutor(max_workers=10)
@@ -61,7 +61,7 @@ class Commander:
         self._cs_parser = CSParser(level=level)
         self._cs_streamer = CSStreamer(level=level)
 
-        self._telemetry = Telemetry(level=level)
+        self._telemetry = Telemetry(level=level, data_partition_path=disk_path)
 
     def start(self) -> None:
         """Start all background processes"""
@@ -140,7 +140,8 @@ class Commander:
 
 @click.command()
 @click.option("--level", "-l", help="Logging level")
-def main(level: str = "INFO") -> None:
+@click.option("--disk-path", default="/",  help="Path of the disk which is to be displayed in telemetry")
+def main(level: str = "INFO", disk_path: str = "/") -> None:
     """Root command of CLI"""
 
     # Validate logging level format
@@ -153,8 +154,7 @@ def main(level: str = "INFO") -> None:
     setup_logging(level=level)
 
     # TODO: Implement config file
-
-    commander = Commander(level=level)
+    commander = Commander(level=level, disk_path=disk_path)
     commander.start()
 
     # while True:

@@ -28,7 +28,7 @@ class CSController(Loop, BaseConnection):
         self._queue_in_status: Optional[Queue] = None
         self._queue_out_status: Optional[Queue] = None
 
-        self._queue_of_resp_queues: Optional[Queue[tuple[Queue[Any], str]]] = None
+        self._queue_of_resp_queues: Optional[Queue[tuple[str, Queue[Any], str]]] = None
         self._merged_queue: Optional[Queue[tuple[str, Queue[Any], str]]] = None
 
         self._sock_thread: Optional[threading.Thread] = None
@@ -98,8 +98,8 @@ class CSController(Loop, BaseConnection):
         while -1 < index:
             resp = self.response_buffer[: index + 1]
             # self._logger.debug(resp)
-            resp_queue, label = self._queue_of_resp_queues.get()
-            self._logger.debug(f"Response {resp} to {label}")
+            command, resp_queue, label = self._queue_of_resp_queues.get()
+            self._logger.debug(f"Response {resp} to {label} ({command})")
             resp_queue.put(resp)
             # self._queue_out.put(resp)
             self.response_buffer = self.response_buffer[index + 1 :]
@@ -110,7 +110,7 @@ class CSController(Loop, BaseConnection):
         assert self._queue_of_resp_queues is not None
         # Hang until a new command is received
         command, out_queue, label = self._merged_queue.get()
-        self._queue_of_resp_queues.put((out_queue, label))
+        self._queue_of_resp_queues.put((command, out_queue, label))
         self.send_on_socket(command.encode())
         # self._logger.debug(command)
         # response = "132"
