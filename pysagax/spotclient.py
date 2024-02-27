@@ -27,6 +27,7 @@ from pysagax.spot.stream_process import StreamProcess
 from pysagax.ui import HeadingSourceFrame
 from pysagax.ui.connect_frame import ConnectFrame
 from pysagax.ui.control_frame import ControlFrame
+from pysagax.ui.debug_tab import DebugTab
 from pysagax.ui.playback_tab import PlaybackTab
 from pysagax.ui.source_select_frame import SourceSelectFrame
 from pysagax.ui.stat_frame import StatFrame
@@ -155,12 +156,20 @@ class ClientWindow(tkinter.Frame):
         self.playback_tab.start_recording_function = self.client.start_recording
         self.playback_tab.stop_recording_function = self.client.stop_recording
         self.playback_tab.abort_commands_function = self.client.abort_commands
+        
+        self.debug_tab = DebugTab(
+            master=self.center_notebook,
+            send_commands_function=self.client.send_commands,
+            abort_commands_function=self.client.abort_commands,
+            source_manager=self.client.source_manager,
+        )
 
         self.status_info_tab = ttk.Frame(self.center_notebook)
         self.stream_packets_tab = ttk.Frame(self.center_notebook)
         self.center_notebook.add(self.playback_tab, text="Playback")
         self.center_notebook.add(self.status_info_tab, text="Status info")
         self.center_notebook.add(self.stream_packets_tab, text="Stream packets")
+        self.center_notebook.add(self.debug_tab, text="Debug")
         self.center_notebook.pack(
             side=tkinter.LEFT, fill=tkinter.BOTH, padx=6, expand=True
         )
