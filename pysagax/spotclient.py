@@ -233,6 +233,9 @@ class ClientWindow(tkinter.Frame):
         # TODO: signal_db, noise_db = self.calculate_snr(packet)
         signal_db, noise_db = 0, 0
 
+        # TODO: updating ROI on waterfall
+        #if len(packet.detection):
+        #    self.plot_frame.draw_roi_window(packet.detection[0].frequency, packet.detection[0].bandwidth, -120)
         self.plot_frame.plot_spectrum_packet(
             packet.data[0],
             signal_db,

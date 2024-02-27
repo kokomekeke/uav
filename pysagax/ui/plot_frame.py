@@ -74,6 +74,19 @@ class PlotFrame(tkinter.Frame):
         self.make_plots = read_from_conf(self.conf, ["display", "make_plots"], True)
 
         self.create_canvas()
+        self._draw_empty_plot()
+        
+    def _draw_empty_plot(self) -> None:
+        # this gets called on startup to fill the graph area with an empty plot
+        spectrum = proto_data.Spectrum()
+        spectrum.spectrum_type = proto_data.Spectrum.SpectrumType.MAGNITUDE
+        spectrum.data_type = proto_data.Spectrum.DataType.INT16
+        spectrum.channel_id = 0
+        spectrum.data = np.array([0,0,0]).astype(np.dtype(np.int16)).tobytes()
+        spectrum.center_frequency = 2
+        spectrum.bandwidth = 1
+        self.plot_spectrum_packet(spectrum=spectrum)
+        self.start_animation()
 
     def create_canvas(self) -> None:
         """
@@ -209,15 +222,20 @@ class PlotFrame(tkinter.Frame):
                 roi_freq, roi_span, math.floor(roi_threshold)
             )
 
-            self.magnitude_spectrum_graph.roi_center = event.xdata
-            self.magnitude_spectrum_graph.roi_width = int(
-                roi_span * (self.params.bin_count / self.params.iq_rate)
-            )
-            self.magnitude_spectrum_graph.roi_threshold = int(math.floor(event.ydata))
+            self.draw_roi_window(roi_freq, roi_span, roi_threshold)
+
 
             control_frame_ref.roi_center_entry.set(f"{roi_freq:.0f}")
             control_frame_ref.roi_threshold_entry.set(f"{roi_threshold:.0f}")
             control_frame_ref.roi_span_entry.set(f"{roi_span:.0f}")
+
+    def draw_roi_window(self, roi_center: float, roi_width: float, roi_threshold: float) -> None:
+            self.magnitude_spectrum_graph.roi_center = self.magnitude_spectrum_graph.freq_to_coord(roi_center)
+            self.magnitude_spectrum_graph.roi_width = int(
+                roi_width * (self.params.bin_count / self.params.iq_rate)
+            )
+            self.magnitude_spectrum_graph.roi_threshold = roi_threshold
+
 
     def update_sensors_and_graphs(self) -> None:
         assert self.df_graph is not None  ##TODO: assert for all or no compass graphs?
