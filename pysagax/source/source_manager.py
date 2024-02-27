@@ -14,10 +14,10 @@ class RecordingStatus(Enum):
     """
 
     # STATUS = icon, color, cs_response[is_activated, is_running]
-    DISABLED = "🟣", "Aqua", proto_data.Telemetry.Recording.Status.DISABLED
-    ENABLED = "🟢", "LimeGreen", proto_data.Telemetry.Recording.Status.ENABLED
-    RUNNING = "🟠", "Red", proto_data.Telemetry.Recording.Status.RUNNING
-    UNKNOWN = "❓", "Red", 0
+    DISABLED = "●", "Aqua", proto_data.Telemetry.Recording.Status.DISABLED
+    ENABLED = "●", "LimeGreen", proto_data.Telemetry.Recording.Status.ENABLED
+    RUNNING = "●", "Red", proto_data.Telemetry.Recording.Status.RUNNING
+    UNKNOWN = "?", "Red", 0
 
     def __new__(cls, icon, color, cs_response):
         member = object.__new__(cls)
