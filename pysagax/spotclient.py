@@ -623,6 +623,9 @@ class Client:
 
         self.command_thread.start()
 
+        self.command_thread.set_response_handler(proto_cmd.Instruction.PING, self.client_window.debug_tab.ping_response_handler)
+        self.command_thread.set_response_handler(proto_cmd.Instruction.CS_PING, self.client_window.debug_tab.cs_ping_response_handler)
+
         self.disconnect_value.value = False
 
         # TODO: port and groups to config
