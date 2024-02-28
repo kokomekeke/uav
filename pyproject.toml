@@ -1,6 +1,6 @@
 [project]
 name = "pysagax"
-version = "0.1.30+feb27demo"
+version = "0.1.31+feb27demo"
 authors = [
   { name="Peter Rigo", email="peter.rigo@sagaxcommunications.com" },
   { name="Aron Szabo", email="aron.szabo@sagaxcommunications.com" },

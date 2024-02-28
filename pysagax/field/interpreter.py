@@ -98,7 +98,7 @@ class Interpreter(Loop):
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
-        self._cmd_timeout_seconds = 30.0
+        self._cmd_timeout_seconds = 1.0
         self.config_id = 0
         self._comm_queue_in: Optional[Queue] = None
         self._comm_queue_out: Optional[Queue] = None
@@ -274,7 +274,10 @@ class Interpreter(Loop):
             self._cs_queue_out.put(command)
             self._currently_running_cs_command = command
             try:
-                response = self._cs_queue_in.get(timeout=timeout)
+                command_recv = ""
+                response: Optional[str] = None
+                while command_recv.strip("\r\n\t ;") != command.strip("\r\n\t ;"):
+                    command_recv, response = self._cs_queue_in.get(timeout=timeout)
 
                 if response is None:
                     return None
@@ -347,7 +350,7 @@ class Interpreter(Loop):
                 if not command_arg:
                     continue
                 cs_command = config_command.format(command_arg)
-                cs_response = self._cs_execute(cs_command, important=True)
+                cs_response = self._cs_execute(cs_command, important=True, timeout=30.0)
                 self._config_status_message.success = True
 
                 if cs_response is not None:
