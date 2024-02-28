@@ -65,8 +65,12 @@ class Telemetry(Loop):
         try:
             for command in commands:
                 last_command = command
-                response = self._cs_responses_queue.get(timeout=timeout)
-
+                command_recv = ""
+                response: Optional[str] = None
+                while command_recv.strip("\r\n\t ;") != command.strip("\r\n\t ;"):
+                    command_recv, response = self._cs_responses_queue.get(
+                        timeout=timeout
+                    )
                 if response is None:
                     self._logger.warning(f"CS empty response to {last_command}")
                     return None
