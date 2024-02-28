@@ -261,7 +261,7 @@ class PropSetter:
         if not all([l() for l in self.lambdas]):
             # it is a part of a 'oneof', only include if that tab is selected
             return
-        print(f"{self.field}={self.var.get()}")
+        # print(f"{self.field}={self.var.get()}")
         val = self.var.get()
         type = self.descriptor.type
         label = self.descriptor.label
@@ -461,7 +461,7 @@ class ClientWindow(tkinter.Frame):
         i = tabControl.index(tkinter.END)
 
         if i > 1:
-            print(f"removed {fieldname}[{i-2}]")
+            # print(f"removed {fieldname}[{i-2}]")
             self.prop_setters = list(
                 filter(
                     lambda prop: not prop.field.startswith(f"{fieldname}[{i-2}]"),
@@ -643,6 +643,7 @@ class ClientWindow(tkinter.Frame):
         for setter in self.prop_setters:
             setter()
         print()  # newline
+        print(json_format.MessageToJson(self.sample_command))
         to_print = str(self.sample_command)
         self.console_textarea.configure(
             state="normal"
