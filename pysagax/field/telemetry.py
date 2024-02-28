@@ -211,6 +211,8 @@ class Telemetry(Loop):
         #     pass
         self._measure_hardware_stats()
         self._get_from_cs()
+        if self._sysinfo_packet.software.cs_version == "N/A":
+            self._construct_sysinfo_packet()
         self._push_finished_packet()
         time.sleep(self._interval)
         # Send response to Communicator
