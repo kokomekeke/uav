@@ -236,9 +236,10 @@ class ClientWindow(tkinter.Frame):
         # returns True if packet's timestamp is not fresher than all earlier arrived packets'
         # if the packet is more than 60s late, then we consider it as fresh
         if type(packet) not in self.packet_type_stats.keys():
-            self.packet_type_stats[type(packet)] = {"latest_ts": 0, "arrived": 0, "dropped": 0}
+            self.packet_type_stats[type(packet)] = {"latest_ts": 0, "arrived": 0, "dropped": 0, "last_size_byte": 0}
         
         self.packet_type_stats[type(packet)]["arrived"] += 1
+        self.packet_type_stats[type(packet)]["last_size_byte"] = packet.ByteSize()
 
         timestamp = packet.time.seconds + packet.time.nanos / 1e9
         delay = self.packet_type_stats[type(packet)]["latest_ts"] - timestamp
