@@ -83,7 +83,10 @@ class ZMQConnectionThread(threading.Thread):
                 )
                 if raw_response is not None:
                     response = proto.Response()
-                    response.ParseFromString(raw_response)
+                    try:
+                        response.ParseFromString(raw_response)
+                    except json_format.Error as e:
+                        print(ansi_wrap(text=f"{e}", color="yellow"))
 
                     to_print = json_format.MessageToJson(response)
                     print(ansi_wrap(text="=== Response: ", color="red", bold=True))
@@ -131,8 +134,10 @@ def main() -> None:
                     client.send_queue.put(command)
                     buf = ""
                     print(ansi_wrap(text="...", color="blue"))
-                except json_format.ParseError as e:
-                    print(f"{e}")
+                except json_format.Error as e:
+                    print(ansi_wrap(text=f"{e}", color="yellow"))
+                    buf = ""
+                    print(ansi_wrap(text="=== Command: ", color="red", bold=True))
             else:
                 break
 
