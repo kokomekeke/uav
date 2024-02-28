@@ -118,13 +118,14 @@ class CommandThread(threading.Thread):
             self._last_heartbeat_time = time.time_ns()
             response = proto_cmd.Response()
             response.ParseFromString(raw_response)
-            if response.error.description:
+            if response.error.description:  # TODO: rethink error handling
                 print(
                     f"\n#############\nERROR IN '{proto_cmd.Instruction.Name(command.instruction)}' COMMAND RESPONSE: {response.error.description}"
                     f"\n#############\n"
                 )
-                cmd = proto_cmd.Command(instruction=proto_cmd.CONFIG_STATUS)
-                self.enqueue_commands(cmd)
+                if response.instruction != proto_cmd.CONFIG_STATUS:
+                    cmd = proto_cmd.Command(instruction=proto_cmd.CONFIG_STATUS)
+                    self.enqueue_commands(cmd)
                 #TODO: dont run response handlers if error in response, 
                 #      OR make response handlers that check the error field
                 continue #skipping response handler
