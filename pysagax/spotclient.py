@@ -202,6 +202,7 @@ class ClientWindow(tkinter.Frame):
         )
         self.stat_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.RIGHT)
 
+        self.packet_type_stats = {}
         self.packet_handler_thread = threading.Thread(
             target=self.gui_packet_handler, daemon=True
         )
@@ -211,6 +212,9 @@ class ClientWindow(tkinter.Frame):
         while not self.do_stop:
             try:
                 packet = self.client.stream_to_gui_queue.get(timeout=0.2)
+                if self._is_packet_late(packet):
+                    continue   #drop packet if we've already recieved a fresher one 
+
                 if isinstance(packet, proto_data.Measurement):
                     self.measurement_packet_handler(packet)
                 elif isinstance(packet, proto_data.Telemetry):
@@ -226,6 +230,27 @@ class ClientWindow(tkinter.Frame):
                 print("[GUI packet handler]", e)
                 traceback.print_tb(e.__traceback__)
                 return
+        
+    def _is_packet_late(self, packet: proto_cmd):
+        # keeps track of arrived packets
+        # returns True if packet's timestamp is not fresher than all earlier arrived packets'
+        # if the packet is more than 60s late, then we consider it as fresh
+        if type(packet) not in self.packet_type_stats.keys():
+            self.packet_type_stats[type(packet)] = {"latest_ts": 0, "arrived": 0, "dropped": 0}
+        
+        self.packet_type_stats[type(packet)]["arrived"] += 1
+
+        timestamp = packet.time.seconds + packet.time.nanos / 1e9
+        delay = self.packet_type_stats[type(packet)]["latest_ts"] - timestamp
+        if (delay > 0 and delay < 60): # the packet is (reasonably) late
+            self.packet_type_stats[type(packet)]["dropped"] += 1
+            is_packet_late = True
+        else:   #the packet is fresh, or more than 60s late -> keep it
+            self.packet_type_stats[type(packet)]["latest_ts"] = timestamp
+            is_packet_late = False
+        
+        self.debug_tab.update_stream_packet_stats(self.packet_type_stats)
+        return is_packet_late
 
     def measurement_packet_handler(self, packet: proto_data.Measurement) -> None:
         self.update_stream_packet_lb(packet)

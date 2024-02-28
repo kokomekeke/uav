@@ -21,6 +21,16 @@ class DebugTab(ttk.Frame):
         self.source_manager: SourceManager = source_manager
         self.send_commands_function = send_commands_function
         self.abort_commands_function = abort_commands_function
+        
+        self.stream_packet_stat_string = tkinter.StringVar(value="stream packet stats")
+        self.stream_packet_label = tkinter.Label(
+            self,
+            textvariable=self.stream_packet_stat_string,
+            font=tkinter.font.Font(size=8),
+            anchor="w",
+            justify="left",
+        )
+        self.stream_packet_label.pack(side=tkinter.TOP, anchor="e")
 
         self.ping_pysagax_button = tkinter.Button(self, text="Ping pysagax-UAV", command=self.ping_pysagax_commands)
         self.ping_pysagax_button.pack(side=tkinter.LEFT, anchor="s")
@@ -62,3 +72,8 @@ class DebugTab(ttk.Frame):
 
     def cs_ping_response_handler(self, resp: proto_cmd.Response) -> None:
         print(f"CS PING response: ", resp.ping_data)
+
+    def update_stream_packet_stats(self, stats) -> None:
+        stat_string = str(stats).replace(": {", ":{\n\t").replace(",", ",\n\t").replace("},\n\t", "},\n")
+        self.stream_packet_stat_string.set(stat_string)
+        pass
