@@ -55,14 +55,14 @@ class StatusQueryThread(threading.Thread):
         self.instruction_list = [
             proto_cmd.CONFIG,
             #proto_cmd.POSITION,
-            #proto_cmd.TELEMETRY,
+            proto_cmd.TELEMETRY,
         ]
         self.commands = self.commands_from_instructions(self.instruction_list)
 
         # instructions for querying during configuring CoreService
         self.configuring_instruction_list = [
             proto_cmd.CONFIG_STATUS,
-            #proto_cmd.TELEMETRY,
+            proto_cmd.TELEMETRY,
         ]
         self.configuring_commands = self.commands_from_instructions(self.configuring_instruction_list)
 

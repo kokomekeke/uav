@@ -24,6 +24,9 @@ class PlaybackTab(ttk.Frame):
         self.telemetry_string.set(
             f"TELEMETRY: \n{self.source_manager.latest_telemetry}"
         )
+        self.config_string.set(
+            f"CONFIG: \n{self.source_manager.latest_config}"
+        )
 
     def update_buttons(self) -> None:
         self.start_button.configure(
@@ -71,6 +74,7 @@ class PlaybackTab(ttk.Frame):
         self.position_variable = tkinter.DoubleVar()
         self.status_string = tkinter.StringVar(value="Idle")
         self.telemetry_string = tkinter.StringVar(value="Telemetry data")
+        self.config_string = tkinter.StringVar(value="Config data")
         self.rec_status_string = tkinter.StringVar(value="🟣️")
 
         self._pack_playback_controls()
@@ -101,6 +105,14 @@ class PlaybackTab(ttk.Frame):
             justify="left",
         )
         self.telemetry_label.pack(side=tkinter.RIGHT, anchor="n")
+        self.config_label = tkinter.Label(
+            self.top_frame,
+            textvariable=self.config_string,
+            font=tkinter.font.Font(size=8),
+            anchor="w",
+            justify="left",
+        )
+        self.config_label.pack(side=tkinter.RIGHT, anchor="n")
 
     def _pack_playback_controls(self):
         self.playback_control_frame = ttk.Frame(self)

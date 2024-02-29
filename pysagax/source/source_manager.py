@@ -140,6 +140,7 @@ class SourceManager:
         self.config_status: dict[int, int] = {"responses": 0, "queue": 0}
 
         self.latest_telemetry: Optional[proto_data.Telemetry] = None
+        self.latest_config: Optional[proto_cmd.Config] = None
 
         self.default_source_file_path = "/home/sagax/Generator/"
 
@@ -153,6 +154,7 @@ class SourceManager:
         if resp.success: # CONFIG commands are being processed by pysagaxUAV
             self.is_cs_configuring = True
             return
+        self.latest_config = resp
         self.current_source_path = str(resp.config.source_path).strip().split(" ")
         try:
             self.current_source = Sources(self.current_source_path[0])
