@@ -196,13 +196,13 @@ class Interpreter(Loop):
                     or command.kind == proto_cmd.Command.WRITE
                 ) and command.kind != proto_cmd.Command.READ:
                     conf_thread = threading.Thread(
-                        target=self._config, args=(response, command.config)
+                        target=self._config_set, args=(response, command.config)
                     )
                     conf_thread.start()
                     response.success = True
                     # self._config(response, command.config)
                 else:
-                    self._config(response, None)
+                    self._config(response)
 
             case proto_cmd.TELEMETRY:
                 self._telemetry(response)
@@ -329,59 +329,58 @@ class Interpreter(Loop):
             return None
         raise CSTimeoutException()
 
-    def _config(
-        self, response: proto_cmd.Response, config: proto_cmd.Config | None
+    def _config_set(
+        self, response: proto_cmd.Response, config: proto_cmd.Config
     ) -> None:
-        """Set of query system configuration"""
-        if config is not None:
-            self._config_status_message = proto_cmd.ConfigStatus()
-            self._config_status_message.start_time.GetCurrentTime()
-            count = 0
-            for config_command, proto_lambda in self._CONFIG_COMMANDS:
-                command_arg = proto_lambda(config)
-                if not command_arg:
-                    continue
-                self._config_status_message.queue.append(
-                    str(config_command.format(command_arg))
+        """Set system configuration"""
+        self._config_status_message = proto_cmd.ConfigStatus()
+        self._config_status_message.start_time.GetCurrentTime()
+        for config_command, proto_lambda in self._CONFIG_COMMANDS:
+            command_arg = proto_lambda(config)
+            if not command_arg:
+                continue
+            self._config_status_message.queue.append(
+                str(config_command.format(command_arg))
+            )
+
+        for config_command, proto_lambda in self._CONFIG_COMMANDS:
+            command_arg = proto_lambda(config)
+            if not command_arg:
+                continue
+            cs_command = config_command.format(command_arg)
+            cs_response = self._cs_execute(cs_command, important=True, timeout=30.0)
+            self._config_status_message.success = True
+
+            if cs_response is not None:
+                self._config_status_message.responses[cs_command] = "; ".join(
+                    cs_response
                 )
-
-            for config_command, proto_lambda in self._CONFIG_COMMANDS:
-                command_arg = proto_lambda(config)
-                if not command_arg:
-                    continue
-                cs_command = config_command.format(command_arg)
-                cs_response = self._cs_execute(cs_command, important=True, timeout=30.0)
-                self._config_status_message.success = True
-
-                if cs_response is not None:
-                    self._config_status_message.responses[cs_command] = "; ".join(
-                        cs_response
+                error_code = int(cs_response[0])
+                if error_code != 0:
+                    self._logger.error(f"Cannot set {cs_command}")
+                    # try to set the remaining values
+                    # raise CSErrorException(error_code, cs_response[1])
+                    self._config_status_message.error_code = error_code
+                    self._config_status_message.error_description = (
+                        cs_response[1] if len(cs_response) > 1 else "Unknown"
                     )
-                    error_code = int(cs_response[0])
-                    if error_code != 0:
-                        self._logger.error(f"Cannot set {cs_command}")
-                        # try to set the remaining values
-                        # raise CSErrorException(error_code, cs_response[1])
-                        self._config_status_message.error_code = error_code
-                        self._config_status_message.error_description = (
-                            cs_response[1] if len(cs_response) > 1 else "Unknown"
-                        )
-                        self._config_status_message.success = False
-                    else:
-                        self.config_id += 1
-                        if self._latest_config_id_value is not None:
-                            self._latest_config_id_value.set(self.config_id)
+                    self._config_status_message.success = False
                 else:
-                    self._config_status_message.responses[command_arg] = "TIMED OUT"
-                    self._config_status_message.error_code = -1
+                    self.config_id += 1
+                    if self._latest_config_id_value is not None:
+                        self._latest_config_id_value.set(self.config_id)
+            else:
+                self._config_status_message.responses[command_arg] = "TIMED OUT"
+                self._config_status_message.error_code = -1
 
-                    response.error.description = "CoreService not responding"
-                    self._logger.error(f"Config timed out on command {cs_command}")
-                    # raise CSTimeoutException()
-            self._logger.info("Configuration finished")
-            self._config_status_message.finish_time.GetCurrentTime()
-            return
-        # try:
+                response.error.description = "CoreService not responding"
+                self._logger.error(f"Config timed out on command {cs_command}")
+                # raise CSTimeoutException()
+        self._logger.info("Configuration finished")
+        self._config_status_message.finish_time.GetCurrentTime()
+
+    def _config(self, response: proto_cmd.Response) -> None:
+        """Query system configuration"""
         defaults = lambda val, defa: defa if val is None else val
         response.config.config_id = self.config_id
         response.config.center_frequency = float(
