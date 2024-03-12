@@ -142,3 +142,5 @@ class Streamer(Loop):
             pass
         except zmq.ZMQError as zmqe:
             self._logger.error(f"ZMQError{zmqe.errno}: {str(zmqe)}")
+        except BufferError as bufe:
+            self._logger.error(f"Buffer error: {bufe}")
