@@ -17,13 +17,15 @@ def rotation_matrix_from_vectors(
     c = np.dot(a, b)
     s = np.linalg.norm(v)
     kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
-    rotation_matrix: npt.NDArray = (
+    rotation_matrix: npt.NDArray[np.float64] = (
         np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s**2))
     )
     return rotation_matrix
 
 
 def si_to_float(si: str) -> float:
+    if si == "":
+        return 0
     prefix = {
         "y": 1e-24,  # yocto
         "z": 1e-21,  # zepto
@@ -52,6 +54,7 @@ def si_to_float(si: str) -> float:
 
 
 def normalize_angle(angle: float, high: float = np.pi, low: float = -np.pi) -> float:
+    assert high > low
     span = high - low
     while angle >= high:
         angle = angle - span

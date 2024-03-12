@@ -24,6 +24,7 @@ from pysagax.df.lena_core_service import (
 )
 from pysagax.df.lena_with_compass import StreamAndCompassProcess
 from pysagax.heading.heading_sources import HeadingSource, HeadingStatic
+from pysagax.source.source_manager import SourceManager
 from pysagax.ui.autocomplete_command_box import AutocompleteCommandBox
 from pysagax.ui.lena_matplotlib_graphs import (
     AngleSpectrumGraph,
@@ -79,6 +80,7 @@ __all__ = [
     "normalize_angle",
     "StreamAndCompassProcess",
     "HeadingSource",
+    "SourceManager",
 ]
 
 from . import _version

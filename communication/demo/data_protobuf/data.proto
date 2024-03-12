@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+message Spectrum {
+    google.protobuf.Timestamp time = 1;
+    fixed32 stream_id = 2;
+    repeated float magnitude = 3;
+}
+
+message Detection {
+    google.protobuf.Timestamp time = 1;
+    fixed32 stream_id = 2;
+    float level = 3;
+}
+
+message Event {
+    google.protobuf.Timestamp time = 1;
+    fixed32 stream_id = 2;
+}
+
+message Telemetry {
+    google.protobuf.Timestamp time = 1;
+    fixed32 stream_id = 2;
+    fixed64 disc_usage = 3;
+}

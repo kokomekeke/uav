@@ -1,6 +1,5 @@
 [defaults]
 host = '10.1.1.114'
-encoder_port = 'COM6'
 center_freq = '446M'
 bandwith = '1M'
 gain = '50'
@@ -9,13 +8,12 @@ burst_stride = '50000'
 roi_center = '446.065M'
 roi_span = '50k'
 roi_threshold = '-40'
-df_corrected_from_compass = true    #true: compass, false: encoder
 
 [display]
 fps = 10
 max_bin_count = 1024
 waterfall_size = 200 #Amount of spectrum lines to be displayed on the waterfall diagram.
-spectrum_graph_min_db = -80
+spectrum_graph_min_db = -100
 make_plots = true
 center_box_width = 60
 
@@ -28,6 +26,25 @@ port = 20000
 lat = 47.33
 lon = 19.33
 
-[compass]
-use_sensor_fusion = false #true: compass.angle (for RAC), false: compass.magnetometer_angle (for aaronia)
-offset=0   #without compass sensor this value will be used as compass heading (in radians). Don't forget to set df_corrected_from_compass = true
+[heading]
+    # if also defined for a specific heading source, the following values will be overriden
+    lat = 47.498056
+    lon = 19.04
+    use_magneto = true
+    offset = 90 # in degrees
+    [heading.static]
+        #lat = 
+        #lon = 
+        #angle = 57  # in degrees
+    [heading.encoder]
+        port = "COM6"
+        lat = 47.321013
+        lon = 19.316929
+    [heading.ahrs_socket]
+        #address =  
+        #use_magneto = 
+    [heading.ahrs_usb]
+        #port = 
+        #use_magneto = 
+    [heading.ahrs_ftdi]
+        #use_magneto = 
