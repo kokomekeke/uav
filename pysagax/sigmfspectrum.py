@@ -150,7 +150,7 @@ class FastImshow:
 
 @click.command()
 @click.option("--fftsize", default=1024, type=int, help="FFT size")
-@click.option("--stride", default=1024, type=int, help="File read stride")
+@click.option("--stride", default=0, type=int, help="File read stride")
 @click.option(
     "--show",
     multiple=True,
@@ -170,11 +170,15 @@ class FastImshow:
     # help="Path to sigmf-collection or containing folder.",
 )
 def main(fftsize, stride, show, save, filename):
-    
+
     if not show and not save:
         show = [0]
-        print("No channel selected for displaying or saving. Selecting channel 0 to display.")
-        print("To select one or more channels use options like: --show 0 --show 1 --save 0")
+        print(
+            "No channel selected for displaying or saving. Selecting channel 0 to display."
+        )
+        print(
+            "To select one or more channels use options like: --show 0 --show 1 --save 0"
+        )
     if os.path.isdir(filename):
         filename = os.path.join(filename, "recording.sigmf-collection")
     if filename.endswith(".sigmf-collection"):
@@ -185,10 +189,11 @@ def main(fftsize, stride, show, save, filename):
     else:
         print("Unknown file type. Extension must be .sigmf-collection or .sigmf-meta")
         return
-        
+
     streams = collection.get_stream_names()
     os.chdir(os.path.dirname(filename) or ".")
     plots_shown = 0
+    auto_stride: bool = bool(stride == 0)
     for index, stream in enumerate(streams):
         if index not in show and index not in save:
             print(f"Skipping {stream}")
@@ -201,6 +206,9 @@ def main(fftsize, stride, show, save, filename):
         # signal = sigmffile.fromfile(filename)
         # Get some metadata and all annotations
         sample_rate = signal_sigmf.get_global_field(SigMFFile.SAMPLE_RATE_KEY)
+        if auto_stride:
+            stride = int(max(sample_rate // 10, fftsize))
+            print(f"Using stride: {stride}")
         sample_count = signal_sigmf.sample_count
         signal_duration = sample_count / sample_rate
         # Get capture info associated with the start of annotation
@@ -223,7 +231,8 @@ def main(fftsize, stride, show, save, filename):
                 read_samp_count += stride
                 stride_count += 1
         reduced_sample_count = len(samples_ba)
-        print(f"Read samples {str(signal_sigmf.data_file)} {reduced_sample_count}")
+        print(f"Read {reduced_sample_count} samples from {str(signal_sigmf.data_file)} ({sample_count} total with stride {stride}) ")
+        print(f"Calculating FFT {fftsize}")
         # print(f"lenc={lenc}")
         samples = (
             np.frombuffer(bytes(samples_ba), dtype="i2")
@@ -242,6 +251,7 @@ def main(fftsize, stride, show, save, filename):
             scale_to="magnitude",
         )
         Sxx = SFT.spectrogram(samples)
+        print("FFT ready")
         # f, t, Sxx = signal.spectrogram(
         #     samples, sample_rate, nperseg=fftsize, return_onesided=False, noverlap=0
         # )
@@ -264,7 +274,7 @@ def main(fftsize, stride, show, save, filename):
             fig = plt.figure()
             ax = fig.add_subplot(111)
             im = FastImshow(
-                    buf=20 * np.log10(Sxx),
+                buf=20 * np.log10(Sxx),
                 ax=ax,
                 extent=[
                     0,
@@ -277,10 +287,9 @@ def main(fftsize, stride, show, save, filename):
             im.show()
             # plt.plot(samples)
             plots_shown += 1
-            plt.get_current_fig_manager().set_window_title(f"{str(stream)} ({index})" )  # type: ignore
+            plt.get_current_fig_manager().set_window_title(f"{str(stream)} ({index})")  # type: ignore
 
             plt.show(block=True if len(show) >= plots_shown else False)
-  
 
 
 if __name__ == "__main__":
