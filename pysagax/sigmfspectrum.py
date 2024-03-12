@@ -231,7 +231,9 @@ def main(fftsize, stride, show, save, filename):
                 read_samp_count += stride
                 stride_count += 1
         reduced_sample_count = len(samples_ba)
-        print(f"Read {reduced_sample_count} samples from {str(signal_sigmf.data_file)} ({sample_count} total with stride {stride}) ")
+        print(
+            f"Read {reduced_sample_count} samples from {str(signal_sigmf.data_file)} ({sample_count} total with stride {stride}) "
+        )
         print(f"Calculating FFT {fftsize}")
         # print(f"lenc={lenc}")
         samples = (
@@ -252,11 +254,7 @@ def main(fftsize, stride, show, save, filename):
         )
         Sxx = SFT.spectrogram(samples)
         print("FFT ready")
-        # f, t, Sxx = signal.spectrogram(
-        #     samples, sample_rate, nperseg=fftsize, return_onesided=False, noverlap=0
-        # )
-        # Sxx = np.fft.fftshift(Sxx, axes=0)
-        # f = np.fft.fftshift(f)
+
         if index in save:
             np.savez(
                 str(signal_sigmf.data_file),
@@ -274,7 +272,9 @@ def main(fftsize, stride, show, save, filename):
             fig = plt.figure()
             ax = fig.add_subplot(111)
             im = FastImshow(
-                buf=20 * np.log10(Sxx),
+                buf=10 * np.log10(Sxx)
+                - 90.309,  # magnitude spectrum is squared already
+                # 90.309 = 20*log(10; 2^15)
                 ax=ax,
                 extent=[
                     0,
@@ -285,7 +285,6 @@ def main(fftsize, stride, show, save, filename):
                 tgt_res=1024,
             )
             im.show()
-            # plt.plot(samples)
             plots_shown += 1
             plt.get_current_fig_manager().set_window_title(f"{str(stream)} ({index})")  # type: ignore
 
