@@ -118,6 +118,18 @@ class PostProc(Loop):
 
     def _push_finished_packet(self) -> None:
         assert self._comm_queue_out is not None
+        dropped_msg = (
+            "Packet does not contain {} data. "
+            "CoreService likely dropped it due to slow PySAGAX-UAV performance. "
+            "Instead of sending, wait one more cycle to get a full packet."
+        )
+        if len(self._measurement_packet.data) == 0:
+            self._logger.warning(dropped_msg.format("spectrum data"))
+            return
+        if len(self._measurement_packet.peaks) == 0:
+            self._logger.warning(dropped_msg.format("peaks"))
+            return
+
         self._measurement_packet.stream_id = 0
         self._packet_id_counter += 1
         self._measurement_packet.packet_id = self._packet_id_counter

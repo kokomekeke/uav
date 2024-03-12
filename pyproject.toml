@@ -17,7 +17,7 @@ dependencies = [
     "tk",
     "numpy",
     "AHRS",
-    "scipy",
+    "scipy>=1.12.0",
     "pyserial",
     "pyftdi",
     "matplotlib",
@@ -31,6 +31,7 @@ dependencies = [
     "protobuf",
     "pyzmq",
     "click",
+    "sigmf",
 ]
 
 [tool.versioneer]
@@ -50,6 +51,7 @@ cstestclient = "pysagax.cstestclient:main"
 dfclient = "pysagax.dfclient:main"
 spotclient = "pysagax.spotclient:main"
 sigmfdisp = "pysagax.sigmfdisp:main"
+sigmfspectrum = "pysagax.sigmfspectrum:main"
 pysagax-uav = "pysagax.pysagax_uav:main"
 zmqtestclient = "pysagax.zmqtestclient:main"
 clizmqclient = "pysagax.clizmqclient:main"
