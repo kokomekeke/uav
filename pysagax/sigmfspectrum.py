@@ -177,12 +177,17 @@ def main(fftsize, stride, show, save, filename):
         print("To select one or more channels use options like: --show 0 --show 1 --save 0")
     if os.path.isdir(filename):
         filename = os.path.join(filename, "recording.sigmf-collection")
-
-    collection = sigmffile.fromfile(filename)
-    assert isinstance(collection, SigMFCollection)
+    if filename.endswith(".sigmf-collection"):
+        collection = sigmffile.fromfile(filename)
+        assert isinstance(collection, SigMFCollection)
+    elif filename.endswith(".sigmf-meta"):
+        collection = SigMFCollection([filename])
+    else:
+        print("Unknown file type. Extension must be .sigmf-collection or .sigmf-meta")
+        return
+        
     streams = collection.get_stream_names()
-
-    os.chdir(os.path.dirname(filename))
+    os.chdir(os.path.dirname(filename) or ".")
     plots_shown = 0
     for index, stream in enumerate(streams):
         if index not in show and index not in save:
