@@ -1,10 +1,10 @@
 [defaults]
-host = '10.1.1.114'
+host = 'localhost'
 center_freq = '446M'
 bandwith = '1M'
 gain = '50'
 bin_count = '1024'
-burst_stride = '50000'
+burst_stride = '65536'
 roi_center = '446.065M'
 roi_span = '50k'
 roi_threshold = '-40'

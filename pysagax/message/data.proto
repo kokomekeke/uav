@@ -1,0 +1,159 @@
+syntax = "proto3";
+
+package pysagax.message;
+import "google/protobuf/timestamp.proto";
+
+message Telemetry {
+    // Non-critical information changing regularly
+
+    google.protobuf.Timestamp time = 1;
+    fixed32 stream_id = 2;
+
+    // Hardware info
+    message Hardware {
+        float cpu_usage = 1;
+        int64 disk_usage = 2;
+        float temperature = 3;
+    }
+    Hardware hardware = 5;
+
+    // Source info
+    message Source {
+        // Source status
+        enum Status {
+            DISABLED = 0;
+            ENABLED = 1;
+            RUNNING = 2;
+        }
+        Status status = 3;
+
+        // Current position in selected source
+        uint64 position = 5;
+
+        // Length of selected source
+        uint64 length = 6;
+    }
+    Source source = 9;
+
+    // Recording info
+    message Recording {
+        // Recording status
+        enum Status {
+            DISABLED = 0;
+            ENABLED = 1;
+            RUNNING = 2;
+        }
+        Status status = 1;
+
+        // Path of recording being written
+        string filename = 2;
+
+        // Current length of recording
+        uint64 length = 3;
+    }
+    Recording recording = 10;
+}
+
+message Detection {
+    // A single detection instance
+
+    // ID of Event to which it belongs
+    uint32 event_id = 1;
+
+    // ID of source region
+    uint32 roi_id = 6;
+
+    // General detection information
+    float frequency = 7;
+    float bandwidth = 8;
+    float strength = 9;
+    float azimuth = 10;
+    float elevation = 11;
+    float snr = 12;
+    float deviation = 13;
+}
+
+message Spectrum {
+    // Spectrum data
+
+    int32 channel_id = 1;
+
+    // Type of spectrum contained
+    enum SpectrumType {
+        MAGNITUDE = 0;
+        AZIMUTH = 1;
+        ELEVATION = 2;
+    }
+    SpectrumType spectrum_type = 2;
+
+    // Data type of data in byte array
+    enum DataType {
+        INT16 = 0;
+        INT8 = 1;
+        FLOAT32 = 5;
+    }
+    DataType data_type = 3;
+    
+    bytes data = 5;
+
+    float center_frequency = 7;
+    float bandwidth = 8;
+}
+
+message Measurement {
+    // Constanstly steamed data
+
+    google.protobuf.Timestamp time = 1;
+    uint32 stream_id = 2;
+
+    // ID of configuration at time of measurement
+    uint32 config_id = 3;
+
+    // Metadata
+    uint64 packet_id = 5;
+    uint64 position = 6;
+    float heading = 7;
+    repeated float quaternion = 8;
+    bool overflow = 9;
+    repeated int32 peaks = 10;
+
+    // Spectrum data
+    repeated Spectrum data = 13;
+
+    // Detections made on above spectrum
+    repeated Detection detection = 17;
+}
+
+message Event {
+    // High-level ComInt event, aggregate of one or more Detections
+
+    google.protobuf.Timestamp time = 1;
+    uint32 stream_id = 2;
+
+    // ID of event
+    uint32 event_id = 5;
+
+    // General information
+    float frequency = 6;
+    float strength = 7;
+    float lob = 8;
+    float certainty = 9;
+    float duration = 10;
+    google.protobuf.Timestamp detection = 11;
+}
+
+message OperationalError {
+    // Error during operation (not during command execution)
+
+    enum ErrorType {
+        // Possible error types
+        UNKNOWN = 0;
+    }
+
+    // General error information
+    google.protobuf.Timestamp time = 1;
+    ErrorType type = 2;
+
+    // Detailed error message
+    string description = 5;
+}

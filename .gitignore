@@ -58,5 +58,4 @@ octave*.txt
 calibration*.npz
 auto_test_*.csv
 
-# Client .csv recording save location
-racclient_recordings/
+pysagax.egg-info
