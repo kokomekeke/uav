@@ -136,7 +136,7 @@ class SourceManager:
         self.recording_status: RecordingStatus = RecordingStatus.UNKNOWN
         self.source_status: SourceStatus = SourceStatus.UNKNOWN
         self.cs_status: CoreServiceStatus = CoreServiceStatus.DISCONNECTED
-        self.is_cs_configuring: bool = False 
+        self.is_cs_configuring: bool = False
         self.config_status: dict[int, int] = {"responses": 0, "queue": 0}
 
         self.latest_telemetry: Optional[proto_data.Telemetry] = None
@@ -151,7 +151,7 @@ class SourceManager:
             self.cs_status = CoreServiceStatus.CONNECTED
 
     def source_config_handler(self, resp) -> None:
-        if resp.success: # CONFIG commands are being processed by pysagaxUAV
+        if resp.success:  # CONFIG commands are being processed by pysagaxUAV
             self.is_cs_configuring = True
             return
         self.latest_config = resp
@@ -242,7 +242,7 @@ class SourceManager:
 
     def get_set_source_command(self, source_str: str, params: str):
         """
-        Contructs a the command for pysagaxUAV based on the display name provided by the GUI
+        Constructs a the command for pysagaxUAV based on the display name provided by the GUI
         """
         cmd = proto_cmd.Command()
         cmd.instruction = proto_cmd.CONFIG
