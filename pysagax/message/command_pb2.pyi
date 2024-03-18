@@ -10,6 +10,7 @@ import google.protobuf.internal.enum_type_wrapper
 import google.protobuf.message
 import google.protobuf.timestamp_pb2
 import pysagax.message.data_pb2
+import pysagax.message.heading_pb2
 import sys
 import typing
 
@@ -223,46 +224,18 @@ class ROIMask(google.protobuf.message.Message):
 global___ROIMask = ROIMask
 
 @typing_extensions.final
-class Heading(google.protobuf.message.Message):
-    """A single Heading source"""
-
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
-
-    @typing_extensions.final
-    class ParametersEntry(google.protobuf.message.Message):
-        DESCRIPTOR: google.protobuf.descriptor.Descriptor
-
-        KEY_FIELD_NUMBER: builtins.int
-        VALUE_FIELD_NUMBER: builtins.int
-        key: builtins.str
-        value: builtins.str
-        def __init__(
-            self,
-            *,
-            key: builtins.str = ...,
-            value: builtins.str = ...,
-        ) -> None: ...
-        def ClearField(self, field_name: typing_extensions.Literal["key", b"key", "value", b"value"]) -> None: ...
-
-    TYPE_FIELD_NUMBER: builtins.int
-    PARAMETERS_FIELD_NUMBER: builtins.int
-    type: builtins.str
-    """ID of"""
-    @property
-    def parameters(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
-        """Commands and their descriptions/values"""
-    def __init__(
-        self,
-        *,
-        type: builtins.str = ...,
-        parameters: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
-    ) -> None: ...
-    def ClearField(self, field_name: typing_extensions.Literal["parameters", b"parameters", "type", b"type"]) -> None: ...
-
-global___Heading = Heading
-
-@typing_extensions.final
 class Config(google.protobuf.message.Message):
+    """message Heading {
+        // A single Heading source
+
+        // ID of 
+        string type = 1;
+
+        // Commands and their descriptions/values
+        map<string, string> parameters = 2;
+    }
+    """
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     class _Type:
@@ -309,7 +282,7 @@ class Config(google.protobuf.message.Message):
     def roi(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___ROIMask]:
         """ROI mask, made up of individual regions"""
     @property
-    def heading(self) -> global___Heading:
+    def heading(self) -> pysagax.message.heading_pb2.HeadingConfig:
         """Heading source selection"""
     mean_window: builtins.float
     """PostProcessing parameters"""
@@ -326,7 +299,7 @@ class Config(google.protobuf.message.Message):
         source_path: builtins.str = ...,
         type: global___Config.Type.ValueType = ...,
         roi: collections.abc.Iterable[global___ROIMask] | None = ...,
-        heading: global___Heading | None = ...,
+        heading: pysagax.message.heading_pb2.HeadingConfig | None = ...,
         mean_window: builtins.float = ...,
     ) -> None: ...
     def HasField(self, field_name: typing_extensions.Literal["heading", b"heading"]) -> builtins.bool: ...
@@ -398,7 +371,7 @@ class SystemInfo(google.protobuf.message.Message):
     @property
     def software(self) -> global___SystemInfo.Software: ...
     @property
-    def headings(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___Heading]:
+    def headings(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]:
         """Information about available Heading sources"""
     @property
     def radios(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___SystemInfo.SDR]: ...
@@ -407,7 +380,7 @@ class SystemInfo(google.protobuf.message.Message):
         *,
         hardware: global___SystemInfo.Hardware | None = ...,
         software: global___SystemInfo.Software | None = ...,
-        headings: collections.abc.Iterable[global___Heading] | None = ...,
+        headings: collections.abc.Iterable[builtins.str] | None = ...,
         radios: collections.abc.Iterable[global___SystemInfo.SDR] | None = ...,
     ) -> None: ...
     def HasField(self, field_name: typing_extensions.Literal["hardware", b"hardware", "software", b"software"]) -> builtins.bool: ...

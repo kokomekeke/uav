@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package pysagax.message;
 import "google/protobuf/timestamp.proto";
+import "pysagax/message/heading.proto";
 
 message Telemetry {
     // Non-critical information changing regularly
@@ -52,6 +53,7 @@ message Telemetry {
         uint64 length = 3;
     }
     Recording recording = 10;
+	HeadingStatus heading = 11;
 }
 
 message Detection {
@@ -116,6 +118,7 @@ message Measurement {
     repeated float quaternion = 8;
     bool overflow = 9;
     repeated int32 peaks = 10;
+	HeadingData heading_data = 11;
 
     // Spectrum data
     repeated Spectrum data = 13;

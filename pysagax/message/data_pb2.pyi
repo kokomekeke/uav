@@ -9,6 +9,7 @@ import google.protobuf.internal.containers
 import google.protobuf.internal.enum_type_wrapper
 import google.protobuf.message
 import google.protobuf.timestamp_pb2
+import pysagax.message.heading_pb2
 import sys
 import typing
 
@@ -131,6 +132,7 @@ class Telemetry(google.protobuf.message.Message):
     HARDWARE_FIELD_NUMBER: builtins.int
     SOURCE_FIELD_NUMBER: builtins.int
     RECORDING_FIELD_NUMBER: builtins.int
+    HEADING_FIELD_NUMBER: builtins.int
     @property
     def time(self) -> google.protobuf.timestamp_pb2.Timestamp: ...
     stream_id: builtins.int
@@ -140,6 +142,8 @@ class Telemetry(google.protobuf.message.Message):
     def source(self) -> global___Telemetry.Source: ...
     @property
     def recording(self) -> global___Telemetry.Recording: ...
+    @property
+    def heading(self) -> pysagax.message.heading_pb2.HeadingStatus: ...
     def __init__(
         self,
         *,
@@ -148,9 +152,10 @@ class Telemetry(google.protobuf.message.Message):
         hardware: global___Telemetry.Hardware | None = ...,
         source: global___Telemetry.Source | None = ...,
         recording: global___Telemetry.Recording | None = ...,
+        heading: pysagax.message.heading_pb2.HeadingStatus | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing_extensions.Literal["hardware", b"hardware", "recording", b"recording", "source", b"source", "time", b"time"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing_extensions.Literal["hardware", b"hardware", "recording", b"recording", "source", b"source", "stream_id", b"stream_id", "time", b"time"]) -> None: ...
+    def HasField(self, field_name: typing_extensions.Literal["hardware", b"hardware", "heading", b"heading", "recording", b"recording", "source", b"source", "time", b"time"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing_extensions.Literal["hardware", b"hardware", "heading", b"heading", "recording", b"recording", "source", b"source", "stream_id", b"stream_id", "time", b"time"]) -> None: ...
 
 global___Telemetry = Telemetry
 
@@ -279,6 +284,7 @@ class Measurement(google.protobuf.message.Message):
     QUATERNION_FIELD_NUMBER: builtins.int
     OVERFLOW_FIELD_NUMBER: builtins.int
     PEAKS_FIELD_NUMBER: builtins.int
+    HEADING_DATA_FIELD_NUMBER: builtins.int
     DATA_FIELD_NUMBER: builtins.int
     DETECTION_FIELD_NUMBER: builtins.int
     @property
@@ -295,6 +301,8 @@ class Measurement(google.protobuf.message.Message):
     overflow: builtins.bool
     @property
     def peaks(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.int]: ...
+    @property
+    def heading_data(self) -> pysagax.message.heading_pb2.HeadingData: ...
     @property
     def data(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___Spectrum]:
         """Spectrum data"""
@@ -313,11 +321,12 @@ class Measurement(google.protobuf.message.Message):
         quaternion: collections.abc.Iterable[builtins.float] | None = ...,
         overflow: builtins.bool = ...,
         peaks: collections.abc.Iterable[builtins.int] | None = ...,
+        heading_data: pysagax.message.heading_pb2.HeadingData | None = ...,
         data: collections.abc.Iterable[global___Spectrum] | None = ...,
         detection: collections.abc.Iterable[global___Detection] | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing_extensions.Literal["time", b"time"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing_extensions.Literal["config_id", b"config_id", "data", b"data", "detection", b"detection", "heading", b"heading", "overflow", b"overflow", "packet_id", b"packet_id", "peaks", b"peaks", "position", b"position", "quaternion", b"quaternion", "stream_id", b"stream_id", "time", b"time"]) -> None: ...
+    def HasField(self, field_name: typing_extensions.Literal["heading_data", b"heading_data", "time", b"time"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing_extensions.Literal["config_id", b"config_id", "data", b"data", "detection", b"detection", "heading", b"heading", "heading_data", b"heading_data", "overflow", b"overflow", "packet_id", b"packet_id", "peaks", b"peaks", "position", b"position", "quaternion", b"quaternion", "stream_id", b"stream_id", "time", b"time"]) -> None: ...
 
 global___Measurement = Measurement
 
