@@ -115,8 +115,12 @@ class StatusFrame(tkinter.Frame):
             self.map_server_button.config(relief="sunken")
             self.map_server_start_callable()
 
-    def path_update(self):
-        self.status_path_string.set(
-            self.source_manager.get_current_source_path_str()
-            + f" [{self.source_manager.source_status.name}]"
-        )
+    def config_update(self):
+        src_path = self.source_manager.get_current_source_path_str()
+        status_path_string = ""
+        if src_path is not None:
+            status_path_string = src_path + f" [{self.source_manager.source_status.name}]"
+            
+        status_path_string = status_path_string + f" [{self.source_manager.config_status['responses']}/{self.source_manager.config_status['queue']}]"
+
+        self.status_path_string.set(status_path_string)

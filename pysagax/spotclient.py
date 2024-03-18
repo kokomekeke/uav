@@ -11,18 +11,23 @@ import socket
 import threading
 import tkinter
 from multiprocessing.managers import ValueProxy
+from pysagax.communication.broadcast import RX
+from pysagax.communication.req_rep_tcp import REQ
 
 from pysagax.heading.heading_manager import HeadingManager
 from pysagax.heading.queue_collector import QueueValueCollector
 from pysagax.source.source_manager import CoreServiceStatus, SourceManager
+from pysagax.spot.command_thread import CommandThread
 from pysagax.spot.commands_connection_thread import CommandsConnectionThread
 from pysagax.spot.commands_handler_thread import CommandsHandlerThread
 from pysagax.spot.map_server import MapServer
 from pysagax.spot.recording_thread import RecordingThread
 from pysagax.spot.status_query_thread import StatusQueryThread
+from pysagax.spot.stream_process import StreamProcess
 from pysagax.ui import HeadingSourceFrame
 from pysagax.ui.connect_frame import ConnectFrame
 from pysagax.ui.control_frame import ControlFrame
+from pysagax.ui.debug_tab import DebugTab
 from pysagax.ui.playback_tab import PlaybackTab
 from pysagax.ui.source_select_frame import SourceSelectFrame
 from pysagax.ui.stat_frame import StatFrame
@@ -52,6 +57,11 @@ from pysagax import (
 from pysagax.ui.plot_frame import PlotFrame, PlotSettingsFrame
 from pysagax.util.multiqueue import MultiQueue
 from pysagax.util.read_from_conf import read_from_conf
+from pysagax.util.get_ip import get_ip
+
+import pysagax.message.command_pb2 as proto_cmd
+import pysagax.message.data_pb2 as proto_data
+from pysagax.message.data_types import DataType
 
 conf: Optional[dict[str, Any]] = None
 icon_image: Optional[tkinter.PhotoImage] = None
@@ -109,7 +119,7 @@ class ClientWindow(tkinter.Frame):
             master=self.left_notebook,
             conf=conf,
             source_manager=self.client.source_manager,
-            do_select_source_function=self.client.do_set_source_params,
+            do_select_source_function=self.client.do_set_source,
             relief=tkinter.RAISED,
             borderwidth=1,
         )
@@ -117,7 +127,7 @@ class ClientWindow(tkinter.Frame):
         self.control_frame = ControlFrame(
             master=self.left_notebook,
             conf=conf,
-            do_configuration_function=self.client.do_configuration_params,
+            do_configuration_function=self.client.do_configuration,
             source_manager=self.client.source_manager,
             relief=tkinter.RAISED,
             borderwidth=1,
@@ -127,7 +137,7 @@ class ClientWindow(tkinter.Frame):
             self.left_notebook,
             self.plot_frame,
             send_commands_function=self.client.send_commands,
-            conf = conf,
+            conf=conf,
             relief=tkinter.RAISED,
             borderwidth=1,
         )
@@ -147,11 +157,19 @@ class ClientWindow(tkinter.Frame):
         self.playback_tab.stop_recording_function = self.client.stop_recording
         self.playback_tab.abort_commands_function = self.client.abort_commands
 
+        self.debug_tab = DebugTab(
+            master=self.center_notebook,
+            send_commands_function=self.client.send_commands,
+            abort_commands_function=self.client.abort_commands,
+            source_manager=self.client.source_manager,
+        )
+
         self.status_info_tab = ttk.Frame(self.center_notebook)
         self.stream_packets_tab = ttk.Frame(self.center_notebook)
         self.center_notebook.add(self.playback_tab, text="Playback")
         self.center_notebook.add(self.status_info_tab, text="Status info")
         self.center_notebook.add(self.stream_packets_tab, text="Stream packets")
+        self.center_notebook.add(self.debug_tab, text="Debug")
         self.center_notebook.pack(
             side=tkinter.LEFT, fill=tkinter.BOTH, padx=6, expand=True
         )
@@ -184,6 +202,7 @@ class ClientWindow(tkinter.Frame):
         )
         self.stat_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.RIGHT)
 
+        self.packet_type_stats = {}
         self.packet_handler_thread = threading.Thread(
             target=self.gui_packet_handler, daemon=True
         )
@@ -192,76 +211,19 @@ class ClientWindow(tkinter.Frame):
     def gui_packet_handler(self) -> None:
         while not self.do_stop:
             try:
-                data = self.client.stream_to_gui_queue.get(timeout=0.2)
+                packet = self.client.stream_to_gui_queue.get(timeout=0.2)
+                if self._is_packet_late(packet):
+                    continue  # drop packet if we've already recieved a fresher one
 
-                packet = data["cs_packet"]
-                self.aggregated_roi_results = data["aggregated_roi_results"]
-                self.compass_angle = data["compass_angle"]
-                self.compass_heading = data["compass_heading"]
-
-                try:
-                    ts = datetime.fromtimestamp(packet.time_ns / 1e9, tz=None)
-                    packet_string = (
-                        f"[{packet.stream_id}] {ts.strftime('%H:%M:%S')}.{int((packet.time_ns % 1e9) / 1e6):03d} - "
-                        f"{str(packet)} - c_angle={self.compass_angle}"
+                if isinstance(packet, proto_data.Measurement):
+                    self.measurement_packet_handler(packet)
+                elif isinstance(packet, proto_data.Telemetry):
+                    self.telemetry_packet_handler(packet)
+                else:
+                    print(
+                        f"Handling stream packet type {type(packet)} is not implemented"
                     )
-                    self.stream_packets_lb.insert(tkinter.END, packet_string)
-                    self.stream_packets_lb.delete(
-                        0, self.stream_packets_lb.size() - 1000
-                    )
-                    self.stream_packets_lb.see(tkinter.END)
 
-                    if isinstance(packet, CoreServiceSpectrumPacket):
-                        signal_db, noise_db = self.calculate_snr(packet)
-                        self.stat_frame.snr_string.set(f"{signal_db-noise_db:.1f}dB")
-                        self.plot_frame.plot_spectrum_packet(
-                            packet, signal_db, noise_db
-                        )
-
-                    if isinstance(
-                        packet, CoreServiceDebugPacket
-                    ):  # updating peak plots
-                        if packet.title == "peaks":
-                            regex = r"peak(\d+)=(\d+)"
-                            matches = re.findall(
-                                regex, str(packet)
-                            )  # creating a list of (ChannelID, PeakValue) tuples from the debug message
-                            peaks = [peak[1] for peak in matches]
-                            try:
-                                self.stat_frame.update_peak_plot(peaks)
-                            except IndexError:
-                                """
-                                During changing center freq, the CoreService sometiomes sends negative peak values.
-                                This behaviour has not been investigated on the CS side, only handled here
-                                """
-                                pass
-                        elif packet.title == "q":
-                            quality = float(packet.contents.decode().strip())
-                            self.stat_frame.quality_value_string.set(f"{quality:.2f}")
-
-                    if isinstance(packet, CoreServiceROIResultPacket):
-                        latest_roi_resutls = {
-                            "df_value": packet.roi_azimuth,
-                            "df_elevation": packet.roi_elevation,
-                        }
-
-                        self.stat_frame.update_stats(
-                            latest_roi_resutls, self.aggregated_roi_results
-                        )
-
-                    if isinstance(packet, CoreServiceEOFPacket):
-                        self.info_update_handler(
-                            "End of file reached for Sigmf recording",
-                            source="GUI packet handler",
-                        )
-                        if self.client.repeat_playback:
-                            self.client.send_commands(
-                                "SOURCE:Position! 0;SOURCE:Start!;"
-                            )
-                except Exception as e:
-                    if not self.do_stop:
-                        print("[GUI packet handler]", e)
-                        traceback.print_tb(e.__traceback__)
             except queue.Empty:
                 pass
             except Exception as e:
@@ -269,14 +231,105 @@ class ClientWindow(tkinter.Frame):
                 traceback.print_tb(e.__traceback__)
                 return
 
+    def _is_packet_late(self, packet: proto_cmd):
+        # keeps track of arrived packets
+        # returns True if packet's timestamp is not fresher than all earlier arrived packets'
+        # if the packet is more than 60s late, then we consider it as fresh
+        if type(packet) not in self.packet_type_stats.keys():
+            self.packet_type_stats[type(packet)] = {
+                "latest_ts": 0,
+                "arrived": 0,
+                "dropped": 0,
+                "last_size_byte": 0,
+            }
+
+        self.packet_type_stats[type(packet)]["arrived"] += 1
+        self.packet_type_stats[type(packet)]["last_size_byte"] = packet.ByteSize()
+
+        timestamp = packet.time.seconds + packet.time.nanos / 1e9
+        delay = self.packet_type_stats[type(packet)]["latest_ts"] - timestamp
+        if delay > 0 and delay < 60:  # the packet is (reasonably) late
+            self.packet_type_stats[type(packet)]["dropped"] += 1
+            is_packet_late = True
+        else:  # the packet is fresh, or more than 60s late -> keep it
+            self.packet_type_stats[type(packet)]["latest_ts"] = timestamp
+            is_packet_late = False
+
+        self.debug_tab.update_stream_packet_stats(self.packet_type_stats)
+        return is_packet_late
+
+    def measurement_packet_handler(self, packet: proto_data.Measurement) -> None:
+        self.update_stream_packet_lb(packet)
+
+        # TODO: signal_db, noise_db = self.calculate_snr(packet)
+        signal_db, noise_db = 0, 0
+
+        # TODO: updating ROI on waterfall
+        # if len(packet.detection):
+        #    self.plot_frame.draw_roi_window(packet.detection[0].frequency, packet.detection[0].bandwidth, -120)
+        self.plot_frame.plot_spectrum_packet(
+            packet.data[0],
+            signal_db,
+            noise_db,
+        )
+
+        self.stat_frame.update_peak_plot(packet.peaks)
+
+        # TODO: remove compass heading/angle
+        self.compass_angle = packet.heading
+        self.compass_heading = packet.heading
+
+        # TODO: rethink roi results
+        latest_roi_resutls = {"df_value": 0, "df_elevation": 0}
+        self.aggregated_roi_results = {
+            "df_value_mean": 0,
+            "df_value_std": 0,
+            "df_elevation_mean": 0,
+            "df_elevation_std": 0,
+        }
+        if len(packet.detection):
+            self.aggregated_roi_results["df_value_std"] = packet.detection[0].deviation
+            latest_roi_resutls = {
+                "df_value": packet.detection[0].azimuth,
+                "df_elevation": packet.detection[0].elevation,
+            }
+        self.stat_frame.update_stats(latest_roi_resutls, self.aggregated_roi_results)
+
+        # if isinstance(packet, CoreServiceEOFPacket):
+        #         self.info_update_handler(
+        #             "End of file reached for Sigmf recording",
+        #             source="GUI packet handler",
+        #         )
+        #         if self.client.repeat_playback:
+        #             pass  # TODO: implement repeat using protobuf
+        #             # self.client.send_commands(
+        #             #     "SOURCE:Position! 0;SOURCE:Start!;"
+        #             # )
+
+    def telemetry_packet_handler(self, packet: proto_data.Telemetry):
+        # Processes telemetry packets that arrived through stream or command connection
+        self.client.source_manager.source_telemetry_handler(packet)
+        source_length = packet.source.length
+        current_position = packet.source.position
+        self.playback_tab.update(
+            current_position=current_position, source_length=source_length
+        )
+
+    def update_stream_packet_lb(self, packet):
+        ts = datetime.fromtimestamp(packet.time.seconds, tz=None)
+        packet_string = (
+            f"[{packet.stream_id}] {ts.strftime('%H:%M:%S')}.{int((packet.time.nanos % 1e9) / 1e6):03d} - "
+            f"detection: {packet.detection}"
+        )
+        self.stream_packets_lb.insert(tkinter.END, packet_string)
+        self.stream_packets_lb.delete(0, self.stream_packets_lb.size() - 1000)
+        self.stream_packets_lb.see(tkinter.END)
+
     def command_status_msg_handler(self, message: str) -> None:
         if message.startswith("#info"):
             message = message[len("#info") :]
         elif message.startswith("#action"):
             message = message[len("#action") :]
-            if message == "send_commands_finished":
-                # self.decrease_unfinished_send_commands()
-                return
         else:  # status updates have no prefix, these should also be shown on status_frame
             self.set_command_status(message)
         self.info_update_handler(message, "Command Thread")
@@ -286,13 +339,6 @@ class ClientWindow(tkinter.Frame):
         self.info_update_handler(message, source="Stream Process")
 
     def recording_status_msg_handler(self, message: str) -> None:
-        # if message.startswith("#info"):
-        #     message = message[len("#info") :]
-        # elif message.startswith("#action"):
-        #     message = message[len("#action") :]
-        #     if message == "send_commands_finished":
-        #         self.decrease_unfinished_send_commands()
-        #         return
         self.info_update_handler(message, "Recording Thread")
 
     def map_server_status_msg_handler(self, message: str) -> None:
@@ -427,14 +473,14 @@ class Client:
 
         self.source_manager = SourceManager()
         self.heading_manager = HeadingManager()
-        self.stream_to_gui_queue: queue.Queue[Any] = self.manager.Queue(maxsize=100)
+        self.stream_to_gui_queue: queue.Queue[Any] = self.manager.Queue(maxsize=1)
         self.stream_to_rec_queue: Optional[queue.Queue[Any]] = None
-        self.stream_to_map_queue: queue.Queue[Any] = self.manager.Queue(maxsize=10)
+        self.stream_to_map_queue: queue.Queue[Any] = self.manager.Queue(maxsize=1)
 
         self.stream_process_multiqueue = MultiQueue([self.stream_to_gui_queue])
 
         self.client_window = ClientWindow(self, root)
-        self.command_connection_thread: Optional[CommandsConnectionThread] = None
+        self.command_connection: Optional[REQ] = None
         self.command_thread: Optional[CommandsHandlerThread] = None
         self.status_query_thread: Optional[StatusQueryThread] = None
         self.stream_process: Optional[StreamAndCompassProcess] = None
@@ -443,6 +489,9 @@ class Client:
         self.repeat_playback: bool = False
 
         self.stream_process_watcher_queue: multiprocessing.Queue[
+            str
+        ] = multiprocessing.Queue()
+        self.command_connection_status_watcher_queue: multiprocessing.Queue[
             str
         ] = multiprocessing.Queue()
         self.command_thread_watcher_queue: multiprocessing.Queue[
@@ -486,8 +535,22 @@ class Client:
 
                 if self.command_thread is not None:
                     try:
-                        msg = self.command_thread_watcher_queue.get_nowait()
+                        msg = self.command_connection_status_watcher_queue.get_nowait()
                         self.client_window.command_status_msg_handler(msg)
+                        do_sleep = False
+                    except queue.Empty:
+                        pass
+                    try:
+                        (
+                            working,
+                            current_cmd,
+                        ) = self.command_thread_watcher_queue.get_nowait()
+                        self.source_manager.command_status_callback(
+                            working, current_cmd
+                        )
+                        self.client_window.playback_tab.display_command_status(
+                            current_cmd
+                        )
                         do_sleep = False
                     except queue.Empty:
                         pass
@@ -528,26 +591,21 @@ class Client:
         """
         assert self.command_thread is not None
         if (
-            self.command_connection_thread is None
+            self.command_connection is None
         ):  ##TODO: After disconnecting command_thread should be None
             return
         self.command_thread.abort_commands()
 
-    def send_commands(self, cmd: str) -> None:
+    def send_commands(self, cmd) -> None:
         """
         Send the command from the command entry box to the client. Called on pressing the Return key in the autocomplete box.
         """
         assert self.command_thread is not None
         if (
-            self.command_connection_thread is None
+            self.command_connection is None
         ):  ##TODO: After disconnecting command_thread should be None
             return
         self.command_thread.enqueue_commands(cmd)
-
-    def command_status_callback(self, working: bool, current_cmd: str) -> None:
-        self.command_thread_watcher_queue.put("#action" + "send_commands_finished")
-        self.source_manager.command_status_callback(working, current_cmd)
-        self.client_window.playback_tab.display_command_status(current_cmd)
 
     def start_dfg_map_server(self) -> None:
         global conf
@@ -556,7 +614,9 @@ class Client:
         )
         self.stream_process_multiqueue.add_queue(self.stream_to_map_queue)
 
-        self.dfg_map_server.host = read_from_conf(conf, ["map_server", "host"], "0.0.0.0")
+        self.dfg_map_server.host = read_from_conf(
+            conf, ["map_server", "host"], "0.0.0.0"
+        )
         self.dfg_map_server.port = read_from_conf(conf, ["map_server", "port"], 20000)
         if "lat" in conf["map_server"] and "lon" in conf["map_server"]:
             self.dfg_map_server.predefined_coords = (
@@ -579,32 +639,73 @@ class Client:
         """
         Action of the "Connect" button
         """
-        self.command_connection_thread = CommandsConnectionThread(
-            self.command_thread_watcher_queue
-        )
-        self.command_connection_thread.connect_callback = connect_action
-        self.command_connection_thread.connected_callback = connected_action
-        self.command_connection_thread.disconnect_callback = disconnect_action
-        self.command_connection_thread.host_port = f"{host_address}:12936"
-        self.command_connection_thread.start()
 
-        self.command_thread = CommandsHandlerThread(
-            conn=self.command_connection_thread,
-            status_callback=self.command_status_callback,
-            status_queue=self.command_thread_watcher_queue,
+        self.command_connection = REQ(
+            address_server=host_address
+        )  # , address_client=None, port_client=5556, port_server=5555)
+
+        self.command_thread = CommandThread(
+            connection=self.command_connection,
+            thread_status_queue=self.command_thread_watcher_queue,
+            connection_status_queue=self.command_connection_status_watcher_queue,
         )
+        self.command_thread.connect_callback = connect_action
+        self.command_thread.connected_callback = connected_action
+        self.command_thread.disconnect_callback = disconnect_action
 
         self.command_thread.start()
+
+        self.command_thread.set_response_handler(
+            proto_cmd.Instruction.PING,
+            self.client_window.debug_tab.ping_response_handler,
+        )
+        self.command_thread.set_response_handler(
+            proto_cmd.Instruction.CS_PING,
+            self.client_window.debug_tab.cs_ping_response_handler,
+        )
+
+        self.disconnect_value.value = False
+
+        # TODO: port and groups to config
+        stream_connection_port = 4242
+        all_groups = [group.value for group in DataType]
+        self.stream_process = StreamProcess(
+            stream_connection_port,
+            all_groups,
+            self.stream_process_multiqueue,
+            self.disconnect_value,
+            self.stream_process_watcher_queue,
+        )
+        self.stream_process.start()
+
+        self.status_query_thread = StatusQueryThread(client=self)
+        self.status_query_thread.start()
+
+        cmd_stream_start = proto_cmd.Command()
+        cmd_stream_start.instruction = proto_cmd.STREAM_START
+        # TODO: customazible stream levels
+        cmd_stream_start.target.id = 1
+        cmd_stream_start.target.level = proto_cmd.StreamTarget.StreamLevel.SPECTRUM
+        cmd_stream_start.target.address = get_ip(host_address)
+        cmd_stream_start.target.port = 4242
+
+        # TODO: think about ideal timeout values, move to config
+        cmd_stream_start.target.heartbeat_timeout = 1
+        cmd_stream_start.target.telemetry_timeout = 1
+
+        self.command_thread.enqueue_commands(cmd_stream_start)
+        return
+        # TODO: the following response hanlder using protobuf
         self.command_thread.set_response_handler(
             "CORE:Version?",
-            lambda cmd, resp: self.command_thread_watcher_queue.put(
+            lambda cmd, resp: self.command_connection_status_watcher_queue.put(
                 f"#infoCS Version {resp[1]}.{resp[2]}.{resp[3]}"
                 f"-{resp[4]}+{resp[5]} VCS:{resp[6]}"
             ),
         )
         self.command_thread.set_response_handler(
             "SOURCE:Configure!",
-            lambda cmd, resp: self.command_thread_watcher_queue.put(
+            lambda cmd, resp: self.command_connection_status_watcher_queue.put(
                 "#infoCore Service configured"
                 if int(resp[0]) == 0
                 else "#infoCore Service conf failed"
@@ -612,7 +713,7 @@ class Client:
         )
         self.command_thread.set_response_handler(
             "ROI:Configure!",
-            lambda cmd, resp: self.command_thread_watcher_queue.put(
+            lambda cmd, resp: self.command_connection_status_watcher_queue.put(
                 "#infoCore Service ROI configured"
                 if int(resp[0]) == 0
                 else "#infoCore Service ROI failed"
@@ -620,41 +721,14 @@ class Client:
         )
         self.command_thread.set_response_handler(
             "RECORDING:Stop!",
-            lambda cmd, resp: self.command_thread_watcher_queue.put(
+            lambda cmd, resp: self.command_connection_status_watcher_queue.put(
                 f"#infoCS Recordings done: {', '.join(resp)}"
             ),
         )
-        self.status_query_thread = StatusQueryThread(
-            self.command_thread,
-            self.client_window.playback_tab,
-            self.client_window.control_frame,
-            self.client_window.status_frame,
-            self.source_manager,
-        )
-        self.status_query_thread.start()
-
-        self.disconnect_value.value = False
-        self.stream_process = StreamAndCompassProcess(
-            self.stream_process_multiqueue,
-            self.disconnect_value,
-            self.stream_process_watcher_queue,
-        )
-        self.stream_process.heading_queue = QueueValueCollector(
-            self.heading_manager.mp_values, conf
-        )
-        self.stream_process.host_port = f"{host_address}:12937"
-        self.stream_process.mean_window_seconds = self.mean_window_width_value
-        self.stream_process.start()
-
-    def do_set_source_params(self, kwargs: dict[str, Any]) -> None:
-        self.do_set_source(**kwargs)
 
     def do_set_source(self, source: str, params: str) -> None:
         cmd = self.source_manager.get_set_source_command(source, params)
-        self.send_commands(f"CORE:Version?;{cmd}SOURCE:Path?;")
-
-    def do_configuration_params(self, params: dict[str, Any]) -> None:
-        self.do_configuration(**params)
+        self.command_thread.enqueue_commands(cmd)
 
     def do_configuration(
         self,
@@ -667,7 +741,7 @@ class Client:
         roi_span,
         roi_threshold,
     ) -> None:
-        cmd = self.source_manager.get_config_commands(
+        cmd_list = self.source_manager.get_config_commands(
             freq,
             bw,
             gain,
@@ -677,14 +751,17 @@ class Client:
             roi_span,
             roi_threshold,
         )
-        self.send_commands(cmd)
+        self.send_commands(cmd_list)
 
     def disconnect_commands(self) -> None:
         """
         Action of the "Disconnect" button
         """
-        if self.command_connection_thread is not None:
-            self.command_connection_thread.disconnect = True
+        if self.command_thread is not None:
+            self.command_thread.do_disconnect = True
+        if self.command_connection is not None:
+            self.command_connection.disconnect()
+            self.command_connection = None
 
         if self.stream_process is not None:
             if self.disconnect_value is not None:
@@ -696,22 +773,29 @@ class Client:
         self.stream_thread.join() """
 
     def update_roi_settings(self, roi_center, roi_span, roi_threshold) -> None:
-        self.send_commands(
-            f"ROI:CenterFrequency! {roi_center:.0f};"
-            f"ROI:Span! {roi_span:.0f};"
-            f"ROI:Threshold! {roi_threshold:.0f};"
-            f"ROI:Configure!;"
+        cmd = proto_cmd.Command()
+        cmd.instruction = proto_cmd.CONFIG
+        roi_mask = self.source_manager.get_single_roi_mask(
+            roi_center, roi_span, roi_threshold
         )
+        cmd.config.roi.append(roi_mask)
+        self.send_commands(cmd)
 
     def start_recording(self) -> None:
         self.start_local_recording()
-        self.send_commands("RECORDING:Start!;")
-        self.recording_started = True
+        cmd = proto_cmd.Command()
+        cmd.instruction = proto_cmd.REC_START
+        self.send_commands(cmd)
+        self.recording_started = (
+            True  # TODO: this is depracated (source_manager.recording_status)
+        )
         ##TODO: start local recording if CS is also recording when connecting to it
 
     def stop_recording(self) -> None:
         self.stop_local_recording()
-        self.send_commands("RECORDING:Stop!;")
+        cmd = proto_cmd.Command()
+        cmd.instruction = proto_cmd.REC_STOP
+        self.send_commands(cmd)
         self.recording_started = False
 
     def start_local_recording(self) -> None:

@@ -369,6 +369,11 @@ class MagnitudeSpectrumGraph(GraphImage):
             self.params.iq_rate / self.params.bin_count
         ) + self.params.center_frequency
 
+    def freq_to_coord(self, freq: float) -> float: 
+        return (freq  - self.params.center_frequency) / (
+            self.params.iq_rate / self.params.bin_count
+        ) + self.params.bin_count / 2
+
     def bin_freq_formatter(self, x: float, pos: Any = None) -> str:
         return f"{self.coord_to_freq(x) / 1e6:.3f}M"
 

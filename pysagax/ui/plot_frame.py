@@ -1,5 +1,6 @@
 import math
 import tkinter
+import numpy as np
 from tkinter import ttk
 from typing import Any, Callable, Optional
 
@@ -15,7 +16,9 @@ from matplotlib.backends.backend_tkagg import (  # type: ignore
 
 import pysagax
 from pysagax.df.lena_core_service import CoreServiceSpectrumPacket
+from pysagax.source.source_manager import CoreServiceStatus
 from pysagax.spot.calculate_df_corrected import calculate_df_corrected
+import pysagax.message.data_pb2 as proto_data
 
 # from pysagax.spotclient import Client, conf, calculate_df_corrected
 from pysagax.ui.custom_widgets import EntryWithLabel, ToggleButton
@@ -71,6 +74,19 @@ class PlotFrame(tkinter.Frame):
         self.make_plots = read_from_conf(self.conf, ["display", "make_plots"], True)
 
         self.create_canvas()
+        self._draw_empty_plot()
+        
+    def _draw_empty_plot(self) -> None:
+        # this gets called on startup to fill the graph area with an empty plot
+        spectrum = proto_data.Spectrum()
+        spectrum.spectrum_type = proto_data.Spectrum.SpectrumType.MAGNITUDE
+        spectrum.data_type = proto_data.Spectrum.DataType.INT16
+        spectrum.channel_id = 0
+        spectrum.data = np.array([0,0,0]).astype(np.dtype(np.int16)).tobytes()
+        spectrum.center_frequency = 2
+        spectrum.bandwidth = 1
+        self.plot_spectrum_packet(spectrum=spectrum)
+        self.start_animation()
 
     def create_canvas(self) -> None:
         """
@@ -189,7 +205,7 @@ class PlotFrame(tkinter.Frame):
         return image_list
 
     def click_handler(self, event: Any) -> None:
-        if self.master.status_frame.status_command_string.get() != "Connected":
+        if self.master.client.source_manager.cs_status == CoreServiceStatus.DISCONNECTED:
             return
         control_frame_ref = self.master.control_frame  ##Could be better?
         ##TODO: set roi span from graph
@@ -206,15 +222,20 @@ class PlotFrame(tkinter.Frame):
                 roi_freq, roi_span, math.floor(roi_threshold)
             )
 
-            self.magnitude_spectrum_graph.roi_center = event.xdata
-            self.magnitude_spectrum_graph.roi_width = int(
-                roi_span * (self.params.bin_count / self.params.iq_rate)
-            )
-            self.magnitude_spectrum_graph.roi_threshold = int(math.floor(event.ydata))
+            self.draw_roi_window(roi_freq, roi_span, roi_threshold)
+
 
             control_frame_ref.roi_center_entry.set(f"{roi_freq:.0f}")
             control_frame_ref.roi_threshold_entry.set(f"{roi_threshold:.0f}")
             control_frame_ref.roi_span_entry.set(f"{roi_span:.0f}")
+
+    def draw_roi_window(self, roi_center: float, roi_width: float, roi_threshold: float) -> None:
+            self.magnitude_spectrum_graph.roi_center = self.magnitude_spectrum_graph.freq_to_coord(roi_center)
+            self.magnitude_spectrum_graph.roi_width = int(
+                roi_width * (self.params.bin_count / self.params.iq_rate)
+            )
+            self.magnitude_spectrum_graph.roi_threshold = roi_threshold
+
 
     def update_sensors_and_graphs(self) -> None:
         assert self.df_graph is not None  ##TODO: assert for all or no compass graphs?
@@ -235,34 +256,47 @@ class PlotFrame(tkinter.Frame):
 
     def plot_spectrum_packet(
         self,
-        packet: CoreServiceSpectrumPacket,
+        spectrum,
         signal_db: float = 0.0,
         noise_db: float = 0.0,
     ) -> None:
         if self.make_plots == False:
             return
-        if packet.bin_count == 0:
+        
+        #Decoding spectrum data
+        data_type = spectrum.data_type
+        np_data_type = {
+            proto_data.Spectrum.DataType.INT16: np.dtype(np.int16),
+            proto_data.Spectrum.DataType.INT8: np.dtype(np.int8),
+            proto_data.Spectrum.DataType.FLOAT32: np.dtype(np.float32),
+        }[data_type]
+        spectrum_data = np.frombuffer(spectrum.data, np_data_type)
+        bin_count = len(spectrum_data)
+        center_frequency = spectrum.center_frequency
+        iq_rate = spectrum.bandwidth
+
+        if bin_count == 0 or iq_rate == 0:
             return
         if (
             self.redraw_canvas
-            or packet.bin_count
+            or bin_count
             != self.params.bin_count  # or restart if the dimensions change
-            or packet.center_frequency
+            or center_frequency
             != self.params.center_frequency  # or restart if the axes change
-            or packet.iq_rate != self.params.iq_rate
+            or iq_rate != self.params.iq_rate
         ):
             # Animation can be created, because at this point we know bin count and other properties
             # Also restart when bin count or any other parameter has changed
-            self.params.bin_count = packet.bin_count
-            self.params.iq_rate = packet.iq_rate
-            self.params.center_frequency = packet.center_frequency
+            self.params.bin_count = bin_count
+            self.params.iq_rate = iq_rate
+            self.params.center_frequency = center_frequency
             self.create_anim()
             self.redraw_canvas = False
 
         assert self.magnitude_waterfall_graph is not None
         assert self.magnitude_spectrum_graph is not None
-        self.magnitude_waterfall_graph.add_data(packet.magnitude_spectrum)
-        self.magnitude_spectrum_graph.add_data(packet.magnitude_spectrum)
+        self.magnitude_waterfall_graph.add_data(spectrum_data)
+        self.magnitude_spectrum_graph.add_data(spectrum_data)
         self.magnitude_spectrum_graph.signal_lvl = signal_db
         self.magnitude_spectrum_graph.noise_lvl = noise_db
 
@@ -457,6 +491,7 @@ class PlotSettingsFrame(tkinter.Frame):
         self.plot_frame.disable_plotting()
         
     def choose_spectrum_commands(self, event: Any) -> None:
-        self.send_commands_function(
-            f"DEBUG:SpectrumChannel! {self.channel_spectrum_combo.current()};"
-        )
+        pass #TODO: implement using protobuf
+        # self.send_commands_function(
+        #     f"DEBUG:SpectrumChannel! {self.channel_spectrum_combo.current()};"
+        # )

@@ -120,7 +120,7 @@ class ControlFrame(tkinter.Frame):
         self.configure_button.configure(state="disabled")
         self.do_configuration_function = do_configuration_function
 
-    def path_update(self) -> None:
+    def config_update(self) -> None:
         self._update_bandwith_entry()
         tuning_settings_state = en_if(self.source_manager.current_source.is_tunable)
         self.freq_entry.config(state=tuning_settings_state)
@@ -158,4 +158,4 @@ class ControlFrame(tkinter.Frame):
             "roi_span": si_to_float(self.roi_span_entry.get()),
             "roi_threshold": self.roi_threshold_entry.get(),
         }
-        self.do_configuration_function(kwargs)
+        self.do_configuration_function(**kwargs)
