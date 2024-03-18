@@ -1,7 +1,7 @@
 import socket
 
 
-def get_ip():
+def get_ip(host_address="10.254.254.254"):
     """
     Returns the local IP address without internet connection
     Source: https://stackoverflow.com/a/28950776
@@ -10,7 +10,7 @@ def get_ip():
     s.settimeout(0)
     try:
         # doesn't even have to be reachable
-        s.connect(("10.254.254.254", 1))
+        s.connect((host_address, 1))
         IP = s.getsockname()[0]
     except Exception:
         IP = "127.0.0.1"

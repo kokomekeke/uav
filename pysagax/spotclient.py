@@ -156,7 +156,7 @@ class ClientWindow(tkinter.Frame):
         self.playback_tab.start_recording_function = self.client.start_recording
         self.playback_tab.stop_recording_function = self.client.stop_recording
         self.playback_tab.abort_commands_function = self.client.abort_commands
-        
+
         self.debug_tab = DebugTab(
             master=self.center_notebook,
             send_commands_function=self.client.send_commands,
@@ -213,7 +213,7 @@ class ClientWindow(tkinter.Frame):
             try:
                 packet = self.client.stream_to_gui_queue.get(timeout=0.2)
                 if self._is_packet_late(packet):
-                    continue   #drop packet if we've already recieved a fresher one 
+                    continue  # drop packet if we've already recieved a fresher one
 
                 if isinstance(packet, proto_data.Measurement):
                     self.measurement_packet_handler(packet)
@@ -230,26 +230,31 @@ class ClientWindow(tkinter.Frame):
                 print("[GUI packet handler]", e)
                 traceback.print_tb(e.__traceback__)
                 return
-        
+
     def _is_packet_late(self, packet: proto_cmd):
         # keeps track of arrived packets
         # returns True if packet's timestamp is not fresher than all earlier arrived packets'
         # if the packet is more than 60s late, then we consider it as fresh
         if type(packet) not in self.packet_type_stats.keys():
-            self.packet_type_stats[type(packet)] = {"latest_ts": 0, "arrived": 0, "dropped": 0, "last_size_byte": 0}
-        
+            self.packet_type_stats[type(packet)] = {
+                "latest_ts": 0,
+                "arrived": 0,
+                "dropped": 0,
+                "last_size_byte": 0,
+            }
+
         self.packet_type_stats[type(packet)]["arrived"] += 1
         self.packet_type_stats[type(packet)]["last_size_byte"] = packet.ByteSize()
 
         timestamp = packet.time.seconds + packet.time.nanos / 1e9
         delay = self.packet_type_stats[type(packet)]["latest_ts"] - timestamp
-        if (delay > 0 and delay < 60): # the packet is (reasonably) late
+        if delay > 0 and delay < 60:  # the packet is (reasonably) late
             self.packet_type_stats[type(packet)]["dropped"] += 1
             is_packet_late = True
-        else:   #the packet is fresh, or more than 60s late -> keep it
+        else:  # the packet is fresh, or more than 60s late -> keep it
             self.packet_type_stats[type(packet)]["latest_ts"] = timestamp
             is_packet_late = False
-        
+
         self.debug_tab.update_stream_packet_stats(self.packet_type_stats)
         return is_packet_late
 
@@ -260,7 +265,7 @@ class ClientWindow(tkinter.Frame):
         signal_db, noise_db = 0, 0
 
         # TODO: updating ROI on waterfall
-        #if len(packet.detection):
+        # if len(packet.detection):
         #    self.plot_frame.draw_roi_window(packet.detection[0].frequency, packet.detection[0].bandwidth, -120)
         self.plot_frame.plot_spectrum_packet(
             packet.data[0],
@@ -483,21 +488,21 @@ class Client:
         self.dfg_map_server: Optional[MapServer] = None
         self.repeat_playback: bool = False
 
-        self.stream_process_watcher_queue: multiprocessing.Queue[str] = (
-            multiprocessing.Queue()
-        )
-        self.command_connection_status_watcher_queue: multiprocessing.Queue[str] = (
-            multiprocessing.Queue()
-        )
-        self.command_thread_watcher_queue: multiprocessing.Queue[str] = (
-            multiprocessing.Queue()
-        )
-        self.recording_thread_watcher_queue: multiprocessing.Queue[str] = (
-            multiprocessing.Queue()
-        )
-        self.map_server_thread_watcher_queue: multiprocessing.Queue[str] = (
-            multiprocessing.Queue()
-        )
+        self.stream_process_watcher_queue: multiprocessing.Queue[
+            str
+        ] = multiprocessing.Queue()
+        self.command_connection_status_watcher_queue: multiprocessing.Queue[
+            str
+        ] = multiprocessing.Queue()
+        self.command_thread_watcher_queue: multiprocessing.Queue[
+            str
+        ] = multiprocessing.Queue()
+        self.recording_thread_watcher_queue: multiprocessing.Queue[
+            str
+        ] = multiprocessing.Queue()
+        self.map_server_thread_watcher_queue: multiprocessing.Queue[
+            str
+        ] = multiprocessing.Queue()
 
         self.disconnect_value = self.manager.Value("i", 0)
         """
@@ -536,9 +541,10 @@ class Client:
                     except queue.Empty:
                         pass
                     try:
-                        working, current_cmd = (
-                            self.command_thread_watcher_queue.get_nowait()
-                        )
+                        (
+                            working,
+                            current_cmd,
+                        ) = self.command_thread_watcher_queue.get_nowait()
                         self.source_manager.command_status_callback(
                             working, current_cmd
                         )
@@ -649,8 +655,14 @@ class Client:
 
         self.command_thread.start()
 
-        self.command_thread.set_response_handler(proto_cmd.Instruction.PING, self.client_window.debug_tab.ping_response_handler)
-        self.command_thread.set_response_handler(proto_cmd.Instruction.CS_PING, self.client_window.debug_tab.cs_ping_response_handler)
+        self.command_thread.set_response_handler(
+            proto_cmd.Instruction.PING,
+            self.client_window.debug_tab.ping_response_handler,
+        )
+        self.command_thread.set_response_handler(
+            proto_cmd.Instruction.CS_PING,
+            self.client_window.debug_tab.cs_ping_response_handler,
+        )
 
         self.disconnect_value.value = False
 
@@ -669,13 +681,12 @@ class Client:
         self.status_query_thread = StatusQueryThread(client=self)
         self.status_query_thread.start()
 
-
         cmd_stream_start = proto_cmd.Command()
         cmd_stream_start.instruction = proto_cmd.STREAM_START
         # TODO: customazible stream levels
         cmd_stream_start.target.id = 1
         cmd_stream_start.target.level = proto_cmd.StreamTarget.StreamLevel.SPECTRUM
-        cmd_stream_start.target.address = get_ip()
+        cmd_stream_start.target.address = get_ip(host_address)
         cmd_stream_start.target.port = 4242
 
         # TODO: think about ideal timeout values, move to config
