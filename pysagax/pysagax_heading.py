@@ -63,6 +63,7 @@ class HeadingRunner:
         self._heading_data.gps_lat = lat
         self._heading_data.gps_lon = lon
         self._logger.debug(f"GPS callback lat={lat} lon={lon}")
+        self._heading_data.timestamp.GetCurrentTime()
         self._last_update_time = time.time()
         self.push_data()
 
@@ -71,12 +72,14 @@ class HeadingRunner:
         for q in [q0, q1, q2, q3]:
             self._heading_data.quaternion.append(q)
         self._logger.debug(f"Quaternion callback [{q0} {q1} {q2} {q3}]")
+        self._heading_data.timestamp.GetCurrentTime()
         self._last_update_time = time.time()
         self.push_data()
 
     def offset_callback(self, offset: float) -> None:
         self._heading_data.offset = offset
         self._logger.debug(f"Offset callback offset={offset}")
+        self._heading_data.timestamp.GetCurrentTime()
         self._last_update_time = time.time()
         self.push_data()
 
@@ -85,6 +88,7 @@ class HeadingRunner:
         self._heading_data.gps_lon = 0
         del self._heading_data.quaternion[:]
         self._logger.warning("Invalidate callback")
+        self._heading_data.timestamp.GetCurrentTime()
         self._last_update_time = time.time()
         self.push_data()
 
@@ -206,8 +210,6 @@ def setup_logging(
     if show_process_name:
         format = "[{processName}] " + format
     install(level=level, fmt=format, style="{")
-
-    # TODO: Implement log files
 
 
 if __name__ == "__main__":
