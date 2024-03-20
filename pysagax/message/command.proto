@@ -157,6 +157,7 @@ message SystemInfo {
     // Information about general hardware components
     message Hardware {
         int64 disk = 1;
+		string hostname = 10;
     }
     Hardware hardware = 1;
 

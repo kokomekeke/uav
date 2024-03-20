@@ -35,17 +35,20 @@ class Telemetry(google.protobuf.message.Message):
         CPU_USAGE_FIELD_NUMBER: builtins.int
         DISK_USAGE_FIELD_NUMBER: builtins.int
         TEMPERATURE_FIELD_NUMBER: builtins.int
+        HOSTNAME_FIELD_NUMBER: builtins.int
         cpu_usage: builtins.float
         disk_usage: builtins.int
         temperature: builtins.float
+        hostname: builtins.str
         def __init__(
             self,
             *,
             cpu_usage: builtins.float = ...,
             disk_usage: builtins.int = ...,
             temperature: builtins.float = ...,
+            hostname: builtins.str = ...,
         ) -> None: ...
-        def ClearField(self, field_name: typing_extensions.Literal["cpu_usage", b"cpu_usage", "disk_usage", b"disk_usage", "temperature", b"temperature"]) -> None: ...
+        def ClearField(self, field_name: typing_extensions.Literal["cpu_usage", b"cpu_usage", "disk_usage", b"disk_usage", "hostname", b"hostname", "temperature", b"temperature"]) -> None: ...
 
     @typing_extensions.final
     class Source(google.protobuf.message.Message):

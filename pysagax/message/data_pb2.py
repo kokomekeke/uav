@@ -16,7 +16,7 @@ from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__
 from pysagax.message import heading_pb2 as pysagax_dot_message_dot_heading__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1apysagax/message/data.proto\x12\x0fpysagax.message\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1dpysagax/message/heading.proto\"\x9c\x05\n\tTelemetry\x12(\n\x04time\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x11\n\tstream_id\x18\x02 \x01(\x07\x12\x35\n\x08hardware\x18\x05 \x01(\x0b\x32#.pysagax.message.Telemetry.Hardware\x12\x31\n\x06source\x18\t \x01(\x0b\x32!.pysagax.message.Telemetry.Source\x12\x37\n\trecording\x18\n \x01(\x0b\x32$.pysagax.message.Telemetry.Recording\x12/\n\x07heading\x18\x0b \x01(\x0b\x32\x1e.pysagax.message.HeadingStatus\x1a\x46\n\x08Hardware\x12\x11\n\tcpu_usage\x18\x01 \x01(\x02\x12\x12\n\ndisk_usage\x18\x02 \x01(\x03\x12\x13\n\x0btemperature\x18\x03 \x01(\x02\x1a\x96\x01\n\x06Source\x12\x38\n\x06status\x18\x03 \x01(\x0e\x32(.pysagax.message.Telemetry.Source.Status\x12\x10\n\x08position\x18\x05 \x01(\x04\x12\x0e\n\x06length\x18\x06 \x01(\x04\"0\n\x06Status\x12\x0c\n\x08\x44ISABLED\x10\x00\x12\x0b\n\x07\x45NABLED\x10\x01\x12\x0b\n\x07RUNNING\x10\x02\x1a\x9c\x01\n\tRecording\x12;\n\x06status\x18\x01 \x01(\x0e\x32+.pysagax.message.Telemetry.Recording.Status\x12\x10\n\x08\x66ilename\x18\x02 \x01(\t\x12\x0e\n\x06length\x18\x03 \x01(\x04\"0\n\x06Status\x12\x0c\n\x08\x44ISABLED\x10\x00\x12\x0b\n\x07\x45NABLED\x10\x01\x12\x0b\n\x07RUNNING\x10\x02\"\xa9\x01\n\tDetection\x12\x10\n\x08\x65vent_id\x18\x01 \x01(\r\x12\x0e\n\x06roi_id\x18\x06 \x01(\r\x12\x11\n\tfrequency\x18\x07 \x01(\x02\x12\x11\n\tbandwidth\x18\x08 \x01(\x02\x12\x10\n\x08strength\x18\t \x01(\x02\x12\x0f\n\x07\x61zimuth\x18\n \x01(\x02\x12\x11\n\televation\x18\x0b \x01(\x02\x12\x0b\n\x03snr\x18\x0c \x01(\x02\x12\x11\n\tdeviation\x18\r \x01(\x02\"\xb8\x02\n\x08Spectrum\x12\x12\n\nchannel_id\x18\x01 \x01(\x05\x12=\n\rspectrum_type\x18\x02 \x01(\x0e\x32&.pysagax.message.Spectrum.SpectrumType\x12\x35\n\tdata_type\x18\x03 \x01(\x0e\x32\".pysagax.message.Spectrum.DataType\x12\x0c\n\x04\x64\x61ta\x18\x05 \x01(\x0c\x12\x18\n\x10\x63\x65nter_frequency\x18\x07 \x01(\x02\x12\x11\n\tbandwidth\x18\x08 \x01(\x02\"9\n\x0cSpectrumType\x12\r\n\tMAGNITUDE\x10\x00\x12\x0b\n\x07\x41ZIMUTH\x10\x01\x12\r\n\tELEVATION\x10\x02\",\n\x08\x44\x61taType\x12\t\n\x05INT16\x10\x00\x12\x08\n\x04INT8\x10\x01\x12\x0b\n\x07\x46LOAT32\x10\x05\"\xd4\x02\n\x0bMeasurement\x12(\n\x04time\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x11\n\tstream_id\x18\x02 \x01(\r\x12\x11\n\tconfig_id\x18\x03 \x01(\r\x12\x11\n\tpacket_id\x18\x05 \x01(\x04\x12\x10\n\x08position\x18\x06 \x01(\x04\x12\x0f\n\x07heading\x18\x07 \x01(\x02\x12\x12\n\nquaternion\x18\x08 \x03(\x02\x12\x10\n\x08overflow\x18\t \x01(\x08\x12\r\n\x05peaks\x18\n \x03(\x05\x12\x32\n\x0cheading_data\x18\x0b \x01(\x0b\x32\x1c.pysagax.message.HeadingData\x12\'\n\x04\x64\x61ta\x18\r \x03(\x0b\x32\x19.pysagax.message.Spectrum\x12-\n\tdetection\x18\x11 \x03(\x0b\x32\x1a.pysagax.message.Detection\"\xdc\x01\n\x05\x45vent\x12(\n\x04time\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x11\n\tstream_id\x18\x02 \x01(\r\x12\x10\n\x08\x65vent_id\x18\x05 \x01(\r\x12\x11\n\tfrequency\x18\x06 \x01(\x02\x12\x10\n\x08strength\x18\x07 \x01(\x02\x12\x0b\n\x03lob\x18\x08 \x01(\x02\x12\x11\n\tcertainty\x18\t \x01(\x02\x12\x10\n\x08\x64uration\x18\n \x01(\x02\x12-\n\tdetection\x18\x0b \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"\xa6\x01\n\x10OperationalError\x12(\n\x04time\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x39\n\x04type\x18\x02 \x01(\x0e\x32+.pysagax.message.OperationalError.ErrorType\x12\x13\n\x0b\x64\x65scription\x18\x05 \x01(\t\"\x18\n\tErrorType\x12\x0b\n\x07UNKNOWN\x10\x00\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1apysagax/message/data.proto\x12\x0fpysagax.message\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1dpysagax/message/heading.proto\"\xae\x05\n\tTelemetry\x12(\n\x04time\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x11\n\tstream_id\x18\x02 \x01(\x07\x12\x35\n\x08hardware\x18\x05 \x01(\x0b\x32#.pysagax.message.Telemetry.Hardware\x12\x31\n\x06source\x18\t \x01(\x0b\x32!.pysagax.message.Telemetry.Source\x12\x37\n\trecording\x18\n \x01(\x0b\x32$.pysagax.message.Telemetry.Recording\x12/\n\x07heading\x18\x0b \x01(\x0b\x32\x1e.pysagax.message.HeadingStatus\x1aX\n\x08Hardware\x12\x11\n\tcpu_usage\x18\x01 \x01(\x02\x12\x12\n\ndisk_usage\x18\x02 \x01(\x03\x12\x13\n\x0btemperature\x18\x03 \x01(\x02\x12\x10\n\x08hostname\x18\n \x01(\t\x1a\x96\x01\n\x06Source\x12\x38\n\x06status\x18\x03 \x01(\x0e\x32(.pysagax.message.Telemetry.Source.Status\x12\x10\n\x08position\x18\x05 \x01(\x04\x12\x0e\n\x06length\x18\x06 \x01(\x04\"0\n\x06Status\x12\x0c\n\x08\x44ISABLED\x10\x00\x12\x0b\n\x07\x45NABLED\x10\x01\x12\x0b\n\x07RUNNING\x10\x02\x1a\x9c\x01\n\tRecording\x12;\n\x06status\x18\x01 \x01(\x0e\x32+.pysagax.message.Telemetry.Recording.Status\x12\x10\n\x08\x66ilename\x18\x02 \x01(\t\x12\x0e\n\x06length\x18\x03 \x01(\x04\"0\n\x06Status\x12\x0c\n\x08\x44ISABLED\x10\x00\x12\x0b\n\x07\x45NABLED\x10\x01\x12\x0b\n\x07RUNNING\x10\x02\"\xa9\x01\n\tDetection\x12\x10\n\x08\x65vent_id\x18\x01 \x01(\r\x12\x0e\n\x06roi_id\x18\x06 \x01(\r\x12\x11\n\tfrequency\x18\x07 \x01(\x02\x12\x11\n\tbandwidth\x18\x08 \x01(\x02\x12\x10\n\x08strength\x18\t \x01(\x02\x12\x0f\n\x07\x61zimuth\x18\n \x01(\x02\x12\x11\n\televation\x18\x0b \x01(\x02\x12\x0b\n\x03snr\x18\x0c \x01(\x02\x12\x11\n\tdeviation\x18\r \x01(\x02\"\xb8\x02\n\x08Spectrum\x12\x12\n\nchannel_id\x18\x01 \x01(\x05\x12=\n\rspectrum_type\x18\x02 \x01(\x0e\x32&.pysagax.message.Spectrum.SpectrumType\x12\x35\n\tdata_type\x18\x03 \x01(\x0e\x32\".pysagax.message.Spectrum.DataType\x12\x0c\n\x04\x64\x61ta\x18\x05 \x01(\x0c\x12\x18\n\x10\x63\x65nter_frequency\x18\x07 \x01(\x02\x12\x11\n\tbandwidth\x18\x08 \x01(\x02\"9\n\x0cSpectrumType\x12\r\n\tMAGNITUDE\x10\x00\x12\x0b\n\x07\x41ZIMUTH\x10\x01\x12\r\n\tELEVATION\x10\x02\",\n\x08\x44\x61taType\x12\t\n\x05INT16\x10\x00\x12\x08\n\x04INT8\x10\x01\x12\x0b\n\x07\x46LOAT32\x10\x05\"\xd4\x02\n\x0bMeasurement\x12(\n\x04time\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x11\n\tstream_id\x18\x02 \x01(\r\x12\x11\n\tconfig_id\x18\x03 \x01(\r\x12\x11\n\tpacket_id\x18\x05 \x01(\x04\x12\x10\n\x08position\x18\x06 \x01(\x04\x12\x0f\n\x07heading\x18\x07 \x01(\x02\x12\x12\n\nquaternion\x18\x08 \x03(\x02\x12\x10\n\x08overflow\x18\t \x01(\x08\x12\r\n\x05peaks\x18\n \x03(\x05\x12\x32\n\x0cheading_data\x18\x0b \x01(\x0b\x32\x1c.pysagax.message.HeadingData\x12\'\n\x04\x64\x61ta\x18\r \x03(\x0b\x32\x19.pysagax.message.Spectrum\x12-\n\tdetection\x18\x11 \x03(\x0b\x32\x1a.pysagax.message.Detection\"\xdc\x01\n\x05\x45vent\x12(\n\x04time\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x11\n\tstream_id\x18\x02 \x01(\r\x12\x10\n\x08\x65vent_id\x18\x05 \x01(\r\x12\x11\n\tfrequency\x18\x06 \x01(\x02\x12\x10\n\x08strength\x18\x07 \x01(\x02\x12\x0b\n\x03lob\x18\x08 \x01(\x02\x12\x11\n\tcertainty\x18\t \x01(\x02\x12\x10\n\x08\x64uration\x18\n \x01(\x02\x12-\n\tdetection\x18\x0b \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"\xa6\x01\n\x10OperationalError\x12(\n\x04time\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x39\n\x04type\x18\x02 \x01(\x0e\x32+.pysagax.message.OperationalError.ErrorType\x12\x13\n\x0b\x64\x65scription\x18\x05 \x01(\t\"\x18\n\tErrorType\x12\x0b\n\x07UNKNOWN\x10\x00\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -24,31 +24,31 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'pysagax.message.data_pb2', 
 if _descriptor._USE_C_DESCRIPTORS == False:
   DESCRIPTOR._options = None
   _globals['_TELEMETRY']._serialized_start=112
-  _globals['_TELEMETRY']._serialized_end=780
+  _globals['_TELEMETRY']._serialized_end=798
   _globals['_TELEMETRY_HARDWARE']._serialized_start=398
-  _globals['_TELEMETRY_HARDWARE']._serialized_end=468
-  _globals['_TELEMETRY_SOURCE']._serialized_start=471
-  _globals['_TELEMETRY_SOURCE']._serialized_end=621
-  _globals['_TELEMETRY_SOURCE_STATUS']._serialized_start=573
-  _globals['_TELEMETRY_SOURCE_STATUS']._serialized_end=621
-  _globals['_TELEMETRY_RECORDING']._serialized_start=624
-  _globals['_TELEMETRY_RECORDING']._serialized_end=780
-  _globals['_TELEMETRY_RECORDING_STATUS']._serialized_start=573
-  _globals['_TELEMETRY_RECORDING_STATUS']._serialized_end=621
-  _globals['_DETECTION']._serialized_start=783
-  _globals['_DETECTION']._serialized_end=952
-  _globals['_SPECTRUM']._serialized_start=955
-  _globals['_SPECTRUM']._serialized_end=1267
-  _globals['_SPECTRUM_SPECTRUMTYPE']._serialized_start=1164
-  _globals['_SPECTRUM_SPECTRUMTYPE']._serialized_end=1221
-  _globals['_SPECTRUM_DATATYPE']._serialized_start=1223
-  _globals['_SPECTRUM_DATATYPE']._serialized_end=1267
-  _globals['_MEASUREMENT']._serialized_start=1270
-  _globals['_MEASUREMENT']._serialized_end=1610
-  _globals['_EVENT']._serialized_start=1613
-  _globals['_EVENT']._serialized_end=1833
-  _globals['_OPERATIONALERROR']._serialized_start=1836
-  _globals['_OPERATIONALERROR']._serialized_end=2002
-  _globals['_OPERATIONALERROR_ERRORTYPE']._serialized_start=1978
-  _globals['_OPERATIONALERROR_ERRORTYPE']._serialized_end=2002
+  _globals['_TELEMETRY_HARDWARE']._serialized_end=486
+  _globals['_TELEMETRY_SOURCE']._serialized_start=489
+  _globals['_TELEMETRY_SOURCE']._serialized_end=639
+  _globals['_TELEMETRY_SOURCE_STATUS']._serialized_start=591
+  _globals['_TELEMETRY_SOURCE_STATUS']._serialized_end=639
+  _globals['_TELEMETRY_RECORDING']._serialized_start=642
+  _globals['_TELEMETRY_RECORDING']._serialized_end=798
+  _globals['_TELEMETRY_RECORDING_STATUS']._serialized_start=591
+  _globals['_TELEMETRY_RECORDING_STATUS']._serialized_end=639
+  _globals['_DETECTION']._serialized_start=801
+  _globals['_DETECTION']._serialized_end=970
+  _globals['_SPECTRUM']._serialized_start=973
+  _globals['_SPECTRUM']._serialized_end=1285
+  _globals['_SPECTRUM_SPECTRUMTYPE']._serialized_start=1182
+  _globals['_SPECTRUM_SPECTRUMTYPE']._serialized_end=1239
+  _globals['_SPECTRUM_DATATYPE']._serialized_start=1241
+  _globals['_SPECTRUM_DATATYPE']._serialized_end=1285
+  _globals['_MEASUREMENT']._serialized_start=1288
+  _globals['_MEASUREMENT']._serialized_end=1628
+  _globals['_EVENT']._serialized_start=1631
+  _globals['_EVENT']._serialized_end=1851
+  _globals['_OPERATIONALERROR']._serialized_start=1854
+  _globals['_OPERATIONALERROR']._serialized_end=2020
+  _globals['_OPERATIONALERROR_ERRORTYPE']._serialized_start=1996
+  _globals['_OPERATIONALERROR_ERRORTYPE']._serialized_end=2020
 # @@protoc_insertion_point(module_scope)

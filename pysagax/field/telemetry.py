@@ -6,6 +6,7 @@ import shlex
 import time
 import shutil
 import pickle
+import socket
 
 from typing import Any, Generator, Iterable, Optional
 import pysagax
@@ -31,6 +32,7 @@ class Telemetry(Loop):
         self._sysinfo_packet = proto_cmd.SystemInfo()
         self._data_partition_path = data_partition_path
         self._interval = interval
+        self._hostname = socket.gethostname()
 
     def __call__(
         self,
@@ -143,6 +145,7 @@ class Telemetry(Loop):
     def _construct_sysinfo_packet(self) -> None:
         assert self._comm_queue_out is not None
         total, used, free = shutil.disk_usage(self._data_partition_path)
+        self._sysinfo_packet.hardware.hostname = self._hostname
         self._sysinfo_packet.hardware.disk = total // (2**20)  # MiB
         self._sysinfo_packet.software.pysagax_version = pysagax.__version__  # type: ignore
         try:
@@ -181,7 +184,7 @@ class Telemetry(Loop):
 
     def _push_finished_packet(self) -> None:
         assert self._comm_queue_out is not None
-
+        self._telemetry_packet.hardware.hostname = self._hostname
         self._telemetry_packet.time.GetCurrentTime()
         self._logger.debug(
             f"Telemetry packet ready {self._telemetry_packet.time.ToJsonString()}"
