@@ -7,6 +7,7 @@ from pysagax.ui.custom_widgets import ComboboxWithLabel, EntryWithLabel
 from pysagax.util.read_from_conf import read_from_conf
 from pysagax.util.mat import si_to_float
 from pysagax.ui.ui_helpers import en_if
+import pysagax.message.command_pb2 as proto_cmd
 
 
 class ControlFrame(tkinter.Frame):
@@ -41,7 +42,11 @@ class ControlFrame(tkinter.Frame):
         )
 
         self.bw_entry = EntryWithLabel(
-            self, "Bandwidth:", 0, 2, read_from_conf(conf, ["defaults", "bandwith"], "1M")
+            self,
+            "Bandwidth:",
+            0,
+            2,
+            read_from_conf(conf, ["defaults", "bandwith"], "1M"),
         )
 
         self.gain_entry = EntryWithLabel(
@@ -93,7 +98,11 @@ class ControlFrame(tkinter.Frame):
         )
 
         self.roi_span_entry = EntryWithLabel(
-            self, "ROI span:", 2, 2, read_from_conf(conf, ["defaults", "roi_span"], "50k")
+            self,
+            "ROI span:",
+            2,
+            2,
+            read_from_conf(conf, ["defaults", "roi_span"], "50k"),
         )
 
         self.roi_threshold_entry = EntryWithLabel(
@@ -159,3 +168,11 @@ class ControlFrame(tkinter.Frame):
             "roi_threshold": self.roi_threshold_entry.get(),
         }
         self.do_configuration_function(**kwargs)
+
+    def update_roi_entries(self, roi: proto_cmd.ROIMask) -> None:
+        # Updates the values of ROI-related entry fields
+        # TODO: maybe create a tab for editing complex ROI masks on the GUI
+
+        self.roi_center_entry.set(f"{roi.center_frequency/1e6:.3f}M")
+        self.roi_span_entry.set(f"{roi.span/1e3:.2f}k")
+        self.roi_threshold_entry.set(f"{roi.threshold:.0f}")

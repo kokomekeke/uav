@@ -772,14 +772,29 @@ class Client:
         """ self.command_thread.join()
         self.stream_thread.join() """
 
-    def update_roi_settings(self, roi_center, roi_span, roi_threshold) -> None:
+    def config_roi_settings(self, roi_mask: list[proto_cmd.ROIMask]) -> None:
+        # Constructs and sends a config message only containing a ROI window
         cmd = proto_cmd.Command()
         cmd.instruction = proto_cmd.CONFIG
-        roi_mask = self.source_manager.get_single_roi_mask(
-            roi_center, roi_span, roi_threshold
-        )
-        cmd.config.roi.append(roi_mask)
+        cmd.config.roi.extend(roi_mask)
         self.send_commands(cmd)
+        self.update_roi_settings(roi_mask)
+
+    def update_roi_settings(self, roi_mask: list[proto_cmd.ROIMask]):
+        """
+        This method handles the calls the methods related to ROI
+        Any update to the ROI mask should be handled here
+        """
+        if len(roi_mask) == 0:
+            return  # the response for CONFIG command didn't contain ROI information
+        if len(roi_mask) != 1:
+            print(
+                "WARNING: SPOTclient can only handle single-element ROI masks currently."
+            )
+            return
+
+        self.client_window.plot_frame.update_roi_graph(roi_mask)
+        self.client_window.control_frame.update_roi_entries(roi_mask[0])
 
     def start_recording(self) -> None:
         self.start_local_recording()
