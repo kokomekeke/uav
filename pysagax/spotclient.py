@@ -162,6 +162,7 @@ class ClientWindow(tkinter.Frame):
             send_commands_function=self.client.send_commands,
             abort_commands_function=self.client.abort_commands,
             source_manager=self.client.source_manager,
+            client=self.client
         )
 
         self.status_info_tab = ttk.Frame(self.center_notebook)
