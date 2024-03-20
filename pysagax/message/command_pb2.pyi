@@ -320,13 +320,16 @@ class SystemInfo(google.protobuf.message.Message):
         DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
         DISK_FIELD_NUMBER: builtins.int
+        HOSTNAME_FIELD_NUMBER: builtins.int
         disk: builtins.int
+        hostname: builtins.str
         def __init__(
             self,
             *,
             disk: builtins.int = ...,
+            hostname: builtins.str = ...,
         ) -> None: ...
-        def ClearField(self, field_name: typing_extensions.Literal["disk", b"disk"]) -> None: ...
+        def ClearField(self, field_name: typing_extensions.Literal["disk", b"disk", "hostname", b"hostname"]) -> None: ...
 
     @typing_extensions.final
     class Software(google.protobuf.message.Message):
