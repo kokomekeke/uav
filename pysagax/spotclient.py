@@ -58,6 +58,7 @@ from pysagax.ui.plot_frame import PlotFrame, PlotSettingsFrame
 from pysagax.util.multiqueue import MultiQueue
 from pysagax.util.read_from_conf import read_from_conf
 from pysagax.util.get_ip import get_ip
+from pysagax.util.mat import yaw_pitch_roll_from_quaternion
 
 import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.data_pb2 as proto_data
@@ -277,22 +278,35 @@ class ClientWindow(tkinter.Frame):
         self.stat_frame.update_peak_plot(packet.peaks)
 
         # TODO: remove compass heading/angle
-        self.compass_angle = packet.heading
-        self.compass_heading = packet.heading
+        # self.compass_angle = packet.heading
+        # self.compass_heading = packet.heading
+        if len(packet.heading_data.quaternion) == 4:
+            yaw, _, _ = yaw_pitch_roll_from_quaternion(packet.heading_data.quaternion)
+        else:
+            yaw = None
+        self.compass_heading = yaw
 
         # TODO: rethink roi results
-        latest_roi_resutls = {"df_value": 0, "df_elevation": 0}
-        self.aggregated_roi_results = {
-            "df_value_mean": 0,
-            "df_value_std": 0,
-            "df_elevation_mean": 0,
-            "df_elevation_std": 0,
-        }
         if len(packet.detection):
+            latest_roi_resutls = {"df_value": 3, "df_elevation": 0}
+            self.aggregated_roi_results = {
+                "df_value_mean": packet.detection[0].azimuth,
+                "df_value_std": packet.detection[0].deviation,
+                "df_elevation_mean": 0,
+                "df_elevation_std": 0,
+            }
             self.aggregated_roi_results["df_value_std"] = packet.detection[0].deviation
             latest_roi_resutls = {
                 "df_value": packet.detection[0].azimuth,
                 "df_elevation": packet.detection[0].elevation,
+            }
+        else: 
+            latest_roi_resutls = {"df_value": None, "df_elevation": None}
+            self.aggregated_roi_results = {
+                "df_value_mean": None,
+                "df_value_std": None,
+                "df_elevation_mean": None,
+                "df_elevation_std": None,
             }
         self.stat_frame.update_stats(latest_roi_resutls, self.aggregated_roi_results)
 

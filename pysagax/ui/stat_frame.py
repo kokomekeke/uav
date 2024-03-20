@@ -169,7 +169,11 @@ class StatFrame(tkinter.Frame):
     def update_stats(
         self, latest_roi_results: dict[str, Any], aggregated_roi_results: dict[str, Any]
     ) -> None:
-        rad_to_deg = lambda x: normalize_angle(x * 180 / np.pi, high=360.0, low=0.0)
+        rad_to_deg = (
+            lambda x: normalize_angle(x * 180 / np.pi, high=360.0, low=0.0)
+            if x is not None
+            else 0
+        )
 
         self.df_value_string.set(f"{rad_to_deg(latest_roi_results['df_value']):.2f}°")
         self.df_value_mean_string.set(
