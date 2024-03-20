@@ -76,6 +76,7 @@ class MapServer(DFGMapServer):
 
         self.update_timestamp()
         assert df_corrected is not None
-        self.update_angle(df_corrected, packet.detection[0].frequency)
+        # rounding frequencies for Sagax DF G-system
+        self.update_angle(df_corrected, round(packet.detection[0].frequency, -4))
         self.update_lat_lon(lat, lon)
         self.update_clients()
