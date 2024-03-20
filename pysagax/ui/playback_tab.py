@@ -8,7 +8,6 @@ from pysagax.ui.ui_helpers import en_if
 import pysagax.message.command_pb2 as proto_cmd
 
 
-
 class PlaybackTab(ttk.Frame):
     def update(
         self,
@@ -24,9 +23,7 @@ class PlaybackTab(ttk.Frame):
         self.telemetry_string.set(
             f"TELEMETRY: \n{self.source_manager.latest_telemetry}"
         )
-        self.config_string.set(
-            f"CONFIG: \n{self.source_manager.latest_config}"
-        )
+        self.config_string.set(f"CONFIG: \n{self.source_manager.latest_config}")
 
     def update_buttons(self) -> None:
         self.start_button.configure(
@@ -95,24 +92,47 @@ class PlaybackTab(ttk.Frame):
             font=tkinter.font.Font(size=8),
             anchor="w",
             justify="left",
+            width=20,
+            wraplength=200,
         )
         self.status_label.pack(side=tkinter.LEFT, anchor="n")
         self.telemetry_label = tkinter.Label(
             self.top_frame,
             textvariable=self.telemetry_string,
             font=tkinter.font.Font(size=8),
+            padx=10,
             anchor="w",
             justify="left",
+            wraplength=200,
         )
+
         self.telemetry_label.pack(side=tkinter.RIGHT, anchor="n")
         self.config_label = tkinter.Label(
             self.top_frame,
             textvariable=self.config_string,
             font=tkinter.font.Font(size=8),
+            padx=10,
             anchor="w",
             justify="left",
+            wraplength=200,
         )
         self.config_label.pack(side=tkinter.RIGHT, anchor="n")
+
+        # Warping long lines in telemetry and config labels
+        status_label_width_px = 144
+        get_top_frame_width = (
+            lambda: self.top_frame.winfo_width() - self.status_label.winfo_width()
+        )  # returns the remaining space that the telemetry and config labels need to share
+        self.telemetry_label.bind(
+            "<Configure>",
+            lambda e: self.telemetry_label.config(
+                wraplength=get_top_frame_width() * 0.35
+            ),
+        )  # event handler for resizing: telemetry gets 35% of the space
+        self.config_label.bind(
+            "<Configure>",
+            lambda e: self.config_label.config(wraplength=get_top_frame_width() * 0.65),
+        )  # event handler for resizing: config gets 65% of the space
 
     def _pack_playback_controls(self):
         self.playback_control_frame = ttk.Frame(self)
