@@ -853,7 +853,7 @@ def main() -> None:
     global conf
     global icon_image
     parser = argparse.ArgumentParser(description="SPOTClient")
-    parser.add_argument("config", nargs="?", default="spotclient.toml")
+    parser.add_argument("config", nargs="?", default="/var/sagax/spotclient/spotclient.toml")
     args = parser.parse_args()
     conf = {}
     if os.path.isfile(args.config):
