@@ -1,6 +1,6 @@
 from __future__ import annotations
 from multiprocessing.managers import DictProxy
-from queue import Empty, Queue
+from queue import Queue
 import queue
 import shlex
 import time
@@ -13,7 +13,7 @@ import pysagax
 import pysagax.message.data_pb2 as proto_data
 import pysagax.message.command_pb2 as proto_cmd
 
-from pysagax.field.loop import Loop
+from pysagax.common.loop import Loop
 
 
 class Telemetry(Loop):

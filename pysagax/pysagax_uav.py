@@ -14,6 +14,7 @@ from coloredlogs import install
 from logging import Handler, getLogger, StreamHandler
 
 from pysagax.field.communicator import Communicator
+from pysagax.field.heading import Heading
 from pysagax.field.interpreter import Interpreter
 from pysagax.field.cscontroller import CSController
 from pysagax.field.csparser import CSParser
@@ -45,6 +46,8 @@ class Commander:
 
         self._telemetry_cs_commands_q = self._manager.Queue()
         self._telemetry_cs_responses_q = self._manager.Queue()
+        self._heading_commands_q = self._manager.Queue()
+        self._heading_data_q = self._manager.Queue()
 
         self._latest_telemetry_proxy = self._manager.dict()
         self._latest_config_id_value = self._manager.Value("i", 0)
@@ -62,6 +65,7 @@ class Commander:
         self._cs_streamer = CSStreamer(level=level)
 
         self._telemetry = Telemetry(level=level, data_partition_path=disk_path)
+        self._heading = Heading(level=level)
 
     def start(self) -> None:
         """Start all background processes"""
@@ -97,6 +101,7 @@ class Commander:
             self._post_proc_input_q,
             self._post_proc_commands_q,
             self._post_proc_responses_q,
+            self._heading_data_q,
             self._latest_config_id_value,
         )
         self._cs_parser_future = self._pool.submit(
@@ -113,6 +118,9 @@ class Commander:
             self._telemetry_cs_responses_q,
             self._latest_telemetry_proxy,
         )
+        self._heading_future = self._pool.submit(
+            self._heading, self._heading_commands_q, self._heading_data_q
+        )
         # Periodically checking errors in threads
         while True:
             done, running = wait(
@@ -124,6 +132,7 @@ class Commander:
                     self._post_proc_future,
                     self._cs_parser_future,
                     self._cs_streamer_future,
+                    self._heading_future,
                 ),
                 timeout=1,
             )
@@ -140,7 +149,11 @@ class Commander:
 
 @click.command()
 @click.option("--level", "-l", help="Logging level")
-@click.option("--disk-path", default="/",  help="Path of the disk which is to be displayed in telemetry")
+@click.option(
+    "--disk-path",
+    default="/",
+    help="Path of the disk which is to be displayed in telemetry",
+)
 def main(level: str = "INFO", disk_path: str = "/") -> None:
     """Root command of CLI"""
 

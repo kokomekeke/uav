@@ -18,7 +18,7 @@ from pysagax.util.mat import normalize_angle, rotation_matrix_from_vectors
 
 
 class HeadingSource:
-    def __init__(self, conf: Optional[dict[str, Any]]) -> None:
+    def __init__(self, conf: Optional[dict[str, Any]] = None) -> None:
         self.gps_updated_callback: Optional[Callable[[float, float], None]] = None
         self.quaternion_updated_callback: Optional[
             Callable[[float, float, float, float], None]
@@ -32,6 +32,8 @@ class HeadingSource:
 
     def cr(self, keys, default_value):
         # shortened config parser for readablity
+        if self.conf is None:
+            return default_value
         return read_from_conf(self.conf, keys, default_value)
 
     def _gps(self, lat: float, lon: float) -> None:
@@ -231,6 +233,9 @@ class HeadingAHRS(HeadingSource):
         if not self.compass:
             return
         self.compass.loop()
+        if self.compass is not None and self.compass.parser is not None:
+            if self.compass.parser.lat is not None and self.compass.parser.lon is not None:
+                self._gps(self.compass.parser.lat, self.compass.parser.lon)
         if self.use_magneto:
             magneto = self.compass.magnetometer_values
             if magneto is None:

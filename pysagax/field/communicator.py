@@ -1,8 +1,7 @@
 from queue import Queue
-import sys
 from typing import Any, Optional
 
-from pysagax.field.loop import Loop
+from pysagax.common.loop import Loop
 from pysagax.communication.req_rep_tcp import REP
 
 import pysagax.message.command_pb2 as proto_cmd

@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.data_pb2 as proto_data
-from pysagax.field.loop import Loop
+from pysagax.common.loop import Loop
 
 
 class CSErrorException(Exception):
