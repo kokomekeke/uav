@@ -17,7 +17,7 @@ from pysagax.message import data_pb2 as pysagax_dot_message_dot_data__pb2
 from pysagax.message import heading_pb2 as pysagax_dot_message_dot_heading__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1dpysagax/message/command.proto\x12\x0fpysagax.message\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1apysagax/message/data.proto\x1a\x1dpysagax/message/heading.proto\"T\n\x07ROIMask\x12\x0e\n\x06roi_id\x18\x01 \x01(\x05\x12\x18\n\x10\x63\x65nter_frequency\x18\x05 \x01(\x02\x12\x0c\n\x04span\x18\x06 \x01(\x02\x12\x11\n\tthreshold\x18\x07 \x01(\x02\"\xeb\x02\n\x06\x43onfig\x12\x11\n\tconfig_id\x18\x01 \x01(\r\x12\x18\n\x10\x63\x65nter_frequency\x18\x05 \x01(\x02\x12\x0f\n\x07iq_rate\x18\x06 \x01(\r\x12\x16\n\x0eplayback_speed\x18\x07 \x01(\x02\x12\x11\n\tbin_count\x18\x08 \x01(\x04\x12\x14\n\x0c\x62urst_stride\x18\t \x01(\x04\x12\x14\n\x0c\x63hannel_gain\x18\n \x03(\x05\x12\x13\n\x0bsource_path\x18\x11 \x01(\t\x12*\n\x04type\x18\x12 \x01(\x0e\x32\x1c.pysagax.message.Config.Type\x12%\n\x03roi\x18\x15 \x03(\x0b\x32\x18.pysagax.message.ROIMask\x12/\n\x07heading\x18\x19 \x01(\x0b\x32\x1e.pysagax.message.HeadingConfig\x12\x13\n\x0bmean_window\x18\x1d \x01(\x02\"\x1e\n\x04Type\x12\x08\n\x04LIVE\x10\x00\x12\x0c\n\x08RECORDED\x10\x01\"\xba\x02\n\nSystemInfo\x12\x36\n\x08hardware\x18\x01 \x01(\x0b\x32$.pysagax.message.SystemInfo.Hardware\x12\x36\n\x08software\x18\x02 \x01(\x0b\x32$.pysagax.message.SystemInfo.Software\x12\x10\n\x08headings\x18\x03 \x03(\t\x12/\n\x06radios\x18\x04 \x03(\x0b\x32\x1f.pysagax.message.SystemInfo.SDR\x1a*\n\x08Hardware\x12\x0c\n\x04\x64isk\x18\x01 \x01(\x03\x12\x10\n\x08hostname\x18\n \x01(\t\x1a\x37\n\x08Software\x12\x12\n\ncs_version\x18\x01 \x01(\t\x12\x17\n\x0fpysagax_version\x18\x02 \x01(\t\x1a\x14\n\x03SDR\x12\r\n\x05model\x18\x01 \x01(\t\"\xf3\x01\n\x0cStreamTarget\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x38\n\x05level\x18\x02 \x01(\x0e\x32).pysagax.message.StreamTarget.StreamLevel\x12\x0f\n\x07\x61\x64\x64ress\x18\x05 \x01(\t\x12\x0c\n\x04port\x18\x06 \x01(\x05\x12\x19\n\x11heartbeat_timeout\x18\t \x01(\x05\x12\x19\n\x11telemetry_timeout\x18\n \x01(\x05\"H\n\x0bStreamLevel\x12\r\n\tHEARTBEAT\x10\x00\x12\r\n\tTELEMETRY\x10\x01\x12\r\n\tDETECTION\x10\x02\x12\x0c\n\x08SPECTRUM\x10\x03\"\x9e\x01\n\x0c\x43ommandError\x12(\n\x04time\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x35\n\x04type\x18\x02 \x01(\x0e\x32\'.pysagax.message.CommandError.ErrorType\x12\x13\n\x0b\x64\x65scription\x18\x05 \x01(\t\"\x18\n\tErrorType\x12\x0b\n\x07UNKNOWN\x10\x00\"\xc1\x02\n\x07\x43ommand\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x31\n\x0binstruction\x18\x02 \x01(\x0e\x32\x1c.pysagax.message.Instruction\x12\x32\n\x04kind\x18\x03 \x01(\x0e\x32$.pysagax.message.Command.CommandKind\x12\x13\n\tping_data\x18\x05 \x01(\tH\x00\x12)\n\x06\x63onfig\x18\x06 \x01(\x0b\x32\x17.pysagax.message.ConfigH\x00\x12\x12\n\x08position\x18\x07 \x01(\x04H\x00\x12/\n\x06target\x18\x08 \x01(\x0b\x32\x1d.pysagax.message.StreamTargetH\x00\"1\n\x0b\x43ommandKind\x12\r\n\tUNDEFINED\x10\x00\x12\x08\n\x04READ\x10\x01\x12\t\n\x05WRITE\x10\x02\x42\x0b\n\tparameter\"\xb1\x02\n\x0c\x43onfigStatus\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12?\n\tresponses\x18\x02 \x03(\x0b\x32,.pysagax.message.ConfigStatus.ResponsesEntry\x12\x12\n\nerror_code\x18\x04 \x01(\x05\x12\x19\n\x11\x65rror_description\x18\x05 \x01(\t\x12.\n\nstart_time\x18\x06 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12/\n\x0b\x66inish_time\x18\x07 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\r\n\x05queue\x18\x08 \x03(\t\x1a\x30\n\x0eResponsesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\xfc\x02\n\x08Response\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x31\n\x0binstruction\x18\x02 \x01(\x0e\x32\x1c.pysagax.message.Instruction\x12,\n\x05\x65rror\x18\x03 \x01(\x0b\x32\x1d.pysagax.message.CommandError\x12\x11\n\x07success\x18\x05 \x01(\x08H\x00\x12\x13\n\tping_data\x18\x06 \x01(\tH\x00\x12)\n\x06\x63onfig\x18\x07 \x01(\x0b\x32\x17.pysagax.message.ConfigH\x00\x12/\n\ttelemetry\x18\x08 \x01(\x0b\x32\x1a.pysagax.message.TelemetryH\x00\x12+\n\x04info\x18\t \x01(\x0b\x32\x1b.pysagax.message.SystemInfoH\x00\x12\x12\n\x08position\x18\n \x01(\x04H\x00\x12\x36\n\rconfig_status\x18\x0b \x01(\x0b\x32\x1d.pysagax.message.ConfigStatusH\x00\x42\x06\n\x04\x64\x61ta*\xc0\x02\n\x0bInstruction\x12\x08\n\x04PING\x10\x00\x12\n\n\x06\x43ONFIG\x10\x01\x12\r\n\tTELEMETRY\x10\x02\x12\x08\n\x04INFO\x10\x03\x12\x11\n\rCONFIG_STATUS\x10\x04\x12\x0c\n\x08PY_RESET\x10\x08\x12\x0c\n\x08\x43S_START\x10\t\x12\x0b\n\x07\x43S_STOP\x10\n\x12\x0e\n\nCS_RESTART\x10\x0b\x12\x0b\n\x07\x43S_PING\x10\x0c\x12\x10\n\x0cSOURCE_START\x10\r\x12\x0f\n\x0bSOURCE_STOP\x10\x0e\x12\x0c\n\x08POSITION\x10\x0f\x12\r\n\tREC_START\x10\x11\x12\x0c\n\x08REC_STOP\x10\x12\x12\x11\n\rHEADING_START\x10\x15\x12\x10\n\x0cHEADING_STOP\x10\x16\x12\x13\n\x0fHEADING_RESTART\x10\x17\x12\x10\n\x0cSTREAM_START\x10\x19\x12\x0f\n\x0bSTREAM_STOP\x10\x1a\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1dpysagax/message/command.proto\x12\x0fpysagax.message\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1apysagax/message/data.proto\x1a\x1dpysagax/message/heading.proto\"T\n\x07ROIMask\x12\x0e\n\x06roi_id\x18\x01 \x01(\x05\x12\x18\n\x10\x63\x65nter_frequency\x18\x05 \x01(\x02\x12\x0c\n\x04span\x18\x06 \x01(\x02\x12\x11\n\tthreshold\x18\x07 \x01(\x02\"\xeb\x02\n\x06\x43onfig\x12\x11\n\tconfig_id\x18\x01 \x01(\r\x12\x18\n\x10\x63\x65nter_frequency\x18\x05 \x01(\x02\x12\x0f\n\x07iq_rate\x18\x06 \x01(\r\x12\x16\n\x0eplayback_speed\x18\x07 \x01(\x02\x12\x11\n\tbin_count\x18\x08 \x01(\x04\x12\x14\n\x0c\x62urst_stride\x18\t \x01(\x04\x12\x14\n\x0c\x63hannel_gain\x18\n \x03(\x05\x12\x13\n\x0bsource_path\x18\x11 \x01(\t\x12*\n\x04type\x18\x12 \x01(\x0e\x32\x1c.pysagax.message.Config.Type\x12%\n\x03roi\x18\x15 \x03(\x0b\x32\x18.pysagax.message.ROIMask\x12/\n\x07heading\x18\x19 \x01(\x0b\x32\x1e.pysagax.message.HeadingConfig\x12\x13\n\x0bmean_window\x18\x1d \x01(\x02\"\x1e\n\x04Type\x12\x08\n\x04LIVE\x10\x00\x12\x0c\n\x08RECORDED\x10\x01\"\xd9\x02\n\nSystemInfo\x12\x36\n\x08hardware\x18\x01 \x01(\x0b\x32$.pysagax.message.SystemInfo.Hardware\x12\x36\n\x08software\x18\x02 \x01(\x0b\x32$.pysagax.message.SystemInfo.Software\x12/\n\x06radios\x18\x04 \x03(\x0b\x32\x1f.pysagax.message.SystemInfo.SDR\x12/\n\x07heading\x18\x05 \x01(\x0b\x32\x1e.pysagax.message.HeadingStatus\x1a*\n\x08Hardware\x12\x0c\n\x04\x64isk\x18\x01 \x01(\x03\x12\x10\n\x08hostname\x18\n \x01(\t\x1a\x37\n\x08Software\x12\x12\n\ncs_version\x18\x01 \x01(\t\x12\x17\n\x0fpysagax_version\x18\x02 \x01(\t\x1a\x14\n\x03SDR\x12\r\n\x05model\x18\x01 \x01(\t\"\xf3\x01\n\x0cStreamTarget\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x38\n\x05level\x18\x02 \x01(\x0e\x32).pysagax.message.StreamTarget.StreamLevel\x12\x0f\n\x07\x61\x64\x64ress\x18\x05 \x01(\t\x12\x0c\n\x04port\x18\x06 \x01(\x05\x12\x19\n\x11heartbeat_timeout\x18\t \x01(\x05\x12\x19\n\x11telemetry_timeout\x18\n \x01(\x05\"H\n\x0bStreamLevel\x12\r\n\tHEARTBEAT\x10\x00\x12\r\n\tTELEMETRY\x10\x01\x12\r\n\tDETECTION\x10\x02\x12\x0c\n\x08SPECTRUM\x10\x03\"\x9e\x01\n\x0c\x43ommandError\x12(\n\x04time\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x35\n\x04type\x18\x02 \x01(\x0e\x32\'.pysagax.message.CommandError.ErrorType\x12\x13\n\x0b\x64\x65scription\x18\x05 \x01(\t\"\x18\n\tErrorType\x12\x0b\n\x07UNKNOWN\x10\x00\"\xc1\x02\n\x07\x43ommand\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x31\n\x0binstruction\x18\x02 \x01(\x0e\x32\x1c.pysagax.message.Instruction\x12\x32\n\x04kind\x18\x03 \x01(\x0e\x32$.pysagax.message.Command.CommandKind\x12\x13\n\tping_data\x18\x05 \x01(\tH\x00\x12)\n\x06\x63onfig\x18\x06 \x01(\x0b\x32\x17.pysagax.message.ConfigH\x00\x12\x12\n\x08position\x18\x07 \x01(\x04H\x00\x12/\n\x06target\x18\x08 \x01(\x0b\x32\x1d.pysagax.message.StreamTargetH\x00\"1\n\x0b\x43ommandKind\x12\r\n\tUNDEFINED\x10\x00\x12\x08\n\x04READ\x10\x01\x12\t\n\x05WRITE\x10\x02\x42\x0b\n\tparameter\"\xb1\x02\n\x0c\x43onfigStatus\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12?\n\tresponses\x18\x02 \x03(\x0b\x32,.pysagax.message.ConfigStatus.ResponsesEntry\x12\x12\n\nerror_code\x18\x04 \x01(\x05\x12\x19\n\x11\x65rror_description\x18\x05 \x01(\t\x12.\n\nstart_time\x18\x06 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12/\n\x0b\x66inish_time\x18\x07 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\r\n\x05queue\x18\x08 \x03(\t\x1a\x30\n\x0eResponsesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\xfc\x02\n\x08Response\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x31\n\x0binstruction\x18\x02 \x01(\x0e\x32\x1c.pysagax.message.Instruction\x12,\n\x05\x65rror\x18\x03 \x01(\x0b\x32\x1d.pysagax.message.CommandError\x12\x11\n\x07success\x18\x05 \x01(\x08H\x00\x12\x13\n\tping_data\x18\x06 \x01(\tH\x00\x12)\n\x06\x63onfig\x18\x07 \x01(\x0b\x32\x17.pysagax.message.ConfigH\x00\x12/\n\ttelemetry\x18\x08 \x01(\x0b\x32\x1a.pysagax.message.TelemetryH\x00\x12+\n\x04info\x18\t \x01(\x0b\x32\x1b.pysagax.message.SystemInfoH\x00\x12\x12\n\x08position\x18\n \x01(\x04H\x00\x12\x36\n\rconfig_status\x18\x0b \x01(\x0b\x32\x1d.pysagax.message.ConfigStatusH\x00\x42\x06\n\x04\x64\x61ta*\xc0\x02\n\x0bInstruction\x12\x08\n\x04PING\x10\x00\x12\n\n\x06\x43ONFIG\x10\x01\x12\r\n\tTELEMETRY\x10\x02\x12\x08\n\x04INFO\x10\x03\x12\x11\n\rCONFIG_STATUS\x10\x04\x12\x0c\n\x08PY_RESET\x10\x08\x12\x0c\n\x08\x43S_START\x10\t\x12\x0b\n\x07\x43S_STOP\x10\n\x12\x0e\n\nCS_RESTART\x10\x0b\x12\x0b\n\x07\x43S_PING\x10\x0c\x12\x10\n\x0cSOURCE_START\x10\r\x12\x0f\n\x0bSOURCE_STOP\x10\x0e\x12\x0c\n\x08POSITION\x10\x0f\x12\r\n\tREC_START\x10\x11\x12\x0c\n\x08REC_STOP\x10\x12\x12\x11\n\rHEADING_START\x10\x15\x12\x10\n\x0cHEADING_STOP\x10\x16\x12\x13\n\x0fHEADING_RESTART\x10\x17\x12\x10\n\x0cSTREAM_START\x10\x19\x12\x0f\n\x0bSTREAM_STOP\x10\x1a\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -26,8 +26,8 @@ if _descriptor._USE_C_DESCRIPTORS == False:
   DESCRIPTOR._options = None
   _globals['_CONFIGSTATUS_RESPONSESENTRY']._options = None
   _globals['_CONFIGSTATUS_RESPONSESENTRY']._serialized_options = b'8\001'
-  _globals['_INSTRUCTION']._serialized_start=2334
-  _globals['_INSTRUCTION']._serialized_end=2654
+  _globals['_INSTRUCTION']._serialized_start=2365
+  _globals['_INSTRUCTION']._serialized_end=2685
   _globals['_ROIMASK']._serialized_start=142
   _globals['_ROIMASK']._serialized_end=226
   _globals['_CONFIG']._serialized_start=229
@@ -35,29 +35,29 @@ if _descriptor._USE_C_DESCRIPTORS == False:
   _globals['_CONFIG_TYPE']._serialized_start=562
   _globals['_CONFIG_TYPE']._serialized_end=592
   _globals['_SYSTEMINFO']._serialized_start=595
-  _globals['_SYSTEMINFO']._serialized_end=909
-  _globals['_SYSTEMINFO_HARDWARE']._serialized_start=788
-  _globals['_SYSTEMINFO_HARDWARE']._serialized_end=830
-  _globals['_SYSTEMINFO_SOFTWARE']._serialized_start=832
-  _globals['_SYSTEMINFO_SOFTWARE']._serialized_end=887
-  _globals['_SYSTEMINFO_SDR']._serialized_start=889
-  _globals['_SYSTEMINFO_SDR']._serialized_end=909
-  _globals['_STREAMTARGET']._serialized_start=912
-  _globals['_STREAMTARGET']._serialized_end=1155
-  _globals['_STREAMTARGET_STREAMLEVEL']._serialized_start=1083
-  _globals['_STREAMTARGET_STREAMLEVEL']._serialized_end=1155
-  _globals['_COMMANDERROR']._serialized_start=1158
-  _globals['_COMMANDERROR']._serialized_end=1316
-  _globals['_COMMANDERROR_ERRORTYPE']._serialized_start=1292
-  _globals['_COMMANDERROR_ERRORTYPE']._serialized_end=1316
-  _globals['_COMMAND']._serialized_start=1319
-  _globals['_COMMAND']._serialized_end=1640
-  _globals['_COMMAND_COMMANDKIND']._serialized_start=1578
-  _globals['_COMMAND_COMMANDKIND']._serialized_end=1627
-  _globals['_CONFIGSTATUS']._serialized_start=1643
-  _globals['_CONFIGSTATUS']._serialized_end=1948
-  _globals['_CONFIGSTATUS_RESPONSESENTRY']._serialized_start=1900
-  _globals['_CONFIGSTATUS_RESPONSESENTRY']._serialized_end=1948
-  _globals['_RESPONSE']._serialized_start=1951
-  _globals['_RESPONSE']._serialized_end=2331
+  _globals['_SYSTEMINFO']._serialized_end=940
+  _globals['_SYSTEMINFO_HARDWARE']._serialized_start=819
+  _globals['_SYSTEMINFO_HARDWARE']._serialized_end=861
+  _globals['_SYSTEMINFO_SOFTWARE']._serialized_start=863
+  _globals['_SYSTEMINFO_SOFTWARE']._serialized_end=918
+  _globals['_SYSTEMINFO_SDR']._serialized_start=920
+  _globals['_SYSTEMINFO_SDR']._serialized_end=940
+  _globals['_STREAMTARGET']._serialized_start=943
+  _globals['_STREAMTARGET']._serialized_end=1186
+  _globals['_STREAMTARGET_STREAMLEVEL']._serialized_start=1114
+  _globals['_STREAMTARGET_STREAMLEVEL']._serialized_end=1186
+  _globals['_COMMANDERROR']._serialized_start=1189
+  _globals['_COMMANDERROR']._serialized_end=1347
+  _globals['_COMMANDERROR_ERRORTYPE']._serialized_start=1323
+  _globals['_COMMANDERROR_ERRORTYPE']._serialized_end=1347
+  _globals['_COMMAND']._serialized_start=1350
+  _globals['_COMMAND']._serialized_end=1671
+  _globals['_COMMAND_COMMANDKIND']._serialized_start=1609
+  _globals['_COMMAND_COMMANDKIND']._serialized_end=1658
+  _globals['_CONFIGSTATUS']._serialized_start=1674
+  _globals['_CONFIGSTATUS']._serialized_end=1979
+  _globals['_CONFIGSTATUS_RESPONSESENTRY']._serialized_start=1931
+  _globals['_CONFIGSTATUS_RESPONSESENTRY']._serialized_end=1979
+  _globals['_RESPONSE']._serialized_start=1982
+  _globals['_RESPONSE']._serialized_end=2362
 # @@protoc_insertion_point(module_scope)

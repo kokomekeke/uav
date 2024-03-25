@@ -157,9 +157,7 @@ class Telemetry(Loop):
         self._sysinfo_packet.hardware.hostname = self._hostname
         self._sysinfo_packet.hardware.disk = total // (2**20)  # MiB
         self._sysinfo_packet.software.pysagax_version = pysagax.__version__  # type: ignore
-        self._sysinfo_packet.headings.extend(
-            self._heading_status_packet.available_source_types
-        )
+        self._sysinfo_packet.heading.MergeFrom(self._heading_status_packet)
         try:
             _, resp = next(self._cs_execute(["CORE:Version?"]))
             if resp[0] == "0":

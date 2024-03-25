@@ -169,7 +169,7 @@ message SystemInfo {
     Software software = 2;
 
     // Information about available Heading sources
-    repeated string headings = 3;
+    // repeated string headings = 3;
 
     // Information about available SDR sources
     message SDR {
@@ -177,6 +177,7 @@ message SystemInfo {
         string model = 1;
     }
     repeated SDR radios = 4;
+	HeadingStatus heading = 5;
 }
 
 message StreamTarget {
