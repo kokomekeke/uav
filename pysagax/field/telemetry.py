@@ -151,6 +151,7 @@ class Telemetry(Loop):
 
     def _construct_sysinfo_packet(self) -> None:
         assert self._comm_queue_out is not None
+        self._sysinfo_packet.Clear()
         total, used, free = shutil.disk_usage(self._data_partition_path)
         self._sysinfo_packet.hardware.hostname = self._hostname
         self._sysinfo_packet.hardware.disk = total // (2**20)  # MiB

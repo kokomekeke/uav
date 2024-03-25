@@ -35,6 +35,7 @@ class Heading(Loop):
         self._queue_status: Optional[Queue] = None
         self._conn_control: Optional[REQ] = None
         self._conn_stream: Optional[SUB] = None
+        self._last_status_update_time = 0.0
 
     def __call__(
         self,
@@ -45,6 +46,7 @@ class Heading(Loop):
         **kwargs,
     ) -> None:
         self._queue_in = queue_in
+        self._queue_in.put(proto_heading.HeadingConfig())
         self._queue_out = queue_out
         self._queue_status = queue_status
         self._conn_control = REQ(self._address, self._port_control)
@@ -70,6 +72,8 @@ class Heading(Loop):
             and self._queue_status is not None
         )
         assert self._conn_control and self._conn_stream
+        if self._last_status_update_time + 5.0 < time.time():
+            self._queue_in.put(proto_heading.HeadingConfig())  # Only to get status
         try:
             command = self._queue_in.get_nowait()
             assert isinstance(command, proto_heading.HeadingConfig)
@@ -81,6 +85,7 @@ class Heading(Loop):
                 return
             response.ParseFromString(response_raw)
             # self._logger.info(MessageToJson(response))
+            self._last_status_update_time = time.time()
             self._queue_status.put(response)
         except queue.Empty:
             pass
