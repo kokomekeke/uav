@@ -198,7 +198,11 @@ class Telemetry(Loop):
             status_packet = self._heading_status_queue.get_nowait()
             if isinstance(status_packet, proto_heading.HeadingStatus):
                 self._heading_status_packet = status_packet
-                logged_message = MessageToJson(self._heading_status_packet, indent=0).replace("\n","").replace("\r","")
+                logged_message = (
+                    MessageToJson(self._heading_status_packet, indent=0)
+                    .replace("\n", "")
+                    .replace("\r", "")
+                )
                 self._logger.info(f"Heading updated: {logged_message}")
                 self._construct_sysinfo_packet()
         except queue.Empty:
