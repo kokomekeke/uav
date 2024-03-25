@@ -32,6 +32,7 @@ class Heading(Loop):
         # TODO: Set up control channel to CoreService here
         self._queue_in: Optional[Queue] = None
         self._queue_out: Optional[Queue] = None
+        self._queue_status: Optional[Queue] = None
         self._conn_control: Optional[REQ] = None
         self._conn_stream: Optional[SUB] = None
 
@@ -39,12 +40,13 @@ class Heading(Loop):
         self,
         queue_in: Queue[Any],
         queue_out: Queue[Any],
+        queue_status: Queue[Any],
         *args,
         **kwargs,
     ) -> None:
         self._queue_in = queue_in
         self._queue_out = queue_out
-
+        self._queue_status = queue_status
         self._conn_control = REQ(self._address, self._port_control)
         self._conn_stream = SUB(self._address, self._port_stream)
 
@@ -62,19 +64,24 @@ class Heading(Loop):
 
     def _loop(self) -> None:
 
-        assert self._queue_in is not None and self._queue_out is not None
+        assert (
+            self._queue_in is not None
+            and self._queue_out is not None
+            and self._queue_status is not None
+        )
         assert self._conn_control and self._conn_stream
         try:
             command = self._queue_in.get_nowait()
             assert isinstance(command, proto_heading.HeadingConfig)
             response_raw = self._conn_control.send(command.SerializeToString())
-            
+
             response = proto_heading.HeadingStatus()
             if response_raw is None:
                 self._logger.warning("No response for HeadingConfig")
                 return
             response.ParseFromString(response_raw)
-            self._logger.info(response)
+            # self._logger.info(MessageToJson(response))
+            self._queue_status.put(response)
         except queue.Empty:
             pass
         heading_packet_raw = self._conn_stream.receive()
@@ -85,4 +92,3 @@ class Heading(Loop):
             self._queue_out.put(heading_packet)
         else:
             self._logger.debug("No heading packet received")
-       

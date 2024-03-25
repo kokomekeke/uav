@@ -9,10 +9,13 @@ import pickle
 import socket
 
 from typing import Any, Generator, Iterable, Optional
+
+from google.protobuf.json_format import MessageToJson
 import pysagax
 
 import pysagax.message.data_pb2 as proto_data
 import pysagax.message.command_pb2 as proto_cmd
+import pysagax.message.heading_pb2 as proto_heading
 
 from pysagax.common.loop import Loop
 
@@ -27,9 +30,11 @@ class Telemetry(Loop):
         self._comm_queue_out: Optional[Queue] = None
         self._cs_commands_queue: Optional[Queue] = None
         self._cs_responses_queue: Optional[Queue] = None
+        self._heading_status_queue: Optional[Queue] = None
         self._latest_packets_proxy: Optional[DictProxy] = None
         self._telemetry_packet = proto_data.Telemetry()
         self._sysinfo_packet = proto_cmd.SystemInfo()
+        self._heading_status_packet = proto_heading.HeadingStatus()
         self._data_partition_path = data_partition_path
         self._interval = interval
         self._hostname = socket.gethostname()
@@ -40,6 +45,7 @@ class Telemetry(Loop):
         cs_queue_in: Queue[Any],
         cs_commands_queue: Queue[Any],
         cs_responses_queue: Queue[Any],
+        heading_status_queue: Queue[Any],
         latest_packets_proxy: Optional[DictProxy] = None,
         *args,
         **kwargs,
@@ -48,6 +54,7 @@ class Telemetry(Loop):
         self._cs_queue_in = cs_queue_in
         self._cs_commands_queue = cs_commands_queue
         self._cs_responses_queue = cs_responses_queue
+        self._heading_status_queue = heading_status_queue
         self._latest_packets_proxy = latest_packets_proxy
         return super()._call(*args, **kwargs)
 
@@ -148,6 +155,9 @@ class Telemetry(Loop):
         self._sysinfo_packet.hardware.hostname = self._hostname
         self._sysinfo_packet.hardware.disk = total // (2**20)  # MiB
         self._sysinfo_packet.software.pysagax_version = pysagax.__version__  # type: ignore
+        self._sysinfo_packet.headings.extend(
+            self._heading_status_packet.available_source_types
+        )
         try:
             _, resp = next(self._cs_execute(["CORE:Version?"]))
             if resp[0] == "0":
@@ -182,8 +192,21 @@ class Telemetry(Loop):
         # print("Free: %d GiB" % (free // (2**30)))
         self._telemetry_packet.hardware.disk_usage = used // (2**20)  # MiB
 
+    def _get_heading_module_info(self) -> None:
+        assert self._heading_status_queue is not None
+        try:
+            status_packet = self._heading_status_queue.get_nowait()
+            if isinstance(status_packet, proto_heading.HeadingStatus):
+                self._heading_status_packet = status_packet
+                logged_message = MessageToJson(self._heading_status_packet, indent=0).replace("\n","").replace("\r","")
+                self._logger.info(f"Heading updated: {logged_message}")
+                self._construct_sysinfo_packet()
+        except queue.Empty:
+            pass
+
     def _push_finished_packet(self) -> None:
         assert self._comm_queue_out is not None
+        self._telemetry_packet.heading.CopyFrom(self._heading_status_packet)
         self._telemetry_packet.hardware.hostname = self._hostname
         self._telemetry_packet.time.GetCurrentTime()
         self._logger.debug(
@@ -212,6 +235,7 @@ class Telemetry(Loop):
         #             self._push_finished_packet()
         # except queue.Empty:
         #     pass
+        self._get_heading_module_info()
         self._measure_hardware_stats()
         self._get_from_cs()
         if self._sysinfo_packet.software.cs_version == "N/A":

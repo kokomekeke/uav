@@ -48,6 +48,7 @@ class Commander:
         self._telemetry_cs_responses_q = self._manager.Queue()
         self._heading_commands_q = self._manager.Queue()
         self._heading_data_q = self._manager.Queue()
+        self._heading_status_q = self._manager.Queue()
 
         self._latest_telemetry_proxy = self._manager.dict()
         self._latest_config_id_value = self._manager.Value("i", 0)
@@ -82,6 +83,7 @@ class Commander:
             self._cs_responses_q,
             self._cs_commands_q,
             self._stream_conf_q,
+            self._heading_commands_q,
             self._latest_telemetry_proxy,
             self._latest_config_id_value,
         )
@@ -116,10 +118,14 @@ class Commander:
             self._telemetry_in_q,
             self._telemetry_cs_commands_q,
             self._telemetry_cs_responses_q,
+            self._heading_status_q,
             self._latest_telemetry_proxy,
         )
         self._heading_future = self._pool.submit(
-            self._heading, self._heading_commands_q, self._heading_data_q
+            self._heading,
+            self._heading_commands_q,
+            self._heading_data_q,
+            self._heading_status_q,
         )
         # Periodically checking errors in threads
         while True:

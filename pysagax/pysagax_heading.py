@@ -119,6 +119,10 @@ class HeadingRunner:
         heading_source.data_invalid_callback = self.invalid_callback
         heading_source.status_updates_callback = self.log_status
         self.invalid_callback()
+        for conf_key, (conf_type, conf_default)  in heading_source.get_parameters().items():
+            self._current_config[conf_key] = conf_default
+            self._current_config_types[conf_key] = conf_type
+
         self._logger.info(f"Configured {heading_source.__class__.__name__}")
         for def_key, def_value in self._defaults.items():
             heading_source.update_parameter(def_key, def_value)
@@ -142,7 +146,11 @@ class HeadingRunner:
                         config.selected_source_type
                     ]()
                     self._current_heading_source_label = config.selected_source_type
-                    self._current_config_types = heading_source.get_parameters()
+                    self._current_config_types = dict()
+                    self._current_config = dict()
+                    for conf_key, (conf_type, conf_default) in heading_source.get_parameters().items():
+                        self._current_config[conf_key] = conf_default
+                        self._current_config_types[conf_key] = conf_type
                     heading_source.gps_updated_callback = self.gps_callback
                     heading_source.quaternion_updated_callback = (
                         self.quaternion_callback
@@ -153,7 +161,7 @@ class HeadingRunner:
                     self._logger.info(f"Configured {heading_source.__class__.__name__}")
 
                 self._current_config = dict()
-                for param_key, param_val in config.parameters:
+                for param_key, param_val in config.parameters.items():
                     heading_source.update_parameter(param_key, param_val)
                     self._current_config[param_key] = param_val
                     self._logger.info(f"Set {param_key} = {param_val}")

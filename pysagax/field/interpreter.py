@@ -105,6 +105,7 @@ class Interpreter(Loop):
         self._cs_queue_in: Optional[Queue] = None
         self._cs_queue_out: Optional[Queue] = None
         self._stream_conf_queue_out: Optional[Queue] = None
+        self._heading_conf_queue_out: Optional[Queue] = None
         self._latest_telemetry_proxy: Optional[DictProxy] = None
         self._cs_lock: Optional[threading.Lock] = None
         self._currently_running_cs_command = ""
@@ -118,6 +119,7 @@ class Interpreter(Loop):
         cs_queue_in: Queue[str],
         cs_queue_out: Queue[str],
         stream_conf_queue_out: Queue[Any],
+        heading_conf_queue_out: Queue[Any],
         latest_telemetry_proxy: Optional[DictProxy] = None,
         latest_config_id_value: Optional[ValueProxy[int]] = None,
         *args,
@@ -128,6 +130,7 @@ class Interpreter(Loop):
         self._cs_queue_in = cs_queue_in
         self._cs_queue_out = cs_queue_out
         self._stream_conf_queue_out = stream_conf_queue_out
+        self._heading_conf_queue_out = heading_conf_queue_out
         self._latest_telemetry_proxy = latest_telemetry_proxy
         self._latest_config_id_value = latest_config_id_value
         self._cs_lock = threading.Lock()
@@ -335,6 +338,10 @@ class Interpreter(Loop):
         """Set system configuration"""
         self._config_status_message = proto_cmd.ConfigStatus()
         self._config_status_message.start_time.GetCurrentTime()
+        if config.heading.selected_source_type:  # Heading part is set
+            assert self._heading_conf_queue_out is not None
+            self._heading_conf_queue_out.put(config.heading)
+
         for config_command, proto_lambda in self._CONFIG_COMMANDS:
             command_arg = proto_lambda(config)
             if not command_arg:
