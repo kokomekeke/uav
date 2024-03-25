@@ -11,6 +11,7 @@ from typing import Any, Optional
 
 import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.data_pb2 as proto_data
+import pysagax.message.heading_pb2 as proto_heading
 from pysagax.common.loop import Loop
 
 
@@ -416,6 +417,21 @@ class Interpreter(Loop):
         response.config.source_path = defaults(
             self._cs_query_multiple("SOURCE:Path?;"), "UNKNOWN"
         )
+        if (
+            self._latest_telemetry_proxy is None
+            or "HeadingStatus" not in self._latest_telemetry_proxy
+        ):
+            response.config.heading.selected_source_type = "Unknown"
+        else:
+            heading_status_object: proto_heading.HeadingStatus = pickle.loads(
+                self._latest_telemetry_proxy["HeadingStatus"]
+            )
+            response.config.heading.selected_source_type = (
+                heading_status_object.selected_source_type
+            )
+            for param in heading_status_object.parameters:
+                response.config.heading.parameters[param.name] = param.value
+
         # TODO no ROI query methods implemented in CS
 
         # except ValueError:

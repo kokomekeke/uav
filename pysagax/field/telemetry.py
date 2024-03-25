@@ -38,6 +38,7 @@ class Telemetry(Loop):
         self._data_partition_path = data_partition_path
         self._interval = interval
         self._hostname = socket.gethostname()
+        self._latest_heading_status_time = 0.0
 
     def __call__(
         self,
@@ -199,19 +200,29 @@ class Telemetry(Loop):
             status_packet = self._heading_status_queue.get_nowait()
             if isinstance(status_packet, proto_heading.HeadingStatus):
                 self._heading_status_packet = status_packet
+                self._latest_heading_status_time = time.time()
                 logged_message = (
                     MessageToJson(self._heading_status_packet, indent=0)
                     .replace("\n", "")
                     .replace("\r", "")
                 )
                 self._logger.info(f"Heading updated: {logged_message}")
+                if self._latest_packets_proxy is not None:
+                    self._latest_packets_proxy["HeadingStatus"] = pickle.dumps(
+                        self._heading_status_packet
+                    )
+
                 self._construct_sysinfo_packet()
         except queue.Empty:
             pass
 
     def _push_finished_packet(self) -> None:
         assert self._comm_queue_out is not None
-        self._telemetry_packet.heading.CopyFrom(self._heading_status_packet)
+        self._telemetry_packet.heading.status = (
+            "Running"
+            if time.time() < self._latest_heading_status_time + 6
+            else "Unknown"
+        )
         self._telemetry_packet.hardware.hostname = self._hostname
         self._telemetry_packet.time.GetCurrentTime()
         self._logger.debug(
