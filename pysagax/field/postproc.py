@@ -62,6 +62,11 @@ class PostProc(Loop):
             proto_data.Spectrum.DataType.INT8: numpy.dtype(numpy.int8),
             proto_data.Spectrum.DataType.FLOAT32: numpy.dtype(numpy.float32),
         }[self._data_type]
+        self._np_data_type_lims: tuple[float, float] = {
+            proto_data.Spectrum.DataType.INT16: (-32768, 32767),
+            proto_data.Spectrum.DataType.INT8: (-128, 127),
+            proto_data.Spectrum.DataType.FLOAT32: (None, None),
+        }[self._data_type]
         self._logger.info(
             f"Spectrum data type is {self._np_data_type.name}, byte order {sys.byteorder}"
         )
@@ -73,9 +78,12 @@ class PostProc(Loop):
         spectrum.spectrum_type = proto_data.Spectrum.SpectrumType.MAGNITUDE
         spectrum.data_type = self._data_type
         spectrum.channel_id = cs_packet.stream_id
-        spectrum.data = cs_packet.magnitude_spectrum.astype(
-            self._np_data_type
-        ).tobytes()
+        sp_clip = numpy.clip(
+            cs_packet.magnitude_spectrum,
+            self._np_data_type_lims[0],
+            self._np_data_type_lims[1],
+        )
+        spectrum.data = sp_clip.astype(self._np_data_type).tobytes()
         spectrum.center_frequency = cs_packet.center_frequency
         spectrum.bandwidth = cs_packet.iq_rate
         self._measurement_packet.data.append(spectrum)
