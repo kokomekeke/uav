@@ -1,13 +1,12 @@
 from queue import Queue
 import queue
-from typing import Any, Optional, Type
+from typing import Any, Optional
 
 import zmq
 from pysagax.communication.broadcast import TX
 
-from pysagax.field.loop import Loop
+from pysagax.common.loop import Loop
 import pysagax.message.command_pb2 as proto_cmd
-import pysagax.message.data_pb2 as proto_data
 from pysagax.message.data_types import DataType
 
 

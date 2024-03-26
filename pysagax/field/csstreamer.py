@@ -1,12 +1,11 @@
 from __future__ import annotations
-from queue import Empty, Queue
-import queue
+from queue import Queue
 import time
 
-from typing import Any, Optional
+from typing import Optional
 from pysagax.df.lena_core_service import BaseConnection
 
-from pysagax.field.loop import Loop
+from pysagax.common.loop import Loop
 
 
 class CSStreamer(Loop, BaseConnection):

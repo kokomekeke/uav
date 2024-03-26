@@ -1,5 +1,6 @@
 import math
 import re
+import time
 from typing import Any, Callable, Optional
 
 import numpy as np
@@ -18,7 +19,7 @@ from pysagax.util.mat import normalize_angle, rotation_matrix_from_vectors
 
 
 class HeadingSource:
-    def __init__(self, conf: Optional[dict[str, Any]]) -> None:
+    def __init__(self, conf: Optional[dict[str, Any]] = None) -> None:
         self.gps_updated_callback: Optional[Callable[[float, float], None]] = None
         self.quaternion_updated_callback: Optional[
             Callable[[float, float, float, float], None]
@@ -32,6 +33,8 @@ class HeadingSource:
 
     def cr(self, keys, default_value):
         # shortened config parser for readablity
+        if self.conf is None:
+            return default_value
         return read_from_conf(self.conf, keys, default_value)
 
     def _gps(self, lat: float, lon: float) -> None:
@@ -60,8 +63,8 @@ class HeadingSource:
         if key == "offset":
             self._offset(value)
 
-    def get_parameters(self) -> dict[str, str]:
-        return {}
+    def get_parameters(self) -> dict[str, list[Any]]:
+        return dict()
 
     def initialize(self) -> bool:
         return False
@@ -86,12 +89,15 @@ class HeadingStatic(HeadingSource):
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
-        self.lat: float = self.cr(["heading", "static", "lat"],
-                                  self.cr(["heading", "lat"], 47.498056))
-        self.lon: float = self.cr(["heading", "static", "lon"],
-                                  self.cr(["heading", "lon"], 19.04))
-        self.angle: float = self.cr(["heading", "static", "angle"],
-                                  self.cr(["heading", "angle"], 0))
+        self.lat: float = self.cr(
+            ["heading", "static", "lat"], self.cr(["heading", "lat"], 47.498056)
+        )
+        self.lon: float = self.cr(
+            ["heading", "static", "lon"], self.cr(["heading", "lon"], 19.04)
+        )
+        self.angle: float = self.cr(
+            ["heading", "static", "angle"], self.cr(["heading", "angle"], 0)
+        )
 
     def update_parameter(self, key: str, value: Any) -> None:
         super().update_parameter(key, value)
@@ -106,27 +112,34 @@ class HeadingStatic(HeadingSource):
             self.lon = float(value)
             self._gps(self.lat, self.lon)
 
-    def get_parameters(self) -> dict[str, list[str, float]]:
+    def get_parameters(self) -> dict[str, list[Any]]:
         return {
             "lat": ["number", self.lat],
             "lon": ["number", self.lon],
             "angle": ["0-360", self.angle],
         }
 
+    def loop(self) -> None:
+        time.sleep(0.1)
+        return super().loop()
+
 
 class HeadingEncoder(HeadingSource):
     def __init__(self, *args) -> None:
         super().__init__(*args)
         self.connection: Optional[serial.Serial] = None
-        self.port: str = self.cr(["heading", "encoder", "port"],
-                                  self.cr(["heading", "port"], ""))
+        self.port: str = self.cr(
+            ["heading", "encoder", "port"], self.cr(["heading", "port"], "")
+        )
 
-        self.lat: float = self.cr(["heading", "encoder", "lat"],
-                                  self.cr(["heading", "lat"], 47.498056))
-        self.lon: float = self.cr(["heading", "encoder", "lon"],
-                                  self.cr(["heading", "lon"], 19.04))
+        self.lat: float = self.cr(
+            ["heading", "encoder", "lat"], self.cr(["heading", "lat"], 47.498056)
+        )
+        self.lon: float = self.cr(
+            ["heading", "encoder", "lon"], self.cr(["heading", "lon"], 19.04)
+        )
 
-    def get_parameters(self) -> dict[str, list[str, str | float]]:
+    def get_parameters(self) -> dict[str, list[Any]]:
         return {
             "port": ["text", self.port],
             "lat": ["number", self.lat],
@@ -178,10 +191,13 @@ class HeadingAHRS(HeadingSource):
     def __init__(self, *args) -> None:
         super().__init__(*args)
         self.compass: Optional[CompassBase] = None
-        self.address: str = self.cr(["heading", "ahrs_socket", "address"],
-                                  self.cr(["heading", "address"], ""))
-        self.use_magneto: bool = self.cr(["heading", "ahrs_socket", "use_magneto"],
-                                  self.cr(["heading", "use_magneto"], False))
+        self.address: str = self.cr(
+            ["heading", "ahrs_socket", "address"], self.cr(["heading", "address"], "")
+        )
+        self.use_magneto: bool = self.cr(
+            ["heading", "ahrs_socket", "use_magneto"],
+            self.cr(["heading", "use_magneto"], False),
+        )
 
     def update_parameter(self, key: str, value: Any) -> None:
         super().update_parameter(key, value)
@@ -190,7 +206,7 @@ class HeadingAHRS(HeadingSource):
         elif key == "use_magneto":
             self.use_magneto = bool(value)
 
-    def get_parameters(self) -> dict[str, list[str, str | bool]]:
+    def get_parameters(self) -> dict[str, list[Any]]:
         return {
             "address": ["text", self.address],
             "use_magneto": ["bool", self.use_magneto],
@@ -231,6 +247,12 @@ class HeadingAHRS(HeadingSource):
         if not self.compass:
             return
         self.compass.loop()
+        if self.compass is not None and self.compass.parser is not None:
+            if (
+                self.compass.parser.lat is not None
+                and self.compass.parser.lon is not None
+            ):
+                self._gps(self.compass.parser.lat, self.compass.parser.lon)
         if self.use_magneto:
             magneto = self.compass.magnetometer_values
             if magneto is None:
@@ -258,11 +280,12 @@ class HeadingAHRS(HeadingSource):
 class HeadingAHRSUSB(HeadingAHRS):
     def __init__(self, *args) -> None:
         super().__init__(*args)
-        self.port: str = self.cr(["heading", "ahrs_usb", "port"],
-                                  self.cr(["heading", "port"], ""))
-        self.use_magneto: bool = self.cr(["heading", "ahrs_usb", "use_magneto"],
-                                  self.use_magneto) #updating from parent clalss
-
+        self.port: str = self.cr(
+            ["heading", "ahrs_usb", "port"], self.cr(["heading", "port"], "")
+        )
+        self.use_magneto: bool = self.cr(
+            ["heading", "ahrs_usb", "use_magneto"], self.use_magneto
+        )  # updating from parent clalss
 
     def update_parameter(self, key: str, value: Any) -> None:
         super().update_parameter(key, value)
@@ -271,7 +294,7 @@ class HeadingAHRSUSB(HeadingAHRS):
         elif key == "use_magneto":
             self.use_magneto = bool(value)
 
-    def get_parameters(self) -> dict[str, list[str, str | bool]]:
+    def get_parameters(self) -> dict[str, list[Any]]:
         return {
             "port": ["text", self.port],
             "use_magneto": ["bool", self.use_magneto],
@@ -297,16 +320,16 @@ class HeadingAHRSUSB(HeadingAHRS):
 class HeadingAHRSFTDI(HeadingAHRS):
     def __init__(self, *args) -> None:
         super().__init__(*args)
-        self.use_magneto: bool = self.cr(["heading", "ahrs_ftdi", "use_magneto"],
-                                  self.use_magneto) #updating from parent clalss
-
+        self.use_magneto: bool = self.cr(
+            ["heading", "ahrs_ftdi", "use_magneto"], self.use_magneto
+        )  # updating from parent clalss
 
     def update_parameter(self, key: str, value: Any) -> None:
         super().update_parameter(key, value)
         if key == "use_magneto":
             self.use_magneto = bool(value)
 
-    def get_parameters(self) -> dict[str, list[str, bool]]:
+    def get_parameters(self) -> dict[str, list[Any]]:
         return {
             "use_magneto": ["bool", self.use_magneto],
         }

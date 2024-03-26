@@ -2,6 +2,7 @@ syntax = "proto3";
 package pysagax.message;
 import "google/protobuf/timestamp.proto";
 import "pysagax/message/data.proto";
+import "pysagax/message/heading.proto";
 
 enum Instruction {
     // Types of instructions that can be sent
@@ -107,15 +108,6 @@ message ROIMask {
     float threshold = 7;
 }
 
-message Heading {
-    // A single Heading source
-
-    // ID of 
-    string type = 1;
-
-    // Commands and their descriptions/values
-    map<string, string> parameters = 2;
-}
 
 message Config {
     // Increments with every change. Used to validate streamed data against config
@@ -144,7 +136,7 @@ message Config {
     repeated ROIMask roi = 21;
 
     // Heading source selection
-    Heading heading = 25;
+    HeadingConfig heading = 25;
 
     // PostProcessing parameters
     float mean_window = 29;
@@ -156,6 +148,7 @@ message SystemInfo {
     // Information about general hardware components
     message Hardware {
         int64 disk = 1;
+		string hostname = 10;
     }
     Hardware hardware = 1;
 
@@ -167,7 +160,7 @@ message SystemInfo {
     Software software = 2;
 
     // Information about available Heading sources
-    repeated Heading headings = 3;
+    reserved 3;
 
     // Information about available SDR sources
     message SDR {
@@ -175,6 +168,7 @@ message SystemInfo {
         string model = 1;
     }
     repeated SDR radios = 4;
+	HeadingStatus heading = 5;
 }
 
 message StreamTarget {

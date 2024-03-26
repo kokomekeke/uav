@@ -4,7 +4,7 @@ from queue import Queue
 from typing import Any, Optional
 
 from pysagax.df.lena_core_service import BaseConnection
-from pysagax.field.loop import Loop
+from pysagax.common.loop import Loop
 
 
 class CSController(Loop, BaseConnection):

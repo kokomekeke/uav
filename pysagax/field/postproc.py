@@ -1,8 +1,7 @@
 from __future__ import annotations
 import datetime
-import multiprocessing
 from multiprocessing.managers import ValueProxy
-from queue import Empty, Queue
+from queue import Queue
 import queue
 import re
 import sys
@@ -17,10 +16,10 @@ from pysagax.df.lena_core_service import (
     CoreServiceSpectrumPacket,
 )
 
-import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.data_pb2 as proto_data
+import pysagax.message.heading_pb2 as proto_heading
 
-from pysagax.field.loop import Loop
+from pysagax.common.loop import Loop
 
 
 class PostProc(Loop):
@@ -33,11 +32,13 @@ class PostProc(Loop):
         self._conf_queue_out: Optional[Queue] = None
         self._cs_queue_in: Optional[Queue] = None
         self._comm_queue_out: Optional[Queue] = None
+        self._heading_queue_in: Optional[Queue] = None
         self._np_data_type: Optional[numpy.dtype] = None
         self._data_type = data_type
         self._measurement_packet = proto_data.Measurement()
         self._packet_id_counter: int = 0
         self._latest_config_id_value: Optional[ValueProxy[int]] = None
+        self._latest_heading: Optional[proto_heading.HeadingData] = None
 
     def __call__(
         self,
@@ -45,6 +46,7 @@ class PostProc(Loop):
         cs_queue_in: Queue[Any],
         conf_queue_in: Queue[Any],
         conf_queue_out: Queue[Any],
+        heading_queue_in: Queue[Any],
         latest_config_id_value: Optional[ValueProxy[int]] = None,
         *args,
         **kwargs,
@@ -53,11 +55,17 @@ class PostProc(Loop):
         self._cs_queue_in = cs_queue_in
         self._conf_queue_in = conf_queue_in
         self._conf_queue_out = conf_queue_out
+        self._heading_queue_in = heading_queue_in
         self._latest_config_id_value = latest_config_id_value
         self._np_data_type = {
             proto_data.Spectrum.DataType.INT16: numpy.dtype(numpy.int16),
             proto_data.Spectrum.DataType.INT8: numpy.dtype(numpy.int8),
             proto_data.Spectrum.DataType.FLOAT32: numpy.dtype(numpy.float32),
+        }[self._data_type]
+        self._np_data_type_lims: tuple[float, float] = {
+            proto_data.Spectrum.DataType.INT16: (-32768, 32767),
+            proto_data.Spectrum.DataType.INT8: (-128, 127),
+            proto_data.Spectrum.DataType.FLOAT32: (None, None),
         }[self._data_type]
         self._logger.info(
             f"Spectrum data type is {self._np_data_type.name}, byte order {sys.byteorder}"
@@ -70,9 +78,12 @@ class PostProc(Loop):
         spectrum.spectrum_type = proto_data.Spectrum.SpectrumType.MAGNITUDE
         spectrum.data_type = self._data_type
         spectrum.channel_id = cs_packet.stream_id
-        spectrum.data = cs_packet.magnitude_spectrum.astype(
-            self._np_data_type
-        ).tobytes()
+        sp_clip = numpy.clip(
+            cs_packet.magnitude_spectrum,
+            self._np_data_type_lims[0],
+            self._np_data_type_lims[1],
+        )
+        spectrum.data = sp_clip.astype(self._np_data_type).tobytes()
         spectrum.center_frequency = cs_packet.center_frequency
         spectrum.bandwidth = cs_packet.iq_rate
         self._measurement_packet.data.append(spectrum)
@@ -133,6 +144,8 @@ class PostProc(Loop):
         self._measurement_packet.stream_id = 0
         self._packet_id_counter += 1
         self._measurement_packet.packet_id = self._packet_id_counter
+        if self._latest_heading is not None:
+            self._measurement_packet.heading_data.CopyFrom(self._latest_heading)
         if self._latest_config_id_value is not None:
             self._measurement_packet.config_id = self._latest_config_id_value.get()
         self._logger.debug(f"PostProc finished on packet {self._packet_id_counter}")
@@ -144,13 +157,23 @@ class PostProc(Loop):
         assert self._cs_queue_in is not None
         assert self._conf_queue_in is not None
         assert self._conf_queue_out is not None
+        assert self._heading_queue_in is not None
         # Hang until a new command is received
         try:
             conf_request = self._conf_queue_in.get(timeout=0, block=False)
             self._logger.info(vars(conf_request))
+            self._conf_queue_out.put(None)
         except queue.Empty:
             pass
         # Execute command
+
+        while True:
+            try:
+                heading_packet = self._heading_queue_in.get_nowait()
+                if heading_packet is not None:
+                    self._latest_heading = heading_packet
+            except queue.Empty:
+                break
         try:
             cs_stream_packet = self._cs_queue_in.get(block=True, timeout=1)
             assert isinstance(cs_stream_packet, CoreServicePacket)

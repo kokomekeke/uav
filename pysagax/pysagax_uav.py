@@ -3,21 +3,26 @@
 # Created by aron.szabo@sagaxcommunications.com on 09.02.2024.
 #
 from __future__ import annotations
+
 import multiprocessing
 import sys
-from typing import Any, Optional
-import click
 import traceback
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, wait
-from rich.logging import RichHandler
+from concurrent.futures import ProcessPoolExecutor, wait
+from logging import Handler, StreamHandler, getLogger
+from os import getpid
+from signal import SIGINT, SIGTERM, signal
+from typing import Any, Optional
+
+import click
 from coloredlogs import install
-from logging import Handler, getLogger, StreamHandler
+from rich.logging import RichHandler
 
 from pysagax.field.communicator import Communicator
-from pysagax.field.interpreter import Interpreter
 from pysagax.field.cscontroller import CSController
 from pysagax.field.csparser import CSParser
 from pysagax.field.csstreamer import CSStreamer
+from pysagax.field.heading import Heading
+from pysagax.field.interpreter import Interpreter
 from pysagax.field.postproc import PostProc
 from pysagax.field.streamer import Streamer
 from pysagax.field.telemetry import Telemetry
@@ -27,6 +32,7 @@ class Commander:
     """Main process of the service. Holds and controls necessary concurrent tasks"""
 
     def __init__(self, level: str = "INFO", disk_path: str = "/") -> None:
+
         self._logger = getLogger("Commander")
         self._manager = multiprocessing.Manager()
         self._pool = ProcessPoolExecutor(max_workers=10)
@@ -45,6 +51,9 @@ class Commander:
 
         self._telemetry_cs_commands_q = self._manager.Queue()
         self._telemetry_cs_responses_q = self._manager.Queue()
+        self._heading_commands_q = self._manager.Queue()
+        self._heading_data_q = self._manager.Queue()
+        self._heading_status_q = self._manager.Queue()
 
         self._latest_telemetry_proxy = self._manager.dict()
         self._latest_config_id_value = self._manager.Value("i", 0)
@@ -62,85 +71,111 @@ class Commander:
         self._cs_streamer = CSStreamer(level=level)
 
         self._telemetry = Telemetry(level=level, data_partition_path=disk_path)
+        self._heading = Heading(level=level)
 
     def start(self) -> None:
         """Start all background processes"""
 
         self._logger.debug("Starting Commander")
 
-        self._communicator_future = self._pool.submit(
+        communicator_future = self._pool.submit(
             self._communicator, self._responses_q, self._commands_q
         )
-        self._interpreter_future = self._pool.submit(
+        interpreter_future = self._pool.submit(
             self._interpreter,
             self._commands_q,
             self._responses_q,
             self._cs_responses_q,
             self._cs_commands_q,
             self._stream_conf_q,
+            self._heading_commands_q,
+            self._post_proc_commands_q,
+            self._post_proc_responses_q,
             self._latest_telemetry_proxy,
             self._latest_config_id_value,
         )
-        self._cs_controller_future = self._pool.submit(
+        cs_controller_future = self._pool.submit(
             self._cs_controller,
             self._cs_commands_q,
             self._cs_responses_q,
             self._telemetry_cs_commands_q,
             self._telemetry_cs_responses_q,
         )
-        self._streamer_future = self._pool.submit(
+        streamer_future = self._pool.submit(
             self._streamer, self._stream_packets_q, self._stream_conf_q
         )
-        self._post_proc_future = self._pool.submit(
+        post_proc_future = self._pool.submit(
             self._post_proc,
             self._stream_packets_q,
             self._post_proc_input_q,
             self._post_proc_commands_q,
             self._post_proc_responses_q,
+            self._heading_data_q,
             self._latest_config_id_value,
         )
-        self._cs_parser_future = self._pool.submit(
+        cs_parser_future = self._pool.submit(
             self._cs_parser, self._raw_cs_stream_q, self._post_proc_input_q
         )
-        self._cs_streamer_future = self._pool.submit(
-            self._cs_streamer, self._raw_cs_stream_q
-        )
-        self._telemetry_future = self._pool.submit(
+        cs_streamer_future = self._pool.submit(self._cs_streamer, self._raw_cs_stream_q)
+        telemetry_future = self._pool.submit(
             self._telemetry,
             self._stream_packets_q,
-            self._telemetry_in_q,
             self._telemetry_cs_commands_q,
             self._telemetry_cs_responses_q,
+            self._heading_status_q,
             self._latest_telemetry_proxy,
         )
+        heading_future = self._pool.submit(
+            self._heading,
+            self._heading_commands_q,
+            self._heading_data_q,
+            self._heading_status_q,
+        )
         # Periodically checking errors in threads
+
+        signal(SIGINT, self._signal_handler)
+        signal(SIGTERM, self._signal_handler)
         while True:
             done, running = wait(
                 (
-                    self._communicator_future,
-                    self._interpreter_future,
-                    self._cs_controller_future,
-                    self._streamer_future,
-                    self._post_proc_future,
-                    self._cs_parser_future,
-                    self._cs_streamer_future,
+                    communicator_future,
+                    interpreter_future,
+                    cs_controller_future,
+                    streamer_future,
+                    post_proc_future,
+                    cs_parser_future,
+                    cs_streamer_future,
+                    heading_future,
                 ),
                 timeout=1,
             )
-
             for future in done:
                 if future.exception(0) is not None:
                     # Trace is lost this way, TODO: fix it
+                    self._logger.critical("Got exception")
                     traceback.print_exception(future.exception(0))
-                    self._logger.critical("Terminating all processes")
-                    self._pool.shutdown()
-                    self._logger.critical("All processes terminated")
-                    sys.exit(0)
+                    self._quit()
+
+    def _signal_handler(self, signal, frame) -> None:
+        """Handle incoming signals"""
+        self._logger.info(f"Main received signal {signal} (Pid {getpid()}), exiting...")
+        self._quit()
+
+    def _quit(self) -> None:
+        self._logger.critical("Terminating all processes")
+        self._pool.shutdown()
+        self._manager.shutdown()
+        self._logger.critical("All processes terminated")
+        sys.exit(0)
 
 
 @click.command()
 @click.option("--level", "-l", help="Logging level")
-@click.option("--disk-path", default="/",  help="Path of the disk which is to be displayed in telemetry")
+@click.option(
+    "--disk-path",
+    default="/",
+    help="Path of the disk which is to be displayed in telemetry",
+)
 def main(level: str = "INFO", disk_path: str = "/") -> None:
     """Root command of CLI"""
 

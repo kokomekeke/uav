@@ -1,19 +1,23 @@
 from __future__ import annotations
 from multiprocessing.managers import DictProxy
-from queue import Empty, Queue
+from queue import Queue
 import queue
 import shlex
 import time
 import shutil
 import pickle
+import socket
 
 from typing import Any, Generator, Iterable, Optional
+
+from google.protobuf.json_format import MessageToJson
 import pysagax
 
 import pysagax.message.data_pb2 as proto_data
 import pysagax.message.command_pb2 as proto_cmd
+import pysagax.message.heading_pb2 as proto_heading
 
-from pysagax.field.loop import Loop
+from pysagax.common.loop import Loop
 
 
 class Telemetry(Loop):
@@ -22,30 +26,33 @@ class Telemetry(Loop):
         self, data_partition_path: str = "/", interval: float = 0.25, *args, **kwargs
     ) -> None:
         super().__init__(*args, **kwargs)
-        self._cs_queue_in: Optional[Queue] = None
         self._comm_queue_out: Optional[Queue] = None
         self._cs_commands_queue: Optional[Queue] = None
         self._cs_responses_queue: Optional[Queue] = None
+        self._heading_status_queue: Optional[Queue] = None
         self._latest_packets_proxy: Optional[DictProxy] = None
         self._telemetry_packet = proto_data.Telemetry()
         self._sysinfo_packet = proto_cmd.SystemInfo()
+        self._heading_status_packet = proto_heading.HeadingStatus()
         self._data_partition_path = data_partition_path
         self._interval = interval
+        self._hostname = socket.gethostname()
+        self._latest_heading_status_time = 0.0
 
     def __call__(
         self,
         comm_queue_out: Queue[Any],
-        cs_queue_in: Queue[Any],
         cs_commands_queue: Queue[Any],
         cs_responses_queue: Queue[Any],
+        heading_status_queue: Queue[Any],
         latest_packets_proxy: Optional[DictProxy] = None,
         *args,
         **kwargs,
     ) -> None:
         self._comm_queue_out = comm_queue_out
-        self._cs_queue_in = cs_queue_in
         self._cs_commands_queue = cs_commands_queue
         self._cs_responses_queue = cs_responses_queue
+        self._heading_status_queue = heading_status_queue
         self._latest_packets_proxy = latest_packets_proxy
         return super()._call(*args, **kwargs)
 
@@ -142,9 +149,12 @@ class Telemetry(Loop):
 
     def _construct_sysinfo_packet(self) -> None:
         assert self._comm_queue_out is not None
+        self._sysinfo_packet.Clear()
         total, used, free = shutil.disk_usage(self._data_partition_path)
+        self._sysinfo_packet.hardware.hostname = self._hostname
         self._sysinfo_packet.hardware.disk = total // (2**20)  # MiB
         self._sysinfo_packet.software.pysagax_version = pysagax.__version__  # type: ignore
+        self._sysinfo_packet.heading.MergeFrom(self._heading_status_packet)
         try:
             _, resp = next(self._cs_execute(["CORE:Version?"]))
             if resp[0] == "0":
@@ -179,9 +189,36 @@ class Telemetry(Loop):
         # print("Free: %d GiB" % (free // (2**30)))
         self._telemetry_packet.hardware.disk_usage = used // (2**20)  # MiB
 
+    def _get_heading_module_info(self) -> None:
+        assert self._heading_status_queue is not None
+        try:
+            status_packet = self._heading_status_queue.get_nowait()
+            if isinstance(status_packet, proto_heading.HeadingStatus):
+                self._heading_status_packet = status_packet
+                self._latest_heading_status_time = time.time()
+                logged_message = (
+                    MessageToJson(self._heading_status_packet, indent=0)
+                    .replace("\n", "")
+                    .replace("\r", "")
+                )
+                self._logger.info(f"Heading updated: {logged_message}")
+                if self._latest_packets_proxy is not None:
+                    self._latest_packets_proxy["HeadingStatus"] = pickle.dumps(
+                        self._heading_status_packet
+                    )
+
+                self._construct_sysinfo_packet()
+        except queue.Empty:
+            pass
+
     def _push_finished_packet(self) -> None:
         assert self._comm_queue_out is not None
-
+        self._telemetry_packet.heading.status = (
+            "Running"
+            if time.time() < self._latest_heading_status_time + 6
+            else "Unknown"
+        )
+        self._telemetry_packet.hardware.hostname = self._hostname
         self._telemetry_packet.time.GetCurrentTime()
         self._logger.debug(
             f"Telemetry packet ready {self._telemetry_packet.time.ToJsonString()}"
@@ -199,7 +236,6 @@ class Telemetry(Loop):
 
     def _loop(self) -> None:
         assert self._comm_queue_out is not None
-        assert self._cs_queue_in is not None
 
         # try:
         #     cs_stream_packet = self._cs_queue_in.get(block=False)
@@ -209,6 +245,7 @@ class Telemetry(Loop):
         #             self._push_finished_packet()
         # except queue.Empty:
         #     pass
+        self._get_heading_module_info()
         self._measure_hardware_stats()
         self._get_from_cs()
         if self._sysinfo_packet.software.cs_version == "N/A":
