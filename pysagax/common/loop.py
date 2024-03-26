@@ -18,7 +18,7 @@ class Loop:
     def _call(self, *args, **kwargs) -> None:
         """Execute the main logic of the loop"""
         try:
-            self._logger.debug(f"Setting up loop (Pid {getpid()})")
+            self._logger.info(f"Loop (Pid {getpid()})")
             self._pre_loop()
 
             self._logger.debug(f"Running main loop (Pid {getpid()})")

@@ -149,10 +149,10 @@ class Commander:
                 ),
                 timeout=1,
             )
-            self._logger.critical("Got exception")
             for future in done:
                 if future.exception(0) is not None:
                     # Trace is lost this way, TODO: fix it
+                    self._logger.critical("Got exception")
                     traceback.print_exception(future.exception(0))
                     self._quit()
 
