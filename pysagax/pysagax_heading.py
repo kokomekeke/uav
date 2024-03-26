@@ -39,7 +39,6 @@ class HeadingRunner:
             "AHRS": HeadingAHRS,
             "AHRSFTDI": HeadingAHRSFTDI,
             "Encoder": HeadingEncoder,
-            "Source": HeadingSource,
             "Static": HeadingStatic,
         }
         self._heading_sources_labels = dict()

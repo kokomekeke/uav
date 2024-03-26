@@ -115,7 +115,6 @@ class Commander:
         self._telemetry_future = self._pool.submit(
             self._telemetry,
             self._stream_packets_q,
-            self._telemetry_in_q,
             self._telemetry_cs_commands_q,
             self._telemetry_cs_responses_q,
             self._heading_status_q,

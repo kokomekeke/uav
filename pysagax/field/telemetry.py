@@ -26,7 +26,6 @@ class Telemetry(Loop):
         self, data_partition_path: str = "/", interval: float = 0.25, *args, **kwargs
     ) -> None:
         super().__init__(*args, **kwargs)
-        self._cs_queue_in: Optional[Queue] = None
         self._comm_queue_out: Optional[Queue] = None
         self._cs_commands_queue: Optional[Queue] = None
         self._cs_responses_queue: Optional[Queue] = None
@@ -43,7 +42,6 @@ class Telemetry(Loop):
     def __call__(
         self,
         comm_queue_out: Queue[Any],
-        cs_queue_in: Queue[Any],
         cs_commands_queue: Queue[Any],
         cs_responses_queue: Queue[Any],
         heading_status_queue: Queue[Any],
@@ -52,7 +50,6 @@ class Telemetry(Loop):
         **kwargs,
     ) -> None:
         self._comm_queue_out = comm_queue_out
-        self._cs_queue_in = cs_queue_in
         self._cs_commands_queue = cs_commands_queue
         self._cs_responses_queue = cs_responses_queue
         self._heading_status_queue = heading_status_queue
@@ -239,7 +236,6 @@ class Telemetry(Loop):
 
     def _loop(self) -> None:
         assert self._comm_queue_out is not None
-        assert self._cs_queue_in is not None
 
         # try:
         #     cs_stream_packet = self._cs_queue_in.get(block=False)
