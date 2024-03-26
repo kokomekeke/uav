@@ -107,6 +107,8 @@ class Interpreter(Loop):
         self._cs_queue_out: Optional[Queue] = None
         self._stream_conf_queue_out: Optional[Queue] = None
         self._heading_conf_queue_out: Optional[Queue] = None
+        self._postproc_conf_queue_out: Optional[Queue] = None
+        self._postproc_conf_queue_resp_in: Optional[Queue] = None
         self._latest_telemetry_proxy: Optional[DictProxy] = None
         self._cs_lock: Optional[threading.Lock] = None
         self._currently_running_cs_command = ""
@@ -121,6 +123,8 @@ class Interpreter(Loop):
         cs_queue_out: Queue[str],
         stream_conf_queue_out: Queue[Any],
         heading_conf_queue_out: Queue[Any],
+        postproc_conf_queue_out: Queue[Any],
+        postproc_conf_queue_resp_in: Queue[Any],
         latest_telemetry_proxy: Optional[DictProxy] = None,
         latest_config_id_value: Optional[ValueProxy[int]] = None,
         *args,
@@ -132,6 +136,8 @@ class Interpreter(Loop):
         self._cs_queue_out = cs_queue_out
         self._stream_conf_queue_out = stream_conf_queue_out
         self._heading_conf_queue_out = heading_conf_queue_out
+        self._postproc_conf_queue_out = postproc_conf_queue_out
+        self._postproc_conf_queue_resp_in = postproc_conf_queue_resp_in
         self._latest_telemetry_proxy = latest_telemetry_proxy
         self._latest_config_id_value = latest_config_id_value
         self._cs_lock = threading.Lock()
@@ -260,6 +266,16 @@ class Interpreter(Loop):
 
         # Send response to Communicator
         return response  # .SerializeToString()
+    
+    def _postproc_configure(self, command: Any) -> Any:
+        assert self._postproc_conf_queue_out is not None
+        assert self._postproc_conf_queue_resp_in is not None
+        self._postproc_conf_queue_out.put(command)
+        try:
+            return self._postproc_conf_queue_resp_in.get(timeout=5)
+        except queue.Empty:
+            # Postproc module does not respond
+            return None
 
     def _cs_execute(
         self, command: str, timeout: Optional[float] = None, important: bool = False
@@ -272,7 +288,7 @@ class Interpreter(Loop):
             timeout = self._cmd_timeout_seconds
         if command[-1:] != ";":
             command += ";"
-        if self._cs_lock.locked() and not important:
+        if self._cs_lock.locked() and not important:  # Do not wait if not important
             raise CSThreadOccupied(self._currently_running_cs_command)
         with self._cs_lock:
             self._cs_queue_out.put(command)

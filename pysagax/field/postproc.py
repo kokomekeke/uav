@@ -162,6 +162,7 @@ class PostProc(Loop):
         try:
             conf_request = self._conf_queue_in.get(timeout=0, block=False)
             self._logger.info(vars(conf_request))
+            self._conf_queue_out.put(None)
         except queue.Empty:
             pass
         # Execute command

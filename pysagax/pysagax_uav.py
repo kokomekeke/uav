@@ -84,6 +84,8 @@ class Commander:
             self._cs_commands_q,
             self._stream_conf_q,
             self._heading_commands_q,
+            self._post_proc_commands_q,
+            self._post_proc_responses_q,
             self._latest_telemetry_proxy,
             self._latest_config_id_value,
         )
