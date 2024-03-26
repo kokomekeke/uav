@@ -283,7 +283,6 @@ class Measurement(google.protobuf.message.Message):
     CONFIG_ID_FIELD_NUMBER: builtins.int
     PACKET_ID_FIELD_NUMBER: builtins.int
     POSITION_FIELD_NUMBER: builtins.int
-    HEADING_FIELD_NUMBER: builtins.int
     QUATERNION_FIELD_NUMBER: builtins.int
     OVERFLOW_FIELD_NUMBER: builtins.int
     PEAKS_FIELD_NUMBER: builtins.int
@@ -298,7 +297,6 @@ class Measurement(google.protobuf.message.Message):
     packet_id: builtins.int
     """Metadata"""
     position: builtins.int
-    heading: builtins.float
     @property
     def quaternion(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.float]: ...
     overflow: builtins.bool
@@ -320,7 +318,6 @@ class Measurement(google.protobuf.message.Message):
         config_id: builtins.int = ...,
         packet_id: builtins.int = ...,
         position: builtins.int = ...,
-        heading: builtins.float = ...,
         quaternion: collections.abc.Iterable[builtins.float] | None = ...,
         overflow: builtins.bool = ...,
         peaks: collections.abc.Iterable[builtins.int] | None = ...,
@@ -329,7 +326,7 @@ class Measurement(google.protobuf.message.Message):
         detection: collections.abc.Iterable[global___Detection] | None = ...,
     ) -> None: ...
     def HasField(self, field_name: typing_extensions.Literal["heading_data", b"heading_data", "time", b"time"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing_extensions.Literal["config_id", b"config_id", "data", b"data", "detection", b"detection", "heading", b"heading", "heading_data", b"heading_data", "overflow", b"overflow", "packet_id", b"packet_id", "peaks", b"peaks", "position", b"position", "quaternion", b"quaternion", "stream_id", b"stream_id", "time", b"time"]) -> None: ...
+    def ClearField(self, field_name: typing_extensions.Literal["config_id", b"config_id", "data", b"data", "detection", b"detection", "heading_data", b"heading_data", "overflow", b"overflow", "packet_id", b"packet_id", "peaks", b"peaks", "position", b"position", "quaternion", b"quaternion", "stream_id", b"stream_id", "time", b"time"]) -> None: ...
 
 global___Measurement = Measurement
 

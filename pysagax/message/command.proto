@@ -108,15 +108,6 @@ message ROIMask {
     float threshold = 7;
 }
 
-// message Heading {
-//     // A single Heading source
-// 
-//     // ID of 
-//     string type = 1;
-// 
-//     // Commands and their descriptions/values
-//     map<string, string> parameters = 2;
-// }
 
 message Config {
     // Increments with every change. Used to validate streamed data against config
@@ -169,7 +160,7 @@ message SystemInfo {
     Software software = 2;
 
     // Information about available Heading sources
-    // repeated string headings = 3;
+    reserved 3;
 
     // Information about available SDR sources
     message SDR {

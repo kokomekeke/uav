@@ -225,17 +225,6 @@ global___ROIMask = ROIMask
 
 @typing_extensions.final
 class Config(google.protobuf.message.Message):
-    """message Heading {
-        // A single Heading source
-
-        // ID of 
-        string type = 1;
-
-        // Commands and their descriptions/values
-        map<string, string> parameters = 2;
-    }
-    """
-
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     class _Type:
@@ -351,11 +340,7 @@ class SystemInfo(google.protobuf.message.Message):
 
     @typing_extensions.final
     class SDR(google.protobuf.message.Message):
-        """Information about available Heading sources
-        repeated string headings = 3;
-
-        Information about available SDR sources
-        """
+        """Information about available SDR sources"""
 
         DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
