@@ -18,10 +18,10 @@ class Loop:
     def _call(self, *args, **kwargs) -> None:
         """Execute the main logic of the loop"""
         try:
-            self._logger.debug("Setting up loop")
+            self._logger.debug(f"Setting up loop (Pid {getpid()})")
             self._pre_loop()
 
-            self._logger.debug("Running main loop")
+            self._logger.debug(f"Running main loop (Pid {getpid()})")
             while True:
                 self._loop()
         except Exception as e:
@@ -44,7 +44,7 @@ class Loop:
     def _signal_handler(self, signal, frame) -> None:
         """Handle incoming signals"""
 
-        self._logger.info(f"Received signal {signal}, exiting...")
+        getLogger("Loop").info(f"Received signal {signal} (Pid {getpid()}), exiting...")
         self._quit()
 
     def _quit(self) -> None:
