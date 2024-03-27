@@ -21,6 +21,7 @@ from pysagax.common.loop import Loop
 
 
 class Telemetry(Loop):
+    """Background process for collecting telemetry data and creating Telemetry messages"""
 
     def __init__(
         self, data_partition_path: str = "/", interval: float = 0.25, *args, **kwargs

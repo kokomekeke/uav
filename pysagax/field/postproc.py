@@ -23,6 +23,7 @@ from pysagax.common.loop import Loop
 
 
 class PostProc(Loop):
+    """Background process for CoreService stream packets post processing tasks and creating Measurement packets"""
 
     def __init__(
         self, data_type=proto_data.Spectrum.DataType.INT16, *args, **kwargs

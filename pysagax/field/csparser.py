@@ -8,6 +8,7 @@ from pysagax.common.loop import Loop
 
 
 class CSParser(Loop, CoreServiceParser):
+    """Background process for converting binary CoreService packets to python objects"""
 
     def __init__(
         self,

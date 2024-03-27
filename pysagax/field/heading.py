@@ -13,7 +13,7 @@ from pysagax.df.lena_core_service import BaseConnection
 
 
 class Heading(Loop):
-    """Background process communicating with CoreService command interface"""
+    """Background process for communicating with the PySAGAX-Heading service"""
 
     def __init__(
         self,

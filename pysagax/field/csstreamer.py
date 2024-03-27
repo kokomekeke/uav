@@ -9,6 +9,7 @@ from pysagax.common.loop import Loop
 
 
 class CSStreamer(Loop, BaseConnection):
+    """Background process for connecting to the CoreService stream interface and receiving binary data from there"""
 
     def __init__(
         self,
