@@ -8,12 +8,14 @@ import pysagax.message.data_pb2 as proto_data
 
 from pysagax.message.data_types import DataType
 
+
 @click.option("-p", "--port", type=int, default=5050, help="Port of receiver")
 def main(
     port: int = 5050,
 ):
     logging.basicConfig(level="DEBUG")
     logging.getLogger("main")
+    print(f"ZMQ DISH on port {port}/udp waiting for ZMQ RADIO")
     all_groups = [group.value for group in DataType]
     client = RX(port=port)
     client.connect(group=all_groups)

@@ -99,12 +99,12 @@ def rgetattr(obj, attr, *args):
 
 
 class ZMQConnectionThread(threading.Thread):
-    def __init__(self, address: str = "127.0.0.1") -> None:
+    def __init__(self, address: str = "127.0.0.1", port_s: int = 5556) -> None:
         super().__init__(daemon=True)
 
         self.address = address
-        
-        port_s = 5556
+        self.port = port_s
+
         print(f"Connecting to {address}:{port_s}")
         # Define up- and downstream channels
         self._zmq = REQ(address_server=address, port_server=port_s)
@@ -146,7 +146,9 @@ class ZMQConnectionThread(threading.Thread):
         if self.connect_callback is not None:
             self.connect_callback()
         self._zmq.connect()
-        self.display_status_callback("ZMQ Connected")
+        self.display_status_callback(
+            f"Socket created to ZMQ REP {self.address} {self.port}/tcp "
+        )
         self.connected = True
         if self.connected_callback is not None:
             self.connected_callback()
@@ -320,7 +322,7 @@ class ClientWindow(tkinter.Frame):
 
         status_command_label_label = tkinter.Label(
             status_frame,
-            text="ZMQ Host:",
+            text="ZMQ REQ:",
             font=tkinter.font.Font(weight=tkinter.font.BOLD, size=10),
         )
         status_command_label_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
@@ -685,7 +687,10 @@ class ClientWindow(tkinter.Frame):
         """
         Action of the "Connect" button
         """
-        self.zmq_thread = ZMQConnectionThread(self.host_command.get().split(":")[0])
+        addr_parts = self.host_command.get().split(":")
+        self.zmq_thread = ZMQConnectionThread(
+            addr_parts[0], int(addr_parts[1]) if len(addr_parts) > 1 else 5556
+        )
         self.zmq_thread.console_textarea_ref = self.console_textarea
         self.zmq_thread.connect_callback = self.connect_action
         self.zmq_thread.disconnect_callback = self.disconnect_action
