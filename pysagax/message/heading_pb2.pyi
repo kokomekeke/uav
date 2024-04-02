@@ -132,11 +132,13 @@ class HeadingData(google.protobuf.message.Message):
     OFFSET_FIELD_NUMBER: builtins.int
     packet_id: builtins.int
     @property
-    def timestamp(self) -> google.protobuf.timestamp_pb2.Timestamp: ...
+    def timestamp(self) -> google.protobuf.timestamp_pb2.Timestamp:
+        """System time of the acquisition, used to synchronize heading to signal"""
     @property
     def quaternion(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.float]: ...
     @property
-    def gps_time(self) -> google.protobuf.timestamp_pb2.Timestamp: ...
+    def gps_time(self) -> google.protobuf.timestamp_pb2.Timestamp:
+        """Timestamp from the GPS if present, can be used to adjust system clock"""
     gps_lat: builtins.float
     gps_lon: builtins.float
     offset: builtins.float

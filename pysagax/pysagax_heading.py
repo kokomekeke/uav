@@ -39,7 +39,6 @@ class HeadingRunner:
             "AHRS": HeadingAHRS,
             "AHRSFTDI": HeadingAHRSFTDI,
             "Encoder": HeadingEncoder,
-            "Source": HeadingSource,
             "Static": HeadingStatic,
         }
         self._heading_sources_labels = dict()
@@ -105,7 +104,7 @@ class HeadingRunner:
         for conf_key, conf_val in self._current_config.items():
             param = proto_heading.HeadingParameter()
             param.name = conf_key
-            param.value = conf_val
+            param.value = str(conf_val)
             param.type = self._current_config_types[param.name]
             self._heading_status.parameters.append(param)
 
@@ -119,10 +118,19 @@ class HeadingRunner:
         heading_source.data_invalid_callback = self.invalid_callback
         heading_source.status_updates_callback = self.log_status
         self.invalid_callback()
+
         self._logger.info(f"Configured {heading_source.__class__.__name__}")
         for def_key, def_value in self._defaults.items():
             heading_source.update_parameter(def_key, def_value)
             self._logger.info(f"Set {def_key} = {def_value}")
+
+        for conf_key, (
+            conf_type,
+            conf_default,
+        ) in heading_source.get_parameters().items():
+            self._current_config[conf_key] = conf_default
+            self._current_config_types[conf_key] = conf_type
+
         while True:
 
             while True:
@@ -135,6 +143,10 @@ class HeadingRunner:
                 except google.protobuf.message.DecodeError:
                     self._logger.warning("Malformed Protobuf message on ZMQ Command")
                     return
+                if not config.selected_source_type:
+                    self.craft_status_packet()
+                    self._server_rep.resp(self._heading_status.SerializeToString())
+                    continue
                 if config.selected_source_type != self._current_heading_source_label:
 
                     heading_source.close()
@@ -142,7 +154,14 @@ class HeadingRunner:
                         config.selected_source_type
                     ]()
                     self._current_heading_source_label = config.selected_source_type
-                    self._current_config_types = heading_source.get_parameters()
+                    self._current_config_types = dict()
+                    self._current_config = dict()
+                    for conf_key, (
+                        conf_type,
+                        conf_default,
+                    ) in heading_source.get_parameters().items():
+                        self._current_config[conf_key] = conf_default
+                        self._current_config_types[conf_key] = conf_type
                     heading_source.gps_updated_callback = self.gps_callback
                     heading_source.quaternion_updated_callback = (
                         self.quaternion_callback
@@ -153,7 +172,7 @@ class HeadingRunner:
                     self._logger.info(f"Configured {heading_source.__class__.__name__}")
 
                 self._current_config = dict()
-                for param_key, param_val in config.parameters:
+                for param_key, param_val in config.parameters.items():
                     heading_source.update_parameter(param_key, param_val)
                     self._current_config[param_key] = param_val
                     self._logger.info(f"Set {param_key} = {param_val}")

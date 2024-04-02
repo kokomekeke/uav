@@ -225,17 +225,6 @@ global___ROIMask = ROIMask
 
 @typing_extensions.final
 class Config(google.protobuf.message.Message):
-    """message Heading {
-        // A single Heading source
-
-        // ID of 
-        string type = 1;
-
-        // Commands and their descriptions/values
-        map<string, string> parameters = 2;
-    }
-    """
-
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     class _Type:
@@ -367,27 +356,26 @@ class SystemInfo(google.protobuf.message.Message):
 
     HARDWARE_FIELD_NUMBER: builtins.int
     SOFTWARE_FIELD_NUMBER: builtins.int
-    HEADINGS_FIELD_NUMBER: builtins.int
     RADIOS_FIELD_NUMBER: builtins.int
+    HEADING_FIELD_NUMBER: builtins.int
     @property
     def hardware(self) -> global___SystemInfo.Hardware: ...
     @property
     def software(self) -> global___SystemInfo.Software: ...
     @property
-    def headings(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]:
-        """Information about available Heading sources"""
-    @property
     def radios(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___SystemInfo.SDR]: ...
+    @property
+    def heading(self) -> pysagax.message.heading_pb2.HeadingStatus: ...
     def __init__(
         self,
         *,
         hardware: global___SystemInfo.Hardware | None = ...,
         software: global___SystemInfo.Software | None = ...,
-        headings: collections.abc.Iterable[builtins.str] | None = ...,
         radios: collections.abc.Iterable[global___SystemInfo.SDR] | None = ...,
+        heading: pysagax.message.heading_pb2.HeadingStatus | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing_extensions.Literal["hardware", b"hardware", "software", b"software"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing_extensions.Literal["hardware", b"hardware", "headings", b"headings", "radios", b"radios", "software", b"software"]) -> None: ...
+    def HasField(self, field_name: typing_extensions.Literal["hardware", b"hardware", "heading", b"heading", "software", b"software"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing_extensions.Literal["hardware", b"hardware", "heading", b"heading", "radios", b"radios", "software", b"software"]) -> None: ...
 
 global___SystemInfo = SystemInfo
 

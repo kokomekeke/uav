@@ -24,9 +24,9 @@ message HeadingConfig {
 
 message HeadingData {
     uint64 packet_id = 1;
-    google.protobuf.Timestamp timestamp = 2;
+    google.protobuf.Timestamp timestamp = 2;  // System time of the acquisition, used to synchronize heading to signal
     repeated float quaternion = 3;
-    google.protobuf.Timestamp gps_time = 10;
+    google.protobuf.Timestamp gps_time = 10;  // Timestamp from the GPS if present, can be used to adjust system clock
     float gps_lat = 11;
     float gps_lon = 12;
     float offset = 5;

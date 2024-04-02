@@ -11,6 +11,8 @@ from pysagax.message.data_types import DataType
 
 
 class StreamerServer:
+    """Background process for real-time bandwidth intensive UDP client communication"""
+
     def __init__(
         self, server: TX, level: int, timeout: int, telemetry_packet_period: int = 1
     ) -> None:

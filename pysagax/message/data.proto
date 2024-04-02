@@ -115,7 +115,7 @@ message Measurement {
     // Metadata
     uint64 packet_id = 5;
     uint64 position = 6;
-    float heading = 7;
+    reserved 7;
     repeated float quaternion = 8;
     bool overflow = 9;
     repeated int32 peaks = 10;

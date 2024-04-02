@@ -18,17 +18,23 @@ from pysagax.communication.req_rep_tcp import REQ
 
 parser = argparse.ArgumentParser(description="CLI ZMQ commander parameters")
 parser.add_argument("address")
+parser.add_argument("-p", "--port", type=int, default=5556)
 args = parser.parse_args()
 
 
 class ZMQConnectionThread(threading.Thread):
-    def __init__(self, address: str = "127.0.0.1") -> None:
+    def __init__(self, address: str = "127.0.0.1", port_s: int = 5556) -> None:
         super().__init__(daemon=True)
 
         self.address = address
 
         port_s = 5556
-        print(ansi_wrap(text=f"Connecting to {address}:{port_s}", color="blue"))
+        print(
+            ansi_wrap(
+                text=f"ZMQ REQ connecting to ZMQ REP {address} {port_s}/tcp",
+                color="blue",
+            )
+        )
         # Define up- and downstream channels
         self._zmq = REQ(address_server=address, port_server=port_s)
         self.disconnect: bool = False
@@ -113,14 +119,16 @@ class ZMQConnectionThread(threading.Thread):
 def main() -> None:
     global args
 
-    client = ZMQConnectionThread(address=args.address)
+    client = ZMQConnectionThread(address=args.address, port_s=args.port)
     client.start()
     buf = ""
     while not client.connected:
         print(ansi_wrap(text="...", color="blue"))
         time.sleep(0.5)
-
-    print(ansi_wrap(text="=== Command: ", color="red", bold=True))
+    print(
+        "Protobuf JSON format docs: https://protobuf.dev/programming-guides/proto3/#json"
+    )
+    print(ansi_wrap(text="=== Command JSON: ", color="red", bold=True))
     while client.connected:
         try:
             inp = input()
@@ -137,7 +145,7 @@ def main() -> None:
                 except json_format.Error as e:
                     print(ansi_wrap(text=f"{e}", color="yellow"))
                     buf = ""
-                    print(ansi_wrap(text="=== Command: ", color="red", bold=True))
+                    print(ansi_wrap(text="=== Command JSON: ", color="red", bold=True))
             else:
                 break
 
