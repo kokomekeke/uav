@@ -8,7 +8,7 @@ import pysagax.message.data_pb2 as proto_data
 
 from pysagax.message.data_types import DataType
 
-
+@click.command()
 @click.option("-p", "--port", type=int, default=5050, help="Port of receiver")
 def main(
     port: int = 5050,
