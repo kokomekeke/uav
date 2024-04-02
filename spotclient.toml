@@ -23,8 +23,8 @@ mean_window_width_seconds = 1
 [map_server]
 host = '0.0.0.0'
 port = 20000
-lat = 47.33
-lon = 19.33
+#lat = 47.33    # these coordinates overwrite the ones arriving in Measurement packets
+#lon = 19.33
 
 [heading]
     # if also defined for a specific heading source, the following values will be overriden

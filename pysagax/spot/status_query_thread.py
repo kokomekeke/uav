@@ -13,6 +13,7 @@ from pysagax.spot.command_thread import CommandThread
 from pysagax.ui.control_frame import ControlFrame
 from pysagax.ui.playback_tab import PlaybackTab
 from pysagax.ui.status_frame import StatusFrame
+from pysagax.ui.plot_frame import PlotFrame
 
 
 class StatusQueryThread(threading.Thread):
@@ -22,6 +23,7 @@ class StatusQueryThread(threading.Thread):
 
     def source_config_handler(self, resp) -> None:
         self.source_manager.source_config_handler(resp)
+        self.client.update_roi_settings(resp.config.roi)
         self.ct_tab.config_update()
         self.status_frame.config_update()
 
@@ -42,6 +44,7 @@ class StatusQueryThread(threading.Thread):
         self.pb_tab: PlaybackTab = client.client_window.playback_tab
         self.ct_tab: ControlFrame = client.client_window.control_frame
         self.status_frame: StatusFrame = client.client_window.status_frame
+        self.plot_frame: PlotFrame = client.client_window.plot_frame
         self.comm.set_response_handler(
             proto_cmd.TELEMETRY, self.source_telemetry_handler
         )

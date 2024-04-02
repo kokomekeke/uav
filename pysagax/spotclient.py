@@ -58,6 +58,7 @@ from pysagax.ui.plot_frame import PlotFrame, PlotSettingsFrame
 from pysagax.util.multiqueue import MultiQueue
 from pysagax.util.read_from_conf import read_from_conf
 from pysagax.util.get_ip import get_ip
+from pysagax.util.mat import yaw_pitch_roll_from_quaternion
 
 import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.data_pb2 as proto_data
@@ -162,6 +163,7 @@ class ClientWindow(tkinter.Frame):
             send_commands_function=self.client.send_commands,
             abort_commands_function=self.client.abort_commands,
             source_manager=self.client.source_manager,
+            client=self.client
         )
 
         self.status_info_tab = ttk.Frame(self.center_notebook)
@@ -276,22 +278,35 @@ class ClientWindow(tkinter.Frame):
         self.stat_frame.update_peak_plot(packet.peaks)
 
         # TODO: remove compass heading/angle
-        self.compass_angle = packet.heading
-        self.compass_heading = packet.heading
+        # self.compass_angle = packet.heading
+        # self.compass_heading = packet.heading
+        if len(packet.heading_data.quaternion) == 4:
+            yaw, _, _ = yaw_pitch_roll_from_quaternion(packet.heading_data.quaternion)
+        else:
+            yaw = None
+        self.compass_heading = yaw
 
         # TODO: rethink roi results
-        latest_roi_resutls = {"df_value": 0, "df_elevation": 0}
-        self.aggregated_roi_results = {
-            "df_value_mean": 0,
-            "df_value_std": 0,
-            "df_elevation_mean": 0,
-            "df_elevation_std": 0,
-        }
         if len(packet.detection):
+            latest_roi_resutls = {"df_value": 3, "df_elevation": 0}
+            self.aggregated_roi_results = {
+                "df_value_mean": packet.detection[0].azimuth,
+                "df_value_std": packet.detection[0].deviation,
+                "df_elevation_mean": 0,
+                "df_elevation_std": 0,
+            }
             self.aggregated_roi_results["df_value_std"] = packet.detection[0].deviation
             latest_roi_resutls = {
                 "df_value": packet.detection[0].azimuth,
                 "df_elevation": packet.detection[0].elevation,
+            }
+        else: 
+            latest_roi_resutls = {"df_value": None, "df_elevation": None}
+            self.aggregated_roi_results = {
+                "df_value_mean": None,
+                "df_value_std": None,
+                "df_elevation_mean": None,
+                "df_elevation_std": None,
             }
         self.stat_frame.update_stats(latest_roi_resutls, self.aggregated_roi_results)
 
@@ -772,14 +787,29 @@ class Client:
         """ self.command_thread.join()
         self.stream_thread.join() """
 
-    def update_roi_settings(self, roi_center, roi_span, roi_threshold) -> None:
+    def config_roi_settings(self, roi_mask: list[proto_cmd.ROIMask]) -> None:
+        # Constructs and sends a config message only containing a ROI window
         cmd = proto_cmd.Command()
         cmd.instruction = proto_cmd.CONFIG
-        roi_mask = self.source_manager.get_single_roi_mask(
-            roi_center, roi_span, roi_threshold
-        )
-        cmd.config.roi.append(roi_mask)
+        cmd.config.roi.extend(roi_mask)
         self.send_commands(cmd)
+        self.update_roi_settings(roi_mask)
+
+    def update_roi_settings(self, roi_mask: list[proto_cmd.ROIMask]):
+        """
+        This method handles the calls the methods related to ROI
+        Any update to the ROI mask should be handled here
+        """
+        if len(roi_mask) == 0:
+            return  # the response for CONFIG command didn't contain ROI information
+        if len(roi_mask) != 1:
+            print(
+                "WARNING: SPOTclient can only handle single-element ROI masks currently."
+            )
+            return
+
+        self.client_window.plot_frame.update_roi_graph(roi_mask)
+        self.client_window.control_frame.update_roi_entries(roi_mask[0])
 
     def start_recording(self) -> None:
         self.start_local_recording()
@@ -838,7 +868,7 @@ def main() -> None:
     global conf
     global icon_image
     parser = argparse.ArgumentParser(description="SPOTClient")
-    parser.add_argument("config", nargs="?", default="spotclient.toml")
+    parser.add_argument("config", nargs="?", default="/var/sagax/spotclient/spotclient.toml")
     args = parser.parse_args()
     conf = {}
     if os.path.isfile(args.config):

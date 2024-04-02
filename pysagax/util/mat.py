@@ -1,5 +1,8 @@
 import numpy as np
 import numpy.typing as npt
+import pyquaternion
+from math import atan2, asin
+
 
 
 def rotation_matrix_from_vectors(
@@ -61,3 +64,15 @@ def normalize_angle(angle: float, high: float = np.pi, low: float = -np.pi) -> f
     while angle < low:
         angle = angle + span
     return angle
+
+def yaw_pitch_roll_from_quaternion(quaternion: list[float]) -> list[float]:
+    """
+    Only tested for yaw!
+    """
+
+    qw, qx, qy, qz = quaternion
+    yaw = atan2(2.0*(qy*qz + qw*qx), qw*qw - qx*qx - qy*qy + qz*qz)
+    pitch = asin(-2.0*(qx*qz - qw*qy))
+    roll = atan2(2.0*(qx*qy + qw*qz), qw*qw + qx*qx - qy*qy - qz*qz)
+    return roll, pitch, yaw # results are in wrong order!
+    return yaw, pitch, roll

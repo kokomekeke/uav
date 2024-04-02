@@ -19,6 +19,7 @@ from pysagax.df.lena_core_service import CoreServiceSpectrumPacket
 from pysagax.source.source_manager import CoreServiceStatus
 from pysagax.spot.calculate_df_corrected import calculate_df_corrected
 import pysagax.message.data_pb2 as proto_data
+import pysagax.message.command_pb2 as proto_cmd
 
 # from pysagax.spotclient import Client, conf, calculate_df_corrected
 from pysagax.ui.custom_widgets import EntryWithLabel, ToggleButton
@@ -214,27 +215,24 @@ class PlotFrame(tkinter.Frame):
         if self.magnitude_spectrum_graph is None:
             return
         if event.inaxes == self.magnitude_spectrum_graph.plot:
-            roi_span = pysagax.si_to_float(control_frame_ref.roi_span_entry.get())
-            roi_freq = self.magnitude_spectrum_graph.coord_to_freq(event.xdata)
-            roi_threshold = event.ydata
+            roi = proto_cmd.ROIMask()
+            roi.span = pysagax.si_to_float(control_frame_ref.roi_span_entry.get())
+            roi.center_frequency = self.magnitude_spectrum_graph.coord_to_freq(event.xdata)
+            roi.threshold = event.ydata
+            self.client.config_roi_settings([roi])
 
-            self.client.update_roi_settings(
-                roi_freq, roi_span, math.floor(roi_threshold)
-            )
+    def update_roi_graph(self, roi_mask: list[proto_cmd.ROIMask]):
+        if len(roi_mask) != 1:
+            print("WARNING: the spectrum graph can only display a single-element ROI mask currently.")
+            return
+        self._draw_roi_window(roi_mask[0].center_frequency, roi_mask[0].span, roi_mask[0].threshold)
 
-            self.draw_roi_window(roi_freq, roi_span, roi_threshold)
-
-
-            control_frame_ref.roi_center_entry.set(f"{roi_freq:.0f}")
-            control_frame_ref.roi_threshold_entry.set(f"{roi_threshold:.0f}")
-            control_frame_ref.roi_span_entry.set(f"{roi_span:.0f}")
-
-    def draw_roi_window(self, roi_center: float, roi_width: float, roi_threshold: float) -> None:
-            self.magnitude_spectrum_graph.roi_center = self.magnitude_spectrum_graph.freq_to_coord(roi_center)
-            self.magnitude_spectrum_graph.roi_width = int(
-                roi_width * (self.params.bin_count / self.params.iq_rate)
-            )
-            self.magnitude_spectrum_graph.roi_threshold = roi_threshold
+    def _draw_roi_window(self, roi_center: float, roi_width: float, roi_threshold: float) -> None:
+        self.magnitude_spectrum_graph.roi_center = self.magnitude_spectrum_graph.freq_to_coord(roi_center)
+        self.magnitude_spectrum_graph.roi_width = int(
+            roi_width * (self.params.bin_count / self.params.iq_rate)
+        )
+        self.magnitude_spectrum_graph.roi_threshold = roi_threshold
 
 
     def update_sensors_and_graphs(self) -> None:

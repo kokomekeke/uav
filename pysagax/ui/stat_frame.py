@@ -25,10 +25,10 @@ class StatFrame(tkinter.Frame):
         self.quality_value_string = tkinter.StringVar(value="NaN")
         self.snr_string = tkinter.StringVar(value="NaN")
 
-        self.columnconfigure(0, weight=1)
-        self.columnconfigure(1, weight=1)
-        self.columnconfigure(2, weight=1)
-        self.columnconfigure(3, weight=1)
+        self.columnconfigure(0, weight=1, minsize=50)
+        self.columnconfigure(1, weight=1, minsize=60)
+        self.columnconfigure(2, weight=1, minsize=60)
+        self.columnconfigure(3, weight=1, minsize=60)
 
         disp_font = tkinter.font.Font(family="serif", size=14)
 
@@ -41,32 +41,26 @@ class StatFrame(tkinter.Frame):
 
         df_value_label = ttk.Label(self, text="DF angle:")
         df_value_label.grid(column=0, row=1, sticky=tkinter.W, padx=5, pady=5)
+        display_kwargs = {
+            "font": disp_font,
+            "foreground": "red",
+            "background": "yellow",
+            "width": 7,
+        }
         df_value_disp = ttk.Label(
-            self,
-            textvariable=self.df_value_string,
-            font=disp_font,
-            foreground="red",
-            background="yellow",
+            self, textvariable=self.df_value_string, **display_kwargs
         )
         df_value_disp.grid(
             column=1, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=3
         )
         df_value_mean_disp = ttk.Label(
-            self,
-            textvariable=self.df_value_mean_string,
-            font=disp_font,
-            foreground="red",
-            background="yellow",
+            self, textvariable=self.df_value_mean_string, **display_kwargs
         )
         df_value_mean_disp.grid(
             column=2, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=3
         )
         df_value_deviation_disp = ttk.Label(
-            self,
-            textvariable=self.df_value_deviation_string,
-            font=disp_font,
-            foreground="red",
-            background="yellow",
+            self, textvariable=self.df_value_deviation_string, **display_kwargs
         )
         df_value_deviation_disp.grid(
             column=3, row=1, sticky=tkinter.E + tkinter.W, padx=5, pady=3
@@ -75,29 +69,17 @@ class StatFrame(tkinter.Frame):
         df_elev_label = ttk.Label(self, text="DF elevation:")
         df_elev_label.grid(column=0, row=2, sticky=tkinter.W, padx=5, pady=5)
         df_elev_disp = ttk.Label(
-            self,
-            textvariable=self.df_elev_string,
-            font=disp_font,
-            foreground="red",
-            background="yellow",
+            self, textvariable=self.df_elev_string, **display_kwargs
         )
         df_elev_disp.grid(column=1, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
         df_elev_mean_disp = ttk.Label(
-            self,
-            textvariable=self.df_elev_mean_string,
-            font=disp_font,
-            foreground="red",
-            background="yellow",
+            self, textvariable=self.df_elev_mean_string, **display_kwargs
         )
         df_elev_mean_disp.grid(
             column=2, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=3
         )
         df_elev_deviation_disp = ttk.Label(
-            self,
-            textvariable=self.df_elev_deviation_string,
-            font=disp_font,
-            foreground="red",
-            background="yellow",
+            self, textvariable=self.df_elev_deviation_string, **display_kwargs
         )
         df_elev_deviation_disp.grid(
             column=3, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=3
@@ -106,11 +88,7 @@ class StatFrame(tkinter.Frame):
         quality_value_label = ttk.Label(self, text="Signal quality:")
         quality_value_label.grid(column=0, row=3, sticky=tkinter.W, padx=5, pady=5)
         quality_value_disp = ttk.Label(
-            self,
-            textvariable=self.quality_value_string,
-            font=disp_font,
-            foreground="red",
-            background="yellow",
+            self, textvariable=self.quality_value_string, **display_kwargs
         )
         quality_value_disp.grid(
             column=1, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=3
@@ -118,13 +96,7 @@ class StatFrame(tkinter.Frame):
 
         snr_label = ttk.Label(self, text="SNR:")
         snr_label.grid(column=2, row=3, sticky=tkinter.W, padx=5, pady=5)
-        snr_disp = ttk.Label(
-            self,
-            textvariable=self.snr_string,
-            font=disp_font,
-            foreground="red",
-            background="yellow",
-        )
+        snr_disp = ttk.Label(self, textvariable=self.snr_string, **display_kwargs)
         snr_disp.grid(column=3, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
 
         self.peak_chart = tkinter.Canvas(
@@ -166,7 +138,7 @@ class StatFrame(tkinter.Frame):
         if len(peaks) != 4:
             return
         max_width = self.peak_chart.winfo_width()
-        adc_resolution = 2**15 - 1
+        adc_resolution = 2 ** 15 - 1
 
         peaks = [int(peak) for peak in peaks]
         peaks_dbfs = [
@@ -197,7 +169,11 @@ class StatFrame(tkinter.Frame):
     def update_stats(
         self, latest_roi_results: dict[str, Any], aggregated_roi_results: dict[str, Any]
     ) -> None:
-        rad_to_deg = lambda x: normalize_angle(x * 180 / np.pi, high=360.0, low=0.0)
+        rad_to_deg = (
+            lambda x: normalize_angle(x * 180 / np.pi, high=360.0, low=0.0)
+            if x is not None
+            else 0
+        )
 
         self.df_value_string.set(f"{rad_to_deg(latest_roi_results['df_value']):.2f}°")
         self.df_value_mean_string.set(
