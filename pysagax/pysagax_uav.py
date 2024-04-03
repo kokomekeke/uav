@@ -145,6 +145,7 @@ class Commander:
                     post_proc_future,
                     cs_parser_future,
                     cs_streamer_future,
+                    telemetry_future,
                     heading_future,
                 ),
                 timeout=1,
