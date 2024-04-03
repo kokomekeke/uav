@@ -45,50 +45,50 @@ class Interpreter(Loop):
         proto_cmd.REC_STOP: "RECORDING:Stop!",
     }
     _CONFIG_COMMANDS = [
-        ("SOURCE:Path! {};", lambda config: config.source_path),
-        ("SOURCE:CenterFrequency! {:.0f};", lambda config: config.center_frequency),
-        ("SOURCE:IqRate! {};", lambda config: config.iq_rate),
-        ("SOURCE:BurstStride! {};", lambda config: config.burst_stride),
-        ("SOURCE:PlaybackSpeed! {:.2f};", lambda config: config.playback_speed),
+        ("SOURCE:Path! {};", lambda config: config.cs.source_path),
+        ("SOURCE:CenterFrequency! {:.0f};", lambda config: config.cs.center_frequency),
+        ("SOURCE:IqRate! {};", lambda config: config.cs.iq_rate),
+        ("SOURCE:BurstStride! {};", lambda config: config.cs.burst_stride),
+        ("SOURCE:PlaybackSpeed! {:.2f};", lambda config: config.cs.playback_speed),
         (
             "SOURCE:ChannelGain! 0 {};",
             lambda config: (
-                config.channel_gain[0] if len(config.channel_gain) >= 1 else 0
+                config.cs.channel_gain[0] if len(config.cs.channel_gain) >= 1 else 0
             ),
         ),
         (
             "SOURCE:ChannelGain! 1 {};",
             lambda config: (
-                config.channel_gain[1] if len(config.channel_gain) >= 2 else 0
+                config.cs.channel_gain[1] if len(config.cs.channel_gain) >= 2 else 0
             ),
         ),
         (
             "SOURCE:ChannelGain! 2 {};",
             lambda config: (
-                config.channel_gain[2] if len(config.channel_gain) >= 3 else 0
+                config.cs.channel_gain[2] if len(config.cs.channel_gain) >= 3 else 0
             ),
         ),
         (
             "SOURCE:ChannelGain! 3 {};",
             lambda config: (
-                config.channel_gain[3] if len(config.channel_gain) >= 4 else 0
+                config.cs.channel_gain[3] if len(config.cs.channel_gain) >= 4 else 0
             ),
         ),
         ("SOURCE:Configure!;", lambda config: " "),
-        ("AOA:BinCount! {};", lambda config: config.bin_count),
+        ("AOA:BinCount! {};", lambda config: config.cs.bin_count),
         ("AOA:Configure!;", lambda config: " "),
-        ("ROI:Enable! {};", lambda config: "1" if len(config.roi) else "0"),
+        ("ROI:Enable! {};", lambda config: "1" if len(config.pp.roi) else "0"),
         (
             "ROI:CenterFrequency! {:.0f};",
-            lambda config: (config.roi[0].center_frequency if len(config.roi) else 0.0),
+            lambda config: (config.pp.roi[0].center_frequency if len(config.pp.roi) else 0.0),
         ),
         (
             "ROI:Span! {:.0f};",
-            lambda config: config.roi[0].span if len(config.roi) else 0.0,
+            lambda config: config.pp.roi[0].span if len(config.pp.roi) else 0.0,
         ),
         (
             "ROI:Threshold! {:.0f};",
-            lambda config: config.roi[0].threshold if len(config.roi) else 0.0,
+            lambda config: config.pp.roi[0].threshold if len(config.pp.roi) else 0.0,
         ),
         ("ROI:Configure!;", lambda config: " "),
     ]
@@ -407,21 +407,21 @@ class Interpreter(Loop):
         """Query system configuration"""
         defaults = lambda val, defa: defa if val is None else val
         response.config.config_id = self.config_id
-        response.config.center_frequency = float(
+        response.config.cs.center_frequency = float(
             defaults(self._cs_query("SOURCE:CenterFrequency?;"), 0)
         )
-        response.config.iq_rate = int(
+        response.config.cs.iq_rate = int(
             float(defaults(self._cs_query("SOURCE:IqRate?;"), 0))
         )
-        response.config.playback_speed = float(
+        response.config.cs.playback_speed = float(
             defaults(self._cs_query("SOURCE:PlaybackSpeed?;"), 0)
         )
-        response.config.bin_count = int(defaults(self._cs_query("AOA:BinCount?;"), 0))
-        response.config.burst_stride = int(
+        response.config.cs.bin_count = int(defaults(self._cs_query("AOA:BinCount?;"), 0))
+        response.config.cs.burst_stride = int(
             defaults(self._cs_query("SOURCE:BurstStride?;"), 0)
         )
         for gain_index in range(4):
-            response.config.channel_gain.append(
+            response.config.cs.channel_gain.append(
                 int(
                     float(
                         defaults(
@@ -430,7 +430,7 @@ class Interpreter(Loop):
                     )
                 )
             )
-        response.config.source_path = defaults(
+        response.config.cs.source_path = defaults(
             self._cs_query_multiple("SOURCE:Path?;"), "UNKNOWN"
         )
         if (

@@ -155,7 +155,7 @@ class SourceManager:
             self.is_cs_configuring = True
             return
         self.latest_config = resp
-        self.current_source_path = str(resp.config.source_path).strip().split(" ")
+        self.current_source_path = str(resp.config.cs.source_path).strip().split(" ")
         try:
             self.current_source = Sources(self.current_source_path[0])
         except:
@@ -216,18 +216,18 @@ class SourceManager:
 
         cmd = proto_cmd.Command()
         cmd.instruction = proto_cmd.CONFIG
-        cmd.config.center_frequency = float(freq)
-        cmd.config.iq_rate = int(bw)
-        # cmd.config.playback_speed = 1
-        cmd.config.bin_count = int(bin_count)
-        cmd.config.burst_stride = int(burst_stride)
-        cmd.config.channel_gain[:] = 4 * [int(gain)]
-        cmd.config.roi.append(
+        cmd.config.cs.center_frequency = float(freq)
+        cmd.config.cs.iq_rate = int(bw)
+        # cmd.config.cs.playback_speed = 1
+        cmd.config.cs.bin_count = int(bin_count)
+        cmd.config.cs.burst_stride = int(burst_stride)
+        cmd.config.cs.channel_gain[:] = 4 * [int(gain)]
+        cmd.config.pp.roi.append(
             self.get_single_roi_mask(roi_center, roi_span, roi_threshold)
         )
         # TODO: heading?
         # TODO: mean_window
-        # TODO: cmd.config.type = LIVE/RECORDED #why is it needed???
+        # TODO: cmd.config.cs.type = LIVE/RECORDED #why is it needed???
         return [cmd]
 
     def get_single_roi_mask(
@@ -262,7 +262,7 @@ class SourceManager:
             source_path = f"Sidekiq {p}"
         elif source_str == Sources.UHD.display_name:
             source_path = f"UHD"
-        cmd.config.source_path = source_path
+        cmd.config.cs.source_path = source_path
 
         return cmd
 
