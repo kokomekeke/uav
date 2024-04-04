@@ -224,25 +224,24 @@ class ROIMask(google.protobuf.message.Message):
 global___ROIMask = ROIMask
 
 @typing_extensions.final
-class Config(google.protobuf.message.Message):
+class CoreServiceConfig(google.protobuf.message.Message):
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     class _Type:
         ValueType = typing.NewType("ValueType", builtins.int)
         V: typing_extensions.TypeAlias = ValueType
 
-    class _TypeEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[Config._Type.ValueType], builtins.type):
+    class _TypeEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[CoreServiceConfig._Type.ValueType], builtins.type):
         DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
-        LIVE: Config._Type.ValueType  # 0
-        RECORDED: Config._Type.ValueType  # 1
+        LIVE: CoreServiceConfig._Type.ValueType  # 0
+        RECORDED: CoreServiceConfig._Type.ValueType  # 1
 
     class Type(_Type, metaclass=_TypeEnumTypeWrapper):
         """Type of source"""
 
-    LIVE: Config.Type.ValueType  # 0
-    RECORDED: Config.Type.ValueType  # 1
+    LIVE: CoreServiceConfig.Type.ValueType  # 0
+    RECORDED: CoreServiceConfig.Type.ValueType  # 1
 
-    CONFIG_ID_FIELD_NUMBER: builtins.int
     CENTER_FREQUENCY_FIELD_NUMBER: builtins.int
     IQ_RATE_FIELD_NUMBER: builtins.int
     PLAYBACK_SPEED_FIELD_NUMBER: builtins.int
@@ -251,11 +250,6 @@ class Config(google.protobuf.message.Message):
     CHANNEL_GAIN_FIELD_NUMBER: builtins.int
     SOURCE_PATH_FIELD_NUMBER: builtins.int
     TYPE_FIELD_NUMBER: builtins.int
-    ROI_FIELD_NUMBER: builtins.int
-    HEADING_FIELD_NUMBER: builtins.int
-    MEAN_WINDOW_FIELD_NUMBER: builtins.int
-    config_id: builtins.int
-    """Increments with every change. Used to validate streamed data against config"""
     center_frequency: builtins.float
     """CoreService parameters"""
     iq_rate: builtins.int
@@ -266,19 +260,10 @@ class Config(google.protobuf.message.Message):
     def channel_gain(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.int]: ...
     source_path: builtins.str
     """Source parameters"""
-    type: global___Config.Type.ValueType
-    @property
-    def roi(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___ROIMask]:
-        """ROI mask, made up of individual regions"""
-    @property
-    def heading(self) -> pysagax.message.heading_pb2.HeadingConfig:
-        """Heading source selection"""
-    mean_window: builtins.float
-    """PostProcessing parameters"""
+    type: global___CoreServiceConfig.Type.ValueType
     def __init__(
         self,
         *,
-        config_id: builtins.int = ...,
         center_frequency: builtins.float = ...,
         iq_rate: builtins.int = ...,
         playback_speed: builtins.float = ...,
@@ -286,13 +271,60 @@ class Config(google.protobuf.message.Message):
         burst_stride: builtins.int = ...,
         channel_gain: collections.abc.Iterable[builtins.int] | None = ...,
         source_path: builtins.str = ...,
-        type: global___Config.Type.ValueType = ...,
+        type: global___CoreServiceConfig.Type.ValueType = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing_extensions.Literal["bin_count", b"bin_count", "burst_stride", b"burst_stride", "center_frequency", b"center_frequency", "channel_gain", b"channel_gain", "iq_rate", b"iq_rate", "playback_speed", b"playback_speed", "source_path", b"source_path", "type", b"type"]) -> None: ...
+
+global___CoreServiceConfig = CoreServiceConfig
+
+@typing_extensions.final
+class PostProcessingConfig(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    ROI_FIELD_NUMBER: builtins.int
+    MEAN_WINDOW_FIELD_NUMBER: builtins.int
+    @property
+    def roi(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___ROIMask]:
+        """ROI mask, made up of individual regions"""
+    mean_window: builtins.float
+    """PostProcessing parameters"""
+    def __init__(
+        self,
+        *,
         roi: collections.abc.Iterable[global___ROIMask] | None = ...,
-        heading: pysagax.message.heading_pb2.HeadingConfig | None = ...,
         mean_window: builtins.float = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing_extensions.Literal["heading", b"heading"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing_extensions.Literal["bin_count", b"bin_count", "burst_stride", b"burst_stride", "center_frequency", b"center_frequency", "channel_gain", b"channel_gain", "config_id", b"config_id", "heading", b"heading", "iq_rate", b"iq_rate", "mean_window", b"mean_window", "playback_speed", b"playback_speed", "roi", b"roi", "source_path", b"source_path", "type", b"type"]) -> None: ...
+    def ClearField(self, field_name: typing_extensions.Literal["mean_window", b"mean_window", "roi", b"roi"]) -> None: ...
+
+global___PostProcessingConfig = PostProcessingConfig
+
+@typing_extensions.final
+class Config(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    CONFIG_ID_FIELD_NUMBER: builtins.int
+    CS_FIELD_NUMBER: builtins.int
+    PP_FIELD_NUMBER: builtins.int
+    HEADING_FIELD_NUMBER: builtins.int
+    config_id: builtins.int
+    """Increments with every change. Used to validate streamed data against config"""
+    @property
+    def cs(self) -> global___CoreServiceConfig: ...
+    @property
+    def pp(self) -> global___PostProcessingConfig: ...
+    @property
+    def heading(self) -> pysagax.message.heading_pb2.HeadingConfig:
+        """Heading source selection"""
+    def __init__(
+        self,
+        *,
+        config_id: builtins.int = ...,
+        cs: global___CoreServiceConfig | None = ...,
+        pp: global___PostProcessingConfig | None = ...,
+        heading: pysagax.message.heading_pb2.HeadingConfig | None = ...,
+    ) -> None: ...
+    def HasField(self, field_name: typing_extensions.Literal["cs", b"cs", "heading", b"heading", "pp", b"pp"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing_extensions.Literal["config_id", b"config_id", "cs", b"cs", "heading", b"heading", "pp", b"pp"]) -> None: ...
 
 global___Config = Config
 

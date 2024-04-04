@@ -791,7 +791,7 @@ class Client:
         # Constructs and sends a config message only containing a ROI window
         cmd = proto_cmd.Command()
         cmd.instruction = proto_cmd.CONFIG
-        cmd.config.roi.extend(roi_mask)
+        cmd.config.pp.roi.extend(roi_mask)
         self.send_commands(cmd)
         self.update_roi_settings(roi_mask)
 
