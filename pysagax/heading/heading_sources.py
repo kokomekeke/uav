@@ -64,6 +64,10 @@ class HeadingSource:
             self._offset(value)
 
     def get_parameters(self) -> dict[str, list[Any]]:
+        """
+        return a dict of
+        config_key: [config_type, config_default_value]
+        """
         return dict()
 
     def initialize(self) -> bool:
