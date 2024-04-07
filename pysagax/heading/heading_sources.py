@@ -182,7 +182,7 @@ class HeadingEncoder(HeadingSource):
             if len(ctr):
                 self.update_heading(normalize_angle(float(ctr[0])), 0, 0)
                 self._quaternion(self.quaternion)
-        except:
+        except Exception:
             self._data_invalid()
             self._status("#encoder" + "Disconnected.")
 
