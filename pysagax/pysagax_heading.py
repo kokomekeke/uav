@@ -48,8 +48,6 @@ class HeadingRunner:
         self._heading_data = proto_heading.HeadingData()
         self._heading_status = proto_heading.HeadingStatus()
         self._current_heading_source_label: str = "Static"
-        self._current_config: dict[str, Any] = dict()
-        self._current_config_types: dict[str, str] = dict()
         self._server_rep.connect()
         self._server_pub.connect()
         self._last_data_packet_time = time.time()
@@ -102,11 +100,14 @@ class HeadingRunner:
         for key in self._heading_sources.keys():
             self._heading_status.available_source_types.append(key)
         self._heading_status.selected_source_type = self._current_heading_source_label
-        for conf_key, conf_val in self._current_config.items():
+        for conf_key, (
+            conf_type,
+            conf_val,
+        ) in self._heading_source.get_parameters().items():
             param = proto_heading.HeadingParameter()
             param.name = conf_key
             param.value = str(conf_val)
-            param.type = self._current_config_types[param.name]
+            param.type = conf_type
             self._heading_status.parameters.append(param)
 
     def _create_heading_source(
@@ -124,14 +125,6 @@ class HeadingRunner:
                 config.selected_source_type
             ]()
             self._current_heading_source_label = config.selected_source_type
-        self._current_config_types = dict()
-        self._current_config = dict()
-        for conf_key, (
-            conf_type,
-            conf_default,
-        ) in self._heading_source.get_parameters().items():
-            self._current_config[conf_key] = conf_default
-            self._current_config_types[conf_key] = conf_type
         self._heading_source.gps_updated_callback = self.gps_callback
         self._heading_source.quaternion_updated_callback = self.quaternion_callback
         self._heading_source.offset_updated_callback = self.offset_callback
@@ -172,11 +165,11 @@ class HeadingRunner:
                 self._heading_source.close()
                 self._create_heading_source(config)
 
-            self._current_config = dict()
             for param_key, param_val in config.parameters.items():
-                self._heading_source.update_parameter(param_key, param_val)
-                self._current_config[param_key] = param_val
-                self._logger.info(f"Set {param_key} = {param_val}")
+                if self._heading_source.update_parameter(param_key, param_val):
+                    self._logger.info(f"Set {param_key} = {param_val}")
+                else:
+                    self._logger.error(f"Invalid parameter \"{param_key}\" for heading source type \"{type(self._heading_source)}\"")
             self._heading_source.initialize()
             self.craft_status_packet()
             self._server_rep.resp(self._heading_status.SerializeToString())
