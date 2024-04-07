@@ -177,6 +177,7 @@ class HeadingRunner:
                 self._heading_source.update_parameter(param_key, param_val)
                 self._current_config[param_key] = param_val
                 self._logger.info(f"Set {param_key} = {param_val}")
+            self._heading_source.initialize()
             self.craft_status_packet()
             self._server_rep.resp(self._heading_status.SerializeToString())
 
