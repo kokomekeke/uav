@@ -1,20 +1,13 @@
 from __future__ import annotations
-import datetime
 from multiprocessing.managers import ValueProxy
 from queue import Queue
 import queue
-import re
 import sys
 
 from typing import Any, Optional
 
 import numpy
-from pysagax.df.lena_core_service import (
-    CoreServiceDebugPacket,
-    CoreServicePacket,
-    CoreServiceROIResultPacket,
-    CoreServiceSpectrumPacket,
-)
+
 
 import pysagax.message.data_pb2 as proto_data
 import pysagax.message.heading_pb2 as proto_heading
@@ -31,20 +24,18 @@ class PostProc(Loop):
         super().__init__(*args, **kwargs)
         self._conf_queue_in: Optional[Queue] = None
         self._conf_queue_out: Optional[Queue] = None
-        self._cs_queue_in: Optional[Queue] = None
+        self._meas_queue_in: Optional[Queue] = None
         self._comm_queue_out: Optional[Queue] = None
         self._heading_queue_in: Optional[Queue] = None
         self._np_data_type: Optional[numpy.dtype] = None
         self._data_type = data_type
-        self._measurement_packet = proto_data.Measurement()
-        self._packet_id_counter: int = 0
         self._latest_config_id_value: Optional[ValueProxy[int]] = None
         self._latest_heading: Optional[proto_heading.HeadingData] = None
 
     def __call__(
         self,
         comm_queue_out: Queue[Any],
-        cs_queue_in: Queue[Any],
+        meas_queue_in: Queue[Any],
         conf_queue_in: Queue[Any],
         conf_queue_out: Queue[Any],
         heading_queue_in: Queue[Any],
@@ -53,7 +44,7 @@ class PostProc(Loop):
         **kwargs,
     ) -> None:
         self._comm_queue_out = comm_queue_out
-        self._cs_queue_in = cs_queue_in
+        self._meas_queue_in = meas_queue_in
         self._conf_queue_in = conf_queue_in
         self._conf_queue_out = conf_queue_out
         self._heading_queue_in = heading_queue_in
@@ -74,88 +65,33 @@ class PostProc(Loop):
 
         return super()._call(*args, **kwargs)
 
-    def _handle_spectrum_packet(self, cs_packet: CoreServiceSpectrumPacket) -> None:
-        spectrum = proto_data.Spectrum()
-        spectrum.spectrum_type = proto_data.Spectrum.SpectrumType.MAGNITUDE
-        spectrum.data_type = self._data_type
-        spectrum.channel_id = cs_packet.stream_id
+    def _convert_spectrums(
+        self, meas: proto_data.Measurement
+    ) -> proto_data.Measurement:
+        mag_spectrum_original = next(
+            spec
+            for spec in meas.data
+            if spec.spectrum_type == proto_data.Spectrum.SpectrumType.MAGNITUDE
+        )
+        mag_spectrum_conv = proto_data.Spectrum()
+        mag_spectrum_conv.spectrum_type = proto_data.Spectrum.SpectrumType.MAGNITUDE
+        mag_spectrum_conv.data_type = self._data_type
+        mag_spectrum_conv.channel_id = mag_spectrum_original.channel_id
         sp_clip = numpy.clip(
-            cs_packet.magnitude_spectrum,
+            numpy.frombuffer(mag_spectrum_original.data, dtype=numpy.float32),
             self._np_data_type_lims[0],
             self._np_data_type_lims[1],
         )
-        spectrum.data = sp_clip.astype(self._np_data_type).tobytes()
-        spectrum.center_frequency = cs_packet.center_frequency
-        spectrum.bandwidth = cs_packet.iq_rate
-        self._measurement_packet.data.append(spectrum)
-
-    def _handle_roi_packet(self, cs_packet: CoreServiceROIResultPacket) -> None:
-        detection = proto_data.Detection()
-        detection.roi_id = 0
-        detection.frequency = cs_packet.center_frequency
-        detection.bandwidth = cs_packet.span
-        detection.strength = cs_packet.roi_level
-        detection.azimuth = cs_packet.roi_azimuth
-        detection.elevation = cs_packet.roi_elevation
-        self._measurement_packet.detection.append(detection)
-
-    def _decode_iso_datetime(self, isoformat: str) -> Optional[datetime.datetime]:
-        try:
-            return datetime.datetime.fromisoformat(isoformat)
-        except ValueError:
-            try:
-                return datetime.datetime.strptime(isoformat, "%Y-%m-%dT%H:%M:%S.%f%z")
-            except ValueError:
-                return None
-
-    def _handle_debug_packet(self, cs_packet: CoreServiceDebugPacket) -> None:
-        if cs_packet.title == "peaks":
-            regex = r"peak(\d+)=(\d+)"
-            matches = re.findall(
-                regex, str(cs_packet.contents.decode())
-            )  # creating a list of (ChannelID, PeakValue) tuples from the debug message
-            peaks = [int(peak[1]) for peak in matches]
-            self._measurement_packet.peaks.extend(peaks)
-        elif cs_packet.title == "t":
-            dt = self._decode_iso_datetime(cs_packet.contents.decode())
-            if dt is None:
-                self._logger.warning(
-                    f"Cannot decode timestamp {cs_packet.contents.decode()} "
-                )
-                return
-            self._measurement_packet.time.FromDatetime(dt)
-            self._logger.debug(
-                f"Timestamp {cs_packet.contents.decode()} = {self._measurement_packet.time.ToJsonString()}"
-            )
-
-    def _push_finished_packet(self) -> None:
-        assert self._comm_queue_out is not None
-        dropped_msg = (
-            "Packet does not contain {} data. "
-            "CoreService likely dropped it due to slow PySAGAX-UAV performance. "
-            "Instead of sending, wait one more cycle to get a full packet."
-        )
-        if len(self._measurement_packet.data) == 0:
-            self._logger.warning(dropped_msg.format("spectrum data"))
-            return
-        if len(self._measurement_packet.peaks) == 0:
-            self._logger.warning(dropped_msg.format("peaks"))
-            return
-
-        self._measurement_packet.stream_id = 0
-        self._packet_id_counter += 1
-        self._measurement_packet.packet_id = self._packet_id_counter
-        if self._latest_heading is not None:
-            self._measurement_packet.heading_data.CopyFrom(self._latest_heading)
-        if self._latest_config_id_value is not None:
-            self._measurement_packet.config_id = self._latest_config_id_value.get()
-        self._logger.debug(f"PostProc finished on packet {self._packet_id_counter}")
-        self._comm_queue_out.put(self._measurement_packet)
-        self._measurement_packet = proto_data.Measurement()
+        mag_spectrum_conv.data = sp_clip.astype(self._np_data_type).tobytes()
+        mag_spectrum_conv.center_frequency = mag_spectrum_original.center_frequency
+        mag_spectrum_conv.bandwidth = mag_spectrum_original.bandwidth
+        del meas.data[:]
+        meas.data.append(mag_spectrum_conv)
+        return meas
 
     def _loop(self) -> None:
         assert self._comm_queue_out is not None
-        assert self._cs_queue_in is not None
+        assert self._meas_queue_in is not None
         assert self._conf_queue_in is not None
         assert self._conf_queue_out is not None
         assert self._heading_queue_in is not None
@@ -176,16 +112,19 @@ class PostProc(Loop):
             except queue.Empty:
                 break
         try:
-            cs_stream_packet = self._cs_queue_in.get(block=True, timeout=1)
-            assert isinstance(cs_stream_packet, CoreServicePacket)
-            if isinstance(cs_stream_packet, CoreServiceSpectrumPacket):
-                self._handle_spectrum_packet(cs_stream_packet)
-            elif isinstance(cs_stream_packet, CoreServiceROIResultPacket):
-                self._handle_roi_packet(cs_stream_packet)
-            elif isinstance(cs_stream_packet, CoreServiceDebugPacket):
-                self._handle_debug_packet(cs_stream_packet)
-                if cs_stream_packet.title == "t":  # timestamp is the last packet
-                    self._push_finished_packet()
+            meas_packet = self._meas_queue_in.get(block=True, timeout=1)
+            assert isinstance(meas_packet, proto_data.Measurement)
+
+            meas_packet = self._convert_spectrums(meas_packet)
+
+            if self._latest_heading is not None:
+                meas_packet.heading_data.CopyFrom(self._latest_heading)
+            if self._latest_config_id_value is not None:
+                meas_packet.config_id = self._latest_config_id_value.get()
+
+            self._logger.debug(f"PostProc finished on packet {meas_packet.packet_id}")
+            self._comm_queue_out.put(meas_packet)
+
         except queue.Empty:
             pass
         # Send response to Communicator
