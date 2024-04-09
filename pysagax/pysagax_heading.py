@@ -3,15 +3,17 @@
 # Created by aron.szabo@sagaxcommunications.com on 13.03.2024.
 #
 from __future__ import annotations
+import logging
 
 import time
 from logging import Handler, getLogger
 from typing import Any, Optional
+import typing
 
 import click
+from google.protobuf import json_format
 import google.protobuf.message
 from coloredlogs import install
-from google.protobuf.json_format import MessageToJson
 from rich.logging import RichHandler
 
 import pysagax.message.heading_pb2 as proto_heading
@@ -91,9 +93,19 @@ class HeadingRunner:
         self._last_update_time = time.time()
         self.push_data()
 
+    def _protobuf_to_log(
+        self, protobuf: typing.Any, format_str: str = "{}", level: int = logging.INFO
+    ) -> None:
+        message_str = (
+            json_format.MessageToJson(protobuf, indent=0)
+            .replace("\n", "")
+            .replace("\r", "")
+        )
+        self._logger.log(level, format_str.format(message_str))
+
     def push_data(self) -> None:
         self._server_pub.publ(self._heading_data.SerializeToString())
-        self._logger.debug(MessageToJson(self._heading_data))
+        self._protobuf_to_log(self._heading_data)
         self._last_data_packet_time = time.time()
 
     def craft_status_packet(self) -> None:

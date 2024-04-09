@@ -162,7 +162,7 @@ class PostProc(Loop):
         # Hang until a new command is received
         try:
             conf_request = self._conf_queue_in.get(timeout=0, block=False)
-            self._logger.info(vars(conf_request))
+            self._protobuf_to_log(conf_request)
             self._conf_queue_out.put(None)
         except queue.Empty:
             pass
