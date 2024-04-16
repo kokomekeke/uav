@@ -59,11 +59,18 @@ class HeadingSource:
         if self.status_updates_callback:
             self.status_updates_callback(status)
 
-    def update_parameter(self, key: str, value: Any) -> None:
+    def update_parameter(self, key: str, value: Any) -> bool:
         if key == "offset":
-            self._offset(value)
+            self._offset(float(value))
+        else:
+            return False
+        return True
 
     def get_parameters(self) -> dict[str, list[Any]]:
+        """
+        return a dict of
+        config_key: [config_type, config_default_value]
+        """
         return dict()
 
     def initialize(self) -> bool:
@@ -99,8 +106,9 @@ class HeadingStatic(HeadingSource):
             ["heading", "static", "angle"], self.cr(["heading", "angle"], 0)
         )
 
-    def update_parameter(self, key: str, value: Any) -> None:
-        super().update_parameter(key, value)
+    def update_parameter(self, key: str, value: Any) -> bool:
+        if super().update_parameter(key, value):
+            return True
         if key == "angle":
             self.angle = float(value)
             self.update_heading(float(value) / 180 * np.pi, 0, 0)
@@ -111,6 +119,9 @@ class HeadingStatic(HeadingSource):
         elif key == "lon":
             self.lon = float(value)
             self._gps(self.lat, self.lon)
+        else:
+            return False
+        return True
 
     def get_parameters(self) -> dict[str, list[Any]]:
         return {
@@ -146,17 +157,20 @@ class HeadingEncoder(HeadingSource):
             "lon": ["number", self.lon],
         }
 
-    def update_parameter(self, key: str, value: Any) -> None:
-        super().update_parameter(key, value)
+    def update_parameter(self, key: str, value: Any) -> bool:
+        if super().update_parameter(key, value):
+            return True
         if key == "port":
             self.port = str(value)
-
         elif key == "lat":
             self.lat = float(value)
             self._gps(self.lat, self.lon)
         elif key == "lon":
             self.lon = float(value)
             self._gps(self.lat, self.lon)
+        else:
+            return False
+        return True
 
     def initialize(self) -> bool:
         try:
@@ -178,7 +192,7 @@ class HeadingEncoder(HeadingSource):
             if len(ctr):
                 self.update_heading(normalize_angle(float(ctr[0])), 0, 0)
                 self._quaternion(self.quaternion)
-        except:
+        except Exception:
             self._data_invalid()
             self._status("#encoder" + "Disconnected.")
 
@@ -199,12 +213,16 @@ class HeadingAHRS(HeadingSource):
             self.cr(["heading", "use_magneto"], False),
         )
 
-    def update_parameter(self, key: str, value: Any) -> None:
-        super().update_parameter(key, value)
+    def update_parameter(self, key: str, value: Any) -> bool:
+        if super().update_parameter(key, value):
+            return True
         if key == "address":
             self.address = str(value)
         elif key == "use_magneto":
             self.use_magneto = bool(value)
+        else:
+            return False
+        return True
 
     def get_parameters(self) -> dict[str, list[Any]]:
         return {
@@ -287,12 +305,16 @@ class HeadingAHRSUSB(HeadingAHRS):
             ["heading", "ahrs_usb", "use_magneto"], self.use_magneto
         )  # updating from parent clalss
 
-    def update_parameter(self, key: str, value: Any) -> None:
-        super().update_parameter(key, value)
+    def update_parameter(self, key: str, value: Any) -> bool:
+        if super().update_parameter(key, value):
+            return True
         if key == "port":
             self.port = str(value)
         elif key == "use_magneto":
             self.use_magneto = bool(value)
+        else:
+            return False
+        return True
 
     def get_parameters(self) -> dict[str, list[Any]]:
         return {
@@ -324,10 +346,14 @@ class HeadingAHRSFTDI(HeadingAHRS):
             ["heading", "ahrs_ftdi", "use_magneto"], self.use_magneto
         )  # updating from parent clalss
 
-    def update_parameter(self, key: str, value: Any) -> None:
-        super().update_parameter(key, value)
+    def update_parameter(self, key: str, value: Any) -> bool:
+        if super().update_parameter(key, value):
+            return True
         if key == "use_magneto":
             self.use_magneto = bool(value)
+        else:
+            return False
+        return True
 
     def get_parameters(self) -> dict[str, list[Any]]:
         return {
