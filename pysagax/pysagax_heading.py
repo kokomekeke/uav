@@ -138,7 +138,7 @@ class HeadingRunner:
         self._create_heading_source()
         self._logger.debug("Starting Heading")
         while True:
-            self._excecute_config_command()
+            self._execute_config_command()
             self._heading_source.loop()
             if self._last_data_packet_time + 1 < time.time():
                 self._logger.warning(
@@ -149,7 +149,7 @@ class HeadingRunner:
                 pass
         self._heading_source.close()
 
-    def _excecute_config_command(self):
+    def _execute_config_command(self):
         while True:
             raw_command = self._server_rep.recv(0)
             if raw_command is None:
@@ -169,7 +169,9 @@ class HeadingRunner:
                 if self._heading_source.update_parameter(param_key, param_val):
                     self._logger.info(f"Set {param_key} = {param_val}")
                 else:
-                    self._logger.error(f"Invalid parameter \"{param_key}\" for heading source type \"{type(self._heading_source)}\"")
+                    self._logger.error(
+                        f'Invalid parameter "{param_key}" for heading source type "{type(self._heading_source)}"'
+                    )
             self._heading_source.initialize()
             self.craft_status_packet()
             self._server_rep.resp(self._heading_status.SerializeToString())

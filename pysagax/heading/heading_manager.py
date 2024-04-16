@@ -132,6 +132,10 @@ class HeadingManager:
 
         self.mp_process: Optional[multiprocessing.Process] = None
 
+    def get_parameters(self) -> dict[str, list[Any]]:
+        assert self.heading_source is not None
+        return self.heading_source.get_parameters()
+
     def get_heading_source_types(self) -> list[str]:
         return list(self.heading_source_types.keys())
 

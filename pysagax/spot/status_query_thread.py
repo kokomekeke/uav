@@ -36,6 +36,10 @@ class StatusQueryThread(threading.Thread):
         telemetry = resp.telemetry
         self.client.client_window.telemetry_packet_handler(telemetry)
 
+    def source_sysinfo_handler(self, resp) -> None:
+        assert isinstance(resp, proto_cmd.Response)
+        self.client.update_system_info(resp.info)
+
     def __init__(self, client) -> None:
         super().__init__(daemon=True)
         self.client = client
@@ -53,12 +57,14 @@ class StatusQueryThread(threading.Thread):
         self.comm.set_response_handler(
             proto_cmd.CONFIG_STATUS, self.source_config_status_handler
         )
+        self.comm.set_response_handler(proto_cmd.INFO, self.source_sysinfo_handler)
 
         self.source_manager = client.source_manager
 
         # instructions for continous querying the status of pysagaxUAV
         self.instruction_list = [
             proto_cmd.CONFIG,
+            proto_cmd.INFO,
             # proto_cmd.POSITION,
             # proto_cmd.TELEMETRY,
         ]

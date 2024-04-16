@@ -6,14 +6,14 @@ import numpy as np
 
 from numpy._typing import _16Bit
 
-from pysagax.heading.heading_manager import HeadingManager
+from pysagax.heading.heading_pb_client import HeadingPbClient
 from pysagax.heading.heading_sources import HeadingStatic
 from pysagax.ui.custom_widgets import EntryWithLabel
 from pysagax.util.read_from_conf import read_from_conf
 
 
 class HeadingSourceFrame(tkinter.Frame):
-    def __init__(self, master: Any, heading_manager: HeadingManager, conf):
+    def __init__(self, master: Any, heading_manager: HeadingPbClient, conf):
         super().__init__(master)
         self.heading_manager = heading_manager
 
@@ -22,32 +22,40 @@ class HeadingSourceFrame(tkinter.Frame):
         self.type_string = tkinter.StringVar(value="Static")
 
         self.type_combo = ttk.Combobox(self, textvariable=self.type_string, width=11)
-        self.type_combo["values"] = list(
-            self.heading_manager.heading_source_types.keys()
-        )
-        self.type_combo.current(0)
+        self._ui_update_source_types()
         self.type_combo.bind("<<ComboboxSelected>>", self.select_new_source)
         self.type_combo.pack(fill=tkinter.X, expand=True)
-        self.heading_manager.create(HeadingStatic(self.conf))
+        self.heading_manager.create("Static")
         self.config_vars: dict[str, tkinter.Variable] = {}
         self.reconfigure_button = tkinter.Button(self)
         self.config_frame = self.construct_settings_frame()
         self.config_frame.pack(fill=tkinter.BOTH, expand=True)
 
         self.offset_frame = self.construct_offset_frame()
-        self.offset_frame.pack(side=tkinter.RIGHT, fill=tkinter.NONE, expand=False, padx=5, pady=5)
+        self.offset_frame.pack(
+            side=tkinter.RIGHT, fill=tkinter.NONE, expand=False, padx=5, pady=5
+        )
 
         self.pack()
         self.heading_manager.start()
 
+    def _ui_update_source_types(self) -> None:
+        source_types = list(self.heading_manager.get_heading_source_types())
+        if len(source_types) == 0:
+            source_types = ["Static"]
+            self.type_combo.current(0)
+        else:
+            self.type_combo["values"] = list(source_types)
+            self.type_combo.current(
+                source_types.index(self.heading_manager.get_selected_source_type())
+            )
+
     def update_configuration(self, *args: Any) -> bool:
-        if self.heading_manager.heading_source is None:
-            return False
         try:
             for (
                 setting_key,
                 setting_type,
-            ) in self.heading_manager.heading_source.get_parameters().items():
+            ) in self.heading_manager.get_parameters().items():
                 self.heading_manager.update_parameter(
                     setting_key, self.config_vars[setting_key].get()  # type: ignore
                 )
@@ -56,42 +64,50 @@ class HeadingSourceFrame(tkinter.Frame):
         return True
 
     def reconf_commands(self) -> None:
-        new_source = list(self.heading_manager.heading_source_types.values())[
-            self.type_combo.current()
-        ]
-        self.heading_manager.create(new_source(self.conf))
-        self.update_configuration()
+        self.heading_manager.create(
+            self.heading_manager.get_heading_source_types()[self.type_combo.current()]
+        )
+        # self.update_configuration()
         self.heading_manager.initialize()
 
     def select_new_source(self, e: Any) -> None:
-        new_source = list(self.heading_manager.heading_source_types.values())[
-            self.type_combo.current()
-        ]
-        self.heading_manager.create(new_source(self.conf))
+        self.heading_manager.create(
+            self.heading_manager.get_heading_source_types()[self.type_combo.current()]
+        )
         self.heading_manager.initialize()
-        print(repr(self.heading_manager.heading_source))
-        self.config_frame.destroy()
-        self.config_frame = self.construct_settings_frame()
-        self.config_frame.pack(fill=tkinter.BOTH, expand=True)
-        
-        self.offset_frame.destroy()
-        self.offset_frame = self.construct_offset_frame()
-        self.offset_frame.pack(side=tkinter.RIGHT, fill=tkinter.NONE, expand=False, padx=5, pady=5)
+
+    def update_ui(self) -> None:
+        if self.heading_manager.ui_dirty():
+            for child in self.config_frame.winfo_children():
+                child.destroy()
+            self.config_frame.destroy()
+            self.config_frame = self.construct_settings_frame()
+            self.config_frame.pack(fill=tkinter.BOTH, expand=True)
+
+            for child in self.offset_frame.winfo_children():
+                child.destroy()
+            self.offset_frame.destroy()
+            self.offset_frame = self.construct_offset_frame()
+            self.offset_frame.pack(
+                side=tkinter.RIGHT, fill=tkinter.NONE, expand=False, padx=5, pady=5
+            )
+        self._ui_update_source_types()
 
     def construct_settings_frame(self) -> tkinter.Frame:
         new_frame = tkinter.Frame(self)
-        if self.heading_manager.heading_source is None:
+        if self.heading_manager is None:
             return new_frame
         row = 0
         new_frame.grid_rowconfigure(
-            len(self.heading_manager.heading_source.get_parameters()), weight=1
+            len(self.heading_manager.get_parameters()), weight=1
         )  # this needed to be added
         new_frame.grid_columnconfigure(0, weight=1)  # as did this
         new_frame.grid_columnconfigure(1, weight=1)  # as did this
+        print(f"e: {self.heading_manager.get_parameters()}")
         for setting_key, [
             setting_type,
             default_value,
-        ] in self.heading_manager.heading_source.get_parameters().items():
+        ] in self.heading_manager.get_parameters().items():
             label = tkinter.Label(
                 new_frame,
                 text=f"{setting_key}",
@@ -146,20 +162,29 @@ class HeadingSourceFrame(tkinter.Frame):
 
     def construct_offset_frame(self) -> tkinter.Frame:
         new_frame = tkinter.Frame(self)
-        if self.heading_manager.heading_source is None:
+        if self.heading_manager is None:
             return new_frame
         new_frame.grid_columnconfigure(0, weight=1)
         new_frame.grid_columnconfigure(1, weight=1)
         new_frame.grid_columnconfigure(2, weight=1)
         default_offset = read_from_conf(self.conf, ["heading", "offset"], 0)
-        self.offset_entry = EntryWithLabel(new_frame, labeltext="Offset (degrees):", column=0, row=0, default_value=default_offset, width=5)
-        self.set_offset_button = tkinter.Button(new_frame, text="set offset", command=self.set_offset_commands)
+        self.offset_entry = EntryWithLabel(
+            new_frame,
+            labeltext="Offset (degrees):",
+            column=0,
+            row=0,
+            default_value=default_offset,
+            width=5,
+        )
+        self.set_offset_button = tkinter.Button(
+            new_frame, text="set offset", command=self.set_offset_commands
+        )
         self.set_offset_button.grid(column=2, row=0)
 
         return new_frame
-    
+
     def set_offset_commands(self):
-        if self.heading_manager.heading_source is None:
+        if self.heading_manager is None:
             return False
         offset = float(self.offset_entry.get()) * np.pi / 180
         self.heading_manager.update_parameter("offset", offset)
