@@ -80,7 +80,9 @@ class Interpreter(Loop):
         ("ROI:Enable! {};", lambda config: "1" if len(config.pp.roi) else "0"),
         (
             "ROI:CenterFrequency! {:.0f};",
-            lambda config: (config.pp.roi[0].center_frequency if len(config.pp.roi) else 0.0),
+            lambda config: (
+                config.pp.roi[0].center_frequency if len(config.pp.roi) else 0.0
+            ),
         ),
         (
             "ROI:Span! {:.0f};",
@@ -205,10 +207,19 @@ class Interpreter(Loop):
                     command.HasField("parameter")
                     or command.kind == proto_cmd.Command.WRITE
                 ) and command.kind != proto_cmd.Command.READ:
-                    conf_thread = threading.Thread(
-                        target=self._config_set, args=(response, command.config)
-                    )
-                    conf_thread.start()
+                    if command.config.HasField("heading"):  # Heading part is set
+                        assert self._heading_conf_queue_out is not None
+                        self._heading_conf_queue_out.put(command.config.heading)
+                    if command.config.HasField("cs"):
+
+                        conf_thread = threading.Thread(
+                            target=self._config_set, args=(response, command.config)
+                        )
+                        conf_thread.start()
+                    else:
+                        self._config_status_message = proto_cmd.ConfigStatus()
+                        self._config_status_message.start_time.GetCurrentTime()
+                        self._config_status_message.finish_time.GetCurrentTime()
                     response.success = True
                     # self._config(response, command.config)
                 else:
@@ -266,7 +277,7 @@ class Interpreter(Loop):
 
         # Send response to Communicator
         return response  # .SerializeToString()
-    
+
     def _postproc_configure(self, command: Any) -> Any:
         assert self._postproc_conf_queue_out is not None
         assert self._postproc_conf_queue_resp_in is not None
@@ -355,10 +366,6 @@ class Interpreter(Loop):
         """Set system configuration"""
         self._config_status_message = proto_cmd.ConfigStatus()
         self._config_status_message.start_time.GetCurrentTime()
-        if config.heading.selected_source_type:  # Heading part is set
-            assert self._heading_conf_queue_out is not None
-            self._heading_conf_queue_out.put(config.heading)
-
         for config_command, proto_lambda in self._CONFIG_COMMANDS:
             command_arg = proto_lambda(config)
             if not command_arg:
@@ -416,7 +423,9 @@ class Interpreter(Loop):
         response.config.cs.playback_speed = float(
             defaults(self._cs_query("SOURCE:PlaybackSpeed?;"), 0)
         )
-        response.config.cs.bin_count = int(defaults(self._cs_query("AOA:BinCount?;"), 0))
+        response.config.cs.bin_count = int(
+            defaults(self._cs_query("AOA:BinCount?;"), 0)
+        )
         response.config.cs.burst_stride = int(
             defaults(self._cs_query("SOURCE:BurstStride?;"), 0)
         )

@@ -192,25 +192,28 @@ class Telemetry(Loop):
 
     def _get_heading_module_info(self) -> None:
         assert self._heading_status_queue is not None
-        try:
-            status_packet = self._heading_status_queue.get_nowait()
-            if isinstance(status_packet, proto_heading.HeadingStatus):
-                self._heading_status_packet = status_packet
-                self._latest_heading_status_time = time.time()
-                logged_message = (
-                    MessageToJson(self._heading_status_packet, indent=0)
-                    .replace("\n", "")
-                    .replace("\r", "")
-                )
-                self._logger.info(f"Heading updated: {logged_message}")
-                if self._latest_packets_proxy is not None:
-                    self._latest_packets_proxy["HeadingStatus"] = pickle.dumps(
-                        self._heading_status_packet
+        while True:
+            try:
+                status_packet = self._heading_status_queue.get_nowait()
+                if isinstance(status_packet, proto_heading.HeadingStatus):
+                    self._heading_status_packet = status_packet
+                    self._latest_heading_status_time = time.time()
+                    logged_message = (
+                        MessageToJson(self._heading_status_packet, indent=0)
+                        .replace("\n", "")
+                        .replace("\r", "")
                     )
+                    self._logger.info(f"Heading updated: {logged_message}")
+                    if self._latest_packets_proxy is not None:
+                        self._latest_packets_proxy["HeadingStatus"] = pickle.dumps(
+                            self._heading_status_packet
+                        )
 
-                self._construct_sysinfo_packet()
-        except queue.Empty:
-            pass
+                    self._construct_sysinfo_packet()
+                else:
+                    break
+            except queue.Empty:
+                break
 
     def _push_finished_packet(self) -> None:
         assert self._comm_queue_out is not None

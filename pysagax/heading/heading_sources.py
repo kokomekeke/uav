@@ -131,7 +131,7 @@ class HeadingStatic(HeadingSource):
         }
 
     def loop(self) -> None:
-        time.sleep(0.1)
+        time.sleep(0.01)
         return super().loop()
 
 
