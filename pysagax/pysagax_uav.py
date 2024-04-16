@@ -17,6 +17,12 @@ import click
 from coloredlogs import install
 from rich.logging import RichHandler
 
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
+import os
+
 from pysagax.field.communicator import Communicator
 from pysagax.field.cscontroller import CSController
 from pysagax.field.csparser import CSParser
@@ -26,6 +32,7 @@ from pysagax.field.interpreter import Interpreter
 from pysagax.field.postproc import PostProc
 from pysagax.field.streamer import Streamer
 from pysagax.field.telemetry import Telemetry
+from pysagax import __version__
 
 
 class Commander:
@@ -170,7 +177,32 @@ class Commander:
         sys.exit(0)
 
 
+def set_default_config(ctx, param, conf_path):
+    """
+    Overwrites the default values for click options from the given config file.
+    These values can be further overwritten by providing a config file.
+    """
+    if os.path.exists(conf_path):
+        with open(conf_path, "rb") as f:
+            conf = tomllib.load(f)
+        ctx.default_map = conf
+    else:
+        # Can we use the logger instead of print?
+        print(f"Config file wasn't found at '{conf_path}'")
+    return conf_path
+
+
 @click.command()
+@click.version_option(version=__version__, prog_name="PysagaxUAV")
+@click.option(
+    "--config",
+    default="/var/sagax/spotclient/spotclient.toml",
+    type=click.Path(),
+    callback=set_default_config,
+    is_eager=True,
+    expose_value=False,
+    help="Location of the config file. Options set from command line overwrite the ones found in the config file.",
+)
 @click.option("--level", "-l", help="Logging level")
 @click.option(
     "--disk-path",
