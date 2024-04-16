@@ -109,6 +109,16 @@ message ROIMask {
 }
 
 
+message FreqList {
+    uint32 iq_rate = 2;
+    repeated float center_freqs = 3;
+}
+
+message FreqRange {
+	float start = 1;
+	float stop = 2;
+}
+
 message CoreServiceConfig {
     // CoreService parameters
     float center_frequency = 5;
@@ -127,7 +137,7 @@ message CoreServiceConfig {
         RECORDED = 1;
     }
     Type type = 18;
-
+    FreqList freq_list = 19;
 }
 
 message PostProcessingConfig {
@@ -144,10 +154,35 @@ message Config {
     uint32 config_id = 1;
     CoreServiceConfig cs = 2;
     PostProcessingConfig pp = 3;
+	ScanEngineConfig se = 4;
     // Heading source selection
     HeadingConfig heading = 25;
 
 }
+
+message ScanEngineConfig {
+	enum Mode {
+		MANUAL = 0;
+		SCANNING = 1;
+		TRACKING = 2;
+	}
+	Mode mode = 1;
+	oneof parameter {
+		ScanningConfig scanning = 6;
+		TrackingConfig tracking = 7;
+	}
+
+}
+
+message ScanningConfig {
+	repeated FreqRange ranges = 4;
+}
+
+message TrackingConfig {
+	float frequency = 2;
+	float bandwidth = 3;
+}
+
 
 message SystemInfo {
     // General system information
@@ -217,6 +252,7 @@ message CommandError {
     // Detailed error message
     string description = 5;
 }
+
 
 message Command {
     // Common message encapsulating all possible commands
