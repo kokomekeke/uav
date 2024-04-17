@@ -68,25 +68,39 @@ class PostProc(Loop):
     def _convert_spectrums(
         self, meas: proto_data.Measurement
     ) -> proto_data.Measurement:
-        mag_spectrum_original = next(
-            spec
-            for spec in meas.data
-            if spec.spectrum_type == proto_data.Spectrum.SpectrumType.MAGNITUDE
-        )
-        mag_spectrum_conv = proto_data.Spectrum()
-        mag_spectrum_conv.spectrum_type = proto_data.Spectrum.SpectrumType.MAGNITUDE
-        mag_spectrum_conv.data_type = self._data_type
-        mag_spectrum_conv.channel_id = mag_spectrum_original.channel_id
-        sp_clip = numpy.clip(
-            numpy.frombuffer(mag_spectrum_original.data, dtype=numpy.float32),
-            self._np_data_type_lims[0],
-            self._np_data_type_lims[1],
-        )
-        mag_spectrum_conv.data = sp_clip.astype(self._np_data_type).tobytes()
-        mag_spectrum_conv.center_frequency = mag_spectrum_original.center_frequency
-        mag_spectrum_conv.bandwidth = mag_spectrum_original.bandwidth
+        """Converts spectrum data from float to self._data_type and filters out unneeded spectrums"""
+        converted_spectrums: list = []
+        wanted_types = [
+            proto_data.Spectrum.SpectrumType.MAGNITUDE,
+            # proto_data.Spectrum.SpectrumType.AZIMUTH,
+            # proto_data.Spectrum.SpectrumType.ELEVATION
+        ]  # TODO: set from config or client. Maybe set the desired magnitude channel too
+        for spectrum_old in meas.data:
+            if spectrum_old.spectrum_type not in wanted_types:
+                continue
+            spectrum_new = proto_data.Spectrum()
+            spectrum_new.spectrum_type = spectrum_old.spectrum_type
+            spectrum_new.data_type = self._data_type
+            spectrum_new.channel_id = spectrum_old.channel_id
+            spectrum_new.center_frequency = spectrum_old.center_frequency
+            spectrum_new.bandwidth = spectrum_old.bandwidth
+            sp_clip = numpy.clip(
+                numpy.frombuffer(spectrum_old.data, dtype=numpy.float32),
+                self._np_data_type_lims[0],
+                self._np_data_type_lims[1],
+            )
+            if spectrum_new.spectrum_type in [
+                proto_data.Spectrum.SpectrumType.AZIMUTH,
+                proto_data.Spectrum.SpectrumType.ELEVATION,
+            ]:
+                # Representing angles as integers: use full scale (or degrees?)
+                # sp_clip = sp_clip * self._np_data_type_lims[1] / numpy.pi
+                sp_clip = sp_clip * 180 / numpy.pi
+            spectrum_new.data = sp_clip.astype(self._np_data_type).tobytes()
+            converted_spectrums.append(spectrum_new)
+
         del meas.data[:]
-        meas.data.append(mag_spectrum_conv)
+        meas.data.extend(converted_spectrums)
         return meas
 
     def _loop(self) -> None:
