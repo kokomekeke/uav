@@ -54,6 +54,7 @@ class Loop:
         """Stop execution of loop logic"""
 
         # Kill loop forcefully
+        self._logger.critical(f"(Pid {getpid()}) forcefully killed")
         kill(getpid(), 9)
 
     def _protobuf_to_log(
