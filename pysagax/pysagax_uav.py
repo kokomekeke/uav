@@ -195,8 +195,8 @@ def set_default_config(ctx, param, conf_path):
 @click.command()
 @click.version_option(version=__version__, prog_name="PysagaxUAV")
 @click.option(
-    "--config",
-    default="/var/sagax/spotclient/spotclient.toml",
+    "--config", "-c",
+    default="/var/sagax/pysagaxuav/pysagaxuav.toml",
     type=click.Path(),
     callback=set_default_config,
     is_eager=True,
