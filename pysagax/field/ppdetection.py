@@ -16,6 +16,8 @@ from google.protobuf.timestamp_pb2 import Timestamp
 
 from pysagax.common.loop import Loop
 
+from pysagax.util.protobuf_spectrum_to_numpy import protobuf_spectrum_to_numpy
+
 
 class DetectionAggregator:
     """
@@ -196,12 +198,7 @@ class PPDetection(Loop):
             return detections
         spectrum = magnitude_spectrums[0]
 
-        np_data_type = {
-            proto_data.Spectrum.DataType.INT16: np.dtype(np.int16),
-            proto_data.Spectrum.DataType.INT8: np.dtype(np.int8),
-            proto_data.Spectrum.DataType.FLOAT32: np.dtype(np.float32),
-        }[spectrum.data_type]
-        spectrum_data = np.frombuffer(spectrum.data, np_data_type)
+        spectrum_data = protobuf_spectrum_to_numpy(spectrum)
 
         min_freq = spectrum.center_frequency - spectrum.bandwidth / 2
         max_freq = spectrum.center_frequency + spectrum.bandwidth / 2

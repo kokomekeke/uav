@@ -13,6 +13,8 @@ import numpy as np
 
 from pysagax.common.loop import Loop
 
+from pysagax.util.protobuf_spectrum_to_numpy import protobuf_spectrum_to_numpy
+
 
 class PPStreamPreparation(Loop):
     """
@@ -20,7 +22,9 @@ class PPStreamPreparation(Loop):
     Conversions, compressions, and data pruning happens here.
     """
 
-    def __init__(self, data_type=proto_data.Spectrum.DataType.INT16, *args, **kwargs) -> None:
+    def __init__(
+        self, data_type=proto_data.Spectrum.DataType.INT16, *args, **kwargs
+    ) -> None:
         super().__init__(*args, **kwargs)
         self._queue_in: Optional[Queue] = None
         self._queue_out: Optional[Queue] = None
@@ -73,7 +77,7 @@ class PPStreamPreparation(Loop):
             spectrum_new.center_frequency = spectrum_old.center_frequency
             spectrum_new.bandwidth = spectrum_old.bandwidth
             sp_clip = np.clip(
-                np.frombuffer(spectrum_old.data, dtype=np.float32),
+                protobuf_spectrum_to_numpy(spectrum_old),
                 self._np_data_type_lims[0],
                 self._np_data_type_lims[1],
             )
@@ -90,6 +94,7 @@ class PPStreamPreparation(Loop):
         del meas.data[:]
         meas.data.extend(converted_spectrums)
         return meas
+
     def _loop(self) -> None:
         assert self._queue_in is not None
         assert self._queue_out is not None
@@ -97,10 +102,12 @@ class PPStreamPreparation(Loop):
         try:
             packet = self._queue_in.get(block=True, timeout=1)
             assert isinstance(packet, proto_data.Measurement)
-            
+
             packet = self._convert_spectrums(packet)
 
-            self._logger.debug(f"PostProcessing/Stream preparation finished on packet {packet.packet_id}")
+            self._logger.debug(
+                f"PostProcessing/Stream preparation finished on packet {packet.packet_id}"
+            )
             self._queue_out.put(packet)
 
         except queue.Empty:
