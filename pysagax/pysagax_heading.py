@@ -37,6 +37,7 @@ class HeadingRunner:
         self._logger.setLevel(level=level)
         self._server_rep = REP(address_client="127.0.0.1", port_server=5566)
         self._server_pub = PUB(address_client="127.0.0.1", port_server=5567)
+        self._heading_source: Optional[HeadingSource] = None
         self._heading_sources = {
             "AHRS": HeadingAHRS,
             "AHRSFTDI": HeadingAHRSFTDI,
@@ -49,8 +50,6 @@ class HeadingRunner:
         self._heading_data = proto_heading.HeadingData()
         self._heading_status = proto_heading.HeadingStatus()
         self._current_heading_source_label: str = "Static"
-        self._current_config: dict[str, Any] = dict()
-        self._current_config_types: dict[str, str] = dict()
         self._server_rep.connect()
         self._server_pub.connect()
         self._last_data_packet_time = time.time()
@@ -113,85 +112,46 @@ class HeadingRunner:
         for key in self._heading_sources.keys():
             self._heading_status.available_source_types.append(key)
         self._heading_status.selected_source_type = self._current_heading_source_label
-        for conf_key, conf_val in self._current_config.items():
+        for conf_key, (
+            conf_type,
+            conf_val,
+        ) in self._heading_source.get_parameters().items():
             param = proto_heading.HeadingParameter()
             param.name = conf_key
             param.value = str(conf_val)
-            param.type = self._current_config_types[param.name]
+            param.type = conf_type
             self._heading_status.parameters.append(param)
+
+    def _create_heading_source(
+        self, config: Optional[proto_heading.HeadingConfig] = None
+    ):
+        if config is None:
+            # Use static heading by default
+            self._heading_source = HeadingStatic()
+            self._current_heading_source_label = "Static"
+            for def_key, def_value in self._defaults.items():
+                self._heading_source.update_parameter(def_key, def_value)
+                self._logger.info(f"Set {def_key} = {def_value}")
+        else:
+            self._heading_source: HeadingSource = self._heading_sources[
+                config.selected_source_type
+            ]()
+            self._current_heading_source_label = config.selected_source_type
+        self._heading_source.gps_updated_callback = self.gps_callback
+        self._heading_source.quaternion_updated_callback = self.quaternion_callback
+        self._heading_source.offset_updated_callback = self.offset_callback
+        self._heading_source.data_invalid_callback = self.invalid_callback
+        self._heading_source.status_updates_callback = self.log_status
+        self.invalid_callback()
+        self._logger.info(f"Configured {self._heading_source.__class__.__name__}")
 
     def start(self) -> None:
         """Start all background processes"""
-        heading_source = HeadingStatic()
+        self._create_heading_source()
         self._logger.debug("Starting Heading")
-        heading_source.gps_updated_callback = self.gps_callback
-        heading_source.quaternion_updated_callback = self.quaternion_callback
-        heading_source.offset_updated_callback = self.offset_callback
-        heading_source.data_invalid_callback = self.invalid_callback
-        heading_source.status_updates_callback = self.log_status
-        self.invalid_callback()
-
-        self._logger.info(f"Configured {heading_source.__class__.__name__}")
-        for def_key, def_value in self._defaults.items():
-            heading_source.update_parameter(def_key, def_value)
-            self._logger.info(f"Set {def_key} = {def_value}")
-
-        for conf_key, (
-            conf_type,
-            conf_default,
-        ) in heading_source.get_parameters().items():
-            self._current_config[conf_key] = conf_default
-            self._current_config_types[conf_key] = conf_type
-
         while True:
-
-            while True:
-                raw_command = self._server_rep.recv(0)
-                if raw_command is None:
-                    break
-                config = proto_heading.HeadingConfig()
-                try:
-                    config.ParseFromString(raw_command)
-                except google.protobuf.message.DecodeError:
-                    self._logger.warning("Malformed Protobuf message on ZMQ Command")
-                    return
-                if not config.selected_source_type:
-                    self.craft_status_packet()
-                    self._server_rep.resp(self._heading_status.SerializeToString())
-                    continue
-                if config.selected_source_type != self._current_heading_source_label:
-
-                    heading_source.close()
-                    heading_source: HeadingSource = self._heading_sources[
-                        config.selected_source_type
-                    ]()
-                    self._current_heading_source_label = config.selected_source_type
-                    self._current_config_types = dict()
-                    self._current_config = dict()
-                    for conf_key, (
-                        conf_type,
-                        conf_default,
-                    ) in heading_source.get_parameters().items():
-                        self._current_config[conf_key] = conf_default
-                        self._current_config_types[conf_key] = conf_type
-                    heading_source.gps_updated_callback = self.gps_callback
-                    heading_source.quaternion_updated_callback = (
-                        self.quaternion_callback
-                    )
-                    heading_source.data_invalid_callback = self.invalid_callback
-                    heading_source.status_updates_callback = self.log_status
-                    self.invalid_callback()
-                    self._logger.info(f"Configured {heading_source.__class__.__name__}")
-
-                self._current_config = dict()
-                for param_key, param_val in config.parameters.items():
-                    heading_source.update_parameter(param_key, param_val)
-                    self._current_config[param_key] = param_val
-                    self._logger.info(f"Set {param_key} = {param_val}")
-                self.craft_status_packet()
-                self._server_rep.resp(self._heading_status.SerializeToString())
-
-            heading_source.loop()
+            self._excecute_config_command()
+            self._heading_source.loop()
             if self._last_data_packet_time + 1 < time.time():
                 self._logger.warning(
                     f"No updates received for {int(time.time() - self._last_update_time)} seconds (sending last available data)"
@@ -199,7 +159,32 @@ class HeadingRunner:
                 self.push_data()
             else:
                 pass
-        heading_source.close()
+        self._heading_source.close()
+
+    def _excecute_config_command(self):
+        while True:
+            raw_command = self._server_rep.recv(0)
+            if raw_command is None:
+                break
+            config = proto_heading.HeadingConfig()
+            config.ParseFromString(raw_command)
+            if not config.selected_source_type:
+                self.craft_status_packet()
+                self._server_rep.resp(self._heading_status.SerializeToString())
+                continue
+
+            if config.selected_source_type != self._current_heading_source_label:
+                self._heading_source.close()
+                self._create_heading_source(config)
+
+            for param_key, param_val in config.parameters.items():
+                if self._heading_source.update_parameter(param_key, param_val):
+                    self._logger.info(f"Set {param_key} = {param_val}")
+                else:
+                    self._logger.error(f"Invalid parameter \"{param_key}\" for heading source type \"{type(self._heading_source)}\"")
+            self._heading_source.initialize()
+            self.craft_status_packet()
+            self._server_rep.resp(self._heading_status.SerializeToString())
 
 
 @click.command()
