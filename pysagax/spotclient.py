@@ -14,7 +14,6 @@ from multiprocessing.managers import ValueProxy
 from pysagax.communication.broadcast import RX
 from pysagax.communication.req_rep_tcp import REQ
 
-from pysagax.heading.heading_manager import HeadingManager
 from pysagax.heading.heading_pb_client import HeadingPbClient
 from pysagax.heading.queue_collector import QueueValueCollector
 from pysagax.source.source_manager import CoreServiceStatus, SourceManager

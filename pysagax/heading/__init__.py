@@ -1,4 +1,3 @@
-from pysagax.heading.heading_manager import HeadingManager
 from pysagax.heading.heading_sources import (HeadingAHRS, HeadingAHRSUSB,
                                              HeadingEncoder, HeadingStatic)
 
@@ -7,5 +6,4 @@ __all__ = [
     "HeadingEncoder",
     "HeadingAHRS",
     "HeadingAHRSUSB",
-    "HeadingManager",
 ]
