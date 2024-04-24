@@ -52,7 +52,7 @@ class CommandThread(threading.Thread):
         if not isinstance(commands, list):
             commands = [commands]
         for cmd in commands:
-            cmd.id = self.command_id % 2**31 #staying in the range of int32
+            cmd.id = self.command_id % 2**31  # staying in the range of int32
             self.command_id += 1
             self._command_queue.put(cmd)
             # if cmd not in self.command_queue.queue:
@@ -72,9 +72,9 @@ class CommandThread(threading.Thread):
 
         # TODO: REP.connect() always retuns True
         if not connected:
-           self.disconnect_callback() #disconnect callback?
-           self.display_connection_status_callback("Connection failed")
-           return False
+            self.disconnect_callback()  # disconnect callback?
+            self.display_connection_status_callback("Connection failed")
+            return False
 
         if self.connected_callback is not None:
             self.connected_callback()
@@ -126,9 +126,10 @@ class CommandThread(threading.Thread):
                 if response.instruction != proto_cmd.CONFIG_STATUS:
                     cmd = proto_cmd.Command(instruction=proto_cmd.CONFIG_STATUS)
                     self.enqueue_commands(cmd)
-                #TODO: dont run response handlers if error in response, 
+                # TODO: dont run response handlers if error in response,
                 #      OR make response handlers that check the error field
-                continue #skipping response handler
+                continue  # skipping response handler
+
             # print("RESPONSE:\n", response, "\n================\n")  ####
             try:
                 self._response_handler(response)

@@ -162,7 +162,10 @@ class SourceManager:
             self.current_source = Sources.NOT_SET
 
     def source_config_status_handler(self, resp) -> None:
-        if bool(resp.config_status.finish_time.ToSeconds()):
+        if (
+            bool(resp.config_status.finish_time.ToNanoseconds())
+            or "TIMED OUT" in resp.config_status.responses.values()
+        ):
             self.is_cs_configuring = False
         self.config_status["responses"] = len(resp.config_status.responses)
         self.config_status["queue"] = len(resp.config_status.queue)

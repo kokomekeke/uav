@@ -207,10 +207,19 @@ class Interpreter(Loop):
                     command.HasField("parameter")
                     or command.kind == proto_cmd.Command.WRITE
                 ) and command.kind != proto_cmd.Command.READ:
-                    conf_thread = threading.Thread(
-                        target=self._config_set, args=(response, command.config)
-                    )
-                    conf_thread.start()
+                    if command.config.HasField("heading"):  # Heading part is set
+                        assert self._heading_conf_queue_out is not None
+                        self._heading_conf_queue_out.put(command.config.heading)
+                    if command.config.HasField("cs"):
+
+                        conf_thread = threading.Thread(
+                            target=self._config_set, args=(response, command.config)
+                        )
+                        conf_thread.start()
+                    else:
+                        self._config_status_message = proto_cmd.ConfigStatus()
+                        self._config_status_message.start_time.GetCurrentTime()
+                        self._config_status_message.finish_time.GetCurrentTime()
                     response.success = True
                     # self._config(response, command.config)
                 else:
@@ -357,9 +366,6 @@ class Interpreter(Loop):
         """Set system configuration"""
         self._config_status_message = proto_cmd.ConfigStatus()
         self._config_status_message.start_time.GetCurrentTime()
-        if config.heading.selected_source_type:  # Heading part is set
-            assert self._heading_conf_queue_out is not None
-            self._heading_conf_queue_out.put(config.heading)
         if config.pp:
             assert self._postproc_conf_queue_out
             assert self._postproc_conf_queue_resp_in
@@ -401,7 +407,7 @@ class Interpreter(Loop):
                     if self._latest_config_id_value is not None:
                         self._latest_config_id_value.set(self.config_id)
             else:
-                self._config_status_message.responses[command_arg] = "TIMED OUT"
+                self._config_status_message.responses[cs_command] = "TIMED OUT"
                 self._config_status_message.error_code = -1
 
                 response.error.description = "CoreService not responding"
