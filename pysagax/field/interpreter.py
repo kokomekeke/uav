@@ -401,7 +401,7 @@ class Interpreter(Loop):
                     if self._latest_config_id_value is not None:
                         self._latest_config_id_value.set(self.config_id)
             else:
-                self._config_status_message.responses[command_arg] = "TIMED OUT"
+                self._config_status_message.responses[cs_command] = "TIMED OUT"
                 self._config_status_message.error_code = -1
 
                 response.error.description = "CoreService not responding"
