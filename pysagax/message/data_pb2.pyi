@@ -177,6 +177,9 @@ class Detection(google.protobuf.message.Message):
     ELEVATION_FIELD_NUMBER: builtins.int
     SNR_FIELD_NUMBER: builtins.int
     DEVIATION_FIELD_NUMBER: builtins.int
+    MEAN_AZIMUTH_FIELD_NUMBER: builtins.int
+    MEAN_ELEVATION_FIELD_NUMBER: builtins.int
+    MEAN_WINDOW_FIELD_NUMBER: builtins.int
     event_id: builtins.int
     """ID of Event to which it belongs"""
     roi_id: builtins.int
@@ -189,6 +192,9 @@ class Detection(google.protobuf.message.Message):
     elevation: builtins.float
     snr: builtins.float
     deviation: builtins.float
+    mean_azimuth: builtins.float
+    mean_elevation: builtins.float
+    mean_window: builtins.int
     def __init__(
         self,
         *,
@@ -201,8 +207,11 @@ class Detection(google.protobuf.message.Message):
         elevation: builtins.float = ...,
         snr: builtins.float = ...,
         deviation: builtins.float = ...,
+        mean_azimuth: builtins.float = ...,
+        mean_elevation: builtins.float = ...,
+        mean_window: builtins.int = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing_extensions.Literal["azimuth", b"azimuth", "bandwidth", b"bandwidth", "deviation", b"deviation", "elevation", b"elevation", "event_id", b"event_id", "frequency", b"frequency", "roi_id", b"roi_id", "snr", b"snr", "strength", b"strength"]) -> None: ...
+    def ClearField(self, field_name: typing_extensions.Literal["azimuth", b"azimuth", "bandwidth", b"bandwidth", "deviation", b"deviation", "elevation", b"elevation", "event_id", b"event_id", "frequency", b"frequency", "mean_azimuth", b"mean_azimuth", "mean_elevation", b"mean_elevation", "mean_window", b"mean_window", "roi_id", b"roi_id", "snr", b"snr", "strength", b"strength"]) -> None: ...
 
 global___Detection = Detection
 

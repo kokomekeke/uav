@@ -10,7 +10,6 @@ import socket
 
 from typing import Any, Generator, Iterable, Optional
 
-from google.protobuf.json_format import MessageToJson
 import pysagax
 
 import pysagax.message.data_pb2 as proto_data
@@ -197,12 +196,9 @@ class Telemetry(Loop):
             if isinstance(status_packet, proto_heading.HeadingStatus):
                 self._heading_status_packet = status_packet
                 self._latest_heading_status_time = time.time()
-                logged_message = (
-                    MessageToJson(self._heading_status_packet, indent=0)
-                    .replace("\n", "")
-                    .replace("\r", "")
+                self._protobuf_to_log(
+                    self._heading_status_packet, "Heading updated: {}"
                 )
-                self._logger.info(f"Heading updated: {logged_message}")
                 if self._latest_packets_proxy is not None:
                     self._latest_packets_proxy["HeadingStatus"] = pickle.dumps(
                         self._heading_status_packet

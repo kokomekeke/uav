@@ -80,7 +80,9 @@ class Interpreter(Loop):
         ("ROI:Enable! {};", lambda config: "1" if len(config.pp.roi) else "0"),
         (
             "ROI:CenterFrequency! {:.0f};",
-            lambda config: (config.pp.roi[0].center_frequency if len(config.pp.roi) else 0.0),
+            lambda config: (
+                config.pp.roi[0].center_frequency if len(config.pp.roi) else 0.0
+            ),
         ),
         (
             "ROI:Span! {:.0f};",
@@ -266,7 +268,7 @@ class Interpreter(Loop):
 
         # Send response to Communicator
         return response  # .SerializeToString()
-    
+
     def _postproc_configure(self, command: Any) -> Any:
         assert self._postproc_conf_queue_out is not None
         assert self._postproc_conf_queue_resp_in is not None
@@ -358,6 +360,11 @@ class Interpreter(Loop):
         if config.heading.selected_source_type:  # Heading part is set
             assert self._heading_conf_queue_out is not None
             self._heading_conf_queue_out.put(config.heading)
+        if config.pp:
+            assert self._postproc_conf_queue_out
+            assert self._postproc_conf_queue_resp_in
+            self._postproc_conf_queue_out.put(config.pp)
+            pp_response = self._postproc_conf_queue_resp_in.get(block=True)
 
         for config_command, proto_lambda in self._CONFIG_COMMANDS:
             command_arg = proto_lambda(config)
@@ -416,7 +423,9 @@ class Interpreter(Loop):
         response.config.cs.playback_speed = float(
             defaults(self._cs_query("SOURCE:PlaybackSpeed?;"), 0)
         )
-        response.config.cs.bin_count = int(defaults(self._cs_query("AOA:BinCount?;"), 0))
+        response.config.cs.bin_count = int(
+            defaults(self._cs_query("AOA:BinCount?;"), 0)
+        )
         response.config.cs.burst_stride = int(
             defaults(self._cs_query("SOURCE:BurstStride?;"), 0)
         )

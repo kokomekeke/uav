@@ -1,3 +1,4 @@
+import logging
 import queue
 import threading
 import time
@@ -5,11 +6,9 @@ from queue import Queue
 from typing import Any, Optional
 
 import pysagax.message.heading_pb2 as proto_heading
-from google.protobuf.json_format import MessageToJson
 from pysagax.common.loop import Loop
 from pysagax.communication.pub_sub import SUB
 from pysagax.communication.req_rep_tcp import REQ
-from pysagax.df.lena_core_service import BaseConnection
 
 
 class Heading(Loop):
@@ -93,7 +92,7 @@ class Heading(Loop):
         if heading_packet_raw is not None:
             heading_packet = proto_heading.HeadingData()
             heading_packet.ParseFromString(heading_packet_raw)
-            self._logger.debug(MessageToJson(heading_packet))
+            self._protobuf_to_log(heading_packet, level=logging.DEBUG)
             self._queue_out.put(heading_packet)
         else:
             self._logger.debug("No heading packet received")
