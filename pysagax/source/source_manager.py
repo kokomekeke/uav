@@ -163,7 +163,7 @@ class SourceManager:
 
     def source_config_status_handler(self, resp) -> None:
         if (
-            bool(resp.config_status.finish_time.ToSeconds())
+            bool(resp.config_status.finish_time.ToNanoseconds())
             or "TIMED OUT" in resp.config_status.responses.values()
         ):
             self.is_cs_configuring = False

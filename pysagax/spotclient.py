@@ -592,14 +592,6 @@ class Client:
                         do_sleep = False
                     except queue.Empty:
                         pass
-                # if self.heading_manager is not None:
-                #     try:
-                #         msg = self.heading_manager.mp_status.get_nowait()
-                #         self.client_window.stream_status_msg_handler(msg)
-                #         do_sleep = False
-                #     except queue.Empty:
-                #         pass
-
                 ##TODO: msg_handler functions might not need separate threads
                 if do_sleep:
                     sleep(0.1)
