@@ -29,7 +29,10 @@ from pysagax.field.csparser import CSParser
 from pysagax.field.csstreamer import CSStreamer
 from pysagax.field.heading import Heading
 from pysagax.field.interpreter import Interpreter
-from pysagax.field.postproc import PostProc
+from pysagax.field.ppheadingsync import PPHeadingSync
+from pysagax.field.ppdetection import PPDetection
+from pysagax.field.ppevents import PPEvents
+from pysagax.field.ppstreamprep import PPStreamPreparation
 from pysagax.field.streamer import Streamer
 from pysagax.field.telemetry import Telemetry
 from pysagax import __version__
@@ -42,7 +45,7 @@ class Commander:
 
         self._logger = getLogger("Commander")
         self._manager = multiprocessing.Manager()
-        self._pool = ProcessPoolExecutor(max_workers=10)
+        self._pool = ProcessPoolExecutor(max_workers=12)
 
         self._commands_q = self._manager.Queue(maxsize=1)
         self._responses_q = self._manager.Queue(maxsize=1)
@@ -52,7 +55,10 @@ class Commander:
         self._stream_conf_q = self._manager.Queue()
         self._post_proc_commands_q = self._manager.Queue()
         self._post_proc_responses_q = self._manager.Queue()
-        self._post_proc_input_q = self._manager.Queue()
+        self._pp_heading_sync_input_q  = self._manager.Queue()
+        self._pp_detection_input_q  = self._manager.Queue()
+        self._pp_events_input_q  = self._manager.Queue()
+        self._pp_streamprep_input_q  = self._manager.Queue()
         self._raw_cs_stream_q = self._manager.Queue()
         self._telemetry_in_q = self._manager.Queue()
 
@@ -73,7 +79,10 @@ class Commander:
         )
         self._cs_controller = CSController(level=level)
 
-        self._post_proc = PostProc(level=level)
+        self._pp_heading_sync = PPHeadingSync(level=level)
+        self._pp_detection = PPDetection(level=level)
+        self._pp_events = PPEvents(level=level)
+        self._pp_streamprep = PPStreamPreparation(level=level)
         self._cs_parser = CSParser(level=level)
         self._cs_streamer = CSStreamer(level=level)
 
@@ -111,17 +120,32 @@ class Commander:
         streamer_future = self._pool.submit(
             self._streamer, self._stream_packets_q, self._stream_conf_q
         )
-        post_proc_future = self._pool.submit(
-            self._post_proc,
-            self._stream_packets_q,
-            self._post_proc_input_q,
-            self._post_proc_commands_q,
-            self._post_proc_responses_q,
+        pp_heading_sync_future = self._pool.submit(
+            self._pp_heading_sync,
+            self._pp_heading_sync_input_q,
+            self._pp_detection_input_q,
             self._heading_data_q,
             self._latest_config_id_value,
         )
+        pp_detection_future = self._pool.submit(
+            self._pp_detection,
+            self._pp_detection_input_q,
+            self._pp_events_input_q,
+            self._post_proc_commands_q,
+            self._post_proc_responses_q,
+        )
+        pp_events_future = self._pool.submit(
+            self._pp_events,
+            self._pp_events_input_q,
+            self._pp_streamprep_input_q,
+        )
+        pp_streamprep_future = self._pool.submit(
+            self._pp_streamprep,
+            self._pp_streamprep_input_q,
+            self._stream_packets_q
+        )
         cs_parser_future = self._pool.submit(
-            self._cs_parser, self._raw_cs_stream_q, self._post_proc_input_q
+            self._cs_parser, self._raw_cs_stream_q, self._pp_heading_sync_input_q
         )
         cs_streamer_future = self._pool.submit(self._cs_streamer, self._raw_cs_stream_q)
         telemetry_future = self._pool.submit(
@@ -149,7 +173,10 @@ class Commander:
                     interpreter_future,
                     cs_controller_future,
                     streamer_future,
-                    post_proc_future,
+                    pp_heading_sync_future,
+                    pp_detection_future,
+                    pp_events_future,
+                    pp_streamprep_future,
                     cs_parser_future,
                     cs_streamer_future,
                     telemetry_future,
@@ -157,6 +184,10 @@ class Commander:
                 ),
                 timeout=1,
             )
+            if self._pool._max_workers < len(running):
+                self._logger.critical(f"The number of workers ({len(running)}) exceeds the maximum "
+                                      f"set for ProcessPoolExecutor ({self._pool._max_workers})")
+                self._quit()
             for future in done:
                 if future.exception(0) is not None:
                     # Trace is lost this way, TODO: fix it

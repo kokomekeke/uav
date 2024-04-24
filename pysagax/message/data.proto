@@ -74,6 +74,9 @@ message Detection {
     float elevation = 11;
     float snr = 12;
     float deviation = 13;
+    float mean_azimuth = 14;
+    float mean_elevation = 15;
+    int32 mean_window = 4;
 }
 
 message Spectrum {

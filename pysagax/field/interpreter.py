@@ -366,6 +366,15 @@ class Interpreter(Loop):
         """Set system configuration"""
         self._config_status_message = proto_cmd.ConfigStatus()
         self._config_status_message.start_time.GetCurrentTime()
+        if config.heading.selected_source_type:  # Heading part is set
+            assert self._heading_conf_queue_out is not None
+            self._heading_conf_queue_out.put(config.heading)
+        if config.pp:
+            assert self._postproc_conf_queue_out
+            assert self._postproc_conf_queue_resp_in
+            self._postproc_conf_queue_out.put(config.pp)
+            pp_response = self._postproc_conf_queue_resp_in.get(block=True)
+
         for config_command, proto_lambda in self._CONFIG_COMMANDS:
             command_arg = proto_lambda(config)
             if not command_arg:
