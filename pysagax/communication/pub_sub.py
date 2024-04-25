@@ -36,6 +36,13 @@ class SUB:
 
         return None
 
+    def recv(self, timeout: int = 1000) -> tuple[bytes, str] | None:
+        recv_raw = self.receive(timeout)
+        if recv_raw is not None:
+            return bytes(recv_raw[1:]), str(recv_raw[0:1].decode())
+        else:
+            return None
+
 
 class PUB:
     def __init__(self, port_server: int = 5556, **kwargs) -> None:
