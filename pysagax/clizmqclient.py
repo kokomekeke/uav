@@ -11,9 +11,32 @@ from pysagax.message.data_types import DataType
 
 
 @click.command()
-@click.option("-p", "--port", type=int, default=5050, help="Port of receiver")
+@click.option(
+    "-p",
+    "--port",
+    type=int,
+    default=5050,
+    help="TCP port of remote host if PUB/SUB, UDP port of local listen if RADIO/DISH",
+)
 @click.argument("address", default="", required=False)
 def main(port: int = 5050, address: str = ""):
+    """
+    PySAGAX protbuf stream ZMQ test client.
+    This tool will display the received stream packets on stdout.
+
+    Two modes of operation:
+
+    clizmqclient -p 5050
+    --- UDP RADIO/DISH, the client will listen as DISH on UDP port 5050,
+    waiting for a packet from a ZMQ-RADIO service.
+
+    clizmqclient -p 6060 localhost
+    --- TCP PUB/SUB, the client will connect as SUB on localhost:6060,
+    where a ZMQ-PUB service is running.
+
+    If ADDRESS is defined, client will connect as ZMQ SUB on that address,
+    otherwise will listen as ZMQ DISH on udp port.
+    """
     logging.basicConfig(level="DEBUG")
     logging.getLogger("main")
     if address:
