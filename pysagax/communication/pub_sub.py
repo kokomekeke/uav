@@ -37,11 +37,16 @@ class SUB:
         return None
 
     def recv(self, timeout: int = 1000) -> tuple[bytes, str] | None:
-        recv_raw = self.receive(timeout)
-        if recv_raw is not None:
-            return bytes(recv_raw[1:]), str(recv_raw[0:1].decode())
+        if not self._connected:
+            raise Exception("Not connected")
+        if (self._subscriber.poll(timeout) & zmq.POLLIN) != 0:
+            topic, msg = self._subscriber.recv_multipart()
+            return msg, topic.decode()
         else:
-            return None
+            self.disconnect()
+            self.connect()
+
+        return None
 
 
 class PUB:
