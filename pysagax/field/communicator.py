@@ -11,20 +11,24 @@ import google.protobuf.message
 class Communicator(Loop):
     """Background process receiving commands and pushing then to internal queue"""
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(
+        self, address: str = "0.0.0.0", port: int = 5555, *args, **kwargs
+    ) -> None:
         super().__init__(*args, **kwargs)
 
         # Set up command channel
         self._server: Optional[REP] = None
         self._queue_in: Optional[Queue] = None
         self._queue_out: Optional[Queue] = None
+        self._host = address
+        self._port = port
 
     def __call__(
         self, queue_in: Queue[Any], queue_out: Queue[Any], *args, **kwargs
     ) -> None:
         self._queue_in = queue_in
         self._queue_out = queue_out
-        self._server = REP(address_client="127.0.0.1", port_client=5555)
+        self._server = REP(address_client=self._host, port_client=self._port)
         # self._logger.debug(vars(self._server))
         return super()._call(*args, **kwargs)
 

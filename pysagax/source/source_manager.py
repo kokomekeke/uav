@@ -249,24 +249,28 @@ class SourceManager:
         """
         cmd = proto_cmd.Command()
         cmd.instruction = proto_cmd.CONFIG
+        source_type = ""
+        source_path = ""
         print("SOURCE_STRING:", source_str)
         if source_str == Sources.SigMF.display_name:
             if params[-1] != "/":
                 params = params + "/"
-            source_path = f"SigMF {params}recording.sigmf-collection"
+            source_type = f"SigMF"
+            source_path = f"{params}recording.sigmf-collection"
         elif source_str == Sources.Generator.display_name:
-            source_path = (
-                f"SigMF {self.default_source_file_path}recording.sigmf-collections"
-            )
+            source_type = f"SigMF"
+            source_path = f"{self.default_source_file_path}recording.sigmf-collections"
+
         elif source_str == Sources.Sidekiq.display_name:
             p = 1  # for single radio
             if params == "Dual":
                 p = 2
-            source_path = f"Sidekiq {p}"
+            source_type = f"Sidekiq"
+            source_path = f"{p}"
         elif source_str == Sources.UHD.display_name:
-            source_path = f"UHD"
+            source_type = f"UHD"
+        cmd.config.cs.source_type = source_type
         cmd.config.cs.source_path = source_path
-
         return cmd
 
     def is_source_set(self) -> bool:

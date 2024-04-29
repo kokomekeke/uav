@@ -1,14 +1,18 @@
 from __future__ import annotations
+import logging
 from queue import Queue
 import time
 
 from typing import Optional
+from pysagax.communication.pub_sub import SUB
 from pysagax.df.lena_core_service import BaseConnection
 
 from pysagax.common.loop import Loop
 
+from pysagax.message.data_pb2 import Telemetry, Measurement, Event, OperationalError
+from pysagax.message.data_types import DataType
 
-class CSStreamer(Loop, BaseConnection):
+class CSStreamer(Loop):
     """Background process for connecting to the CoreService stream interface and receiving binary data from there"""
 
     def __init__(
@@ -19,34 +23,41 @@ class CSStreamer(Loop, BaseConnection):
         **kwargs,
     ) -> None:
         Loop.__init__(self, *args, **kwargs)
-        BaseConnection.__init__(self)
-        self.host_port = f"{address}:{port}"
+        self._host = address
+        self._port = port
+        self._sub: Optional[SUB] = None
         self._stream_queue_out: Optional[Queue] = None
+        self._telemetry_queue_out: Optional[Queue] = None
 
     def __call__(
         self,
-        stream_queue_out: Queue[bytes],
+        stream_queue_out: Queue[Telemetry | Measurement | Event | OperationalError],
+        telemetry_queue_out: Queue[Telemetry],
         *args,
         **kwargs,
     ) -> None:
         self._stream_queue_out = stream_queue_out
+        self._telemetry_queue_out = telemetry_queue_out
+        self._sub = SUB(self._host, self._port)
+        all_groups = [group.value for group in DataType]
+        self._sub.connect(group=all_groups)
         return super()._call(*args, **kwargs)
 
     def _loop(self) -> None:
-        while True:
-            self.run_socket()
-            self._logger.warning(
-                "Connection to CS Stream lost, reconnecting in 3 seconds"
-            )
-            time.sleep(3.0)
-
-    def display_status_callback(self, message: str) -> None:
-        self._logger.info(message)
-
-    def receive_on_socket(self, data: bytes) -> None:
-        """
-        When text is received on the command socket, send it over in the queue.
-        """
+        assert self._sub is not None
         assert self._stream_queue_out is not None
+        assert self._telemetry_queue_out is not None
+        data, data_type = self._sub.recv() or (b"*", "*")
+        if data_type == "*":
+            return
+        data_type_object = DataType(data_type)
+        stream_packet = DataType.to_message(data_type_object)
+        stream_packet.ParseFromString(data)
+        if isinstance(stream_packet, Measurement):
+            self._stream_queue_out.put(stream_packet)
+        elif isinstance(stream_packet, Telemetry):
+            self._protobuf_to_log(stream_packet, "TEL {}")
+            self._telemetry_queue_out.put(stream_packet)
+        else:
+            self._protobuf_to_log(stream_packet, "Dropped {}", logging.WARNING)
 
-        self._stream_queue_out.put(data)
