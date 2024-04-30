@@ -42,15 +42,15 @@ class Commander:
 
     def __init__(
         self,
-        level: str = "INFO",
-        disk_path: str = "/",
-        command_port: int = 5555,
-        cs_host: str = "127.0.0.1",
-        cs_command_port: int = 12936,
-        cs_stream_port: int = 12937,
-        heading_host: str = "127.0.0.1",
-        heading_control_port: int = 5566,
-        heading_stream_port: int = 5567,
+        level: str,
+        disk_path: str,
+        command_port: int,
+        cs_host: str,
+        cs_command_port: int,
+        cs_stream_port: int,
+        heading_host: str,
+        heading_control_port: int,
+        heading_stream_port: int,
     ) -> None:
 
         self._logger = getLogger("Commander")

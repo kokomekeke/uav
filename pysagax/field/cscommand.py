@@ -1,3 +1,4 @@
+import logging
 import threading
 from queue import Queue
 from typing import Any, Optional
@@ -97,19 +98,18 @@ class CSCommand(Loop):
         command, out_queue, label, timeout = self._merged_queue.get()
         assert isinstance(command, proto_cmd.Command)
         try:
-            self._protobuf_to_log(command, "CMD {}")
+            self._protobuf_to_log(command, "CS CMD {}")
             response_raw = self._req.send(command.SerializeToString(), timeout=timeout)
         except Exception as e:
-            self._logger.warning(
-                f"Tried to send command {command} ({label}). Error {str(e)}"
-            )
+            self._protobuf_to_log(command, "CS CMD {} error below", logging.WARNING)
+            self._logger.warning(f"Tried to send command ({label}). Error {str(e)}")
             return
         if response_raw is None:
-            self._logger.warning(
-                f"Tried to send command {command} ({label}). Socket error."
+            self._protobuf_to_log(
+                command, "CS CMD {} (" + label + ") timed out", logging.WARNING
             )
             response.error.description = "Timeout"
         else:
             response.ParseFromString(response_raw)
-            self._protobuf_to_log(response, "RSP {}")
+            self._protobuf_to_log(response, "CS RSP {}")
         out_queue.put(response)

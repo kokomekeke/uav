@@ -1,3 +1,4 @@
+import logging
 from queue import Queue
 from typing import Any, Optional
 
@@ -62,9 +63,9 @@ class Communicator(Loop):
         self._queue_out.put(command)
 
         # Wait for response from Interpreter
-        self._logger.debug("==========")
+        self._protobuf_to_log(command, "PYSAGAX-UAV CMD {}", logging.INFO)
         response = self._queue_in.get()
         raw_response = response.SerializeToString()
         # Send response to remote client
         self._server.resp(raw_response)
-        self._logger.debug("Response sent")
+        self._protobuf_to_log(response, "PYSAGAX-UAV RSP {}", logging.INFO)
