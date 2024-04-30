@@ -28,6 +28,7 @@ class Telemetry(Loop):
         super().__init__(*args, **kwargs)
         self._comm_queue_out: Optional[Queue] = None
         self._latest_cs_telemetry_packet = proto_data.Telemetry()
+        self._latest_cs_telemetry_update_time = time.time()
         self._cs_telemetry_queue: Optional[Queue] = None
         self._heading_status_queue: Optional[Queue] = None
         self._latest_packets_proxy: Optional[DictProxy] = None
@@ -60,8 +61,13 @@ class Telemetry(Loop):
         latest_cs_telemetry_packet = self._latest_cs_telemetry_packet
         while not self._cs_telemetry_queue.empty():
             latest_cs_telemetry_packet = self._cs_telemetry_queue.get()
+            self._latest_cs_telemetry_update_time = time.time()
         assert isinstance(latest_cs_telemetry_packet, proto_data.Telemetry)
-        self._latest_cs_telemetry_packet = latest_cs_telemetry_packet
+        if self._latest_cs_telemetry_update_time < time.time() - 5.0:
+            # cs telemetry expected at least every 5 secs
+            self._latest_cs_telemetry_packet = proto_data.Telemetry()
+        else:
+            self._latest_cs_telemetry_packet = latest_cs_telemetry_packet
         self._telemetry_packet.source.CopyFrom(self._latest_cs_telemetry_packet.source)
         self._telemetry_packet.recording.CopyFrom(
             self._latest_cs_telemetry_packet.recording

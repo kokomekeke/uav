@@ -155,7 +155,11 @@ class SourceManager:
             self.is_cs_configuring = True
             return
         self.latest_config = resp
-        self.current_source_path = str(resp.config.cs.source_path).strip().split(" ")
+        self.current_source_path = (
+            str(resp.config.cs.source_type + " " + resp.config.cs.source_path)
+            .strip()
+            .split(" ")
+        )
         try:
             self.current_source = Sources(self.current_source_path[0])
         except:

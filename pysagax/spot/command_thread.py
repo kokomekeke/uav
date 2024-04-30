@@ -109,8 +109,14 @@ class CommandThread(threading.Thread):
                 time.sleep(0.1)
                 continue
             # print("COMMAND:\n", command)  ####
+            timeout_ms = 2000
+            if (
+                command.kind == proto_cmd.Command.WRITE
+                and command.instruction == proto_cmd.CONFIG
+            ):
+                timeout_ms = 30000
             raw_response = self._connection.send(
-                command.SerializeToString(), timeout=2000
+                command.SerializeToString(), timeout=timeout_ms
             )
             if raw_response is None:
                 self._timeout_handler(command)
@@ -140,7 +146,7 @@ class CommandThread(threading.Thread):
                 raise e
         self._display_thread_status_callback(False, "")
 
-    def _get_next_command(self):
+    def _get_next_command(self) -> Optional[proto_cmd.Command]:
         if self._command_queue.empty():
             if time.time_ns() - self._last_command_time > self.heartbeat_timeout_ns / 2:
                 # send PING if no communication for a long time

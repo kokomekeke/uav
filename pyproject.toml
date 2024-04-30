@@ -45,9 +45,6 @@ requires = ["setuptools", "wheel", "versioneer"]
 build-backend = "setuptools.build_meta"
 
 [project.scripts]
-aaronia-tcp-server = "pysagax.aaronia_tcp_server:main"
-clitestclient = "pysagax.clitestclient:main"
-cstestclient = "pysagax.cstestclient:main"
 dfclient = "pysagax.dfclient:main"
 spotclient = "pysagax.spotclient:main"
 sigmfdisp = "pysagax.sigmfdisp:main"

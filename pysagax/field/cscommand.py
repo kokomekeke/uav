@@ -1,5 +1,4 @@
 import threading
-import time
 from queue import Queue
 from typing import Any, Optional
 
@@ -31,8 +30,9 @@ class CSCommand(Loop):
         # self._queue_in_status: Optional[Queue] = None
         # self._queue_out_status: Optional[Queue] = None
 
-        self._queue_of_resp_queues: Optional[Queue[tuple[str, Queue[Any], str]]] = None
-        self._merged_queue: Optional[Queue[tuple[str, Queue[Any], str]]] = None
+        self._merged_queue: Optional[
+            Queue[tuple[proto_cmd.Command, Queue[Any], str, int]]
+        ] = None
 
         self._sock_thread: Optional[threading.Thread] = None
         self._queue_primary_thread: Optional[threading.Thread] = None
@@ -58,7 +58,6 @@ class CSCommand(Loop):
 
         self._req = REQ(self._address_server, self._port_server)
 
-        self._queue_of_resp_queues = Queue()
         self._merged_queue = Queue()
 
         return super()._call(*args, **kwargs)
@@ -79,25 +78,27 @@ class CSCommand(Loop):
         self._logger.info("CoreService command operational")
 
     def _queue_watcher(
-        self, input_queue: Queue[Any], output_queue: Queue[Any], label: str = "queue"
+        self,
+        input_queue: Queue[tuple[proto_cmd.Command, int]],
+        output_queue: Queue[Any],
+        label: str = "queue",
     ) -> None:
         assert self._merged_queue is not None
         while True:
-            command: str = input_queue.get()
-            self._merged_queue.put((command, output_queue, label))
+            command, timeout = input_queue.get()
+            self._merged_queue.put((command, output_queue, label, timeout))
 
     def _loop(self) -> None:
         assert self._merged_queue is not None
-        assert self._queue_of_resp_queues is not None
         assert self._req is not None
 
         response = proto_cmd.Response()
         # Hang until a new command is received
-        command, out_queue, label = self._merged_queue.get()
+        command, out_queue, label, timeout = self._merged_queue.get()
         assert isinstance(command, proto_cmd.Command)
         try:
             self._protobuf_to_log(command, "CMD {}")
-            response_raw = self._req.send(command.SerializeToString(), timeout=10000)
+            response_raw = self._req.send(command.SerializeToString(), timeout=timeout)
         except Exception as e:
             self._logger.warning(
                 f"Tried to send command {command} ({label}). Error {str(e)}"

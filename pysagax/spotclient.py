@@ -11,23 +11,21 @@ import socket
 import threading
 import tkinter
 from multiprocessing.managers import ValueProxy
+
 from pysagax.communication.broadcast import RX
 from pysagax.communication.req_rep_tcp import REQ
-
 from pysagax.heading.heading_pb_client import HeadingPbClient
 from pysagax.heading.queue_collector import QueueValueCollector
 from pysagax.source.source_manager import CoreServiceStatus, SourceManager
 from pysagax.spot.command_thread import CommandThread
-from pysagax.spot.commands_connection_thread import CommandsConnectionThread
-from pysagax.spot.commands_handler_thread import CommandsHandlerThread
 from pysagax.spot.map_server import MapServer
 from pysagax.spot.recording_thread import RecordingThread
 from pysagax.spot.status_query_thread import StatusQueryThread
 from pysagax.spot.stream_process import StreamProcess
-from pysagax.ui.heading_source_settings import HeadingSourceFrame
 from pysagax.ui.connect_frame import ConnectFrame
 from pysagax.ui.control_frame import ControlFrame
 from pysagax.ui.debug_tab import DebugTab
+from pysagax.ui.heading_source_settings import HeadingSourceFrame
 from pysagax.ui.playback_tab import PlaybackTab
 from pysagax.ui.source_select_frame import SourceSelectFrame
 from pysagax.ui.stat_frame import StatFrame
@@ -47,23 +45,15 @@ from typing import Any, Callable, Literal, Optional
 import numpy as np
 
 import pysagax
-from pysagax import (
-    CoreServiceDebugPacket,
-    CoreServiceEOFPacket,
-    CoreServiceROIResultPacket,
-    CoreServiceSpectrumPacket,
-    StreamAndCompassProcess,
-)
-from pysagax.ui.plot_frame import PlotFrame, PlotSettingsFrame
-from pysagax.util.multiqueue import MultiQueue
-from pysagax.util.read_from_conf import read_from_conf
-from pysagax.util.get_ip import get_ip
-from pysagax.util.mat import yaw_pitch_roll_from_quaternion
-
 import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.data_pb2 as proto_data
 import pysagax.message.heading_pb2 as proto_heading
 from pysagax.message.data_types import DataType
+from pysagax.ui.plot_frame import PlotFrame, PlotSettingsFrame
+from pysagax.util.get_ip import get_ip
+from pysagax.util.mat import yaw_pitch_roll_from_quaternion
+from pysagax.util.multiqueue import MultiQueue
+from pysagax.util.read_from_conf import read_from_conf
 
 conf: Optional[dict[str, Any]] = None
 icon_image: Optional[tkinter.PhotoImage] = None
@@ -458,29 +448,6 @@ class ClientWindow(tkinter.Frame):
             self.status_info_lb.see(tkinter.END)
             print(datetime.now().strftime("%m.%d. %H:%M:%S"), line)
 
-    def calculate_snr(self, packet: CoreServiceSpectrumPacket) -> tuple[float, float]:
-        min_freq = packet.center_frequency - packet.iq_rate / 2
-        max_freq = packet.center_frequency + packet.iq_rate / 2
-        bin_freqs = np.linspace(min_freq, max_freq, packet.bin_count)
-
-        spectrum = list(zip(bin_freqs, packet.magnitude_spectrum))
-
-        roi_center = pysagax.si_to_float(self.control_frame.roi_center_entry.get())
-        roi_span = pysagax.si_to_float(self.control_frame.roi_span_entry.get())
-        roi_min = roi_center - roi_span / 2
-        roi_max = roi_center + roi_span / 2
-
-        signal_bins = [a for f, a in spectrum if roi_min < f and f < roi_max]
-        noise_bins = [a for f, a in spectrum if not (roi_min < f and f < roi_max)]
-
-        if len(signal_bins) == 0 or len(noise_bins) == 0:
-            return 0, 0
-
-        signal_db = max(signal_bins)
-        noise_db = sum(noise_bins) / len(noise_bins)
-
-        return signal_db, noise_db
-
 
 # Owner class for the client
 class Client:
@@ -495,9 +462,9 @@ class Client:
         self.stream_process_multiqueue = MultiQueue([self.stream_to_gui_queue])
 
         self.command_connection: Optional[REQ] = None
-        self.command_thread: Optional[CommandsHandlerThread] = None
+        self.command_thread: Optional[CommandThread] = None
         self.status_query_thread: Optional[StatusQueryThread] = None
-        self.stream_process: Optional[StreamAndCompassProcess] = None
+        self.stream_process: Optional[StreamProcess] = None
         self.recording_thread: Optional[RecordingThread] = None
         self.dfg_map_server: Optional[MapServer] = None
         self.repeat_playback: bool = False

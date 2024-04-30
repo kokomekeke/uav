@@ -151,7 +151,7 @@ class Interpreter(Loop):
                         cs_command = proto_cmd.Command()
                         cs_command.CopyFrom(command)
                         cs_command.kind = proto_cmd.Command.WRITE
-                        cs_resp = self._cs_control(cs_command)
+                        cs_resp = self._cs_control(cs_command, timeout_ms=30000)
                         if cs_resp.HasField("error"):
                             response.error.CopyFrom(cs_resp.error)
                         else:
@@ -275,7 +275,9 @@ class Interpreter(Loop):
         )
         response.info.MergeFrom(system_info_object)
 
-    def _cs_control(self, command: proto_cmd.Command) -> proto_cmd.Response:
+    def _cs_control(
+        self, command: proto_cmd.Command, timeout_ms: int = 200
+    ) -> proto_cmd.Response:
         """Send control commands (no parameters) to CoreService"""
         assert self._cs_queue_in is not None
         assert self._cs_queue_out is not None
@@ -286,7 +288,7 @@ class Interpreter(Loop):
         if cs_command.HasField("config"):
             cs_command.config.Clear()
             cs_command.config.cs.CopyFrom(command.config.cs)
-        self._cs_queue_out.put(cs_command)
+        self._cs_queue_out.put((cs_command, timeout_ms))
         cs_response = self._cs_queue_in.get()
         if cs_response is not None:
             return cs_response
