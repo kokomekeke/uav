@@ -17,7 +17,7 @@ test_conf: dict[str, Any] = {"a": None, "b": 1, "c": {"x": None, "y": 2, "z": {}
         ((test_conf, ["c", "z"], -1), {}),  # 6: empty dict result
         ((test_conf, ["c", "z", "w"], -1), -1),  # 7: invalid keys
         ((test_conf, ["d", "z", "w"], -1), -1),  # 8: invalid keys
-        (({}, ["d", "z", "w"], -1), -1),  # 9: empty dict imput
+        (({}, ["d", "z", "w"], -1), -1),  # 9: empty dict input
         ((test_conf, ["c", "y"]), 2),  # 10: no default value, valid keys
         ((test_conf, ["c", "z"]), {}),  # 11: no default value, empty dict result
         ((test_conf, ["c", "z", "w"]), None),  # 12: no default value, invalid keys
