@@ -7,6 +7,7 @@ import time
 import shutil
 import pickle
 import socket
+import logging
 
 from typing import Any, Generator, Iterable, Optional
 
@@ -107,7 +108,9 @@ class Telemetry(Loop):
                     self._heading_status_packet = status_packet
                     self._latest_heading_status_time = time.time()
                     self._protobuf_to_log(
-                        self._heading_status_packet, "Heading updated: {}"
+                        self._heading_status_packet,
+                        "Heading updated: {}",
+                        level=logging.DEBUG,
                     )
                     if self._latest_packets_proxy is not None:
                         self._latest_packets_proxy["HeadingStatus"] = pickle.dumps(
