@@ -224,7 +224,7 @@ class PPDetection(Loop):
         for event_id, detection in detections.items():
             signal_db = detection.strength
             snr = signal_db - noise_db
-            detection.snr = snr if snr > 0 else float("-inf")
+            detection.snr = snr if snr > 0 else 0
             detections[event_id] = detection
 
         return detections
