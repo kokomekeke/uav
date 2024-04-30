@@ -5,9 +5,30 @@ import logging
 
 from pysagax.communication.broadcast import RX
 from pysagax.communication.pub_sub import SUB
+from pysagax.communication.req_rep_tcp import REQ
 import pysagax.message.data_pb2 as proto_data
+import pysagax.message.command_pb2 as proto_cmd
 
+from pysagax.util.get_ip import get_ip
 from pysagax.message.data_types import DataType
+
+
+def stream_start(address: str, port: int, own_port: int) -> None:
+    cmd_zmq = REQ(address_server=address, port_server=port)
+    cmd_zmq.connect()
+    cmd_stream_start = proto_cmd.Command()
+    cmd_stream_start.instruction = proto_cmd.STREAM_START
+    # TODO: customazible stream levels
+    cmd_stream_start.target.id = 100
+    cmd_stream_start.target.level = proto_cmd.StreamTarget.StreamLevel.SPECTRUM
+    cmd_stream_start.target.address = get_ip(address)
+    cmd_stream_start.target.port = own_port
+
+    # TODO: think about ideal timeout values, move to config
+    cmd_stream_start.target.heartbeat_timeout = 1
+    cmd_stream_start.target.telemetry_timeout = 1
+    print(cmd_stream_start)
+    print(cmd_zmq.send(cmd_stream_start.SerializeToString(), timeout=2000))
 
 
 @click.command()
@@ -18,8 +39,14 @@ from pysagax.message.data_types import DataType
     default=5050,
     help="TCP port of remote host if PUB/SUB, UDP port of local listen if RADIO/DISH",
 )
+@click.option(
+    "-c",
+    "--cmd",
+    default="",
+    help="PySAGAX command (REQ/REP) port to start stream",
+)
 @click.argument("address", default="", required=False)
-def main(port: int = 5050, address: str = ""):
+def main(port: int = 5050, cmd: str = "", address: str = ""):
     """
     PySAGAX protbuf stream ZMQ test client.
     This tool will display the received stream packets on stdout.
@@ -37,6 +64,14 @@ def main(port: int = 5050, address: str = ""):
     If ADDRESS is defined, client will connect as ZMQ SUB on that address,
     otherwise will listen as ZMQ DISH on udp port.
     """
+
+    if cmd:
+        cmd_host, cmd_port = cmd.split(":")
+        print(
+            f"Connecting to PySAGAX-UAV Command {cmd_host}:{int(cmd_port)}/tcp, requesting stream to local {port}/udp"
+        )
+        stream_start(cmd_host, int(cmd_port), port)
+
     logging.basicConfig(level="DEBUG")
     logging.getLogger("main")
     if address:

@@ -13,7 +13,7 @@ class Communicator(Loop):
     """Background process receiving commands and pushing then to internal queue"""
 
     def __init__(
-        self, address: str = "0.0.0.0", port: int = 5555, *args, **kwargs
+        self, port: int = 5556, *args, **kwargs
     ) -> None:
         super().__init__(*args, **kwargs)
 
@@ -21,7 +21,6 @@ class Communicator(Loop):
         self._server: Optional[REP] = None
         self._queue_in: Optional[Queue] = None
         self._queue_out: Optional[Queue] = None
-        self._host = address
         self._port = port
 
     def __call__(
@@ -29,7 +28,8 @@ class Communicator(Loop):
     ) -> None:
         self._queue_in = queue_in
         self._queue_out = queue_out
-        self._server = REP(address_client=self._host, port_client=self._port)
+        self._server = REP(port_server=self._port)
+        self._logger.info(f"Listening ZMQ REP on {self._port}/tcp")
         # self._logger.debug(vars(self._server))
         return super()._call(*args, **kwargs)
 
