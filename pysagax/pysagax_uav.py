@@ -252,7 +252,7 @@ def set_default_config(ctx, param, conf_path):
     "--command-port",
     "-p",
     type=int,
-    default=5555,
+    default=5556,
     show_default=True,
     help="PysagaxUAV listens on this (ZMQ REP) port for incomming commands",
 )

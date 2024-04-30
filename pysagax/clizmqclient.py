@@ -43,7 +43,7 @@ def stream_start(address: str, port: int, own_port: int) -> None:
     "-c",
     "--cmd",
     default="",
-    help="PySAGAX command (REQ/REP) port to start stream",
+    help="PySAGAX command (REQ/REP) port to automatically start stream (for example: localhost:5556)",
 )
 @click.argument("address", default="", required=False)
 def main(port: int = 5050, cmd: str = "", address: str = ""):
