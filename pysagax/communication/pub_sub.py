@@ -25,7 +25,9 @@ class SUB:
         self._connected = False
 
     def receive(self, timeout: int = 1000):
-
+        """
+        Receive single PUB/SUB message.
+        """
         if not self._connected:
             raise Exception("Not connected")
         if (self._subscriber.poll(timeout) & zmq.POLLIN) != 0:
@@ -37,6 +39,11 @@ class SUB:
         return None
 
     def recv(self, timeout: int = 1000) -> tuple[bytes, str] | None:
+        """
+        Receive PUB/SUB message with (multipart) topic.
+        Compatible with the RX class in pysagax/communication/broadcast.py
+        Returns tuple(message: bytes, topic: str)
+        """
         if not self._connected:
             raise Exception("Not connected")
         if (self._subscriber.poll(timeout) & zmq.POLLIN) != 0:

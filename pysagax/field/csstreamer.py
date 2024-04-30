@@ -56,7 +56,7 @@ class CSStreamer(Loop):
         if isinstance(stream_packet, Measurement):
             self._stream_queue_out.put(stream_packet)
         elif isinstance(stream_packet, Telemetry):
-            self._protobuf_to_log(stream_packet, "CS TEL {}")
+            self._protobuf_to_log(stream_packet, "CS TEL {}", logging.DEBUG)
             self._telemetry_queue_out.put(stream_packet)
         else:
             self._protobuf_to_log(stream_packet, "CS Dropped {}", logging.WARNING)

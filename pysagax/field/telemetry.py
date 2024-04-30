@@ -28,7 +28,7 @@ class Telemetry(Loop):
         super().__init__(*args, **kwargs)
         self._comm_queue_out: Optional[Queue] = None
         self._latest_cs_telemetry_packet = proto_data.Telemetry()
-        self._latest_cs_telemetry_update_time = time.time()
+        self._latest_cs_telemetry_received_time = time.time()
         self._cs_telemetry_queue: Optional[Queue] = None
         self._heading_status_queue: Optional[Queue] = None
         self._latest_packets_proxy: Optional[DictProxy] = None
@@ -61,9 +61,9 @@ class Telemetry(Loop):
         latest_cs_telemetry_packet = self._latest_cs_telemetry_packet
         while not self._cs_telemetry_queue.empty():
             latest_cs_telemetry_packet = self._cs_telemetry_queue.get()
-            self._latest_cs_telemetry_update_time = time.time()
+            self._latest_cs_telemetry_received_time = time.time()
         assert isinstance(latest_cs_telemetry_packet, proto_data.Telemetry)
-        if self._latest_cs_telemetry_update_time < time.time() - 5.0:
+        if self._latest_cs_telemetry_received_time < time.time() - 5.0:
             # cs telemetry expected at least every 5 secs
             self._latest_cs_telemetry_packet = proto_data.Telemetry()
         else:
@@ -81,24 +81,7 @@ class Telemetry(Loop):
         self._sysinfo_packet.hardware.disk = total // (2**20)  # MiB
         self._sysinfo_packet.software.pysagax_version = pysagax.__version__  # type: ignore
         self._sysinfo_packet.heading.MergeFrom(self._heading_status_packet)
-        # try:
-        #     _, resp = next(self._cs_execute(["CORE:Version?"]))
-        #     if resp[0] == "0":
-        #         self._sysinfo_packet.software.cs_version = (
-        #             f"{resp[1]}.{resp[2]}.{resp[3]}"  # major.minor.patch
-        #         )
-        #         if resp[4]:
-        #             self._sysinfo_packet.software.cs_version += (
-        #                 f"-{resp[4]}"  # -prerelease
-        #             )
-        #         if resp[5]:
-        #             self._sysinfo_packet.software.cs_version += f"+{resp[5]}"  # +build
-        #         if resp[6]:
-        #             self._sysinfo_packet.software.cs_version += (
-        #                 f" ({resp[6]})"  # (vcs tag)
-        #             )
-        # except StopIteration:  # CS not responding
-        #     self._sysinfo_packet.software.cs_version = "N/A"
+        # TODO CoreService version
         self._logger.debug("SystemInfo packet ready")
         if self._latest_packets_proxy is not None:
             self._latest_packets_proxy["SystemInfo"] = pickle.dumps(
