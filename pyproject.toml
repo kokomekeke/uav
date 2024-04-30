@@ -1,6 +1,6 @@
 [project]
 name = "pysagax"
-version = "0.2.4"
+version = "0.3.0-alpha"
 authors = [
   { name="Peter Rigo", email="peter.rigo@sagaxcommunications.com" },
   { name="Aron Szabo", email="aron.szabo@sagaxcommunications.com" },
@@ -41,13 +41,10 @@ versionfile_source = "pysagax/_version.py"
 tag_prefix = "v"
 
 [build-system]
-requires = ["setuptools", "wheel", "versioneer", "protoletariat"]
+requires = ["setuptools", "wheel", "versioneer"]
 build-backend = "setuptools.build_meta"
 
 [project.scripts]
-aaronia-tcp-server = "pysagax.aaronia_tcp_server:main"
-clitestclient = "pysagax.clitestclient:main"
-cstestclient = "pysagax.cstestclient:main"
 dfclient = "pysagax.dfclient:main"
 spotclient = "pysagax.spotclient:main"
 sigmfdisp = "pysagax.sigmfdisp:main"

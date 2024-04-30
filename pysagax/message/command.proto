@@ -120,6 +120,8 @@ message CoreServiceConfig {
 
     // Source parameters
     string source_path = 17;
+    string source_type = 19;
+    string source_subdev = 20;
 
     // Type of source
     enum Type {
@@ -208,6 +210,15 @@ message CommandError {
     enum ErrorType {
         // Possible error types
         UNKNOWN = 0;
+        // CoreServiceErrors
+        NO_FILE_LOADED = 100;
+        FAILED_TO_LOAD_CONFIG = 101;
+        SOURCE_ERROR = 102;
+        ACQUISITION_STATE_SOURCE_NOT_CONFIGURED = 103;
+        MALFORMED_PARAMETER = 104;
+        SET_AOA_BIN_COUNT_NOT_IN_SUPPORTED_SET = 105;
+        BAD_PARAMETER_COUNT = 106;
+        NOT_IMPLEMENTED_YET = 199;
     }
 
     // Basic error information
@@ -245,6 +256,9 @@ message Command {
 
         // Stream target
         StreamTarget target = 8;
+
+        // Recording length
+        uint64 rec_length_secs = 9;
     }
 }
 

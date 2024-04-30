@@ -1,2 +1,10 @@
 disk-path = '/'
 level = 'INFO'
+command-port = 5555
+cs-host = "127.0.0.1"
+cs-command-port = 12936
+cs-stream-port = 12937
+heading-host = "127.0.0.1"
+heading-control-port = 5566
+heading-stream-port = 5567
+

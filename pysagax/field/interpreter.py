@@ -35,66 +35,6 @@ class CSThreadOccupied(Exception):
 class Interpreter(Loop):
     """Main coordinator process for the sensor software stack"""
 
-    # CoreService commands matching protobuf Instructions
-    _CS_COMMANDS = {
-        proto_cmd.PING: "CORE:Ping! {value}",
-        proto_cmd.POSITION: "SOURCE:Position{mode} {value}",
-        proto_cmd.SOURCE_START: "SOURCE:Start!",
-        proto_cmd.SOURCE_STOP: "SOURCE:Stop!",
-        proto_cmd.REC_START: "RECORDING:Start!",
-        proto_cmd.REC_STOP: "RECORDING:Stop!",
-    }
-    _CONFIG_COMMANDS = [
-        ("SOURCE:Path! {};", lambda config: config.cs.source_path),
-        ("SOURCE:CenterFrequency! {:.0f};", lambda config: config.cs.center_frequency),
-        ("SOURCE:IqRate! {};", lambda config: config.cs.iq_rate),
-        ("SOURCE:BurstStride! {};", lambda config: config.cs.burst_stride),
-        ("SOURCE:PlaybackSpeed! {:.2f};", lambda config: config.cs.playback_speed),
-        (
-            "SOURCE:ChannelGain! 0 {};",
-            lambda config: (
-                config.cs.channel_gain[0] if len(config.cs.channel_gain) >= 1 else 0
-            ),
-        ),
-        (
-            "SOURCE:ChannelGain! 1 {};",
-            lambda config: (
-                config.cs.channel_gain[1] if len(config.cs.channel_gain) >= 2 else 0
-            ),
-        ),
-        (
-            "SOURCE:ChannelGain! 2 {};",
-            lambda config: (
-                config.cs.channel_gain[2] if len(config.cs.channel_gain) >= 3 else 0
-            ),
-        ),
-        (
-            "SOURCE:ChannelGain! 3 {};",
-            lambda config: (
-                config.cs.channel_gain[3] if len(config.cs.channel_gain) >= 4 else 0
-            ),
-        ),
-        ("SOURCE:Configure!;", lambda config: " "),
-        ("AOA:BinCount! {};", lambda config: config.cs.bin_count),
-        ("AOA:Configure!;", lambda config: " "),
-        ("ROI:Enable! {};", lambda config: "1" if len(config.pp.roi) else "0"),
-        (
-            "ROI:CenterFrequency! {:.0f};",
-            lambda config: (
-                config.pp.roi[0].center_frequency if len(config.pp.roi) else 0.0
-            ),
-        ),
-        (
-            "ROI:Span! {:.0f};",
-            lambda config: config.pp.roi[0].span if len(config.pp.roi) else 0.0,
-        ),
-        (
-            "ROI:Threshold! {:.0f};",
-            lambda config: config.pp.roi[0].threshold if len(config.pp.roi) else 0.0,
-        ),
-        ("ROI:Configure!;", lambda config: " "),
-    ]
-
     def __init__(
         self,
         *args,
@@ -198,9 +138,6 @@ class Interpreter(Loop):
         match command.instruction:
             case proto_cmd.PING:
                 response.ping_data = command.ping_data
-            case proto_cmd.CS_PING:
-                self._cs_ping(response, command.ping_data)
-
             case proto_cmd.CONFIG:
                 # Check whether command is a query or a setting
                 if (
@@ -211,11 +148,15 @@ class Interpreter(Loop):
                         assert self._heading_conf_queue_out is not None
                         self._heading_conf_queue_out.put(command.config.heading)
                     if command.config.HasField("cs"):
+                        cs_command = proto_cmd.Command()
+                        cs_command.CopyFrom(command)
+                        cs_command.kind = proto_cmd.Command.WRITE
+                        cs_resp = self._cs_control(cs_command, timeout_ms=30000)
+                        if cs_resp.HasField("error"):
+                            response.error.CopyFrom(cs_resp.error)
+                        else:
+                            response.config.cs.CopyFrom(cs_resp.config.cs)
 
-                        conf_thread = threading.Thread(
-                            target=self._config_set, args=(response, command.config)
-                        )
-                        conf_thread.start()
                     else:
                         self._config_status_message = proto_cmd.ConfigStatus()
                         self._config_status_message.start_time.GetCurrentTime()
@@ -230,16 +171,6 @@ class Interpreter(Loop):
 
             case proto_cmd.INFO:
                 self._info(response)
-
-            case proto_cmd.POSITION:
-                # Check whether command is a query or a setting
-                if (
-                    command.HasField("parameter")
-                    or command.kind == proto_cmd.Command.WRITE
-                ) and command.kind != proto_cmd.Command.READ:
-                    self._position(response, command.position)
-                else:
-                    self._position(response, None)
 
             case proto_cmd.CS_START:
                 subprocess.run(["sudo", "StartCoreService"])
@@ -262,8 +193,10 @@ class Interpreter(Loop):
                 | proto_cmd.SOURCE_STOP
                 | proto_cmd.REC_START
                 | proto_cmd.REC_STOP
+                | proto_cmd.CS_PING
+                | proto_cmd.POSITION
             ):
-                self._cs_control(response, command.instruction)  # type: ignore
+                response.CopyFrom(self._cs_control(command))
             case proto_cmd.STREAM_START | proto_cmd.STREAM_STOP:
                 assert self._stream_conf_queue_out is not None
                 self._stream_conf_queue_out.put(command)
@@ -288,166 +221,14 @@ class Interpreter(Loop):
             # Postproc module does not respond
             return None
 
-    def _cs_execute(
-        self, command: str, timeout: Optional[float] = None, important: bool = False
-    ) -> Optional[list[str]]:
-        """Send a list of commands to CoreService, return the result."""
-        assert self._cs_queue_in is not None
-        assert self._cs_queue_out is not None
-        assert self._cs_lock is not None
-        if timeout is None:
-            timeout = self._cmd_timeout_seconds
-        if command[-1:] != ";":
-            command += ";"
-        if self._cs_lock.locked() and not important:  # Do not wait if not important
-            raise CSThreadOccupied(self._currently_running_cs_command)
-        with self._cs_lock:
-            self._cs_queue_out.put(command)
-            self._currently_running_cs_command = command
-            try:
-                command_recv = ""
-                response: Optional[str] = None
-                while command_recv.strip("\r\n\t ;") != command.strip("\r\n\t ;"):
-                    command_recv, response = self._cs_queue_in.get(timeout=timeout)
-
-                if response is None:
-                    return None
-                response = response.strip("\r\n\t ;")
-                response_parts = shlex.split(response)
-                error_code = int(response_parts[0])
-                if error_code > 0:
-                    self._logger.warning(f"Error {response} for cmd {command}")
-                self._currently_running_cs_command = ""
-                return response_parts
-            except queue.Empty:
-                self._currently_running_cs_command = ""
-                return None
-
-    def _cs_ping(self, response: proto_cmd.Response, ping_data: str) -> None:
-        """Send a Ping command to CoreService"""
-
-        # Generate and execute appropriate CoreService command
-        cs_command = self._CS_COMMANDS[proto_cmd.PING].format(value=ping_data)
-        cs_response = self._cs_execute(cs_command, timeout=1.0)
-
-        # Check for response validity
-        if cs_response is not None:
-            response.ping_data = cs_response[1]
-        else:
-            response.error.description = "CoreService not responding"
-
-    def _cs_query(self, query_cmd: str) -> Optional[str]:
-        cs_response = self._cs_execute(query_cmd)
-        if cs_response is not None:
-            error_code = int(cs_response[0])
-            if error_code == 0:
-                return cs_response[1]
-            self._logger.warning(
-                f"Could not query {query_cmd}, CS{error_code}{cs_response[1]}"
-            )
-            return None
-        raise CSTimeoutException()
-
-    def _cs_query_multiple(self, query_cmd: str) -> Optional[str]:
-        cs_response = self._cs_execute(query_cmd)
-        if cs_response is not None:
-            error_code = int(cs_response[0])
-            if error_code == 0:
-                return " ".join(cs_response[1:])
-            self._logger.warning(
-                f"Could not query {query_cmd}, CS{error_code}{cs_response[1]}"
-            )
-            return None
-        raise CSTimeoutException()
-
-    def _config_set(
-        self, response: proto_cmd.Response, config: proto_cmd.Config
-    ) -> None:
-        """Set system configuration"""
-        self._config_status_message = proto_cmd.ConfigStatus()
-        self._config_status_message.start_time.GetCurrentTime()
-        if config.pp:
-            assert self._postproc_conf_queue_out
-            assert self._postproc_conf_queue_resp_in
-            self._postproc_conf_queue_out.put(config.pp)
-            pp_response = self._postproc_conf_queue_resp_in.get(block=True)
-
-        for config_command, proto_lambda in self._CONFIG_COMMANDS:
-            command_arg = proto_lambda(config)
-            if not command_arg:
-                continue
-            self._config_status_message.queue.append(
-                str(config_command.format(command_arg))
-            )
-
-        for config_command, proto_lambda in self._CONFIG_COMMANDS:
-            command_arg = proto_lambda(config)
-            if not command_arg:
-                continue
-            cs_command = config_command.format(command_arg)
-            cs_response = self._cs_execute(cs_command, important=True, timeout=30.0)
-            self._config_status_message.success = True
-
-            if cs_response is not None:
-                self._config_status_message.responses[cs_command] = "; ".join(
-                    cs_response
-                )
-                error_code = int(cs_response[0])
-                if error_code != 0:
-                    self._logger.error(f"Cannot set {cs_command}")
-                    # try to set the remaining values
-                    # raise CSErrorException(error_code, cs_response[1])
-                    self._config_status_message.error_code = error_code
-                    self._config_status_message.error_description = (
-                        cs_response[1] if len(cs_response) > 1 else "Unknown"
-                    )
-                    self._config_status_message.success = False
-                else:
-                    self.config_id += 1
-                    if self._latest_config_id_value is not None:
-                        self._latest_config_id_value.set(self.config_id)
-            else:
-                self._config_status_message.responses[cs_command] = "TIMED OUT"
-                self._config_status_message.error_code = -1
-
-                response.error.description = "CoreService not responding"
-                self._logger.error(f"Config timed out on command {cs_command}")
-                # raise CSTimeoutException()
-        self._logger.info("Configuration finished")
-        self._config_status_message.finish_time.GetCurrentTime()
-
     def _config(self, response: proto_cmd.Response) -> None:
         """Query system configuration"""
-        defaults = lambda val, defa: defa if val is None else val
-        response.config.config_id = self.config_id
-        response.config.cs.center_frequency = float(
-            defaults(self._cs_query("SOURCE:CenterFrequency?;"), 0)
-        )
-        response.config.cs.iq_rate = int(
-            float(defaults(self._cs_query("SOURCE:IqRate?;"), 0))
-        )
-        response.config.cs.playback_speed = float(
-            defaults(self._cs_query("SOURCE:PlaybackSpeed?;"), 0)
-        )
-        response.config.cs.bin_count = int(
-            defaults(self._cs_query("AOA:BinCount?;"), 0)
-        )
-        response.config.cs.burst_stride = int(
-            defaults(self._cs_query("SOURCE:BurstStride?;"), 0)
-        )
-        for gain_index in range(4):
-            response.config.cs.channel_gain.append(
-                int(
-                    float(
-                        defaults(
-                            self._cs_query(f"SOURCE:ChannelGain? {gain_index};"), 0
-                        )
-                    )
-                )
-            )
-        response.config.cs.source_path = defaults(
-            self._cs_query_multiple("SOURCE:Path?;"), "UNKNOWN"
-        )
+
+        cs_query_cmd = proto_cmd.Command()
+        cs_query_cmd.instruction = proto_cmd.CONFIG
+        cs_query_cmd.kind = proto_cmd.Command.READ
+        cs_query_resp = self._cs_control(cs_query_cmd)
+        response.config.cs.CopyFrom(cs_query_resp.config.cs)
         if (
             self._latest_telemetry_proxy is None
             or "HeadingStatus" not in self._latest_telemetry_proxy
@@ -494,53 +275,22 @@ class Interpreter(Loop):
         )
         response.info.MergeFrom(system_info_object)
 
-    def _position(self, response: proto_cmd.Response, position: int | None) -> None:
-        """Set or query source position"""
-
-        # Generate and execute appropriate CoreService command
-        if position is not None:
-            cs_command = self._CS_COMMANDS[proto_cmd.POSITION].format(
-                mode="!", value=position
-            )
-        else:
-            cs_command = self._CS_COMMANDS[proto_cmd.POSITION].format(
-                mode="?", value=""
-            )
-        cs_response = self._cs_execute(cs_command)
-
-        # Check for response validity
-        if cs_response is not None:
-            error_code = int(cs_response[0])
-            if error_code == 0:
-                if cs_response[1].isdigit():
-                    response.position = int(cs_response[1])
-                    return
-                elif position is not None:
-                    response.position = position
-                    return
-            raise CSErrorException(error_code, cs_response[1])
-        else:
-            raise CSTimeoutException()
-
     def _cs_control(
-        self, response: proto_cmd.Response, instruction: proto_cmd.Instruction
-    ) -> None:
+        self, command: proto_cmd.Command, timeout_ms: int = 200
+    ) -> proto_cmd.Response:
         """Send control commands (no parameters) to CoreService"""
+        assert self._cs_queue_in is not None
+        assert self._cs_queue_out is not None
 
         # Obtain appropriate CoreService command
-        cs_command = self._CS_COMMANDS[instruction]  # type: ignore
-        cs_response = self._cs_execute(cs_command)
-
-        # Check for response validity
-        # Check for response validity
+        cs_command = proto_cmd.Command()
+        cs_command.CopyFrom(command)
+        if cs_command.HasField("config"):
+            cs_command.config.Clear()
+            cs_command.config.cs.CopyFrom(command.config.cs)
+        self._cs_queue_out.put((cs_command, timeout_ms))
+        cs_response = self._cs_queue_in.get()
         if cs_response is not None:
-            error_code = int(cs_response[0])
-            if error_code == 0:
-                # TODO: Check cs_response for success
-                response.success = True
-            else:
-                response.success = False
-                raise CSErrorException(error_code, cs_response[1])
+            return cs_response
         else:
-            response.success = False
             raise CSTimeoutException()
