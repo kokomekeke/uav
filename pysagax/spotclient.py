@@ -11,23 +11,21 @@ import socket
 import threading
 import tkinter
 from multiprocessing.managers import ValueProxy
+
 from pysagax.communication.broadcast import RX
 from pysagax.communication.req_rep_tcp import REQ
-
-from pysagax.heading.heading_manager import HeadingManager
+from pysagax.heading.heading_pb_client import HeadingPbClient
 from pysagax.heading.queue_collector import QueueValueCollector
 from pysagax.source.source_manager import CoreServiceStatus, SourceManager
 from pysagax.spot.command_thread import CommandThread
-from pysagax.spot.commands_connection_thread import CommandsConnectionThread
-from pysagax.spot.commands_handler_thread import CommandsHandlerThread
 from pysagax.spot.map_server import MapServer
 from pysagax.spot.recording_thread import RecordingThread
 from pysagax.spot.status_query_thread import StatusQueryThread
 from pysagax.spot.stream_process import StreamProcess
-from pysagax.ui import HeadingSourceFrame
 from pysagax.ui.connect_frame import ConnectFrame
 from pysagax.ui.control_frame import ControlFrame
 from pysagax.ui.debug_tab import DebugTab
+from pysagax.ui.heading_source_settings import HeadingSourceFrame
 from pysagax.ui.playback_tab import PlaybackTab
 from pysagax.ui.source_select_frame import SourceSelectFrame
 from pysagax.ui.stat_frame import StatFrame
@@ -47,22 +45,15 @@ from typing import Any, Callable, Literal, Optional
 import numpy as np
 
 import pysagax
-from pysagax import (
-    CoreServiceDebugPacket,
-    CoreServiceEOFPacket,
-    CoreServiceROIResultPacket,
-    CoreServiceSpectrumPacket,
-    StreamAndCompassProcess,
-)
-from pysagax.ui.plot_frame import PlotFrame, PlotSettingsFrame
-from pysagax.util.multiqueue import MultiQueue
-from pysagax.util.read_from_conf import read_from_conf
-from pysagax.util.get_ip import get_ip
-from pysagax.util.mat import yaw_pitch_roll_from_quaternion
-
 import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.data_pb2 as proto_data
+import pysagax.message.heading_pb2 as proto_heading
 from pysagax.message.data_types import DataType
+from pysagax.ui.plot_frame import PlotFrame, PlotSettingsFrame
+from pysagax.util.get_ip import get_ip
+from pysagax.util.mat import yaw_pitch_roll_from_quaternion
+from pysagax.util.multiqueue import MultiQueue
+from pysagax.util.read_from_conf import read_from_conf
 
 conf: Optional[dict[str, Any]] = None
 icon_image: Optional[tkinter.PhotoImage] = None
@@ -163,7 +154,7 @@ class ClientWindow(tkinter.Frame):
             send_commands_function=self.client.send_commands,
             abort_commands_function=self.client.abort_commands,
             source_manager=self.client.source_manager,
-            client=self.client
+            client=self.client,
         )
 
         self.status_info_tab = ttk.Frame(self.center_notebook)
@@ -300,7 +291,7 @@ class ClientWindow(tkinter.Frame):
                 "df_value": packet.detection[0].azimuth,
                 "df_elevation": packet.detection[0].elevation,
             }
-        else: 
+        else:
             latest_roi_resutls = {"df_value": None, "df_elevation": None}
             self.aggregated_roi_results = {
                 "df_value_mean": None,
@@ -457,29 +448,6 @@ class ClientWindow(tkinter.Frame):
             self.status_info_lb.see(tkinter.END)
             print(datetime.now().strftime("%m.%d. %H:%M:%S"), line)
 
-    def calculate_snr(self, packet: CoreServiceSpectrumPacket) -> tuple[float, float]:
-        min_freq = packet.center_frequency - packet.iq_rate / 2
-        max_freq = packet.center_frequency + packet.iq_rate / 2
-        bin_freqs = np.linspace(min_freq, max_freq, packet.bin_count)
-
-        spectrum = list(zip(bin_freqs, packet.magnitude_spectrum))
-
-        roi_center = pysagax.si_to_float(self.control_frame.roi_center_entry.get())
-        roi_span = pysagax.si_to_float(self.control_frame.roi_span_entry.get())
-        roi_min = roi_center - roi_span / 2
-        roi_max = roi_center + roi_span / 2
-
-        signal_bins = [a for f, a in spectrum if roi_min < f and f < roi_max]
-        noise_bins = [a for f, a in spectrum if not (roi_min < f and f < roi_max)]
-
-        if len(signal_bins) == 0 or len(noise_bins) == 0:
-            return 0, 0
-
-        signal_db = max(signal_bins)
-        noise_db = sum(noise_bins) / len(noise_bins)
-
-        return signal_db, noise_db
-
 
 # Owner class for the client
 class Client:
@@ -487,37 +455,40 @@ class Client:
         self.manager = multiprocessing.get_context("spawn").Manager()
 
         self.source_manager = SourceManager()
-        self.heading_manager = HeadingManager()
         self.stream_to_gui_queue: queue.Queue[Any] = self.manager.Queue(maxsize=1)
         self.stream_to_rec_queue: Optional[queue.Queue[Any]] = None
         self.stream_to_map_queue: queue.Queue[Any] = self.manager.Queue(maxsize=1)
 
         self.stream_process_multiqueue = MultiQueue([self.stream_to_gui_queue])
 
-        self.client_window = ClientWindow(self, root)
         self.command_connection: Optional[REQ] = None
-        self.command_thread: Optional[CommandsHandlerThread] = None
+        self.command_thread: Optional[CommandThread] = None
         self.status_query_thread: Optional[StatusQueryThread] = None
-        self.stream_process: Optional[StreamAndCompassProcess] = None
+        self.stream_process: Optional[StreamProcess] = None
         self.recording_thread: Optional[RecordingThread] = None
         self.dfg_map_server: Optional[MapServer] = None
         self.repeat_playback: bool = False
 
-        self.stream_process_watcher_queue: multiprocessing.Queue[
-            str
-        ] = multiprocessing.Queue()
-        self.command_connection_status_watcher_queue: multiprocessing.Queue[
-            str
-        ] = multiprocessing.Queue()
-        self.command_thread_watcher_queue: multiprocessing.Queue[
-            str
-        ] = multiprocessing.Queue()
-        self.recording_thread_watcher_queue: multiprocessing.Queue[
-            str
-        ] = multiprocessing.Queue()
-        self.map_server_thread_watcher_queue: multiprocessing.Queue[
-            str
-        ] = multiprocessing.Queue()
+        self.heading_manager = HeadingPbClient(
+            send_commands_function=self.send_commands,
+            update_ui_callback=self.update_heading_ui,
+        )
+        self.client_window = ClientWindow(self, root)
+        self.stream_process_watcher_queue: multiprocessing.Queue[str] = (
+            multiprocessing.Queue()
+        )
+        self.command_connection_status_watcher_queue: multiprocessing.Queue[str] = (
+            multiprocessing.Queue()
+        )
+        self.command_thread_watcher_queue: multiprocessing.Queue[str] = (
+            multiprocessing.Queue()
+        )
+        self.recording_thread_watcher_queue: multiprocessing.Queue[str] = (
+            multiprocessing.Queue()
+        )
+        self.map_server_thread_watcher_queue: multiprocessing.Queue[str] = (
+            multiprocessing.Queue()
+        )
 
         self.disconnect_value = self.manager.Value("i", 0)
         """
@@ -535,6 +506,9 @@ class Client:
         self.do_stop = False
         self.watcher_thread = threading.Thread(target=self.watcher_thread_fun)
         self.watcher_thread.start()
+
+    def update_heading_ui(self) -> None:
+        self.client_window.heading_source_frame.update_ui()
 
     def watcher_thread_fun(self) -> None:
         while not self.do_stop:
@@ -584,14 +558,6 @@ class Client:
                         do_sleep = False
                     except queue.Empty:
                         pass
-                if self.heading_manager is not None:
-                    try:
-                        msg = self.heading_manager.mp_status.get_nowait()
-                        self.client_window.stream_status_msg_handler(msg)
-                        do_sleep = False
-                    except queue.Empty:
-                        pass
-
                 ##TODO: msg_handler functions might not need separate threads
                 if do_sleep:
                     sleep(0.1)
@@ -615,7 +581,9 @@ class Client:
         """
         Send the command from the command entry box to the client. Called on pressing the Return key in the autocomplete box.
         """
-        assert self.command_thread is not None
+        if self.command_thread is None:
+            print(f"Unable to send command ({str(cmd)})")
+            return
         if (
             self.command_connection is None
         ):  ##TODO: After disconnecting command_thread should be None
@@ -795,6 +763,16 @@ class Client:
         self.send_commands(cmd)
         self.update_roi_settings(roi_mask)
 
+    def query_system_info(self):
+        cmd = proto_cmd.Command()
+        cmd.instruction = proto_cmd.INFO
+        self.send_commands(cmd)
+
+    def update_system_info(self, sysinfo: proto_cmd.SystemInfo) -> None:
+        print(f"Got Info {sysinfo}")
+        self.heading_manager.update_from_heading_status(sysinfo.heading)
+        pass
+
     def update_roi_settings(self, roi_mask: list[proto_cmd.ROIMask]):
         """
         This method handles the calls the methods related to ROI
@@ -868,7 +846,9 @@ def main() -> None:
     global conf
     global icon_image
     parser = argparse.ArgumentParser(description="SPOTClient")
-    parser.add_argument("config", nargs="?", default="/var/sagax/spotclient/spotclient.toml")
+    parser.add_argument(
+        "config", nargs="?", default="/var/sagax/spotclient/spotclient.toml"
+    )
     args = parser.parse_args()
     conf = {}
     if os.path.isfile(args.config):

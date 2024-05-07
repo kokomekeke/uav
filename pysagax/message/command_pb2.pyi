@@ -249,6 +249,8 @@ class CoreServiceConfig(google.protobuf.message.Message):
     BURST_STRIDE_FIELD_NUMBER: builtins.int
     CHANNEL_GAIN_FIELD_NUMBER: builtins.int
     SOURCE_PATH_FIELD_NUMBER: builtins.int
+    SOURCE_TYPE_FIELD_NUMBER: builtins.int
+    SOURCE_SUBDEV_FIELD_NUMBER: builtins.int
     TYPE_FIELD_NUMBER: builtins.int
     center_frequency: builtins.float
     """CoreService parameters"""
@@ -260,6 +262,8 @@ class CoreServiceConfig(google.protobuf.message.Message):
     def channel_gain(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.int]: ...
     source_path: builtins.str
     """Source parameters"""
+    source_type: builtins.str
+    source_subdev: builtins.str
     type: global___CoreServiceConfig.Type.ValueType
     def __init__(
         self,
@@ -271,9 +275,11 @@ class CoreServiceConfig(google.protobuf.message.Message):
         burst_stride: builtins.int = ...,
         channel_gain: collections.abc.Iterable[builtins.int] | None = ...,
         source_path: builtins.str = ...,
+        source_type: builtins.str = ...,
+        source_subdev: builtins.str = ...,
         type: global___CoreServiceConfig.Type.ValueType = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing_extensions.Literal["bin_count", b"bin_count", "burst_stride", b"burst_stride", "center_frequency", b"center_frequency", "channel_gain", b"channel_gain", "iq_rate", b"iq_rate", "playback_speed", b"playback_speed", "source_path", b"source_path", "type", b"type"]) -> None: ...
+    def ClearField(self, field_name: typing_extensions.Literal["bin_count", b"bin_count", "burst_stride", b"burst_stride", "center_frequency", b"center_frequency", "channel_gain", b"channel_gain", "iq_rate", b"iq_rate", "playback_speed", b"playback_speed", "source_path", b"source_path", "source_subdev", b"source_subdev", "source_type", b"source_type", "type", b"type"]) -> None: ...
 
 global___CoreServiceConfig = CoreServiceConfig
 
@@ -477,10 +483,28 @@ class CommandError(google.protobuf.message.Message):
         DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
         UNKNOWN: CommandError._ErrorType.ValueType  # 0
         """Possible error types"""
+        NO_FILE_LOADED: CommandError._ErrorType.ValueType  # 100
+        """CoreServiceErrors"""
+        FAILED_TO_LOAD_CONFIG: CommandError._ErrorType.ValueType  # 101
+        SOURCE_ERROR: CommandError._ErrorType.ValueType  # 102
+        ACQUISITION_STATE_SOURCE_NOT_CONFIGURED: CommandError._ErrorType.ValueType  # 103
+        MALFORMED_PARAMETER: CommandError._ErrorType.ValueType  # 104
+        SET_AOA_BIN_COUNT_NOT_IN_SUPPORTED_SET: CommandError._ErrorType.ValueType  # 105
+        BAD_PARAMETER_COUNT: CommandError._ErrorType.ValueType  # 106
+        NOT_IMPLEMENTED_YET: CommandError._ErrorType.ValueType  # 199
 
     class ErrorType(_ErrorType, metaclass=_ErrorTypeEnumTypeWrapper): ...
     UNKNOWN: CommandError.ErrorType.ValueType  # 0
     """Possible error types"""
+    NO_FILE_LOADED: CommandError.ErrorType.ValueType  # 100
+    """CoreServiceErrors"""
+    FAILED_TO_LOAD_CONFIG: CommandError.ErrorType.ValueType  # 101
+    SOURCE_ERROR: CommandError.ErrorType.ValueType  # 102
+    ACQUISITION_STATE_SOURCE_NOT_CONFIGURED: CommandError.ErrorType.ValueType  # 103
+    MALFORMED_PARAMETER: CommandError.ErrorType.ValueType  # 104
+    SET_AOA_BIN_COUNT_NOT_IN_SUPPORTED_SET: CommandError.ErrorType.ValueType  # 105
+    BAD_PARAMETER_COUNT: CommandError.ErrorType.ValueType  # 106
+    NOT_IMPLEMENTED_YET: CommandError.ErrorType.ValueType  # 199
 
     TIME_FIELD_NUMBER: builtins.int
     TYPE_FIELD_NUMBER: builtins.int
@@ -531,6 +555,7 @@ class Command(google.protobuf.message.Message):
     CONFIG_FIELD_NUMBER: builtins.int
     POSITION_FIELD_NUMBER: builtins.int
     TARGET_FIELD_NUMBER: builtins.int
+    REC_LENGTH_SECS_FIELD_NUMBER: builtins.int
     id: builtins.int
     """Unique ID of command"""
     instruction: global___Instruction.ValueType
@@ -546,6 +571,8 @@ class Command(google.protobuf.message.Message):
     @property
     def target(self) -> global___StreamTarget:
         """Stream target"""
+    rec_length_secs: builtins.int
+    """Recording length"""
     def __init__(
         self,
         *,
@@ -556,10 +583,11 @@ class Command(google.protobuf.message.Message):
         config: global___Config | None = ...,
         position: builtins.int = ...,
         target: global___StreamTarget | None = ...,
+        rec_length_secs: builtins.int = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing_extensions.Literal["config", b"config", "parameter", b"parameter", "ping_data", b"ping_data", "position", b"position", "target", b"target"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing_extensions.Literal["config", b"config", "id", b"id", "instruction", b"instruction", "kind", b"kind", "parameter", b"parameter", "ping_data", b"ping_data", "position", b"position", "target", b"target"]) -> None: ...
-    def WhichOneof(self, oneof_group: typing_extensions.Literal["parameter", b"parameter"]) -> typing_extensions.Literal["ping_data", "config", "position", "target"] | None: ...
+    def HasField(self, field_name: typing_extensions.Literal["config", b"config", "parameter", b"parameter", "ping_data", b"ping_data", "position", b"position", "rec_length_secs", b"rec_length_secs", "target", b"target"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing_extensions.Literal["config", b"config", "id", b"id", "instruction", b"instruction", "kind", b"kind", "parameter", b"parameter", "ping_data", b"ping_data", "position", b"position", "rec_length_secs", b"rec_length_secs", "target", b"target"]) -> None: ...
+    def WhichOneof(self, oneof_group: typing_extensions.Literal["parameter", b"parameter"]) -> typing_extensions.Literal["ping_data", "config", "position", "target", "rec_length_secs"] | None: ...
 
 global___Command = Command
 

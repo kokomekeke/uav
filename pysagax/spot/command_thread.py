@@ -52,7 +52,7 @@ class CommandThread(threading.Thread):
         if not isinstance(commands, list):
             commands = [commands]
         for cmd in commands:
-            cmd.id = self.command_id % 2**31 #staying in the range of int32
+            cmd.id = self.command_id % 2**31  # staying in the range of int32
             self.command_id += 1
             self._command_queue.put(cmd)
             # if cmd not in self.command_queue.queue:
@@ -72,9 +72,9 @@ class CommandThread(threading.Thread):
 
         # TODO: REP.connect() always retuns True
         if not connected:
-           self.disconnect_callback() #disconnect callback?
-           self.display_connection_status_callback("Connection failed")
-           return False
+            self.disconnect_callback()  # disconnect callback?
+            self.display_connection_status_callback("Connection failed")
+            return False
 
         if self.connected_callback is not None:
             self.connected_callback()
@@ -109,8 +109,14 @@ class CommandThread(threading.Thread):
                 time.sleep(0.1)
                 continue
             # print("COMMAND:\n", command)  ####
+            timeout_ms = 2000
+            if (
+                command.kind == proto_cmd.Command.WRITE
+                and command.instruction == proto_cmd.CONFIG
+            ):
+                timeout_ms = 30000
             raw_response = self._connection.send(
-                command.SerializeToString(), timeout=2000
+                command.SerializeToString(), timeout=timeout_ms
             )
             if raw_response is None:
                 self._timeout_handler(command)
@@ -126,9 +132,10 @@ class CommandThread(threading.Thread):
                 if response.instruction != proto_cmd.CONFIG_STATUS:
                     cmd = proto_cmd.Command(instruction=proto_cmd.CONFIG_STATUS)
                     self.enqueue_commands(cmd)
-                #TODO: dont run response handlers if error in response, 
+                # TODO: dont run response handlers if error in response,
                 #      OR make response handlers that check the error field
-                continue #skipping response handler
+                continue  # skipping response handler
+
             # print("RESPONSE:\n", response, "\n================\n")  ####
             try:
                 self._response_handler(response)
@@ -139,7 +146,7 @@ class CommandThread(threading.Thread):
                 raise e
         self._display_thread_status_callback(False, "")
 
-    def _get_next_command(self):
+    def _get_next_command(self) -> Optional[proto_cmd.Command]:
         if self._command_queue.empty():
             if time.time_ns() - self._last_command_time > self.heartbeat_timeout_ns / 2:
                 # send PING if no communication for a long time

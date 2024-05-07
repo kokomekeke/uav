@@ -31,6 +31,7 @@ from pysagax.ui.lena_matplotlib_graphs import (
     WaterfallMagnitudeGraph,
 )
 from pysagax.util.read_from_conf import read_from_conf
+from pysagax.util.protobuf_spectrum_to_numpy import protobuf_spectrum_to_numpy
 
 
 class PlotFrame(tkinter.Frame):
@@ -262,13 +263,7 @@ class PlotFrame(tkinter.Frame):
             return
         
         #Decoding spectrum data
-        data_type = spectrum.data_type
-        np_data_type = {
-            proto_data.Spectrum.DataType.INT16: np.dtype(np.int16),
-            proto_data.Spectrum.DataType.INT8: np.dtype(np.int8),
-            proto_data.Spectrum.DataType.FLOAT32: np.dtype(np.float32),
-        }[data_type]
-        spectrum_data = np.frombuffer(spectrum.data, np_data_type)
+        spectrum_data = protobuf_spectrum_to_numpy(spectrum)
         bin_count = len(spectrum_data)
         center_frequency = spectrum.center_frequency
         iq_rate = spectrum.bandwidth

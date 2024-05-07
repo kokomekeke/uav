@@ -186,6 +186,7 @@ class PlaybackTab(ttk.Frame):
     def position_commands(self, event: Any) -> None:
         cmd = proto_cmd.Command()
         cmd.instruction = proto_cmd.POSITION
+        cmd.kind = proto_cmd.Command.WRITE
         cmd.position = int(self.position_variable.get())
         self.send_commands_function(cmd)
 

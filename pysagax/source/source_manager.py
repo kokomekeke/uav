@@ -155,14 +155,21 @@ class SourceManager:
             self.is_cs_configuring = True
             return
         self.latest_config = resp
-        self.current_source_path = str(resp.config.cs.source_path).strip().split(" ")
+        self.current_source_path = (
+            str(resp.config.cs.source_type + " " + resp.config.cs.source_path)
+            .strip()
+            .split(" ")
+        )
         try:
             self.current_source = Sources(self.current_source_path[0])
         except:
             self.current_source = Sources.NOT_SET
 
     def source_config_status_handler(self, resp) -> None:
-        if bool(resp.config_status.finish_time.ToSeconds()):
+        if (
+            bool(resp.config_status.finish_time.ToNanoseconds())
+            or "TIMED OUT" in resp.config_status.responses.values()
+        ):
             self.is_cs_configuring = False
         self.config_status["responses"] = len(resp.config_status.responses)
         self.config_status["queue"] = len(resp.config_status.queue)
@@ -246,24 +253,28 @@ class SourceManager:
         """
         cmd = proto_cmd.Command()
         cmd.instruction = proto_cmd.CONFIG
+        source_type = ""
+        source_path = ""
         print("SOURCE_STRING:", source_str)
         if source_str == Sources.SigMF.display_name:
             if params[-1] != "/":
                 params = params + "/"
-            source_path = f"SigMF {params}recording.sigmf-collection"
+            source_type = f"SigMF"
+            source_path = f"{params}recording.sigmf-collection"
         elif source_str == Sources.Generator.display_name:
-            source_path = (
-                f"SigMF {self.default_source_file_path}recording.sigmf-collections"
-            )
+            source_type = f"SigMF"
+            source_path = f"{self.default_source_file_path}recording.sigmf-collections"
+
         elif source_str == Sources.Sidekiq.display_name:
             p = 1  # for single radio
             if params == "Dual":
                 p = 2
-            source_path = f"Sidekiq {p}"
+            source_type = f"Sidekiq"
+            source_path = f"{p}"
         elif source_str == Sources.UHD.display_name:
-            source_path = f"UHD"
+            source_type = f"UHD"
+        cmd.config.cs.source_type = source_type
         cmd.config.cs.source_path = source_path
-
         return cmd
 
     def is_source_set(self) -> bool:

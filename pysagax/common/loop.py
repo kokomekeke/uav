@@ -1,6 +1,9 @@
 from logging import getLogger
+import logging
 from signal import signal, SIGINT, SIGTERM
 from os import kill, getpid
+import typing
+from google.protobuf import json_format
 import traceback
 
 
@@ -51,4 +54,15 @@ class Loop:
         """Stop execution of loop logic"""
 
         # Kill loop forcefully
+        self._logger.critical(f"(Pid {getpid()}) forcefully killed")
         kill(getpid(), 9)
+
+    def _protobuf_to_log(
+        self, protobuf: typing.Any, format_str: str = "{}", level: int = logging.INFO
+    ) -> None:
+        message_str = (
+            json_format.MessageToJson(protobuf, indent=0)
+            .replace("\n", "")
+            .replace("\r", "")
+        )
+        self._logger.log(level, format_str.format(message_str))

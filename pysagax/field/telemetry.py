@@ -7,10 +7,10 @@ import time
 import shutil
 import pickle
 import socket
+import logging
 
 from typing import Any, Generator, Iterable, Optional
 
-from google.protobuf.json_format import MessageToJson
 import pysagax
 
 import pysagax.message.data_pb2 as proto_data
@@ -28,8 +28,9 @@ class Telemetry(Loop):
     ) -> None:
         super().__init__(*args, **kwargs)
         self._comm_queue_out: Optional[Queue] = None
-        self._cs_commands_queue: Optional[Queue] = None
-        self._cs_responses_queue: Optional[Queue] = None
+        self._latest_cs_telemetry_packet = proto_data.Telemetry()
+        self._latest_cs_telemetry_received_time = time.time()
+        self._cs_telemetry_queue: Optional[Queue] = None
         self._heading_status_queue: Optional[Queue] = None
         self._latest_packets_proxy: Optional[DictProxy] = None
         self._telemetry_packet = proto_data.Telemetry()
@@ -43,110 +44,35 @@ class Telemetry(Loop):
     def __call__(
         self,
         comm_queue_out: Queue[Any],
-        cs_commands_queue: Queue[Any],
-        cs_responses_queue: Queue[Any],
+        cs_telemetry_queue: Queue[proto_data.Telemetry],
         heading_status_queue: Queue[Any],
         latest_packets_proxy: Optional[DictProxy] = None,
         *args,
         **kwargs,
     ) -> None:
         self._comm_queue_out = comm_queue_out
-        self._cs_commands_queue = cs_commands_queue
-        self._cs_responses_queue = cs_responses_queue
+        self._cs_telemetry_queue = cs_telemetry_queue
         self._heading_status_queue = heading_status_queue
         self._latest_packets_proxy = latest_packets_proxy
         return super()._call(*args, **kwargs)
 
-    def _cs_execute(
-        self, commands: Iterable[str], timeout: Optional[float] = 1
-    ) -> Generator[tuple[str, list[str]], None, None]:
-        """Send a list of commands to CoreService, return the result."""
-        assert self._cs_commands_queue is not None
-        assert self._cs_responses_queue is not None
-        while not self._cs_responses_queue.empty():
-            self._cs_responses_queue.get()
-        for command in commands:
-            if command[-1:] != ";":
-                command += ";"
-            self._cs_commands_queue.put(command)
-        last_command = ""
-        try:
-            for command in commands:
-                last_command = command
-                command_recv = ""
-                response: Optional[str] = None
-                while command_recv.strip("\r\n\t ;") != command.strip("\r\n\t ;"):
-                    command_recv, response = self._cs_responses_queue.get(
-                        timeout=timeout
-                    )
-                if response is None:
-                    self._logger.warning(f"CS empty response to {last_command}")
-                    return None
-                response = response.strip("\r\n\t ;")
-                response_parts = shlex.split(response)
-                error_code = int(response_parts[0])
-                if error_code > 0:
-                    self._logger.warning(f"Error {response} for cmd {command}")
-                yield command, response_parts
-        except queue.Empty:
-            self._logger.error(f"CS not responding to {last_command}")
-            while not self._cs_commands_queue.empty():
-                self._cs_commands_queue.get()
-
     def _get_from_cs(self) -> None:
-        for command, response in self._cs_execute(
-            [
-                "SOURCE:Status?",
-                "RECORDING:Status?",
-                "SOURCE:Length?",
-                "SOURCE:Position?",
-            ]
-        ):
-            self._logger.debug(f" * {command} * {str(response)} *")
-            match command:
-                case "SOURCE:Status?":
-                    if len(response) < 3:
-                        self._logger.warning(
-                            f"Invalid CS response for Status?: {str(response)}"
-                        )
-                        return
-                    ready = bool(int(response[1]))
-                    started = bool(int(response[2]))
-                    self._telemetry_packet.source.status = (
-                        proto_data.Telemetry.Source.DISABLED
-                        if not ready
-                        else (
-                            proto_data.Telemetry.Source.RUNNING
-                            if started
-                            else proto_data.Telemetry.Source.ENABLED
-                        )
-                    )
-                case "RECORDING:Status?":
-                    if len(response) < 3:
-                        self._logger.warning(
-                            f"Invalid CS response for Recording?: {str(response)}"
-                        )
-                        return
-                    enabled = bool(int(response[1]))
-                    running = bool(int(response[2]))
-                    self._telemetry_packet.recording.status = (
-                        proto_data.Telemetry.Recording.DISABLED
-                        if not enabled
-                        else (
-                            proto_data.Telemetry.Recording.RUNNING
-                            if running
-                            else proto_data.Telemetry.Recording.ENABLED
-                        )
-                    )
-                case "SOURCE:Length?":
-                    if response[0] == "0":
-                        self._telemetry_packet.source.length = int(response[1])
 
-                case "SOURCE:Position?":
-                    if response[0] == "0":
-                        self._telemetry_packet.source.position = int(response[1])
-
-            pass
+        assert self._cs_telemetry_queue is not None
+        latest_cs_telemetry_packet = self._latest_cs_telemetry_packet
+        while not self._cs_telemetry_queue.empty():
+            latest_cs_telemetry_packet = self._cs_telemetry_queue.get()
+            self._latest_cs_telemetry_received_time = time.time()
+        assert isinstance(latest_cs_telemetry_packet, proto_data.Telemetry)
+        if self._latest_cs_telemetry_received_time < time.time() - 5.0:
+            # cs telemetry expected at least every 5 secs
+            self._latest_cs_telemetry_packet = proto_data.Telemetry()
+        else:
+            self._latest_cs_telemetry_packet = latest_cs_telemetry_packet
+        self._telemetry_packet.source.CopyFrom(self._latest_cs_telemetry_packet.source)
+        self._telemetry_packet.recording.CopyFrom(
+            self._latest_cs_telemetry_packet.recording
+        )
 
     def _construct_sysinfo_packet(self) -> None:
         assert self._comm_queue_out is not None
@@ -156,24 +82,7 @@ class Telemetry(Loop):
         self._sysinfo_packet.hardware.disk = total // (2**20)  # MiB
         self._sysinfo_packet.software.pysagax_version = pysagax.__version__  # type: ignore
         self._sysinfo_packet.heading.MergeFrom(self._heading_status_packet)
-        try:
-            _, resp = next(self._cs_execute(["CORE:Version?"]))
-            if resp[0] == "0":
-                self._sysinfo_packet.software.cs_version = (
-                    f"{resp[1]}.{resp[2]}.{resp[3]}"  # major.minor.patch
-                )
-                if resp[4]:
-                    self._sysinfo_packet.software.cs_version += (
-                        f"-{resp[4]}"  # -prerelease
-                    )
-                if resp[5]:
-                    self._sysinfo_packet.software.cs_version += f"+{resp[5]}"  # +build
-                if resp[6]:
-                    self._sysinfo_packet.software.cs_version += (
-                        f" ({resp[6]})"  # (vcs tag)
-                    )
-        except StopIteration:  # CS not responding
-            self._sysinfo_packet.software.cs_version = "N/A"
+        # TODO CoreService version
         self._logger.debug("SystemInfo packet ready")
         if self._latest_packets_proxy is not None:
             self._latest_packets_proxy["SystemInfo"] = pickle.dumps(
@@ -192,25 +101,26 @@ class Telemetry(Loop):
 
     def _get_heading_module_info(self) -> None:
         assert self._heading_status_queue is not None
-        try:
-            status_packet = self._heading_status_queue.get_nowait()
-            if isinstance(status_packet, proto_heading.HeadingStatus):
-                self._heading_status_packet = status_packet
-                self._latest_heading_status_time = time.time()
-                logged_message = (
-                    MessageToJson(self._heading_status_packet, indent=0)
-                    .replace("\n", "")
-                    .replace("\r", "")
-                )
-                self._logger.info(f"Heading updated: {logged_message}")
-                if self._latest_packets_proxy is not None:
-                    self._latest_packets_proxy["HeadingStatus"] = pickle.dumps(
-                        self._heading_status_packet
+        while True:
+            try:
+                status_packet = self._heading_status_queue.get_nowait()
+                if isinstance(status_packet, proto_heading.HeadingStatus):
+                    self._heading_status_packet = status_packet
+                    self._latest_heading_status_time = time.time()
+                    self._protobuf_to_log(
+                        self._heading_status_packet,
+                        "Heading updated: {}",
+                        level=logging.DEBUG,
                     )
-
-                self._construct_sysinfo_packet()
-        except queue.Empty:
-            pass
+                    if self._latest_packets_proxy is not None:
+                        self._latest_packets_proxy["HeadingStatus"] = pickle.dumps(
+                            self._heading_status_packet
+                        )
+                    self._construct_sysinfo_packet()
+                else:
+                    break
+            except queue.Empty:
+                break
 
     def _push_finished_packet(self) -> None:
         assert self._comm_queue_out is not None

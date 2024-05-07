@@ -1,3 +1,4 @@
+import logging
 from queue import Queue
 from typing import Any, Optional
 
@@ -11,20 +12,24 @@ import google.protobuf.message
 class Communicator(Loop):
     """Background process receiving commands and pushing then to internal queue"""
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(
+        self, port: int = 5556, *args, **kwargs
+    ) -> None:
         super().__init__(*args, **kwargs)
 
         # Set up command channel
         self._server: Optional[REP] = None
         self._queue_in: Optional[Queue] = None
         self._queue_out: Optional[Queue] = None
+        self._port = port
 
     def __call__(
         self, queue_in: Queue[Any], queue_out: Queue[Any], *args, **kwargs
     ) -> None:
         self._queue_in = queue_in
         self._queue_out = queue_out
-        self._server = REP(address_client="127.0.0.1", port_client=5555)
+        self._server = REP(port_server=self._port)
+        self._logger.info(f"Listening ZMQ REP on {self._port}/tcp")
         # self._logger.debug(vars(self._server))
         return super()._call(*args, **kwargs)
 
@@ -58,9 +63,9 @@ class Communicator(Loop):
         self._queue_out.put(command)
 
         # Wait for response from Interpreter
-        self._logger.debug("==========")
+        self._protobuf_to_log(command, "PYSAGAX-UAV CMD {}", logging.INFO)
         response = self._queue_in.get()
         raw_response = response.SerializeToString()
         # Send response to remote client
         self._server.resp(raw_response)
-        self._logger.debug("Response sent")
+        self._protobuf_to_log(response, "PYSAGAX-UAV RSP {}", logging.INFO)

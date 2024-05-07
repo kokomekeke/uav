@@ -81,7 +81,7 @@ class Streamer(Loop):
             self._servers[f"{target.address}:{target.port}"].server.connect()
             self._logger.info(f"Stream client {target.address}:{target.port} added")
         except zmq.ZMQError as zmqe:
-            self._logger.error(f"ZMQError{zmqe.errno}: {str(zmqe)}")
+            self._logger.error(f"ZMQError {zmqe.errno}: {str(zmqe)}")
 
     def remove_stream_client(self, target: proto_cmd.StreamTarget) -> None:
         self._servers[f"{target.address}:{target.port}"].server.disconnect()
@@ -132,16 +132,16 @@ class Streamer(Loop):
                         f" packet not sent to {host_port} level {server.level}"
                     )
                     continue
-
-                server.server.send(stream_packet, type_field.value)
                 self._logger.debug(
                     f"{packet.DESCRIPTOR.name} ({type_field.name} -> {type_field.value}) "
                     f"#{self._total_packets[type_field]} /{server.packet_period[type_field]}"
-                    f" packet sent to {host_port} level {server.level}"
+                    f" packet to {host_port} level {server.level}"
                 )
+                server.server.send(stream_packet, type_field.value)
+
         except queue.Empty:
             pass
         except zmq.ZMQError as zmqe:
-            self._logger.error(f"ZMQError{zmqe.errno}: {str(zmqe)}")
+            self._logger.error(f"ZMQError {zmqe.errno}: {str(zmqe)}")
         except BufferError as bufe:
             self._logger.error(f"Buffer error: {bufe}")
