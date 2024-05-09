@@ -31,7 +31,7 @@ from pysagax.ui.lena_matplotlib_graphs import (
     WaterfallMagnitudeGraph,
 )
 from pysagax.util.read_from_conf import read_from_conf
-from pysagax.util.protobuf_spectrum_to_numpy import protobuf_spectrum_to_numpy
+from pysagax.util.protobuf_spectrum_utils import protobuf_spectrum_to_numpy
 
 
 class PlotFrame(tkinter.Frame):

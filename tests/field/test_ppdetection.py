@@ -5,7 +5,6 @@ import pysagax.message.data_pb2 as proto_data
 import pysagax.message.command_pb2 as proto_cmd
 import copy
 
-from pysagax.util.protobuf_spectrum_to_numpy import protobuf_spectrum_to_numpy
 from pysagax.util.mat import normalize_angle
 import numpy as np
 

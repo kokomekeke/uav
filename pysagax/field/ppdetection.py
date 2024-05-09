@@ -16,7 +16,7 @@ from google.protobuf.timestamp_pb2 import Timestamp
 
 from pysagax.common.loop import Loop
 
-from pysagax.util.protobuf_spectrum_to_numpy import protobuf_spectrum_to_numpy
+from pysagax.util.protobuf_spectrum_utils import protobuf_spectrum_to_numpy
 
 
 class DetectionAggregator:
