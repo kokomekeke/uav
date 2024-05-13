@@ -121,6 +121,6 @@ class StatusFrame(tkinter.Frame):
         if src_path is not None:
             status_path_string = src_path + f" [{self.source_manager.source_status.name}]"
             
-        status_path_string = status_path_string + f" [{self.source_manager.config_status['responses']}/{self.source_manager.config_status['queue']}]"
+        status_path_string = status_path_string
 
         self.status_path_string.set(status_path_string)
