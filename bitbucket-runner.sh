@@ -19,6 +19,8 @@ if [ -d $ARTIFACTS ]; then
 fi
 python -m venv $PYENV_HOME
 source $PYENV_HOME/bin/activate
+
+$PYENV_HOME/bin/python -m pip install --upgrade pip
 $PYENV_HOME/bin/pip install 'build<0.10.0'
 $PYENV_HOME/bin/pip install -e .
 $PYENV_HOME/bin/pip install .[test]
