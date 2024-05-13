@@ -115,7 +115,7 @@ class TestCalculateSNR:
     @pytest.fixture(scope="function")
     def make_snr_test_cases(self, request):
         """
-        Fuction that returns the predefined spectrum noise bins and detection packets.
+        Function that returns the predefined spectrum noise bins and detection packets.
         This way the parametrize decorator only has to contain the id of these objects
         for readability and reusability.
 
@@ -165,7 +165,7 @@ class TestCalculateSNR:
 
         # Predefined Detections
         # Each element is a simulated output of the ROI detecting algorithm
-        # namely a dictionary of event_id -> Detection packet
+        # namely a dictionary of roi_id -> Detection packet
         # Strength is in dB
         detections = {
             # Single signal detected in a ROI window

@@ -136,7 +136,7 @@ class PPDetection(Loop):
         """Iterating over the spectrum with each element of the ROI mask"""
 
         # packet.detection should be empty, but let's keep the data if it isn't
-        # detections: a dictionary of event_id -> Detection
+        # detections: a dictionary of roi_id -> Detection
         detections = {d.event_id: d for d in packet.detection}
 
         magnitude_spectrums = [
