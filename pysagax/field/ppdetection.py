@@ -17,6 +17,7 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from pysagax.common.loop import Loop
 
 from pysagax.util.protobuf_spectrum_utils import protobuf_spectrum_to_numpy
+from pysagax.util.protobuf_spectrum_utils import create_spectrum_with_freq_dict
 
 
 class DetectionAggregator:
@@ -133,31 +134,51 @@ class PPDetection(Loop):
         self, packet: proto_data.Measurement
     ) -> dict[int, proto_data.Detection]:
         """Iterating over the spectrum with each element of the ROI mask"""
-        detections = {}
-        if len(packet.detection):
-            detections = {0: packet.detection[0]}  # return what CoreService has found
-        if len(self._current_config.roi):
-            detections = self._calculate_snr(
-                packet, detections, self._current_config.roi[0]
-            )
-        return detections
-        # TODO: move roi detection here from CoreService
-        #       then delete the lines in this function until this one
 
-        if not len(self._current_config.roi):
-            return {}
+        # packet.detection should be empty, but let's keep the data if it isn't
+        # detections: a dictionary of event_id -> Detection
+        detections = {d.event_id: d for d in packet.detection}
 
-        detections = {}
+        magnitude_spectrums = [
+            d
+            for d in packet.data
+            if d.spectrum_type == proto_data.Spectrum.SpectrumType.MAGNITUDE
+        ]
+        # can't do detection or SNR calculation without magnitude spectrum or roi masks
+        if not len(magnitude_spectrums) or not len(self._current_config.roi):
+            return detections
+        spectrum = magnitude_spectrums[0]
+        spectrum_with_freq = create_spectrum_with_freq_dict(spectrum)
+
         # run roi detection for each segment of the roi mask
         for roi in self._current_config.roi:
-            new_detections = self._detect_roi(packet, roi)
-            new_detections = self._calculate_snr(packet, new_detections, roi)
+            # Separating spectrum to signal (inside the roi) and noise (outside the roi) bins
+            roi_min = roi.center_frequency - roi.span / 2
+            roi_max = roi.center_frequency + roi.span / 2
+            signal_bins = {
+                f: a
+                for f, a in spectrum_with_freq.items()
+                if roi_min <= f and f <= roi_max
+            }
+            noise_bins = {
+                f: a
+                for f, a in spectrum_with_freq.items()
+                if not (roi_min < f and f < roi_max)
+            }
+
+            new_detections = self._detect_roi(signal_bins, noise_bins, roi)
+            new_detections = self._calculate_snr(
+                signal_bins, noise_bins, new_detections, roi
+            )
             detections = detections | new_detections
 
         return detections
 
     def _detect_roi(
-        self, packet: proto_data.Measurement, roi: proto_cmd.ROIMask
+        self,
+        signal_bins: dict[float, float | int],
+        noise_bins: dict[float, float | int],
+        roi: proto_cmd.ROIMask,
     ) -> dict[int, proto_data.Detection]:
         """
         Detecting signals that are more powerful than the ROI threshold.
@@ -179,9 +200,9 @@ class PPDetection(Loop):
 
     def _calculate_snr(
         self,
-        packet: proto_data.Measurement,
+        signal_bins: dict[float, float | int],
+        noise_bins: dict[float, float | int],
         detections: dict[int, proto_data.Detection],
-        roi: proto_cmd.ROIMask,
     ) -> dict[int, proto_data.Detection]:
         """
         Rough SNR estimation function.
@@ -189,38 +210,10 @@ class PPDetection(Loop):
         Signal level: amplitude of the signal given in the detection list
         Consider improving it. Here is a useful paper on the topic: https://spektroskopie.vdsastro.de/files/pdfs/snr.pdf
         """
-        magnitude_spectrums = [
-            d
-            for d in packet.data
-            if d.spectrum_type == proto_data.Spectrum.SpectrumType.MAGNITUDE
-        ]
-        if not len(magnitude_spectrums):
-            return detections
-        spectrum = magnitude_spectrums[0]
-
-        spectrum_data = protobuf_spectrum_to_numpy(spectrum)
-
-        min_freq = spectrum.center_frequency - spectrum.bandwidth / 2
-        max_freq = spectrum.center_frequency + spectrum.bandwidth / 2
-        bin_freqs = np.linspace(min_freq, max_freq, len(spectrum_data))
-
-        # a list of (bin frequency, bin amplitude) tuples.
-        spectrum_with_freq = list(zip(bin_freqs, spectrum_data))
-
-        roi_min = roi.center_frequency - roi.span / 2
-        roi_max = roi.center_frequency + roi.span / 2
-
-        signal_bins = [
-            a for f, a in spectrum_with_freq if roi_min <= f and f <= roi_max
-        ]
-        noise_bins = [
-            a for f, a in spectrum_with_freq if not (roi_min < f and f < roi_max)
-        ]
-
         if len(noise_bins) == 0:
             return detections
 
-        noise_db = sum(noise_bins) / len(noise_bins)
+        noise_db = sum(noise_bins.values()) / len(noise_bins)
         for event_id, detection in detections.items():
             signal_db = detection.strength
             snr = signal_db - noise_db
