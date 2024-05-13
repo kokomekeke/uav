@@ -24,17 +24,17 @@ $PYENV_HOME/bin/python -m pip install --upgrade pip
 $PYENV_HOME/bin/python -m pip uninstall -y setuptools
 $PYENV_HOME/bin/python -m pip install -U setuptools
 $PYENV_HOME/bin/python -m pip install 'build<0.10.0'
-$PYENV_HOME/bin/python -m pip install versioneer
-$PYENV_HOME/bin/python -m pip install wheel
+$PYENV_HOME/bin/python -m pip install versioneer wheel
 # $PYENV_HOME/bin/pip install -r requirements.txt
 $PYENV_HOME/bin/python -m build --wheel --no-isolation
-$PYENV_HOME/bin/python -m pip install .[test]
+$PYENV_HOME/bin/python -m pip install $SETUP_DIST/*.whl
+$PYENV_HOME/bin/python -m pip install black mypy pytest pytest-cov pytest-mock
 $PYENV_HOME/bin/pytest
 mkdir -p $ARTIFACTS
 S_TARGET="$LARGESHARE/temp/pipelines/sgx-pc/$VCS_TAG"
 if [[ -d $S_TARGET ]]; then
 	rm -r $S_TARGET
 fi
-cp ./dist/*.whl $ARTIFACTS
+cp $SETUP_DIST/*.whl $ARTIFACTS
 mkdir -p $S_TARGET
 cp -r $ARTIFACTS/. $S_TARGET
