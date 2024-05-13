@@ -19,14 +19,17 @@ if [ -d $ARTIFACTS ]; then
 fi
 python -m venv $PYENV_HOME
 source $PYENV_HOME/bin/activate
+$PYENV_HOME/bin/pip install 'build<0.10.0'
 $PYENV_HOME/bin/pip install -e .
 $PYENV_HOME/bin/pip install .[test]
-$PYENV_HOME/bin/pip install 'build<0.10.0'
 # $PYENV_HOME/bin/pip install -r requirements.txt
 $PYENV_HOME/bin/pytest
 $PYENV_HOME/bin/python -m build
 mkdir -p $ARTIFACTS
 S_TARGET="$LARGESHARE/temp/pipelines/sgx-pc/$VCS_TAG"
+if [[ -d $S_TARGET ]]; then
+	rm -r $S_TARGET
+fi
 cp ./dist/*.whl $ARTIFACTS
 mkdir -p $S_TARGET
 cp -r $ARTIFACTS/. $S_TARGET
