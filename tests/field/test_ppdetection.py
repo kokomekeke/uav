@@ -281,3 +281,69 @@ class TestCalculateSNR:
 
         # the returned dictionary shouldn't be changed
         assert original_detections == returned_detections
+
+
+class TestDetectRoi:
+    @pytest.fixture()
+    def make_detect_roi_test_cases(self, request):
+        signal_bins_no = request.param[0]
+        roi_no = request.param[1]
+        azimuth_no = request.param[2]
+        elevation_no = request.param[3]
+
+        signal_bins_options = {0: {13: -10, 14: -5, 15: -2, 16: -8, 17: -10}}
+        roi_options = {
+            0: proto_cmd.ROIMask(roi_id=2, threshold=-6),
+            1: proto_cmd.ROIMask(roi_id=2, threshold=-1),
+        }
+        azimuth_spectrum_options = {
+            0: {10: 0, 11: 1, 12: 2, 13: 3, 14: 4, 15: 5, 16: 6, 17: 7, 18: 8, 19: 9},
+        }
+        elevation_spectrum_options = {
+            0: {10: 10, 11: 9, 12: 8, 13: 7, 14: 6, 15: 5, 16: 4, 17: 3, 18: 2, 19: 1},
+        }
+        return {
+            "signal_bins": signal_bins_options[signal_bins_no],
+            "roi": roi_options[roi_no],
+            "azimuth_spectrum_with_freq": azimuth_spectrum_options[azimuth_no],
+            "elevation_spectrum_with_freq": elevation_spectrum_options[elevation_no],
+        }
+
+    @pytest.mark.parametrize(
+        ["make_detect_roi_test_cases", "expected"],
+        [
+            # [make_detect_roi_test_cases, expected], where params for make_detect_roi_test_cases is a list of:
+            #   signal_bins_no, roi_no, azimuth_no, elevation_no
+            #   and expected is a dict of Detections (the output of _detect_roi() )
+            [
+                [0, 0, 0, 0],
+                {
+                    2: proto_data.Detection(
+                        roi_id=2,
+                        frequency=15,
+                        # bandwidth #TODO
+                        strength=-2,
+                        azimuth=5,
+                        elevation=5,
+                    )
+                },
+            ],
+            # no detection:
+            [[0, 1, 0, 0], {}],
+        ],
+        indirect=["make_detect_roi_test_cases"],  # passing the parameters to a fixture
+    )
+    def test_detect_roi(self, make_detect_roi_test_cases, expected):
+        pp = PPDetection()
+        results = pp._detect_roi(
+            signal_bins=make_detect_roi_test_cases["signal_bins"],
+            noise_bins={},
+            roi=make_detect_roi_test_cases["roi"],
+            azimuth_spectrum_with_freq=make_detect_roi_test_cases[
+                "azimuth_spectrum_with_freq"
+            ],
+            elevation_spectrum_with_freq=make_detect_roi_test_cases[
+                "elevation_spectrum_with_freq"
+            ],
+        )
+        assert results == expected
