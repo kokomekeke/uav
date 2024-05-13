@@ -21,9 +21,11 @@ python -m venv $PYENV_HOME
 source $PYENV_HOME/bin/activate
 
 $PYENV_HOME/bin/python -m pip install --upgrade pip
-$PYENV_HOME/bin/pip install 'build<0.10.0'
-$PYENV_HOME/bin/pip install -e .
-$PYENV_HOME/bin/pip install .[test]
+$PYENV_HOME/bin/python -m pip uninstall -y setuptools
+$PYENV_HOME/bin/python -m pip install -U setuptools
+$PYENV_HOME/bin/python -m pip install 'build<0.10.0'
+$PYENV_HOME/bin/python -m pip install -e .
+$PYENV_HOME/bin/pyhton -m pip install .[test]
 # $PYENV_HOME/bin/pip install -r requirements.txt
 $PYENV_HOME/bin/pytest
 $PYENV_HOME/bin/python -m build
