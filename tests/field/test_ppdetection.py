@@ -5,9 +5,12 @@ import pysagax.message.data_pb2 as proto_data
 import pysagax.message.command_pb2 as proto_cmd
 import copy
 
-from pysagax.util.protobuf_spectrum_to_numpy import protobuf_spectrum_to_numpy
 from pysagax.util.mat import normalize_angle
 import numpy as np
+from pysagax.util.protobuf_spectrum_utils import (
+    convert_iterable_to_spectrum_data,
+    create_spectrum_with_freq_dict,
+)
 
 
 class TestDetectionAggregation:
@@ -112,55 +115,57 @@ class TestCalculateSNR:
     @pytest.fixture(scope="function")
     def make_snr_test_cases(self, request):
         """
-        Fuction that returns the predefined spectrum, detection packet and roi packets.
+        Function that returns the predefined spectrum noise bins and detection packets.
         This way the parametrize decorator only has to contain the id of these objects
         for readability and reusability.
 
         Parameters for this fixture:
-            spectrum_no: int,
+            noise_bin_no: int,
             detections_no: int,
-            roi_center: float,
-            roi_span: float,
-            spectrum_center_freq=15, (optional)
-            spectrum_bandwidth=10,   (optional)
         """
 
-        spectrum_no = request.param[0]
+        noise_bin_no = request.param[0]
         detections_no = request.param[1]
-        roi_center = request.param[2]
-        roi_span = request.param[3]
-        if len(request.param) == 6:
-            spectrum_center_freq = request.param[4]
-            spectrum_bandwidth = request.param[5]
-        else:
-            spectrum_center_freq = 15
-            spectrum_bandwidth = 10
 
         # Predefined spectrums. List of amplitudes for each bin in dB
-        spectrums = {
-            0: [1, 1, 1, 1, 50, 100, 0, 1, 1, 1, 1],
-            1: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-            2: [0, 2, 0, 2, 100, 100, 100, 2, 0, 1, 1],
-            3: [-100, -90, -80, -70, -20, -50, -20, -70, -80, -90, -100],
-            4: [-20, -30, 20, 100, 20, -20, -30],  # 7 bins, mixed positive & negative
+        noise_bins_options = {
+            0: {10: 1, 11: 1, 12: 1, 13: 1, 17: 1, 18: 1, 19: 1, 20: 1},
+            1: {
+                0.0: 1,
+                0.1: 1,
+                0.2: 1,
+                0.3: 1,
+                0.4: 1,
+                0.5: 1,
+                0.6: 1,
+                0.7: 1,
+                0.8: 1,
+                0.9: 1,
+                1: 1,
+            },
+            2: {-5: 0, -4: 2, -3: 0, -2: 2, 2: 2, 3: 0, 4: 1, 5: 1},
+            3: {
+                10: -100,
+                11: -90,
+                12: -80,
+                13: -70,
+                17: -70,
+                18: -80,
+                19: -90,
+                20: -100,
+            },
+            4: {
+                14: -20,
+                14.5: 30,
+                15.5: 20,
+                16: -30,
+            },  # 7 bins, mixed positive & negative
             5: [-40, -50, -60, -20, -10, -20, -10, -20, -20, -10, -10],
         }
 
-        # Make a Measurement packet with a(n empty) Magnitude spectrum
-        #     (No need to generate binary data from our spectrum as the
-        #     protobuf_spectrum_to_numpy is mocked in the test functions)
-        packet = proto_data.Measurement()
-        packet.data.append(
-            proto_data.Spectrum(
-                center_frequency=spectrum_center_freq,
-                bandwidth=spectrum_bandwidth,
-                spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
-            )
-        )
-
         # Predefined Detections
         # Each element is a simulated output of the ROI detecting algorithm
-        # namely a dictionary of event_id -> Detection packet
+        # namely a dictionary of roi_id -> Detection packet
         # Strength is in dB
         detections = {
             # Single signal detected in a ROI window
@@ -189,29 +194,16 @@ class TestCalculateSNR:
             },
         }
 
-        roi = proto_cmd.ROIMask(center_frequency=roi_center, span=roi_span + 1e-6)
-
         return {
-            "spectrum_numpy": np.array(spectrums[spectrum_no]),
-            "packet": packet,
+            "noise_bins": noise_bins_options[noise_bin_no],
             "detections": detections[detections_no],
-            "roi": roi,
         }
 
-    def arrange_and_act_calculate_snr(
-        self, measurement, spectrum, detections, roi, mocker
-    ):
-
+    def arrange_and_act_calculate_snr(self, signal_bins, noise_bins, detections):
         original_detections = copy.deepcopy(detections)  # save the original detections
 
-        # mocking protobuf_spectrum_to_numpy
-        mocker.patch(
-            "pysagax.field.ppdetection.protobuf_spectrum_to_numpy",
-            return_value=spectrum,
-        )
-
         pp = PPDetection()
-        returned_detections = pp._calculate_snr(measurement, detections, roi)
+        returned_detections = pp._calculate_snr(signal_bins, noise_bins, detections)
 
         return original_detections, returned_detections
 
@@ -219,36 +211,33 @@ class TestCalculateSNR:
         ["make_snr_test_cases", "expected"],
         [
             # [make_snr_test_cases, expected], where params for make_snr_test_cases is a list of:
-            #   spectrum_no, detections_no, roi_center, roi_span, optional: spectrum_center_freq=15, spectrum_bandwidth=10
+            #   noise_bin_no, detections_no
             #   and expected is a list of expected snr values for each detection packet
             # Single detection from ROI:
-            [[0, 0, 15, 2], [99]],
-            [[1, 0, 5, 2], [99]],  # roi outside of spectrum // shouldn't happen
-            [[1, 1, 15, 2], [0]],
-            [[2, 0, 15, 2], [99]],
+            [[0, 0], [99]],
+            [[1, 0], [99]],
+            [[1, 1], [0]],
+            [[2, 0], [99]],
             # Multiple detections from single ROI:
-            [[0, 2, 15, 2], [99, 49]],
-            [[0, 3, 15, 2], [99, 0]],
+            [[0, 2], [99, 49]],
+            [[0, 3], [99, 0]],
             # Negative amplitudes
-            [[3, 4, 15, 2], [35]],
-            [[3, 5, 15, 2], [35, 65]],
-            [[3, 5, 15, 4], [40, 70]],  # different ROI definion changes the noise lvl
+            [[3, 4], [35]],
+            [[3, 5], [35, 65]],
             # Mixed positive and negative values
-            [[4, 0, 15, 2, 15, 6], [125]],
+            [[4, 0], [100]],
             # Peak smaller than noise:
-            [[5, 4, 11, 2], [0]],
-            [[5, 4, 10, 4], [0]],  # roi and spectrum data partially aligned
+            [[0, 4], [0]],
         ],
         indirect=["make_snr_test_cases"],  # passing the parameters to a fixture
     )
     def test_calculate_snr(self, make_snr_test_cases, expected, mocker):
-        spectrum_numpy = make_snr_test_cases["spectrum_numpy"]
-        packet = make_snr_test_cases["packet"]
+        signal_bins = {}  # current _calculate_snr() doesn't use signal bins
+        noise_bins = make_snr_test_cases["noise_bins"]
         detections = make_snr_test_cases["detections"]
-        roi = make_snr_test_cases["roi"]
 
         original_detections, returned_detections = self.arrange_and_act_calculate_snr(
-            packet, spectrum_numpy, detections, roi, mocker
+            signal_bins, noise_bins, detections
         )
         if not isinstance(expected, list):
             expected = [expected]
@@ -257,54 +246,23 @@ class TestCalculateSNR:
 
         # the key shouldn't change but values should change for the detection dict
         assert original_detections.keys() == returned_detections.keys()
-        if 0 not in expected: 
-            # 0 is the default value for protobuf float fields. 
+        if 0 not in expected:
+            # 0 is the default value for protobuf float fields.
             # If the correct SNR is not 0 then packets must have changed
             assert original_detections != returned_detections
 
     @pytest.mark.parametrize(
         "make_snr_test_cases",
         [
-            # spectrum_no, detections_no, roi_center, roi_span, optional: spectrum_center_freq=15, spectrum_bandwidth=10
-            # Single detection from ROI:
-            [0, 0, 15, 2],
-            [0, 0, 5, 2],  # roi outside of spectrum // shouldn't happen
-            [0, 1, 15, 2],
-            # Multiple detections from single ROI:
-            [0, 2, 15, 2],
-            [0, 3, 15, 2],
-        ],
-        indirect=["make_snr_test_cases"],  # passing the parameters to a fixture
-    )
-    def test_calculate_snr_no_spectrum(self, make_snr_test_cases, mocker):
-        """
-        Tests when calculate_snr doesn't receive a magnitude spectrum with the measurement packet.
-        In this case the function should return early with the unchanged detection dictionary
-        """
-        spectrum_numpy = None
-        packet = proto_data.Measurement()
-        detections = make_snr_test_cases["detections"]
-        roi = make_snr_test_cases["roi"]
-
-        original_detections, returned_detections = self.arrange_and_act_calculate_snr(
-            packet, spectrum_numpy, detections, roi, mocker
-        )
-
-        # the returned dictionary shouldn't be changed
-        assert original_detections == returned_detections
-
-    @pytest.mark.parametrize(
-        "make_snr_test_cases",
-        [
-            # spectrum_no, detections_no, roi_center, roi_span, optional: spectrum_center_freq=15, spectrum_bandwidth=10
+            # noise_bin_no, detections_no
             # Single detection from ROI
-            [0, 0, 15, 20],
-            [1, 0, 5, 200],  # roi outside of spectrum // shouldn't happen
-            [1, 1, 15, 10],
-            [2, 0, 15, 20],
+            [0, 0],
+            [1, 0],
+            [1, 1],
+            [2, 0],
             # Multiple detections from single ROI:
-            [0, 2, 15, 20],
-            [0, 3, 5, 200],
+            [0, 2],
+            [0, 3],
         ],
         indirect=["make_snr_test_cases"],  # passing the parameters to a fixture
     )
@@ -313,13 +271,12 @@ class TestCalculateSNR:
         When the ROI bandwidth covers the entire spectrum, the algorithm can't calculate ROI,
         so the detection packets should remain unchanged
         """
-        spectrum_numpy = make_snr_test_cases["spectrum_numpy"]
-        packet = make_snr_test_cases["packet"]
+        signal_bins = {}  # current _calculate_snr() doesn't use signal bins
+        noise_bins = {}
         detections = make_snr_test_cases["detections"]
-        roi = make_snr_test_cases["roi"]
 
         original_detections, returned_detections = self.arrange_and_act_calculate_snr(
-            packet, spectrum_numpy, detections, roi, mocker
+            signal_bins, noise_bins, detections
         )
 
         # the returned dictionary shouldn't be changed
