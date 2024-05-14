@@ -136,8 +136,6 @@ class SourceManager:
         self.recording_status: RecordingStatus = RecordingStatus.UNKNOWN
         self.source_status: SourceStatus = SourceStatus.UNKNOWN
         self.cs_status: CoreServiceStatus = CoreServiceStatus.DISCONNECTED
-        self.is_cs_configuring: bool = False
-        self.config_status: dict[int, int] = {"responses": 0, "queue": 0}
 
         self.latest_telemetry: Optional[proto_data.Telemetry] = None
         self.latest_config: Optional[proto_cmd.Config] = None
@@ -151,9 +149,6 @@ class SourceManager:
             self.cs_status = CoreServiceStatus.CONNECTED
 
     def source_config_handler(self, resp) -> None:
-        if resp.success:  # CONFIG commands are being processed by pysagaxUAV
-            self.is_cs_configuring = True
-            return
         self.latest_config = resp
         self.current_source_path = (
             str(resp.config.cs.source_type + " " + resp.config.cs.source_path)
@@ -164,15 +159,6 @@ class SourceManager:
             self.current_source = Sources(self.current_source_path[0])
         except:
             self.current_source = Sources.NOT_SET
-
-    def source_config_status_handler(self, resp) -> None:
-        if (
-            bool(resp.config_status.finish_time.ToNanoseconds())
-            or "TIMED OUT" in resp.config_status.responses.values()
-        ):
-            self.is_cs_configuring = False
-        self.config_status["responses"] = len(resp.config_status.responses)
-        self.config_status["queue"] = len(resp.config_status.queue)
 
     def source_telemetry_handler(self, packet: proto_data.Telemetry) -> None:
         # updates the source status based on the response from CoreService
@@ -223,6 +209,7 @@ class SourceManager:
 
         cmd = proto_cmd.Command()
         cmd.instruction = proto_cmd.CONFIG
+        cmd.kind = proto_cmd.Command.CommandKind.WRITE
         cmd.config.cs.center_frequency = float(freq)
         cmd.config.cs.iq_rate = int(bw)
         # cmd.config.cs.playback_speed = 1
@@ -253,6 +240,7 @@ class SourceManager:
         """
         cmd = proto_cmd.Command()
         cmd.instruction = proto_cmd.CONFIG
+        cmd.kind = proto_cmd.Command.CommandKind.WRITE
         source_type = ""
         source_path = ""
         print("SOURCE_STRING:", source_str)
