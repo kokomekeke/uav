@@ -59,5 +59,6 @@ calibration*.npz
 auto_test_*.csv
 
 pysagax.egg-info
-artifacts
+artifacts/
+build/
 .venv
