@@ -17,6 +17,8 @@ import click
 from coloredlogs import install
 from rich.logging import RichHandler
 
+from pysagax.field.scanengine import ScanEngine
+
 try:
     import tomllib
 except ModuleNotFoundError:
@@ -51,6 +53,10 @@ class Commander:
         heading_host: str,
         heading_control_port: int,
         heading_stream_port: int,
+        scanning_iq_rate: int,
+        scanning_useful_bandwidth: int,
+        scanning_averaging_burst_count: int,
+        scanning_target_resolution_bandwidth: int,
     ) -> None:
 
         self._logger = getLogger("Commander")
@@ -62,9 +68,12 @@ class Commander:
         self._stream_packets_q = self._manager.Queue(maxsize=1)
         self._cs_commands_q = self._manager.Queue()
         self._cs_responses_q = self._manager.Queue()
+        self._se_commands_q = self._manager.Queue()
+        self._se_responses_q = self._manager.Queue()
         self._stream_conf_q = self._manager.Queue()
         self._post_proc_commands_q = self._manager.Queue()
         self._post_proc_responses_q = self._manager.Queue()
+        self._latest_postproc_proxy = self._manager.dict()
         self._pp_heading_sync_input_q = self._manager.Queue()
         self._pp_detection_input_q = self._manager.Queue()
         self._pp_events_input_q = self._manager.Queue()
@@ -85,6 +94,13 @@ class Commander:
         self._streamer = Streamer(level=level)
 
         self._interpreter = Interpreter(
+            level=level,
+        )
+        self._scanengine = ScanEngine(
+            scanning_iq_rate,
+            scanning_useful_bandwidth,
+            scanning_averaging_burst_count,
+            scanning_target_resolution_bandwidth,
             level=level,
         )
         self._cs_command = CSCommand(level=level, address=cs_host, port=cs_command_port)
@@ -125,6 +141,14 @@ class Commander:
             self._post_proc_responses_q,
             self._latest_telemetry_proxy,
             self._latest_config_id_value,
+        )
+        scanengine_future = self._pool.submit(
+            self._scanengine,
+            self._cs_commands_q,
+            self._cs_responses_q,
+            self._se_commands_q,
+            self._se_responses_q,
+            self._latest_postproc_proxy,
         )
         cs_command_future = self._pool.submit(
             self._cs_command,
@@ -181,6 +205,7 @@ class Commander:
                 (
                     communicator_future,
                     interpreter_future,
+                    scanengine_future,
                     cs_command_future,
                     streamer_future,
                     pp_heading_sync_future,
@@ -293,6 +318,30 @@ def set_default_config(ctx, param, conf_path):
     show_default=True,
 )
 @click.option(
+    "--scanning-iq-rate",
+    help="IQ Rate in scanning mode [Hz]",
+    default=5000000,
+    show_default=True,
+)
+@click.option(
+    "--scanning-useful-bandwidth",
+    help="Useful BW in scanning mode [Hz]",
+    default=4000000,
+    show_default=True,
+)
+@click.option(
+    "--scanning-averaging-burst-count",
+    help="Number of bursts to averaging in scanning mode",
+    default=3,
+    show_default=True,
+)
+@click.option(
+    "--scanning-target-resolution-bandwidth",
+    help="Target resolution bandwidth for scanning [Hz]",
+    default=6250,
+    show_default=True,
+)
+@click.option(
     "--disk-path",
     default="/",
     show_default=True,
@@ -308,6 +357,10 @@ def main(
     heading_host: str,
     heading_control_port: int,
     heading_stream_port: int,
+    scanning_iq_rate: int,
+    scanning_useful_bandwidth: int,
+    scanning_averaging_burst_count: int,
+    scanning_target_resolution_bandwidth: int,
 ) -> None:
     """Root command of CLI"""
 
@@ -331,6 +384,10 @@ def main(
         heading_host,
         heading_control_port,
         heading_stream_port,
+        scanning_iq_rate,
+        scanning_useful_bandwidth,
+        scanning_averaging_burst_count,
+        scanning_target_resolution_bandwidth,
     )
     commander.start()
 

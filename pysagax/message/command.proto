@@ -94,6 +94,12 @@ enum Instruction {
     //   parameter: target [StreamTarget] - level parameter will be ignored
     //   response:  success [bool]
     STREAM_STOP = 26;
+
+
+    // Message only for CoreService, it is required to upload a scan plan
+    // before using this command.
+    //   response: success [bool]
+    CS_SCAN_START = 30;
 }
 
 message ROIMask {
@@ -115,8 +121,8 @@ message FreqList {
 }
 
 message FreqRange {
-	float start = 1;
-	float stop = 2;
+    float start = 1;
+    float stop = 2;
 }
 
 message CoreServiceConfig {
@@ -139,7 +145,7 @@ message CoreServiceConfig {
         RECORDED = 1;
     }
     Type type = 18;
-    FreqList freq_list = 19;
+    FreqList scan_plan = 19;
 }
 
 message PostProcessingConfig {
@@ -156,33 +162,33 @@ message Config {
     uint32 config_id = 1;
     CoreServiceConfig cs = 2;
     PostProcessingConfig pp = 3;
-	ScanEngineConfig se = 4;
+    ScanEngineConfig se = 4;
     // Heading source selection
     HeadingConfig heading = 25;
 
 }
 
 message ScanEngineConfig {
-	enum Mode {
-		MANUAL = 0;
-		SCANNING = 1;
-		TRACKING = 2;
-	}
-	Mode mode = 1;
-	oneof parameter {
-		ScanningConfig scanning = 6;
-		TrackingConfig tracking = 7;
-	}
+    enum Mode {
+        MANUAL = 0;
+        SCANNING = 1;
+        TRACKING = 2;
+    }
+    Mode mode = 1;
+    oneof parameter {
+        ScanningConfig scanning = 6;
+        TrackingConfig tracking = 7;
+    }
 
 }
 
 message ScanningConfig {
-	repeated FreqRange ranges = 4;
+    repeated FreqRange ranges = 4;
 }
 
 message TrackingConfig {
-	float frequency = 2;
-	float bandwidth = 3;
+    float frequency = 2;
+    float bandwidth = 3;
 }
 
 
