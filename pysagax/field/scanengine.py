@@ -7,10 +7,8 @@ from queue import Queue
 from typing import Any, Optional, overload
 
 from transitions import Machine
-import pysagax.message.heading_pb2 as proto_heading
+import pysagax.message.command_pb2 as proto_cmd
 from pysagax.common.loop import Loop
-from pysagax.communication.pub_sub import SUB
-from pysagax.communication.req_rep_tcp import REQ
 
 
 class ScanEngineState(enum.Enum):
@@ -140,5 +138,23 @@ class ScanEngine(Loop):
             and self._latest_postproc_status is not None
         )
         print(self.state)
+        match self.state:
+            case ScanEngineState.MANUAL:
+                try:
+                    command: proto_cmd.Command = self._se_commands_q.get(timeout=0.1)
+                    self._cs_commands_q.put(command)
+                    response: proto_cmd.Response = self._cs_responses_q.get()
+                    self._cs_responses_q.put(response)
+                except queue.Empty:
+                    pass
+            case ScanEngineState.SCANNING_IDLE:
+                pass
+            case ScanEngineState.SCANNING_IN_PROGRESS:
+                pass
+            case ScanEngineState.TRACKING_IDLE:
+                pass
+            case ScanEngineState.TRACKING_IN_PROGRESS:
+                pass
+
         self.start_tracking()
         time.sleep(1)
