@@ -145,7 +145,7 @@ message CoreServiceConfig {
         RECORDED = 1;
     }
     Type type = 18;
-    FreqList scan_plan = 19;
+    FreqList scan_plan = 21;
 }
 
 message PostProcessingConfig {

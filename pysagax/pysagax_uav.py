@@ -73,7 +73,8 @@ class Commander:
         self._stream_conf_q = self._manager.Queue()
         self._post_proc_commands_q = self._manager.Queue()
         self._post_proc_responses_q = self._manager.Queue()
-        self._latest_postproc_proxy = self._manager.dict()
+        self._post_proc_to_scan_engine_q = self._manager.Queue()
+        # self._latest_postproc_proxy = self._manager.dict()
         self._pp_heading_sync_input_q = self._manager.Queue()
         self._pp_detection_input_q = self._manager.Queue()
         self._pp_events_input_q = self._manager.Queue()
@@ -148,7 +149,8 @@ class Commander:
             self._cs_responses_q,
             self._se_commands_q,
             self._se_responses_q,
-            self._latest_postproc_proxy,
+            self._post_proc_to_scan_engine_q,
+            self._latest_telemetry_proxy,
         )
         cs_command_future = self._pool.submit(
             self._cs_command,
@@ -171,6 +173,7 @@ class Commander:
             self._pp_events_input_q,
             self._post_proc_commands_q,
             self._post_proc_responses_q,
+            self._post_proc_to_scan_engine_q
         )
         pp_events_future = self._pool.submit(
             self._pp_events,

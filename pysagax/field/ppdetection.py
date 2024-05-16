@@ -105,6 +105,7 @@ class PPDetection(Loop):
         self._queue_out: Optional[Queue] = None
         self._conf_queue_in: Optional[Queue] = None
         self._conf_queue_out: Optional[Queue] = None
+        self._se_queue_out: Optional[Queue] = None
 
         # storing current config
         self._current_config: proto_cmd.PostProcessingConfig = (
@@ -120,6 +121,7 @@ class PPDetection(Loop):
         queue_out: Queue[Any],
         conf_queue_in: Queue[Any],
         conf_queue_out: Queue[Any],
+        se_queue_out: Queue[Any],
         *args,
         **kwargs,
     ) -> None:
@@ -127,7 +129,7 @@ class PPDetection(Loop):
         self._queue_out = queue_out
         self._conf_queue_in = conf_queue_in
         self._conf_queue_out = conf_queue_out
-
+        self._se_queue_out = se_queue_out
         return super()._call(*args, **kwargs)
 
     def _process_spectrum(
@@ -249,6 +251,7 @@ class PPDetection(Loop):
     def _loop(self) -> None:
         assert self._queue_in is not None
         assert self._queue_out is not None
+        assert self._se_queue_out is not None
         assert self._conf_queue_in is not None
         assert self._conf_queue_out is not None
 
@@ -277,6 +280,7 @@ class PPDetection(Loop):
                 f"PostProcessing/Detection finished on packet {packet.packet_id}"
             )
             self._queue_out.put(packet)
+            self._se_queue_out.put(packet)
 
         except queue.Empty:
             pass
