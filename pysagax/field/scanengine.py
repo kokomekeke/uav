@@ -239,7 +239,7 @@ class ScanEngine(Loop):
                 freq_ranges_united[-1].merge(ran)
             else:
                 freq_ranges_united.append(ran)
-        freq_list.iq_rate = self._iq_rate
+        freq_list.iq_rate = int(self._iq_rate)
         for ran in freq_ranges_united:
             freq_list.center_freqs.extend(
                 ran.center_freq_list(
