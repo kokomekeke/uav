@@ -281,9 +281,9 @@ class ScanEngine(Loop):
         )
         self._cs_commands_q.put(command)
 
-    def configure_manual(self, manual_cmd: proto_cmd.Command) -> None:
+    def configure_manual(self, se_cmd: proto_cmd.Command) -> None:
         assert self._cs_commands_q is not None
-        self._cs_commands_q.put(manual_cmd)
+        self._cs_commands_q.put(se_cmd)
 
     def command_scanning(self):
         command = proto_cmd.Command()
@@ -335,7 +335,7 @@ class ScanEngine(Loop):
                 response.config.se.CopyFrom(self.construct_config_report())
                 self._se_responses_q.put(response)
             else:
-                self.off(manual_cmd=command)
+                self.off(se_cmd=command)
                 assert self._latest_cs_response is not None
                 self._se_responses_q.put(self._latest_cs_response)
                 self._latest_cs_response = None

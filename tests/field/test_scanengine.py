@@ -97,6 +97,14 @@ def test_conf_scanning_state_machine(
         se._loop()
 
     assert se.state == ScanEngineState.SCANNING_IDLE
+    test_off = proto_cmd.Command()
+    test_off.kind = proto_cmd.Command.WRITE
+    test_off.instruction = proto_cmd.CONFIG
+    test_off.config.cs.center_frequency = 100e6
+    se._se_commands_q.put(test_off)
+    se._loop()
+
+    assert se.state == ScanEngineState.MANUAL
 
 
 @pytest.mark.parametrize("fail_config", [True, False])
@@ -110,10 +118,9 @@ def test_conf_tracking_state_machine(
     assert se._cs_responses_q is not None
     assert se._post_proc_to_scan_engine_q is not None
 
-    test_cmd = proto_cmd.Command()
-
     assert se.state == ScanEngineState.MANUAL
 
+    test_cmd = proto_cmd.Command()
     test_cmd.kind = proto_cmd.Command.WRITE
     test_cmd.instruction = proto_cmd.CONFIG
     test_cmd.config.se.mode = proto_cmd.ScanEngineConfig.TRACKING
@@ -154,3 +161,12 @@ def test_conf_tracking_state_machine(
     se._post_proc_to_scan_engine_q.put(proto_data.Measurement())
     se._loop()
     assert se.state == ScanEngineState.TRACKING_IDLE
+
+    test_off = proto_cmd.Command()
+    test_off.kind = proto_cmd.Command.WRITE
+    test_off.instruction = proto_cmd.CONFIG
+    test_off.config.cs.center_frequency = 100e6
+    se._se_commands_q.put(test_off)
+    se._loop()
+
+    assert se.state == ScanEngineState.MANUAL
