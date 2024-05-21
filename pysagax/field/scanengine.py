@@ -64,15 +64,10 @@ class ScanEngineState(enum.Enum):
     TRACKING_IN_PROGRESS = 4
 
 
-# class PyiMachine(Machine):
-#     def generate_pyi(self):
-#         with open(f'{__file__}i', 'w') as f:
-#             for model in self.models:
-#                 f.write(f'class {model.__class__.__name__}:\n')
-#                 for event in self.events:
-#                     f.write(f'    @overload\n    def {event}(self, *args, **kwargs) -> bool: ...\n')
-#                 f.write('\n\n')
-#         print(f'{__file__}i generated')
+class StateMachine(Machine):
+
+    def _checked_assignment(self, model, name, func):
+        setattr(model, name, func)
 
 
 class ScanEngine(Loop):
@@ -195,7 +190,7 @@ class ScanEngine(Loop):
         self._latest_telemetry_proxy: Optional[DictProxy] = None
         self.state: ScanEngineState = ScanEngineState.MANUAL
         logging.getLogger("transitions").setLevel(self._logger.level)
-        self._machine = Machine(
+        self._machine = StateMachine(
             self,
             states=ScanEngineState,
             transitions=ScanEngine.transitions,
@@ -254,22 +249,22 @@ class ScanEngine(Loop):
         )
         return freq_list
 
-    def check_cs_response(self) -> bool:
+    def check_cs_response(self, se_cmd: Optional[proto_cmd.Command] = None) -> bool:
         assert self._cs_responses_q is not None
         response: proto_cmd.Response = self._cs_responses_q.get()
         self._latest_cs_response = response
         return not response.HasField("error")
 
-    def configure_scanning(self, scan_cmd: proto_cmd.Command) -> None:
+    def configure_scanning(self, se_cmd: proto_cmd.Command) -> None:
         assert self._cs_commands_q is not None
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CONFIG
         command.config.cs.scan_plan.CopyFrom(
-            self._scan_algorithm(scan_cmd.config.se.scanning)
+            self._scan_algorithm(se_cmd.config.se.scanning)
         )
         self._cs_commands_q.put(command)
 
-    def configure_tracking(self, track_cmd: proto_cmd.Command) -> None:
+    def configure_tracking(self, se_cmd: proto_cmd.Command) -> None:
         pass
 
     def configure_manual(self, manual_cmd: proto_cmd.Command) -> None:
@@ -315,9 +310,9 @@ class ScanEngine(Loop):
                 proto_cmd.ScanEngineConfig.TRACKING,
             ]:
                 if command.config.se.mode == proto_cmd.ScanEngineConfig.SCANNING:
-                    self.switch_scanning(scan_cmd=command.config.se.scanning)
+                    self.switch_scanning(se_cmd=command)
                 elif command.config.se.mode == proto_cmd.ScanEngineConfig.TRACKING:
-                    self.switch_tracking(track_cmd=command.config.se.tracking)
+                    self.switch_tracking(se_cmd=command)
                 response = proto_cmd.Response()
                 response.config.se.CopyFrom(self.construct_config_report())
                 self._se_responses_q.put(response)
