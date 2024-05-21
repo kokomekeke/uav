@@ -11,7 +11,7 @@ from pysagax.field.scanengine import ScanEngine, ScanEngineState
 
 @pytest.mark.parametrize(
     ["useful_bandwidth", "freq_ranges", "expected_center_freqs"],
-    [[2e6, [(430e6, 440e6)], [431e6, 433e6, 435e6, 437e6, 439e6]]],
+    [[10e6, [(400e6, 440e6)], [405e6, 415e6, 425e6, 435e6]]],
 )
 def test_scan_algorithm(useful_bandwidth, freq_ranges, expected_center_freqs) -> None:
     """
@@ -36,7 +36,7 @@ def test_scan_algorithm(useful_bandwidth, freq_ranges, expected_center_freqs) ->
 @pytest.fixture
 def se() -> ScanEngine:
 
-    se = ScanEngine(2000000, 2000000, 1, 1)
+    se = ScanEngine(4000000, 4000000, 1, 1)
     se._cs_commands_q = Queue()
     se._cs_responses_q = Queue()
     se._se_commands_q = Queue()
@@ -138,12 +138,9 @@ def test_conf_tracking_state_machine(
     else:
         assert se.state == ScanEngineState.TRACKING_IDLE
     cs_command: proto_cmd.Command = se._cs_commands_q.get()
+    assert cs_command.config.cs.iq_rate == pytest.approx(5.6e6)
     assert cs_command.config.cs.center_frequency == pytest.approx(
-        test_cmd.config.se.tracking.frequency
-        - test_cmd.config.se.tracking.bandwidth / 2
-    )
-    assert cs_command.config.cs.iq_rate == pytest.approx(
-        test_cmd.config.se.tracking.bandwidth
+        test_cmd.config.se.tracking.frequency - 2.8e6
     )
     tr_start_resp = proto_cmd.Response()
     if fail_scan_start:

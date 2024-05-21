@@ -172,6 +172,30 @@ class ScanEngine(Loop):
         },
     ]
 
+    supported_iq_rates = [
+        541667,
+        1920000,
+        2457600,
+        2800000,
+        3840000,
+        4000000,
+        4915200,
+        5600000,
+        7680000,
+        9830400,
+        10000000,
+        11200000,
+        15360000,
+        16000000,
+        20000000,
+        21666700,
+        22000000,
+        23040000,
+        30720000,
+        40000000,
+        61440000,
+    ]
+
     def __init__(
         self,
         # TODO: Define useful defaults
@@ -183,8 +207,20 @@ class ScanEngine(Loop):
         **kwargs,
     ) -> None:
         Loop.__init__(self, *args, **kwargs)
-        self._iq_rate: int = scanning_iq_rate
-        self._useful_bandwidth: int = scanning_useful_bandwidth
+        self._useful_bandwidth_ratio: float = float(scanning_useful_bandwidth) / float(
+            scanning_iq_rate
+        )
+        if scanning_iq_rate not in ScanEngine.supported_iq_rates:
+            self._iq_rate = self.to_supported_iq_rate(scanning_iq_rate)
+            self._useful_bandwidth: int = int(
+                self._iq_rate * self._useful_bandwidth_ratio
+            )
+            self._logger.warn(
+                f"IQ rate {scanning_iq_rate} not supported, using {self._iq_rate} (useful bw {self._useful_bandwidth}"
+            )
+        else:
+            self._iq_rate: int = scanning_iq_rate
+            self._useful_bandwidth: int = scanning_useful_bandwidth
         self._averaging_burst_count: int = scanning_averaging_burst_count
         self._target_resolution_bandwidth: int = scanning_target_resolution_bandwidth
         self._cs_commands_q: Optional[Queue] = None
@@ -207,6 +243,12 @@ class ScanEngine(Loop):
         # self._machine.generate_pyi()
         self._expected_data_count: int = 0
         self._received_data_count: int = 0
+
+    def to_supported_iq_rate(self, iq: int) -> int:
+        for rate in ScanEngine.supported_iq_rates:
+            if rate >= iq:
+                return rate
+        return ScanEngine.supported_iq_rates[-1]
 
     def __call__(
         self,
@@ -274,10 +316,14 @@ class ScanEngine(Loop):
         assert self._cs_commands_q is not None
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CONFIG
-        command.config.cs.iq_rate = int(se_cmd.config.se.tracking.bandwidth)
+
+        tracking_bw = self.to_supported_iq_rate(
+            int(se_cmd.config.se.tracking.bandwidth / self._useful_bandwidth_ratio) * 2
+        )
+
+        command.config.cs.iq_rate = tracking_bw
         command.config.cs.center_frequency = (
-            se_cmd.config.se.tracking.frequency
-            - se_cmd.config.se.tracking.bandwidth / 2
+            se_cmd.config.se.tracking.frequency - tracking_bw / 2
         )
         self._cs_commands_q.put(command)
 
