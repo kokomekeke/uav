@@ -115,11 +115,15 @@ class ScanEngine(Loop):
             "trigger": "switch_tracking",
             "source": ScanEngineState.MANUAL,
             "dest": ScanEngineState.TRACKING_IDLE,
+            "prepare": "configure_tracking",
+            "conditions": "check_cs_response",
         },
         {
             "trigger": "switch_tracking",
             "source": ScanEngineState.SCANNING_IDLE,
             "dest": ScanEngineState.TRACKING_IDLE,
+            "prepare": "configure_tracking",
+            "conditions": "check_cs_response",
         },
         {
             "trigger": "off",
@@ -146,6 +150,8 @@ class ScanEngine(Loop):
             "trigger": "launch",
             "source": ScanEngineState.TRACKING_IDLE,
             "dest": ScanEngineState.TRACKING_IN_PROGRESS,
+            "prepare": "command_tracking",
+            "conditions": "check_cs_response",
         },
         {
             "trigger": "launch",
@@ -265,7 +271,15 @@ class ScanEngine(Loop):
         self._cs_commands_q.put(command)
 
     def configure_tracking(self, se_cmd: proto_cmd.Command) -> None:
-        pass
+        assert self._cs_commands_q is not None
+        command = proto_cmd.Command()
+        command.instruction = proto_cmd.CONFIG
+        command.config.cs.iq_rate = int(se_cmd.config.se.tracking.bandwidth)
+        command.config.cs.center_frequency = (
+            se_cmd.config.se.tracking.frequency
+            - se_cmd.config.se.tracking.bandwidth / 2
+        )
+        self._cs_commands_q.put(command)
 
     def configure_manual(self, manual_cmd: proto_cmd.Command) -> None:
         assert self._cs_commands_q is not None
@@ -274,6 +288,10 @@ class ScanEngine(Loop):
     def command_scanning(self):
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CS_SCAN_START
+
+    def command_tracking(self):
+        command = proto_cmd.Command()
+        command.instruction = proto_cmd.SOURCE_START
 
     def construct_config_report(self) -> proto_cmd.ScanEngineConfig:
         se_config = proto_cmd.ScanEngineConfig()
@@ -375,7 +393,8 @@ class ScanEngine(Loop):
                     post_proc_data: proto_data.Measurement = (
                         self._post_proc_to_scan_engine_q.get(timeout=q_timeout)
                     )
+                    self.done()
                     # TODO adjust params
                 except queue.Empty:
                     self._logger.error(f"Tracking mode timed out")
-                    self.done()
+                    # self.done()

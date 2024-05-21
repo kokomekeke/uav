@@ -32,6 +32,7 @@ def test_scan_algorithm(useful_bandwidth, freq_ranges, expected_center_freqs) ->
     for expected, actual in zip(expected_center_freqs, result.center_freqs):
         assert actual == pytest.approx(expected)
 
+
 @pytest.fixture
 def se() -> ScanEngine:
 
@@ -48,15 +49,17 @@ def se() -> ScanEngine:
 
 @pytest.mark.parametrize("fail_config", [True, False])
 @pytest.mark.parametrize("fail_scan_start", [True, False])
-def test_conf_scanning_state_machine(se: ScanEngine, fail_config: bool, fail_scan_start: bool) -> None:
+def test_conf_scanning_state_machine(
+    se: ScanEngine, fail_config: bool, fail_scan_start: bool
+) -> None:
 
     assert se._se_commands_q is not None
     assert se._cs_responses_q is not None
     assert se._post_proc_to_scan_engine_q is not None
 
     test_cmd = proto_cmd.Command()
-    
-    assert(se.state == ScanEngineState.MANUAL)
+
+    assert se.state == ScanEngineState.MANUAL
 
     test_cmd.kind = proto_cmd.Command.WRITE
     test_cmd.instruction = proto_cmd.CONFIG
@@ -65,17 +68,16 @@ def test_conf_scanning_state_machine(se: ScanEngine, fail_config: bool, fail_sca
     test_range.start = 440e6
     test_range.stop = 450e6
     se._se_commands_q.put(test_cmd)
-    print(test_cmd)
     conf_resp = proto_cmd.Response()
     if fail_config:
         conf_resp.error.description = "Conf failed"
     se._cs_responses_q.put(conf_resp)
     se._loop()
     if fail_config:
-        assert(se.state == ScanEngineState.MANUAL)
+        assert se.state == ScanEngineState.MANUAL
         return
     else:
-        assert(se.state == ScanEngineState.SCANNING_IDLE)
+        assert se.state == ScanEngineState.SCANNING_IDLE
     scan_start_resp = proto_cmd.Response()
     if fail_scan_start:
         scan_start_resp.error.description = "Scan start failed"
@@ -83,17 +85,72 @@ def test_conf_scanning_state_machine(se: ScanEngine, fail_config: bool, fail_sca
     se._cs_responses_q.put(proto_cmd.Response())
     se._loop()
     if fail_scan_start:
-        assert(se.state == ScanEngineState.SCANNING_IDLE)
+        assert se.state == ScanEngineState.SCANNING_IDLE
         return
     else:
-        assert(se.state == ScanEngineState.SCANNING_IN_PROGRESS)
+        assert se.state == ScanEngineState.SCANNING_IN_PROGRESS
     expected_burst_count = se._expected_data_count
-     
+
     for burst_index in range(expected_burst_count):
-        print(burst_index)
-        assert(se.state == ScanEngineState.SCANNING_IN_PROGRESS)
+        assert se.state == ScanEngineState.SCANNING_IN_PROGRESS
         se._post_proc_to_scan_engine_q.put(proto_data.Measurement())
         se._loop()
 
-    assert(se.state == ScanEngineState.SCANNING_IDLE)
+    assert se.state == ScanEngineState.SCANNING_IDLE
 
+
+@pytest.mark.parametrize("fail_config", [True, False])
+@pytest.mark.parametrize("fail_scan_start", [True, False])
+def test_conf_tracking_state_machine(
+    se: ScanEngine, fail_config: bool, fail_scan_start: bool
+) -> None:
+
+    assert se._se_commands_q is not None
+    assert se._cs_commands_q is not None
+    assert se._cs_responses_q is not None
+    assert se._post_proc_to_scan_engine_q is not None
+
+    test_cmd = proto_cmd.Command()
+
+    assert se.state == ScanEngineState.MANUAL
+
+    test_cmd.kind = proto_cmd.Command.WRITE
+    test_cmd.instruction = proto_cmd.CONFIG
+    test_cmd.config.se.mode = proto_cmd.ScanEngineConfig.TRACKING
+    test_cmd.config.se.tracking.frequency = 446e6
+    test_cmd.config.se.tracking.bandwidth = 2.5e6
+    se._se_commands_q.put(test_cmd)
+    conf_resp = proto_cmd.Response()
+    if fail_config:
+        conf_resp.error.description = "Conf failed"
+    se._cs_responses_q.put(conf_resp)
+    se._loop()
+    if fail_config:
+        assert se.state == ScanEngineState.MANUAL
+        return
+    else:
+        assert se.state == ScanEngineState.TRACKING_IDLE
+    cs_command: proto_cmd.Command = se._cs_commands_q.get()
+    assert cs_command.config.cs.center_frequency == pytest.approx(
+        test_cmd.config.se.tracking.frequency
+        - test_cmd.config.se.tracking.bandwidth / 2
+    )
+    assert cs_command.config.cs.iq_rate == pytest.approx(
+        test_cmd.config.se.tracking.bandwidth
+    )
+    tr_start_resp = proto_cmd.Response()
+    if fail_scan_start:
+        tr_start_resp.error.description = "Tr start failed"
+    se._cs_responses_q.put(tr_start_resp)
+    se._cs_responses_q.put(proto_cmd.Response())
+    se._loop()
+    if fail_scan_start:
+        assert se.state == ScanEngineState.TRACKING_IDLE
+        return
+    else:
+        assert se.state == ScanEngineState.TRACKING_IN_PROGRESS
+    se._loop()
+    assert se.state == ScanEngineState.TRACKING_IN_PROGRESS
+    se._post_proc_to_scan_engine_q.put(proto_data.Measurement())
+    se._loop()
+    assert se.state == ScanEngineState.TRACKING_IDLE
