@@ -10,10 +10,43 @@ from pysagax.field.scanengine import ScanEngine, ScanEngineState
 
 
 @pytest.mark.parametrize(
-    ["useful_bandwidth", "freq_ranges", "expected_center_freqs"],
-    [[10e6, [(400e6, 440e6)], [405e6, 415e6, 425e6, 435e6]]],
+    [
+        "useful_bandwidth",
+        "freq_ranges",
+        "scanning_averaging_burst_count",
+        "expected_center_freqs",
+    ],
+    [
+        [
+            10e6,
+            [(400e6, 440e6), (120e6, 140e6)],
+            1,
+            [125e6, 135e6, 405e6, 415e6, 425e6, 435e6],
+        ],
+        [
+            10e6,
+            [(400e6, 440e6), (120e6, 140e6)],
+            2,
+            [
+                125e6,
+                125e6,
+                135e6,
+                135e6,
+                405e6,
+                405e6,
+                415e6,
+                415e6,
+                425e6,
+                425e6,
+                435e6,
+                435e6,
+            ],
+        ],
+    ],
 )
-def test_scan_algorithm(useful_bandwidth, freq_ranges, expected_center_freqs) -> None:
+def test_scan_algorithm(
+    useful_bandwidth, freq_ranges, expected_center_freqs, scanning_averaging_burst_count
+) -> None:
     """
     Test PPHeadingSync._update_delta_t()
     Params:
@@ -21,7 +54,9 @@ def test_scan_algorithm(useful_bandwidth, freq_ranges, expected_center_freqs) ->
         freq_ranges: tuples of start and stop frequencies
         expected_center_freqs: scanning center frequencies, output of scan algorithm
     """
-    se = ScanEngine(useful_bandwidth, useful_bandwidth, 1, 1)
+    se = ScanEngine(
+        useful_bandwidth, useful_bandwidth, scanning_averaging_burst_count, 1
+    )
     scan_conf = proto_cmd.ScanningConfig()
     for ran in freq_ranges:
         ran_pb = scan_conf.ranges.add()
