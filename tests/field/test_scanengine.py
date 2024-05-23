@@ -6,7 +6,66 @@ import pytest
 
 import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.data_pb2 as proto_data
-from pysagax.field.scanengine import ScanEngine, ScanEngineState
+from pysagax.field.scanengine import FreqRangeInternal, ScanEngine, ScanEngineState
+
+
+@pytest.mark.parametrize(
+    [
+        "fkLH",
+        "B",
+        "expected_result",
+    ],
+    [
+        [
+            (1000, 2000),
+            999,
+            [
+                1250.00,
+                1750.00,
+            ],
+        ],
+        [
+            (1000, 2000),
+            101,
+            [
+                1050.00,
+                1150.00,
+                1250.00,
+                1350.00,
+                1450.00,
+                1550.00,
+                1650.00,
+                1750.00,
+                1850.00,
+                1950.00,
+            ],
+        ],
+        [
+            (1000, 2000),
+            123,
+            [
+                1055.555556,
+                1166.666667,
+                1277.777778,
+                1388.888889,
+                1500.000000,
+                1611.111111,
+                1722.222222,
+                1833.333333,
+                1944.444444,
+            ],
+        ],
+    ],
+)
+def test_center_freq_list(fkLH: tuple[float, float], B: float, expected_result):
+    fkL, fkH = fkLH
+    freq_range = FreqRangeInternal()
+    freq_range.start = fkL
+    freq_range.stop = fkH
+    result = list(freq_range.center_freq_list(B))
+    assert len(result) == len(expected_result)
+    for res, expected_res in zip(result, expected_result):
+        assert res == pytest.approx(expected_res, abs=1e-4)
 
 
 @pytest.mark.parametrize(

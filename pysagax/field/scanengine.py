@@ -41,13 +41,9 @@ class FreqRangeInternal:
         self, useful_bandwidth: float, repeat: int = 1
     ) -> Generator[float, None, None]:
         number_of_jumps = -int(-self.bandwidth // useful_bandwidth)  # ceil
-        starting_center = (
-            self.start
-            + (self.bandwidth - useful_bandwidth * number_of_jumps) / 2
-            + useful_bandwidth / 2
-        )
+        jump_bandwidth = self.bandwidth / float(number_of_jumps)
         for i in range(number_of_jumps):
-            freq = starting_center + i * useful_bandwidth
+            freq = self.start + (i + 0.5) * jump_bandwidth
             for _ in range(repeat):
                 yield freq
         return None
