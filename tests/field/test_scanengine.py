@@ -89,54 +89,96 @@ def test_conf_scanning_state_machine(
 ) -> None:
 
     assert se._se_commands_q is not None
+    assert se._se_responses_q is not None
+    assert se._cs_commands_q is not None
     assert se._cs_responses_q is not None
     assert se._post_proc_to_scan_engine_q is not None
 
-    test_cmd = proto_cmd.Command()
-
+    # Initial state
     assert se.state == ScanEngineState.MANUAL
 
-    test_cmd.kind = proto_cmd.Command.WRITE
-    test_cmd.instruction = proto_cmd.CONFIG
-    test_cmd.config.se.mode = proto_cmd.ScanEngineConfig.SCANNING
-    test_range = test_cmd.config.se.scanning.ranges.add()
+    # ScanEngine Config command
+    se_conf_command = proto_cmd.Command()
+    se_conf_command.kind = proto_cmd.Command.WRITE
+    se_conf_command.instruction = proto_cmd.CONFIG
+    se_conf_command.config.se.mode = proto_cmd.ScanEngineConfig.SCANNING
+    test_range = se_conf_command.config.se.scanning.ranges.add()
     test_range.start = 440e6
     test_range.stop = 450e6
-    se._se_commands_q.put(test_cmd)
-    conf_resp = proto_cmd.Response()
+    se._se_commands_q.put(se_conf_command)
+
+    # Prepare mock CoreService Config Response
+    cs_conf_response = proto_cmd.Response()
     if fail_config:
-        conf_resp.error.description = "Conf failed"
-    se._cs_responses_q.put(conf_resp)
+        cs_conf_response.error.description = "Conf failed"
+    se._cs_responses_q.put(cs_conf_response)
+
+    # Do FSM loop
     se._loop()
+
+    # Validate command sent to CoreService
+    cs_conf_command, _ = se._cs_commands_q.get_nowait()
+    assert isinstance(cs_conf_command, proto_cmd.Command)
+    assert cs_conf_command.instruction == proto_cmd.CONFIG
+    assert cs_conf_command.kind == proto_cmd.Command.WRITE
+    assert len(cs_conf_command.config.cs.scan_plan.center_freqs) >= 2
+
+    # Validate response received from ScanEngine
+    se_conf_response = se._se_responses_q.get_nowait()
+    assert isinstance(se_conf_response, proto_cmd.Response)
     if fail_config:
         assert se.state == ScanEngineState.MANUAL
+        assert se_conf_response.error.description
         return
     else:
         assert se.state == ScanEngineState.SCANNING_IDLE
-    scan_start_resp = proto_cmd.Response()
+        assert se_conf_response.config.se.scanning.ranges[0] == test_range
+
+    # On the next FSM iteration scanning should start automatically
+    # Prepare mock CoreService ScanStart Response
+    cs_scan_start_response = proto_cmd.Response()
     if fail_scan_start:
-        scan_start_resp.error.description = "Scan start failed"
-    se._cs_responses_q.put(scan_start_resp)
+        cs_scan_start_response.error.description = "Scan start failed"
+    se._cs_responses_q.put(cs_scan_start_response)
     se._cs_responses_q.put(proto_cmd.Response())
+
+    # Do FSM loop
     se._loop()
+
+    # Validate command sent to CoreService
+    cs_scan_start_command, _ = se._cs_commands_q.get_nowait()
+    assert isinstance(cs_scan_start_command, proto_cmd.Command)
+    assert cs_scan_start_command.instruction == proto_cmd.CS_SCAN_START
+
+    # Validate ScanEngine FSM state
     if fail_scan_start:
         assert se.state == ScanEngineState.SCANNING_IDLE
         return
     else:
         assert se.state == ScanEngineState.SCANNING_IN_PROGRESS
-    expected_burst_count = se._expected_data_count
 
+    # Internal variable should now be set to expect postproc data
+    expected_burst_count = se._expected_data_count
+    assert expected_burst_count > 0
+
+    # Mock postproc data burst packets
     for burst_index in range(expected_burst_count):
         assert se.state == ScanEngineState.SCANNING_IN_PROGRESS
         se._post_proc_to_scan_engine_q.put(proto_data.Measurement())
         se._loop()
 
+    # After all expected postproc packets received,
+    # FSM should automatically return to SCANNING_IDLE
     assert se.state == ScanEngineState.SCANNING_IDLE
-    test_off = proto_cmd.Command()
-    test_off.kind = proto_cmd.Command.WRITE
-    test_off.instruction = proto_cmd.CONFIG
-    test_off.config.cs.center_frequency = 100e6
-    se._se_commands_q.put(test_off)
+
+    # Test return to MANUAL mode
+    se_off_command = proto_cmd.Command()
+    se_off_command.kind = proto_cmd.Command.WRITE
+    se_off_command.instruction = proto_cmd.CONFIG
+    se_off_command.config.cs.center_frequency = 100e6
+    se._se_commands_q.put(se_off_command)
+
+    # Do FSM loop
     se._loop()
 
     assert se.state == ScanEngineState.MANUAL
@@ -149,51 +191,92 @@ def test_conf_tracking_state_machine(
 ) -> None:
 
     assert se._se_commands_q is not None
+    assert se._se_responses_q is not None
     assert se._cs_commands_q is not None
     assert se._cs_responses_q is not None
     assert se._post_proc_to_scan_engine_q is not None
 
+    # Initial state
     assert se.state == ScanEngineState.MANUAL
 
-    test_cmd = proto_cmd.Command()
-    test_cmd.kind = proto_cmd.Command.WRITE
-    test_cmd.instruction = proto_cmd.CONFIG
-    test_cmd.config.se.mode = proto_cmd.ScanEngineConfig.TRACKING
-    test_cmd.config.se.tracking.frequency = 446e6
-    test_cmd.config.se.tracking.bandwidth = 2.5e6
-    se._se_commands_q.put(test_cmd)
-    conf_resp = proto_cmd.Response()
+    # ScanEngine Config command
+    se_conf_command = proto_cmd.Command()
+    se_conf_command.kind = proto_cmd.Command.WRITE
+    se_conf_command.instruction = proto_cmd.CONFIG
+    se_conf_command.config.se.mode = proto_cmd.ScanEngineConfig.TRACKING
+    se_conf_command.config.se.tracking.frequency = 446e6
+    se_conf_command.config.se.tracking.bandwidth = 2.5e6
+    se._se_commands_q.put(se_conf_command)
+
+    # Prepare mock CoreService Config Response
+    cs_conf_response = proto_cmd.Response()
     if fail_config:
-        conf_resp.error.description = "Conf failed"
-    se._cs_responses_q.put(conf_resp)
+        cs_conf_response.error.description = "Conf failed"
+    se._cs_responses_q.put(cs_conf_response)
+
+    # Do FSM loop
     se._loop()
+
+    # Validate command sent to CoreService
+    cs_conf_command, _ = se._cs_commands_q.get_nowait()
+    assert isinstance(cs_conf_command, proto_cmd.Command)
+    assert cs_conf_command.instruction == proto_cmd.CONFIG
+    assert cs_conf_command.kind == proto_cmd.Command.WRITE
+    assert cs_conf_command.config.cs.iq_rate == pytest.approx(5.6e6)
+    assert cs_conf_command.config.cs.center_frequency == pytest.approx(
+        se_conf_command.config.se.tracking.frequency - 2.8e6
+    )
+
+    # Validate response received from ScanEngine
+    se_conf_response = se._se_responses_q.get_nowait()
+    assert isinstance(se_conf_response, proto_cmd.Response)
     if fail_config:
         assert se.state == ScanEngineState.MANUAL
+        assert se_conf_response.error.description
         return
     else:
         assert se.state == ScanEngineState.TRACKING_IDLE
-    cs_command: proto_cmd.Command = se._cs_commands_q.get()
-    assert cs_command.config.cs.iq_rate == pytest.approx(5.6e6)
-    assert cs_command.config.cs.center_frequency == pytest.approx(
-        test_cmd.config.se.tracking.frequency - 2.8e6
-    )
-    tr_start_resp = proto_cmd.Response()
+        assert se_conf_response.config.se.tracking.frequency == pytest.approx(
+            se_conf_command.config.se.tracking.frequency
+        )
+        assert se_conf_response.config.se.tracking.bandwidth == pytest.approx(
+            se_conf_command.config.se.tracking.bandwidth
+        )
+
+    # On the next FSM iteration tracking should start automatically
+    # Prepare mock CoreService ScanStart Response
+    cs_tr_start_response = proto_cmd.Response()
     if fail_scan_start:
-        tr_start_resp.error.description = "Tr start failed"
-    se._cs_responses_q.put(tr_start_resp)
+        cs_tr_start_response.error.description = "Tr start failed"
+    se._cs_responses_q.put(cs_tr_start_response)
     se._cs_responses_q.put(proto_cmd.Response())
+
+    # Do FSM loop
     se._loop()
+
+    # Validate command sent to CoreService
+    cs_scan_start_command, _ = se._cs_commands_q.get_nowait()
+    assert isinstance(cs_scan_start_command, proto_cmd.Command)
+    assert cs_scan_start_command.instruction == proto_cmd.SOURCE_START
+
+    # Validate ScanEngine FSM state
     if fail_scan_start:
         assert se.state == ScanEngineState.TRACKING_IDLE
         return
     else:
         assert se.state == ScanEngineState.TRACKING_IN_PROGRESS
+
+    # On the next FSM iteration no data is yet received,
+    # FSM should remain in TRACKING_IN_PROGRESS
     se._loop()
     assert se.state == ScanEngineState.TRACKING_IN_PROGRESS
+
+    # On the next FSM iteration tracking is done
     se._post_proc_to_scan_engine_q.put(proto_data.Measurement())
     se._loop()
     assert se.state == ScanEngineState.TRACKING_IDLE
 
+    # Test return to MANUAL mode
     test_off = proto_cmd.Command()
     test_off.kind = proto_cmd.Command.WRITE
     test_off.instruction = proto_cmd.CONFIG

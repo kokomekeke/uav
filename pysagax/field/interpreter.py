@@ -45,8 +45,8 @@ class Interpreter(Loop):
         self.config_id = 0
         self._comm_queue_in: Optional[Queue] = None
         self._comm_queue_out: Optional[Queue] = None
-        self._cs_queue_in: Optional[Queue] = None
-        self._cs_queue_out: Optional[Queue] = None
+        self._se_queue_in: Optional[Queue] = None
+        self._se_queue_out: Optional[Queue] = None
         self._stream_conf_queue_out: Optional[Queue] = None
         self._heading_conf_queue_out: Optional[Queue] = None
         self._postproc_conf_queue_out: Optional[Queue] = None
@@ -74,8 +74,8 @@ class Interpreter(Loop):
     ) -> None:
         self._comm_queue_in = comm_queue_in
         self._comm_queue_out = comm_queue_out
-        self._cs_queue_in = cs_queue_in
-        self._cs_queue_out = cs_queue_out
+        self._se_queue_in = cs_queue_in
+        self._se_queue_out = cs_queue_out
         self._stream_conf_queue_out = stream_conf_queue_out
         self._heading_conf_queue_out = heading_conf_queue_out
         self._postproc_conf_queue_out = postproc_conf_queue_out
@@ -88,8 +88,8 @@ class Interpreter(Loop):
     def _loop(self) -> None:
         assert self._comm_queue_in is not None
         assert self._comm_queue_out is not None
-        assert self._cs_queue_in is not None
-        assert self._cs_queue_out is not None
+        assert self._se_queue_in is not None
+        assert self._se_queue_out is not None
         # Hang until a new command is received
         command = self._comm_queue_in.get()
         response = proto_cmd.Response()
@@ -144,24 +144,28 @@ class Interpreter(Loop):
                     command.HasField("parameter")
                     or command.kind == proto_cmd.Command.WRITE
                 ) and command.kind != proto_cmd.Command.READ:
+                    response.success = True
                     if command.config.HasField("heading"):  # Heading part is set
                         assert self._heading_conf_queue_out is not None
                         self._heading_conf_queue_out.put(command.config.heading)
-                    if command.config.HasField("cs"):
-                        cs_command = proto_cmd.Command()
-                        cs_command.CopyFrom(command)
-                        cs_command.kind = proto_cmd.Command.WRITE
-                        cs_resp = self._cs_control(cs_command, timeout_ms=30000)
-                        if cs_resp.HasField("error"):
-                            response.error.CopyFrom(cs_resp.error)
+                    if command.config.HasField("cs") or command.config.HasField("se"):
+                        assert (
+                            self._se_queue_in is not None
+                            and self._se_queue_out is not None
+                        )
+                        self._se_queue_out.put(command)
+                        se_response = self._se_queue_in.get()
+                        if se_response.HasField("error"):
+                            response.error.CopyFrom(se_response.error)
+                            response.success = False
                         else:
-                            response.config.cs.CopyFrom(cs_resp.config.cs)
+                            response.config.cs.CopyFrom(se_response.config.cs)
+                            response.config.se.CopyFrom(se_response.config.se)
 
                     else:
                         self._config_status_message = proto_cmd.ConfigStatus()
                         self._config_status_message.start_time.GetCurrentTime()
                         self._config_status_message.finish_time.GetCurrentTime()
-                    response.success = True
                     # self._config(response, command.config)
                 else:
                     self._config(response)
@@ -274,23 +278,3 @@ class Interpreter(Loop):
             self._latest_telemetry_proxy["SystemInfo"]
         )
         response.info.MergeFrom(system_info_object)
-
-    def _cs_control(
-        self, command: proto_cmd.Command, timeout_ms: int = 200
-    ) -> proto_cmd.Response:
-        """Send control commands (no parameters) to CoreService"""
-        assert self._cs_queue_in is not None
-        assert self._cs_queue_out is not None
-
-        # Obtain appropriate CoreService command
-        cs_command = proto_cmd.Command()
-        cs_command.CopyFrom(command)
-        if cs_command.HasField("config"):
-            cs_command.config.Clear()
-            cs_command.config.cs.CopyFrom(command.config.cs)
-        self._cs_queue_out.put((cs_command, timeout_ms))
-        cs_response = self._cs_queue_in.get()
-        if cs_response is not None:
-            return cs_response
-        else:
-            raise CSTimeoutException()

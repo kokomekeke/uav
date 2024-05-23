@@ -203,6 +203,8 @@ class ScanEngine(Loop):
         scanning_useful_bandwidth: int,
         scanning_averaging_burst_count: int,
         scanning_target_resolution_bandwidth: int,
+        timeout_config_ms: int = 30000,
+        timeout_instruction_ms: int = 1000,
         *args,
         **kwargs,
     ) -> None:
@@ -240,9 +242,13 @@ class ScanEngine(Loop):
         )
         self._latest_cs_response: Optional[proto_cmd.Response] = None
         self._configured_freq_ranges: list[FreqRangeInternal] = []
+        self._configured_tracking_frequency = 0.0
+        self._configured_tracking_bandwidth = 0.0
         # self._machine.generate_pyi()
         self._expected_data_count: int = 0
         self._received_data_count: int = 0
+        self._config_cs_timeout = timeout_config_ms
+        self._instruction_cs_timeout = timeout_instruction_ms
 
     def to_supported_iq_rate(self, iq: int) -> int:
         for rate in ScanEngine.supported_iq_rates:
@@ -307,15 +313,17 @@ class ScanEngine(Loop):
         assert self._cs_commands_q is not None
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CONFIG
+        command.kind = proto_cmd.Command.WRITE
         command.config.cs.scan_plan.CopyFrom(
             self._scan_algorithm(se_cmd.config.se.scanning)
         )
-        self._cs_commands_q.put(command)
+        self._cs_commands_q.put((command, self._config_cs_timeout))
 
     def configure_tracking(self, se_cmd: proto_cmd.Command) -> None:
         assert self._cs_commands_q is not None
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CONFIG
+        command.kind = proto_cmd.Command.WRITE
 
         tracking_bw = self.to_supported_iq_rate(
             int(se_cmd.config.se.tracking.bandwidth / self._useful_bandwidth_ratio) * 2
@@ -325,19 +333,32 @@ class ScanEngine(Loop):
         command.config.cs.center_frequency = (
             se_cmd.config.se.tracking.frequency - tracking_bw / 2
         )
-        self._cs_commands_q.put(command)
+        self._configured_tracking_frequency = se_cmd.config.se.tracking.frequency
+        self._configured_tracking_bandwidth = se_cmd.config.se.tracking.bandwidth
+        self._cs_commands_q.put((command, self._config_cs_timeout))
 
     def configure_manual(self, se_cmd: proto_cmd.Command) -> None:
         assert self._cs_commands_q is not None
-        self._cs_commands_q.put(se_cmd)
+
+        cs_command = proto_cmd.Command()
+        cs_command.CopyFrom(se_cmd)
+        cs_command.kind = proto_cmd.Command.WRITE
+        if cs_command.HasField("config"):
+            cs_command.config.Clear()
+            cs_command.config.cs.CopyFrom(se_cmd.config.cs)
+        self._cs_commands_q.put((cs_command, self._config_cs_timeout))
 
     def command_scanning(self):
+        assert self._cs_commands_q is not None
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CS_SCAN_START
+        self._cs_commands_q.put((command, self._instruction_cs_timeout))
 
     def command_tracking(self):
+        assert self._cs_commands_q is not None
         command = proto_cmd.Command()
         command.instruction = proto_cmd.SOURCE_START
+        self._cs_commands_q.put((command, self._instruction_cs_timeout))
 
     def construct_config_report(self) -> proto_cmd.ScanEngineConfig:
         se_config = proto_cmd.ScanEngineConfig()
@@ -349,6 +370,9 @@ class ScanEngine(Loop):
             ScanEngineState.TRACKING_IDLE: proto_cmd.ScanEngineConfig.TRACKING,
             ScanEngineState.TRACKING_IN_PROGRESS: proto_cmd.ScanEngineConfig.TRACKING,
         }[self.state]
+        if se_config.mode == proto_cmd.ScanEngineConfig.TRACKING:
+            se_config.tracking.frequency = self._configured_tracking_frequency
+            se_config.tracking.bandwidth = self._configured_tracking_bandwidth
         if se_config.mode == proto_cmd.ScanEngineConfig.SCANNING:
             for ran in self._configured_freq_ranges:
                 pb_ran = se_config.scanning.ranges.add()
@@ -373,16 +397,25 @@ class ScanEngine(Loop):
                 proto_cmd.ScanEngineConfig.SCANNING,
                 proto_cmd.ScanEngineConfig.TRACKING,
             ]:
+                self._logger.info(f"ScanEngine configuration {command.config.se.mode}")
                 if command.config.se.mode == proto_cmd.ScanEngineConfig.SCANNING:
                     self.switch_scanning(se_cmd=command)
                 elif command.config.se.mode == proto_cmd.ScanEngineConfig.TRACKING:
                     self.switch_tracking(se_cmd=command)
+                assert self._latest_cs_response is not None
                 response = proto_cmd.Response()
-                response.config.se.CopyFrom(self.construct_config_report())
+                if self._latest_cs_response.HasField("error"):
+                    response.error.CopyFrom(self._latest_cs_response.error)
+                else:
+                    response.config.se.CopyFrom(self.construct_config_report())
+                self._protobuf_to_log(response, "ScanEngine conf finished: {}")
                 self._se_responses_q.put(response)
+                self._latest_cs_response = None
             else:
+                self._logger.info(f"ScanEngine manual configuration")
                 self.off(se_cmd=command)
                 assert self._latest_cs_response is not None
+                self._protobuf_to_log(self._latest_cs_response, "Manual conf finished: {}")
                 self._se_responses_q.put(self._latest_cs_response)
                 self._latest_cs_response = None
         return True
@@ -396,7 +429,7 @@ class ScanEngine(Loop):
             pass
 
     def _loop(self) -> None:
-        q_timeout = 1
+        q_timeout = 1.0
         assert (
             self._cs_commands_q is not None
             and self._cs_responses_q is not None

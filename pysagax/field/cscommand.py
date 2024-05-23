@@ -108,7 +108,7 @@ class CSCommand(Loop):
             self._protobuf_to_log(
                 command, "CS CMD {} (" + label + ") timed out", logging.WARNING
             )
-            response.error.description = "Timeout"
+            response.error.description = "CoreService Timeout"
         else:
             response.ParseFromString(response_raw)
             self._protobuf_to_log(response, "CS RSP {}")

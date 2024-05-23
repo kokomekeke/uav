@@ -50,6 +50,8 @@ class Commander:
         cs_host: str,
         cs_command_port: int,
         cs_stream_port: int,
+        cs_command_config_timeout: int,
+        cs_command_instruction_timeout: int,
         heading_host: str,
         heading_control_port: int,
         heading_stream_port: int,
@@ -102,6 +104,8 @@ class Commander:
             scanning_useful_bandwidth,
             scanning_averaging_burst_count,
             scanning_target_resolution_bandwidth,
+            cs_command_config_timeout,
+            cs_command_instruction_timeout,
             level=level,
         )
         self._cs_command = CSCommand(level=level, address=cs_host, port=cs_command_port)
@@ -173,7 +177,7 @@ class Commander:
             self._pp_events_input_q,
             self._post_proc_commands_q,
             self._post_proc_responses_q,
-            self._post_proc_to_scan_engine_q
+            self._post_proc_to_scan_engine_q,
         )
         pp_events_future = self._pool.submit(
             self._pp_events,
@@ -303,6 +307,18 @@ def set_default_config(ctx, param, conf_path):
     show_default=True,
 )
 @click.option(
+    "--cs-command-config-timeout",
+    help="Timeout for CoreService CONFIG commands [ms]",
+    default=30000,
+    show_default=True,
+)
+@click.option(
+    "--cs-command-instruction-timeout",
+    help="Timeout for CoreService commands except for CONFIG [ms]",
+    default=1000,
+    show_default=True,
+)
+@click.option(
     "--heading-host",
     help="Hostname of Heading module (PySAGAX-Heading)",
     default="127.0.0.1",
@@ -356,6 +372,8 @@ def main(
     command_port: int,
     cs_host: str,
     cs_command_port: int,
+    cs_command_config_timeout: int,
+    cs_command_instruction_timeout: int,
     cs_stream_port: int,
     heading_host: str,
     heading_control_port: int,
@@ -384,6 +402,8 @@ def main(
         cs_host,
         cs_command_port,
         cs_stream_port,
+        cs_command_config_timeout,
+        cs_command_instruction_timeout,
         heading_host,
         heading_control_port,
         heading_stream_port,
