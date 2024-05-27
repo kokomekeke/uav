@@ -55,6 +55,7 @@ message Telemetry {
     }
     Recording recording = 10;
     HeadingStatus heading = 11;
+    string scanengine_state = 12;
 }
 
 message Detection {

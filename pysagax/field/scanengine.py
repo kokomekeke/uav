@@ -534,4 +534,4 @@ class ScanEngine(Loop):
                     # TODO adjust params
                 except queue.Empty:
                     self._logger.error(f"Tracking mode timed out")
-                    # self.done()
+                    self.done()

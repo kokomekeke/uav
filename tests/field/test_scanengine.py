@@ -343,10 +343,6 @@ def test_conf_tracking_state_machine(
     else:
         assert se.state == ScanEngineState.TRACKING_IN_PROGRESS
 
-    # On the next FSM iteration no data is yet received,
-    # FSM should remain in TRACKING_IN_PROGRESS
-    se._loop()
-    assert se.state == ScanEngineState.TRACKING_IN_PROGRESS
 
     # On the next FSM iteration tracking is done
     se._post_proc_to_scan_engine_q.put(proto_data.Measurement())

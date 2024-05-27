@@ -199,6 +199,7 @@ class Commander:
             self._telemetry_in_q,
             self._heading_status_q,
             self._latest_telemetry_proxy,
+            self._latest_se_proxy
         )
         heading_future = self._pool.submit(
             self._heading,
@@ -300,13 +301,13 @@ def set_default_config(ctx, param, conf_path):
 @click.option(
     "--cs-command-port",
     help="CoreService command (ZMQ REP) port",
-    default=6000,
+    default=12938,
     show_default=True,
 )
 @click.option(
     "--cs-stream-port",
     help="CoreService stream (ZMQ PUB) port",
-    default=6001,
+    default=12939,
     show_default=True,
 )
 @click.option(

@@ -136,6 +136,7 @@ class Telemetry(google.protobuf.message.Message):
     SOURCE_FIELD_NUMBER: builtins.int
     RECORDING_FIELD_NUMBER: builtins.int
     HEADING_FIELD_NUMBER: builtins.int
+    SCANENGINE_STATE_FIELD_NUMBER: builtins.int
     @property
     def time(self) -> google.protobuf.timestamp_pb2.Timestamp: ...
     stream_id: builtins.int
@@ -147,6 +148,7 @@ class Telemetry(google.protobuf.message.Message):
     def recording(self) -> global___Telemetry.Recording: ...
     @property
     def heading(self) -> pysagax.message.heading_pb2.HeadingStatus: ...
+    scanengine_state: builtins.str
     def __init__(
         self,
         *,
@@ -156,9 +158,10 @@ class Telemetry(google.protobuf.message.Message):
         source: global___Telemetry.Source | None = ...,
         recording: global___Telemetry.Recording | None = ...,
         heading: pysagax.message.heading_pb2.HeadingStatus | None = ...,
+        scanengine_state: builtins.str = ...,
     ) -> None: ...
     def HasField(self, field_name: typing_extensions.Literal["hardware", b"hardware", "heading", b"heading", "recording", b"recording", "source", b"source", "time", b"time"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing_extensions.Literal["hardware", b"hardware", "heading", b"heading", "recording", b"recording", "source", b"source", "stream_id", b"stream_id", "time", b"time"]) -> None: ...
+    def ClearField(self, field_name: typing_extensions.Literal["hardware", b"hardware", "heading", b"heading", "recording", b"recording", "scanengine_state", b"scanengine_state", "source", b"source", "stream_id", b"stream_id", "time", b"time"]) -> None: ...
 
 global___Telemetry = Telemetry
 
