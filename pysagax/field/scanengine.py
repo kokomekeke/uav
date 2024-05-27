@@ -440,7 +440,7 @@ class ScanEngine(Loop):
                 self._handle_incoming_instruction(q_timeout)
             case ScanEngineState.SCANNING_IDLE:
                 self._discard_post_proc_output()
-                if not self._handle_incoming_instruction(q_timeout):
+                if not self._handle_incoming_instruction(0.0):
                     self.launch()
             case ScanEngineState.TRACKING_IDLE:
                 self._discard_post_proc_output()
