@@ -133,6 +133,13 @@ class ScanEngine(Loop):
             "conditions": "check_cs_response",
         },
         {
+            "trigger": "switch_tracking",
+            "source": ScanEngineState.TRACKING_IDLE,
+            "dest": ScanEngineState.TRACKING_IDLE,
+            "prepare": "configure_tracking",
+            "conditions": "check_cs_response",
+        },
+        {
             "trigger": "off",
             "source": ScanEngineState.TRACKING_IDLE,
             "dest": ScanEngineState.MANUAL,
