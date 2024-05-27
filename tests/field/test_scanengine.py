@@ -301,7 +301,7 @@ def test_conf_tracking_state_machine(
     assert cs_conf_command.kind == proto_cmd.Command.WRITE
     assert cs_conf_command.config.cs.iq_rate == pytest.approx(5.6e6)
     assert cs_conf_command.config.cs.center_frequency == pytest.approx(
-        se_conf_command.config.se.tracking.frequency - 2.8e6
+        se_conf_command.config.se.tracking.frequency - 5.6e6 / 4
     )
 
     # Validate response received from ScanEngine
@@ -342,7 +342,6 @@ def test_conf_tracking_state_machine(
         return
     else:
         assert se.state == ScanEngineState.TRACKING_IN_PROGRESS
-
 
     # On the next FSM iteration tracking is done
     se._post_proc_to_scan_engine_q.put(proto_data.Measurement())

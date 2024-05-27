@@ -354,7 +354,7 @@ class ScanEngine(Loop):
 
         command.config.cs.iq_rate = tracking_bw
         command.config.cs.center_frequency = (
-            se_cmd.config.se.tracking.frequency - tracking_bw / 2
+            se_cmd.config.se.tracking.frequency - tracking_bw / 4
         )
         self._configured_tracking_frequency = se_cmd.config.se.tracking.frequency
         self._configured_tracking_bandwidth = se_cmd.config.se.tracking.bandwidth
