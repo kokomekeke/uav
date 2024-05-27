@@ -47,7 +47,10 @@ class SUB:
         if not self._connected:
             raise Exception("Not connected")
         if (self._subscriber.poll(timeout) & zmq.POLLIN) != 0:
-            topic, msg = self._subscriber.recv_multipart()
+            multipart = self._subscriber.recv_multipart()
+            if len(multipart) != 2:
+                raise Exception(f"Invalid multipart: {str(multipart)}")
+            topic, msg = multipart
             return msg, topic.decode()
         else:
             self.disconnect()

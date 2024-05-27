@@ -57,8 +57,8 @@ class CSCommand(Loop):
         # self._queue_in_status = queue_in_status
         # self._queue_out_status = queue_out_status
 
+        self._logger.info(f"ZMQ REQ connecting to ZMQ REP on {self._address_server}:{self._port_server}")
         self._req = REQ(self._address_server, self._port_server)
-
         self._merged_queue = Queue()
 
         return super()._call(*args, **kwargs)
