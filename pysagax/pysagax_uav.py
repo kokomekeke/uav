@@ -91,6 +91,7 @@ class Commander:
         self._heading_status_q = self._manager.Queue()
 
         self._latest_telemetry_proxy = self._manager.dict()
+        self._latest_se_proxy = self._manager.dict()
         self._latest_config_id_value = self._manager.Value("i", 0)
 
         self._communicator = Communicator(level=level, port=command_port)
@@ -144,6 +145,7 @@ class Commander:
             self._heading_commands_q,
             self._post_proc_commands_q,
             self._post_proc_responses_q,
+            self._latest_se_proxy,
             self._latest_telemetry_proxy,
             self._latest_config_id_value,
         )
@@ -154,6 +156,7 @@ class Commander:
             self._se_commands_q,
             self._se_responses_q,
             self._post_proc_to_scan_engine_q,
+            self._latest_se_proxy,
             self._latest_telemetry_proxy,
         )
         cs_command_future = self._pool.submit(

@@ -5,7 +5,6 @@ import queue
 from queue import Queue
 
 import subprocess
-import shlex
 import threading
 from typing import Any, Optional
 
@@ -51,6 +50,7 @@ class Interpreter(Loop):
         self._heading_conf_queue_out: Optional[Queue] = None
         self._postproc_conf_queue_out: Optional[Queue] = None
         self._postproc_conf_queue_resp_in: Optional[Queue] = None
+        self._latest_se_proxy: Optional[DictProxy] = None
         self._latest_telemetry_proxy: Optional[DictProxy] = None
         self._cs_lock: Optional[threading.Lock] = None
         self._currently_running_cs_command = ""
@@ -67,6 +67,7 @@ class Interpreter(Loop):
         heading_conf_queue_out: Queue[Any],
         postproc_conf_queue_out: Queue[Any],
         postproc_conf_queue_resp_in: Queue[Any],
+        latest_se_proxy: Optional[DictProxy] = None,
         latest_telemetry_proxy: Optional[DictProxy] = None,
         latest_config_id_value: Optional[ValueProxy[int]] = None,
         *args,
@@ -80,6 +81,7 @@ class Interpreter(Loop):
         self._heading_conf_queue_out = heading_conf_queue_out
         self._postproc_conf_queue_out = postproc_conf_queue_out
         self._postproc_conf_queue_resp_in = postproc_conf_queue_resp_in
+        self._latest_se_proxy = latest_se_proxy
         self._latest_telemetry_proxy = latest_telemetry_proxy
         self._latest_config_id_value = latest_config_id_value
         self._cs_lock = threading.Lock()
@@ -200,7 +202,7 @@ class Interpreter(Loop):
                 | proto_cmd.CS_PING
                 | proto_cmd.POSITION
             ):
-                response.CopyFrom(self._cs_control(command))
+                response.CopyFrom(self._se_control(command))
             case proto_cmd.STREAM_START | proto_cmd.STREAM_STOP:
                 assert self._stream_conf_queue_out is not None
                 self._stream_conf_queue_out.put(command)
@@ -227,12 +229,12 @@ class Interpreter(Loop):
 
     def _config(self, response: proto_cmd.Response) -> None:
         """Query system configuration"""
-
-        cs_query_cmd = proto_cmd.Command()
-        cs_query_cmd.instruction = proto_cmd.CONFIG
-        cs_query_cmd.kind = proto_cmd.Command.READ
-        cs_query_resp = self._cs_control(cs_query_cmd)
-        response.config.cs.CopyFrom(cs_query_resp.config.cs)
+        if self._latest_se_proxy is not None and "config" in self._latest_se_proxy:
+            se_config: proto_cmd.ScanEngineConfig = self._latest_se_proxy["config"]
+            response.config.se.CopyFrom(se_config)
+        if self._latest_se_proxy is not None and "cs_config" in self._latest_se_proxy:
+            cs_config: proto_cmd.CoreServiceConfig = self._latest_se_proxy["cs_config"]
+            response.config.cs.CopyFrom(cs_config)
         if (
             self._latest_telemetry_proxy is None
             or "HeadingStatus" not in self._latest_telemetry_proxy
@@ -278,3 +280,11 @@ class Interpreter(Loop):
             self._latest_telemetry_proxy["SystemInfo"]
         )
         response.info.MergeFrom(system_info_object)
+
+    def _se_control(self, command: proto_cmd.Command) -> proto_cmd.Response:
+        assert (
+            self._se_queue_in is not None
+            and self._se_queue_out is not None
+        )
+        self._se_queue_out.put(command)
+        return self._se_queue_in.get()

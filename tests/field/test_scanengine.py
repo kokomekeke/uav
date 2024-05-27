@@ -1,7 +1,7 @@
 import multiprocessing
 from multiprocessing.managers import DictProxy
 from queue import Queue
-from typing import Any
+from typing import Any, Callable, Optional
 import pytest
 
 import pysagax.message.command_pb2 as proto_cmd
@@ -141,6 +141,22 @@ def se() -> ScanEngine:
     return se
 
 
+def loop_se_with_cs_control(
+    se: ScanEngine, action: Optional[Callable[[ScanEngine], Any]] = None
+) -> None:
+    assert se._cs_commands_q is not None
+    assert se._cs_responses_q is not None
+    prep_response = proto_cmd.Response()
+    prep_response.success = True
+    se._cs_responses_q.put(prep_response)
+    if action is None:
+        se._loop()
+    else:
+        action(se)
+    caught_cmd, _ = se._cs_commands_q.get_nowait()
+    assert caught_cmd
+
+
 @pytest.mark.parametrize("fail_config", [True, False])
 @pytest.mark.parametrize("fail_scan_start", [True, False])
 def test_conf_scanning_state_machine(
@@ -153,6 +169,7 @@ def test_conf_scanning_state_machine(
     assert se._cs_responses_q is not None
     assert se._post_proc_to_scan_engine_q is not None
 
+    loop_se_with_cs_control(se)
     # Initial state
     assert se.state == ScanEngineState.MANUAL
 
@@ -255,6 +272,7 @@ def test_conf_tracking_state_machine(
     assert se._cs_responses_q is not None
     assert se._post_proc_to_scan_engine_q is not None
 
+    loop_se_with_cs_control(se)
     # Initial state
     assert se.state == ScanEngineState.MANUAL
 
@@ -344,3 +362,72 @@ def test_conf_tracking_state_machine(
     se._loop()
 
     assert se.state == ScanEngineState.MANUAL
+
+
+@pytest.mark.parametrize(
+    "test_state",
+    [
+        ScanEngineState.MANUAL,
+        ScanEngineState.SCANNING_IDLE,
+        ScanEngineState.TRACKING_IDLE,
+    ],
+)
+@pytest.mark.parametrize(
+    "instruction",
+    [
+        proto_cmd.SOURCE_START,
+        proto_cmd.SOURCE_STOP,
+        proto_cmd.REC_START,
+        proto_cmd.REC_STOP,
+        proto_cmd.CS_PING,
+        proto_cmd.POSITION,
+    ],
+)
+def test_se_command_passthrough(
+    se: ScanEngine,
+    test_state: ScanEngineState,
+    instruction: proto_cmd.Instruction.ValueType,
+) -> None:
+
+    assert se._se_commands_q is not None
+    assert se._se_responses_q is not None
+    assert se._cs_commands_q is not None
+    assert se._cs_responses_q is not None
+    assert se._post_proc_to_scan_engine_q is not None
+
+    loop_se_with_cs_control(se)
+    # Initial state
+    assert se.state == ScanEngineState.MANUAL
+
+    if test_state == ScanEngineState.SCANNING_IDLE:
+        loop_se_with_cs_control(se, lambda se: se.switch_scanning(proto_cmd.Command()))
+
+    if test_state == ScanEngineState.TRACKING_IDLE:
+        loop_se_with_cs_control(se, lambda se: se.switch_tracking(proto_cmd.Command()))
+
+    assert se.state == test_state
+    for i in range(3):
+        # ScanEngine Config command
+        se_conf_command = proto_cmd.Command()
+        se_conf_command.kind = (
+            proto_cmd.Command.WRITE if i % 2 else proto_cmd.Command.READ
+        )
+        se_conf_command.instruction = instruction
+        se._se_commands_q.put(se_conf_command)
+
+        # Prepare mock CoreService Config Response
+        cs_conf_response = proto_cmd.Response()
+        se._cs_responses_q.put(cs_conf_response)
+
+        # Do FSM loop
+        se._loop()
+
+        # Validate command sent to CoreService
+        cs_conf_command, _ = se._cs_commands_q.get_nowait()
+        assert isinstance(cs_conf_command, proto_cmd.Command)
+        assert cs_conf_command.instruction == instruction
+        assert (
+            cs_conf_command.kind == proto_cmd.Command.WRITE
+            if i % 2
+            else proto_cmd.Command.READ
+        )

@@ -53,11 +53,12 @@ class FreqRangeInternal:
 
 
 class ScanEngineState(enum.Enum):
-    MANUAL = 0
-    SCANNING_IDLE = 1
-    TRACKING_IDLE = 2
-    SCANNING_IN_PROGRESS = 3
-    TRACKING_IN_PROGRESS = 4
+    INIT = 0
+    MANUAL = 1
+    SCANNING_IDLE = 2
+    TRACKING_IDLE = 3
+    SCANNING_IN_PROGRESS = 4
+    TRACKING_IN_PROGRESS = 5
 
 
 class StateMachine(Machine):
@@ -67,6 +68,9 @@ class StateMachine(Machine):
 
 
 class ScanEngine(Loop):
+
+    @overload
+    def initialize(self, *args, **kwargs) -> bool: ...  # type: ignore
 
     @overload
     def switch_scanning(self, *args, **kwargs) -> bool: ...  # type: ignore
@@ -86,6 +90,13 @@ class ScanEngine(Loop):
     """Background process for communicating with the PySAGAX-Heading service"""
 
     transitions = [
+        {
+            "trigger": "initialize",
+            "source": ScanEngineState.INIT,
+            "dest": ScanEngineState.MANUAL,
+            "prepare": "query_cs_config",
+            "conditions": "check_cs_response",
+        },
         {
             "trigger": "switch_scanning",
             "source": ScanEngineState.MANUAL,
@@ -228,13 +239,14 @@ class ScanEngine(Loop):
         self._queue_status: Optional[Queue] = None
         self._post_proc_to_scan_engine_q: Optional[Queue] = None
         self._latest_telemetry_proxy: Optional[DictProxy] = None
-        self.state: ScanEngineState = ScanEngineState.MANUAL
+        self._latest_se_proxy: Optional[DictProxy] = None
+        self.state: ScanEngineState = ScanEngineState.INIT
         logging.getLogger("transitions").setLevel(self._logger.level)
         self._machine = StateMachine(
             self,
             states=ScanEngineState,
             transitions=ScanEngine.transitions,
-            initial=ScanEngineState.MANUAL,
+            initial=ScanEngineState.INIT,
         )
         self._latest_cs_response: Optional[proto_cmd.Response] = None
         self._configured_freq_ranges: list[FreqRangeInternal] = []
@@ -259,6 +271,7 @@ class ScanEngine(Loop):
         se_commands_q: Queue[Any],
         se_responses_q: Queue[Any],
         post_proc_to_scan_engine_q: Queue[Any],
+        latest_se_proxy: DictProxy,
         latest_telemetry_proxy: DictProxy,
         *args,
         **kwargs,
@@ -267,6 +280,7 @@ class ScanEngine(Loop):
         self._cs_responses_q = cs_responses_q
         self._se_commands_q = se_commands_q
         self._se_responses_q = se_responses_q
+        self._latest_se_proxy = latest_se_proxy
         self._latest_telemetry_proxy = latest_telemetry_proxy
         self._post_proc_to_scan_engine_q = post_proc_to_scan_engine_q
         return super()._call(*args, **kwargs)
@@ -275,6 +289,9 @@ class ScanEngine(Loop):
         self, scan_conf: proto_cmd.ScanningConfig
     ) -> proto_cmd.FreqList:
         freq_list = proto_cmd.FreqList()
+        if not scan_conf.ranges:
+            self._logger.warning("No scan ranges defined!")
+            return freq_list
         freq_ranges = sorted(scan_conf.ranges, key=lambda ran: ran.start)
         freq_ranges_united: list[FreqRangeInternal] = [
             FreqRangeInternal(freq_ranges[0])
@@ -303,7 +320,17 @@ class ScanEngine(Loop):
         assert self._cs_responses_q is not None
         response: proto_cmd.Response = self._cs_responses_q.get()
         self._latest_cs_response = response
+        if response.HasField("config"):
+            if self._latest_se_proxy is not None:
+                self._latest_se_proxy["cs_config"] = response.config.cs
         return not response.HasField("error")
+
+    def query_cs_config(self) -> None:
+        assert self._cs_commands_q is not None
+        command = proto_cmd.Command()
+        command.instruction = proto_cmd.CONFIG
+        command.kind = proto_cmd.Command.READ
+        self._cs_commands_q.put((command, self._instruction_cs_timeout))
 
     def configure_scanning(self, se_cmd: proto_cmd.Command) -> None:
         assert self._cs_commands_q is not None
@@ -344,6 +371,10 @@ class ScanEngine(Loop):
             cs_command.config.cs.CopyFrom(se_cmd.config.cs)
         self._cs_commands_q.put((cs_command, self._config_cs_timeout))
 
+    def manual_command(self, cs_command: proto_cmd.Command) -> None:
+        assert self._cs_commands_q is not None
+        self._cs_commands_q.put((cs_command, self._instruction_cs_timeout))
+
     def command_scanning(self):
         assert self._cs_commands_q is not None
         command = proto_cmd.Command()
@@ -360,6 +391,7 @@ class ScanEngine(Loop):
         se_config = proto_cmd.ScanEngineConfig()
 
         se_config.mode = {
+            ScanEngineState.INIT: proto_cmd.ScanEngineConfig.MANUAL,
             ScanEngineState.MANUAL: proto_cmd.ScanEngineConfig.MANUAL,
             ScanEngineState.SCANNING_IDLE: proto_cmd.ScanEngineConfig.SCANNING,
             ScanEngineState.SCANNING_IN_PROGRESS: proto_cmd.ScanEngineConfig.SCANNING,
@@ -374,6 +406,8 @@ class ScanEngine(Loop):
                 pb_ran = se_config.scanning.ranges.add()
                 pb_ran.start = ran.start
                 pb_ran.stop = ran.stop
+        if self._latest_se_proxy is not None:
+            self._latest_se_proxy["config"] = se_config
         return se_config
 
     def _pre_loop(self) -> None:
@@ -411,9 +445,33 @@ class ScanEngine(Loop):
                 self._logger.info(f"ScanEngine manual configuration")
                 self.off(se_cmd=command)
                 assert self._latest_cs_response is not None
-                self._protobuf_to_log(self._latest_cs_response, "Manual conf finished: {}")
+                self._protobuf_to_log(
+                    self._latest_cs_response, "Manual conf finished: {}"
+                )
                 self._se_responses_q.put(self._latest_cs_response)
                 self._latest_cs_response = None
+        elif (
+            command.instruction == proto_cmd.CONFIG
+            and command.kind == proto_cmd.Command.READ
+        ):
+            response = proto_cmd.Response()
+            response.config.se.CopyFrom(self.construct_config_report())
+            self._se_responses_q.put(response)
+        elif command.instruction in [
+            proto_cmd.SOURCE_START,
+            proto_cmd.SOURCE_STOP,
+            proto_cmd.REC_START,
+            proto_cmd.REC_STOP,
+            proto_cmd.CS_PING,
+            proto_cmd.POSITION,
+        ]:
+            self.manual_command(command)
+            self.check_cs_response()
+            self._se_responses_q.put(self._latest_cs_response)
+        else:
+            response = proto_cmd.Response()
+            response.error.description = "Unsupported {str(command.instruction)}"
+            self._se_responses_q.put(response)
         return True
 
     def _discard_post_proc_output(self) -> None:
@@ -434,7 +492,11 @@ class ScanEngine(Loop):
             and self._post_proc_to_scan_engine_q is not None
             and self._latest_telemetry_proxy is not None
         )
+        if self._latest_se_proxy is not None:
+            self._latest_se_proxy["state"] = str(self.state).split(".")[-1]
         match self.state:
+            case ScanEngineState.INIT:
+                self.initialize()
             case ScanEngineState.MANUAL:
                 self._discard_post_proc_output()
                 self._handle_incoming_instruction(q_timeout)
