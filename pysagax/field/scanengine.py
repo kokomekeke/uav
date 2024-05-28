@@ -5,6 +5,7 @@ import queue
 from queue import Queue
 from typing import Any, Generator, Optional, overload
 
+import google.protobuf.json_format
 from transitions import Machine
 import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.data_pb2 as proto_data
@@ -90,6 +91,9 @@ class ScanEngine(Loop):
     """FSM transition triggers"""
 
     @overload
+    def reset(self, *args, **kwargs) -> bool: ...  # type: ignore
+
+    @overload
     def initialize(self, *args, **kwargs) -> bool: ...  # type: ignore
 
     @overload
@@ -110,11 +114,19 @@ class ScanEngine(Loop):
     """ FSM transitions """
     transitions = [
         {
+            "trigger": "reset",
+            "source": "*",
+            "dest": ScanEngineState.INIT,
+            "prepare": "initialize_source",
+            "conditions": "check_cs_response",
+        },
+        {
             "trigger": "initialize",
             "source": ScanEngineState.INIT,
             "dest": ScanEngineState.MANUAL,
             "prepare": "query_cs_config",
             "conditions": "check_cs_response",
+            "after": "do_auto_config",
         },
         {
             "trigger": "switch_scanning",
@@ -238,6 +250,10 @@ class ScanEngine(Loop):
         scanning_target_resolution_bandwidth: int,
         timeout_config_ms: int = 30000,
         timeout_instruction_ms: int = 1000,
+        source_device_type: str = "",
+        source_device_path: str = "",
+        auto_config: str = "",
+        reset_on_error: bool = False,
         *args,
         **kwargs,
     ) -> None:
@@ -251,7 +267,7 @@ class ScanEngine(Loop):
                 self._iq_rate * self._useful_bandwidth_ratio
             )
             self._logger.warn(
-                f"IQ rate {scanning_iq_rate} not supported, using {self._iq_rate} (useful bw {self._useful_bandwidth}"
+                f"IQ rate {scanning_iq_rate} not supported, using {self._iq_rate} (useful bw {self._useful_bandwidth})"
             )
         else:
             self._iq_rate: int = scanning_iq_rate
@@ -273,6 +289,8 @@ class ScanEngine(Loop):
             states=ScanEngineState,
             transitions=ScanEngine.transitions,
             initial=ScanEngineState.INIT,
+            queued=True,
+            auto_transitions=False,
         )
         self._latest_cs_response: Optional[proto_cmd.Response] = None
         self._configured_freq_ranges: list[FreqRangeInternal] = []
@@ -283,6 +301,22 @@ class ScanEngine(Loop):
         self._received_data_count: int = 0
         self._config_cs_timeout = timeout_config_ms
         self._instruction_cs_timeout = timeout_instruction_ms
+        self._source_device_type = source_device_type
+        self._source_device_path = source_device_path
+        self._auto_config: Optional[proto_cmd.Command] = None
+        if auto_config:
+            command = proto_cmd.Command()
+            command.kind = proto_cmd.Command.WRITE
+            command.instruction = proto_cmd.CONFIG
+            try:
+                google.protobuf.json_format.Parse(auto_config, command.config)
+                self._protobuf_to_log(command, "Auto conf command is {}", logging.INFO)
+                self._auto_config = command
+            except google.protobuf.json_format.Error:
+                self._logger.warning(
+                    f"Malformed Command.Config Protobuf JSON in auto config param: {self._auto_config}"
+                )
+        self._reset_on_error = reset_on_error
 
     def to_supported_iq_rate(self, iq: int) -> int:
         """
@@ -363,7 +397,18 @@ class ScanEngine(Loop):
         if response.HasField("config"):
             if self._latest_se_proxy is not None:
                 self._latest_se_proxy["cs_config"] = response.config.cs
+        if response.HasField("error") and self._reset_on_error:
+            self.reset()
+
         return not response.HasField("error")
+
+    def do_auto_config(self) -> None:
+        """
+        Action on the INIT -> MANUAL transition.
+        """
+        if self._auto_config is not None:
+            self._protobuf_to_log(self._auto_config, "Execute auto config {}")
+            self._handle_instruction(self._auto_config)
 
     def query_cs_config(self) -> None:
         """
@@ -374,6 +419,25 @@ class ScanEngine(Loop):
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CONFIG
         command.kind = proto_cmd.Command.READ
+        self._cs_commands_q.put((command, self._instruction_cs_timeout))
+
+    def initialize_source(self) -> None:
+        """
+        Action on the * -> INIT transition.
+        Resets source to initialized state
+        """
+        assert self._cs_commands_q is not None
+        assert self._cs_responses_q is not None
+        command = proto_cmd.Command()
+        command.instruction = proto_cmd.CONFIG
+        command.kind = proto_cmd.Command.WRITE
+        command.config.cs.source_type = "NULL"
+        self._cs_commands_q.put((command, self._instruction_cs_timeout))
+        response: proto_cmd.Response = self._cs_responses_q.get()
+        if response.HasField("error"):
+            self._logger.error("Could not set CS Source to NULL")
+        command.config.cs.source_type = self._source_device_type
+        command.config.cs.source_path = self._source_device_path
         self._cs_commands_q.put((command, self._instruction_cs_timeout))
 
     def configure_scanning(self, se_cmd: proto_cmd.Command) -> None:
@@ -389,6 +453,8 @@ class ScanEngine(Loop):
         command.config.cs.scan_plan.CopyFrom(
             self._scan_algorithm(se_cmd.config.se.scanning)
         )
+        command.config.cs.source_type = self._source_device_type
+        command.config.cs.source_path = self._source_device_path
         self._cs_commands_q.put((command, self._config_cs_timeout))
 
     def configure_tracking(self, se_cmd: proto_cmd.Command) -> None:
@@ -414,6 +480,8 @@ class ScanEngine(Loop):
         command.config.cs.center_frequency = (
             se_cmd.config.se.tracking.frequency - command.config.cs.iq_rate / 4
         )
+        command.config.cs.source_type = self._source_device_type
+        command.config.cs.source_path = self._source_device_path
 
         self._configured_tracking_frequency = se_cmd.config.se.tracking.frequency
         self._configured_tracking_bandwidth = se_cmd.config.se.tracking.bandwidth
@@ -504,6 +572,17 @@ class ScanEngine(Loop):
             command: proto_cmd.Command = self._se_commands_q.get(timeout=timeout)
         except queue.Empty:
             return False
+        response = self._handle_instruction(command)
+        if response is None:
+            response = proto_cmd.Response()
+            response.error.description = "ScanEngine null response"
+        self._protobuf_to_log(response, "ScanEngine finished {}")
+        self._se_responses_q.put(response)
+        return True
+
+    def _handle_instruction(
+        self, command: proto_cmd.Command
+    ) -> Optional[proto_cmd.Response]:
         if (
             command.instruction == proto_cmd.CONFIG
             and command.kind == proto_cmd.Command.WRITE
@@ -512,36 +591,35 @@ class ScanEngine(Loop):
                 proto_cmd.ScanEngineConfig.SCANNING,
                 proto_cmd.ScanEngineConfig.TRACKING,
             ]:
-                self._logger.info(f"ScanEngine configuration {command.config.se.mode}")
                 if command.config.se.mode == proto_cmd.ScanEngineConfig.SCANNING:
+                    self._logger.info(f"ScanEngine configuration SCANNING")
                     self.switch_scanning(se_cmd=command)
                 elif command.config.se.mode == proto_cmd.ScanEngineConfig.TRACKING:
+                    self._logger.info(f"ScanEngine configuration TRACKING")
                     self.switch_tracking(se_cmd=command)
-                assert self._latest_cs_response is not None
                 response = proto_cmd.Response()
-                if self._latest_cs_response.HasField("error"):
+                if (
+                    self._latest_cs_response is not None
+                    and self._latest_cs_response.HasField("error")
+                ):
                     response.error.CopyFrom(self._latest_cs_response.error)
                 else:
                     response.config.se.CopyFrom(self.construct_config_report())
-                self._protobuf_to_log(response, "ScanEngine conf finished: {}")
-                self._se_responses_q.put(response)
                 self._latest_cs_response = None
+                return response
             else:
                 self._logger.info(f"ScanEngine manual configuration")
                 self.off(se_cmd=command)
-                assert self._latest_cs_response is not None
-                self._protobuf_to_log(
-                    self._latest_cs_response, "Manual conf finished: {}"
-                )
-                self._se_responses_q.put(self._latest_cs_response)
+                response = self._latest_cs_response
                 self._latest_cs_response = None
+                return response
         elif (
             command.instruction == proto_cmd.CONFIG
             and command.kind == proto_cmd.Command.READ
         ):
             response = proto_cmd.Response()
             response.config.se.CopyFrom(self.construct_config_report())
-            self._se_responses_q.put(response)
+            return response
         elif command.instruction in [
             proto_cmd.SOURCE_START,
             proto_cmd.SOURCE_STOP,
@@ -552,12 +630,13 @@ class ScanEngine(Loop):
         ]:
             self.manual_command(command)
             self.check_cs_response()
-            self._se_responses_q.put(self._latest_cs_response)
+            response = self._latest_cs_response
+            self._latest_cs_response = None
+            return response
         else:
             response = proto_cmd.Response()
             response.error.description = "Unsupported {str(command.instruction)}"
-            self._se_responses_q.put(response)
-        return True
+            return response
 
     def _discard_post_proc_output(self) -> None:
         """
@@ -587,6 +666,7 @@ class ScanEngine(Loop):
 
         match self.state:
             case ScanEngineState.INIT:
+                self._discard_post_proc_output()
                 self.initialize()
             case ScanEngineState.MANUAL:
                 self._discard_post_proc_output()

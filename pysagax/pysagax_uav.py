@@ -59,6 +59,10 @@ class Commander:
         scanning_useful_bandwidth: int,
         scanning_averaging_burst_count: int,
         scanning_target_resolution_bandwidth: int,
+        source_device_type: str,
+        source_device_path: str,
+        auto_config: str,
+        cs_reset_on_fail: bool,
     ) -> None:
 
         self._logger = getLogger("Commander")
@@ -93,7 +97,9 @@ class Commander:
         self._latest_se_proxy = self._manager.dict()
         self._latest_config_id_value = self._manager.Value("i", 0)
 
-        self._communicator = Communicator(level=level, port=command_port)
+        self._communicator = Communicator(
+            level=level, port=command_port
+        )
         self._streamer = Streamer(level=level)
 
         self._interpreter = Interpreter(
@@ -106,6 +112,10 @@ class Commander:
             scanning_target_resolution_bandwidth,
             cs_command_config_timeout,
             cs_command_instruction_timeout,
+            source_device_type,
+            source_device_path,
+            auto_config,
+            cs_reset_on_fail,
             level=level,
         )
         self._cs_command = CSCommand(level=level, address=cs_host, port=cs_command_port)
@@ -198,7 +208,7 @@ class Commander:
             self._telemetry_in_q,
             self._heading_status_q,
             self._latest_telemetry_proxy,
-            self._latest_se_proxy
+            self._latest_se_proxy,
         )
         heading_future = self._pool.submit(
             self._heading,
@@ -369,6 +379,25 @@ def set_default_config(ctx, param, conf_path):
     show_default=True,
     help="Path of the disk which is to be displayed in telemetry",
 )
+@click.option(
+    "--source-device-type",
+    default="UHD",
+    show_default=True,
+    help="Default device type configured by ScanEngine",
+)
+@click.option(
+    "--source-device-path",
+    default="",
+    show_default=True,
+    help="Default device path configured by ScanEngine",
+)
+@click.option(
+    "--auto-config",
+    default='{"se": {"mode": "TRACKING", "tracking": {"frequency": 446000000.0,"bandwidth": 62500}}}',
+    show_default=True,
+    help="JSON-encoded protobuf configuration command",
+)
+@click.option('--cs_reset-on-fail', is_flag=True, help="Reset CS source on command fail")
 def main(
     level: str,
     disk_path: str,
@@ -385,6 +414,10 @@ def main(
     scanning_useful_bandwidth: int,
     scanning_averaging_burst_count: int,
     scanning_target_resolution_bandwidth: int,
+    source_device_type: str,
+    source_device_path: str,
+    auto_config: str,
+    cs_reset_on_fail: bool,
 ) -> None:
     """Root command of CLI"""
 
@@ -414,6 +447,10 @@ def main(
         scanning_useful_bandwidth,
         scanning_averaging_burst_count,
         scanning_target_resolution_bandwidth,
+        source_device_type,
+        source_device_path,
+        auto_config,
+        cs_reset_on_fail
     )
     commander.start()
 
