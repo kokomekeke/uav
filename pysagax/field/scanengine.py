@@ -378,7 +378,8 @@ class ScanEngine(Loop):
 
     def configure_scanning(self, se_cmd: proto_cmd.Command) -> None:
         """
-        Action before entering SCANNING_IDLE state.
+        Action before entering SCANNING_IDLE state,
+        when the transition is triggered by the se_cmd configuration command.
         Sends Scanning configuration to CoreService.
         """
         assert self._cs_commands_q is not None
@@ -392,7 +393,8 @@ class ScanEngine(Loop):
 
     def configure_tracking(self, se_cmd: proto_cmd.Command) -> None:
         """
-        Action before entering TRACKING_IDLE state.
+        Action before entering TRACKING_IDLE state,
+        when the transition is triggered by the se_cmd configuration command.
         Sends Tracking configuration to CoreService.
         """
         assert self._cs_commands_q is not None
@@ -418,6 +420,11 @@ class ScanEngine(Loop):
         self._cs_commands_q.put((command, self._config_cs_timeout))
 
     def configure_manual(self, se_cmd: proto_cmd.Command) -> None:
+        """
+        Action before entering MANUAL state,
+        when the transition is triggered by the se_cmd configuration command.
+        The CoreService gets the "cs" part of the incoming message.
+        """
         assert self._cs_commands_q is not None
 
         cs_command = proto_cmd.Command()
@@ -431,6 +438,7 @@ class ScanEngine(Loop):
     def manual_command(self, cs_command: proto_cmd.Command) -> None:
         """
         Called when a CoreService command arrives on the ScanEngine incoming queue.
+        (like REC_START, POSITION, or CS_PING)
         Forwards the message to the CoreService.
         """
         assert self._cs_commands_q is not None
