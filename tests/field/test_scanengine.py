@@ -11,7 +11,7 @@ from pysagax.field.scanengine import FreqRangeInternal, ScanEngine, ScanEngineSt
 
 @pytest.mark.parametrize(
     [
-        "fkLH",
+        "f0Max",
         "B",
         "expected_result",
     ],
@@ -57,11 +57,11 @@ from pysagax.field.scanengine import FreqRangeInternal, ScanEngine, ScanEngineSt
         ],
     ],
 )
-def test_center_freq_list(fkLH: tuple[float, float], B: float, expected_result):
-    fkL, fkH = fkLH
+def test_center_freq_list(f0Max: tuple[float, float], B: float, expected_result):
+    f0k, fMaxk = f0Max
     freq_range = FreqRangeInternal()
-    freq_range.start = fkL
-    freq_range.stop = fkH
+    freq_range.start = f0k
+    freq_range.stop = fMaxk
     result = list(freq_range.center_freq_list(B))
     assert len(result) == len(expected_result)
     for res, expected_res in zip(result, expected_result):
