@@ -2,7 +2,6 @@ import enum
 import logging
 from multiprocessing.managers import DictProxy
 import queue
-import time
 from queue import Queue
 from typing import Any, Generator, Optional, overload
 
@@ -13,6 +12,11 @@ from pysagax.common.loop import Loop
 
 
 class FreqRangeInternal:
+    """
+    Helper class for storing start and stop frequencies on frequency ranges,
+    and calculating frequency hopping on it. It is only to be used by ScanEngine.
+    """
+
     def __init__(self, freq_range: Optional[proto_cmd.FreqRange] = None) -> None:
         self.start = freq_range.start if freq_range is not None else 0.0
         self.stop = freq_range.stop if freq_range is not None else 0.0
@@ -22,6 +26,9 @@ class FreqRangeInternal:
         return self.stop - self.start
 
     def overlap(self, other: "FreqRangeInternal") -> bool:
+        """
+        Returns: True if two frequency ranges overlap
+        """
         assert self.start <= self.stop and other.start <= other.stop
         return (
             (self.start <= other.start and other.start <= self.stop)
@@ -30,6 +37,9 @@ class FreqRangeInternal:
         )
 
     def merge(self, other: "FreqRangeInternal") -> None:
+        """
+        Merges other range into this one by extending the boundaries of this one.
+        """
         if not self.overlap(other):
             return
         if self.stop < other.stop:
@@ -40,6 +50,10 @@ class FreqRangeInternal:
     def center_freq_list(
         self, useful_bandwidth: float, repeat: int = 1
     ) -> Generator[float, None, None]:
+        """
+        Generates center frequency list based on scan algorithm.
+        https://sagaxcommunications.atlassian.net/wiki/spaces/ALTS/pages/245071917/Scan+Engine#Scan-algoritmus
+        """
         number_of_jumps = -int(-self.bandwidth // useful_bandwidth)  # ceil
         jump_bandwidth = self.bandwidth / float(number_of_jumps)
         for i in range(number_of_jumps):
@@ -64,10 +78,16 @@ class ScanEngineState(enum.Enum):
 class StateMachine(Machine):
 
     def _checked_assignment(self, model, name, func):
+        """
+        This allows method overriding in pytransitions, so that
+        we can define FSM transition methods in advance and make
+        linters understand FSM trigger calls.
+        """
         setattr(model, name, func)
 
 
 class ScanEngine(Loop):
+    """FSM transition triggers"""
 
     @overload
     def initialize(self, *args, **kwargs) -> bool: ...  # type: ignore
@@ -87,8 +107,7 @@ class ScanEngine(Loop):
     @overload
     def done(self, *args, **kwargs) -> bool: ...  # type: ignore
 
-    """Background process for communicating with the PySAGAX-Heading service"""
-
+    """ FSM transitions """
     transitions = [
         {
             "trigger": "initialize",
@@ -186,6 +205,7 @@ class ScanEngine(Loop):
         },
     ]
 
+    """ The IQ rate list of the Sidekiq radios    """
     supported_iq_rates = [
         541667,
         1920000,
@@ -212,7 +232,6 @@ class ScanEngine(Loop):
 
     def __init__(
         self,
-        # TODO: Define useful defaults
         scanning_iq_rate: int,
         scanning_useful_bandwidth: int,
         scanning_averaging_burst_count: int,
@@ -266,6 +285,10 @@ class ScanEngine(Loop):
         self._instruction_cs_timeout = timeout_instruction_ms
 
     def to_supported_iq_rate(self, iq: int) -> int:
+        """
+        This is important for certain SDR radios which support a limited set of IQ rates.
+        Returns the nearest higher IQ rate from the supported list.
+        """
         for rate in ScanEngine.supported_iq_rates:
             if rate >= iq:
                 return rate
@@ -295,6 +318,11 @@ class ScanEngine(Loop):
     def _scan_algorithm(
         self, scan_conf: proto_cmd.ScanningConfig
     ) -> proto_cmd.FreqList:
+        """
+        Runs the Scan algorithm on the provided scan_conf configuration and
+        returns the frequency list needed by CoreService.
+        See https://sagaxcommunications.atlassian.net/wiki/spaces/ALTS/pages/245071917/Scan+Engine#Scan-algoritmus
+        """
         freq_list = proto_cmd.FreqList()
         if not scan_conf.ranges:
             self._logger.warning("No scan ranges defined!")
@@ -324,6 +352,11 @@ class ScanEngine(Loop):
         return freq_list
 
     def check_cs_response(self, se_cmd: Optional[proto_cmd.Command] = None) -> bool:
+        """
+        Runs before entering an FSM state, which needs CoreService configuration.
+        This is executed after sending a configuration command, and prevents FSM transition
+        if an error occurs.
+        """
         assert self._cs_responses_q is not None
         response: proto_cmd.Response = self._cs_responses_q.get()
         self._latest_cs_response = response
@@ -333,6 +366,10 @@ class ScanEngine(Loop):
         return not response.HasField("error")
 
     def query_cs_config(self) -> None:
+        """
+        Action on the INIT -> MANUAL transition.
+        Queries the initial configuration of CoreService.
+        """
         assert self._cs_commands_q is not None
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CONFIG
@@ -340,6 +377,10 @@ class ScanEngine(Loop):
         self._cs_commands_q.put((command, self._instruction_cs_timeout))
 
     def configure_scanning(self, se_cmd: proto_cmd.Command) -> None:
+        """
+        Action before entering SCANNING_IDLE state.
+        Sends Scanning configuration to CoreService.
+        """
         assert self._cs_commands_q is not None
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CONFIG
@@ -350,6 +391,10 @@ class ScanEngine(Loop):
         self._cs_commands_q.put((command, self._config_cs_timeout))
 
     def configure_tracking(self, se_cmd: proto_cmd.Command) -> None:
+        """
+        Action before entering TRACKING_IDLE state.
+        Sends Tracking configuration to CoreService.
+        """
         assert self._cs_commands_q is not None
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CONFIG
@@ -359,10 +404,15 @@ class ScanEngine(Loop):
             int(se_cmd.config.se.tracking.bandwidth / self._useful_bandwidth_ratio) * 2
         )
 
-        command.config.cs.iq_rate = tracking_bw
+        # Do not switch to lower IQ rate for tracking, only higher if needed
+        command.config.cs.iq_rate = max(tracking_bw, self._iq_rate)
+
+        # Tracked signal should be on the center of the positive side
+        # of the baseband signal
         command.config.cs.center_frequency = (
             se_cmd.config.se.tracking.frequency - tracking_bw / 4
         )
+
         self._configured_tracking_frequency = se_cmd.config.se.tracking.frequency
         self._configured_tracking_bandwidth = se_cmd.config.se.tracking.bandwidth
         self._cs_commands_q.put((command, self._config_cs_timeout))
@@ -379,22 +429,38 @@ class ScanEngine(Loop):
         self._cs_commands_q.put((cs_command, self._config_cs_timeout))
 
     def manual_command(self, cs_command: proto_cmd.Command) -> None:
+        """
+        Called when a CoreService command arrives on the ScanEngine incoming queue.
+        Forwards the message to the CoreService.
+        """
         assert self._cs_commands_q is not None
         self._cs_commands_q.put((cs_command, self._instruction_cs_timeout))
 
     def command_scanning(self):
+        """
+        Action on the SCANNING_IDLE -> SCANNING_IN_PROGRESS transition.
+        Sends the CS_SCAN_START command to CoreService.
+        """
         assert self._cs_commands_q is not None
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CS_SCAN_START
         self._cs_commands_q.put((command, self._instruction_cs_timeout))
 
     def command_tracking(self):
+        """
+        Action on the TRACKING_IDLE -> TRACKING_IN_PROGRESS transition.
+        Sends the SOURCE_START command to CoreService.
+        """
         assert self._cs_commands_q is not None
         command = proto_cmd.Command()
         command.instruction = proto_cmd.SOURCE_START
         self._cs_commands_q.put((command, self._instruction_cs_timeout))
 
     def construct_config_report(self) -> proto_cmd.ScanEngineConfig:
+        """
+        Called on configuration change. This method constructs the Config report
+        which can be queried with the CONFIG READ protobuf command.
+        """
         se_config = proto_cmd.ScanEngineConfig()
 
         se_config.mode = {
@@ -421,6 +487,10 @@ class ScanEngine(Loop):
         self._logger.info("ScanEngine starts")
 
     def _handle_incoming_instruction(self, timeout: float) -> bool:
+        """
+        Runs when the FSM is inside a state and allows for an incoming ScanEngine command.
+        Returns True if there was an incoming command to process.
+        """
         assert self._se_commands_q is not None and self._se_responses_q is not None
         try:
             command: proto_cmd.Command = self._se_commands_q.get(timeout=timeout)
@@ -482,6 +552,10 @@ class ScanEngine(Loop):
         return True
 
     def _discard_post_proc_output(self) -> None:
+        """
+        If the FSM is in such a state that the post proc data is not processed,
+        the queue should be emptied.
+        """
         assert self._post_proc_to_scan_engine_q is not None
         try:
             while True:
@@ -500,7 +574,9 @@ class ScanEngine(Loop):
             and self._latest_telemetry_proxy is not None
         )
         if self._latest_se_proxy is not None:
+            # This will be used in the telemetry packet.
             self._latest_se_proxy["state"] = str(self.state).split(".")[-1]
+
         match self.state:
             case ScanEngineState.INIT:
                 self.initialize()
@@ -510,6 +586,9 @@ class ScanEngine(Loop):
             case ScanEngineState.SCANNING_IDLE:
                 self._discard_post_proc_output()
                 if not self._handle_incoming_instruction(0.0):
+                    # If there was an incoming command, the _loop iteration will be used
+                    # to execute that command. Only go to the SCANNING_IN_PROGRESS state,
+                    # if there aren't any commands left in the queue.
                     self.launch()
             case ScanEngineState.TRACKING_IDLE:
                 self._discard_post_proc_output()
@@ -517,6 +596,8 @@ class ScanEngine(Loop):
                     self.launch()
             case ScanEngineState.SCANNING_IN_PROGRESS:
                 try:
+                    # Scanning in progress: no commands allowed, the FSM is waiting
+                    # for all the Measurement packets to arrive.
                     post_proc_data: proto_data.Measurement = (
                         self._post_proc_to_scan_engine_q.get(timeout=q_timeout)
                     )
