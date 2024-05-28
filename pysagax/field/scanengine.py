@@ -410,7 +410,7 @@ class ScanEngine(Loop):
         # Tracked signal should be on the center of the positive side
         # of the baseband signal
         command.config.cs.center_frequency = (
-            se_cmd.config.se.tracking.frequency - tracking_bw / 4
+            se_cmd.config.se.tracking.frequency - command.config.cs.iq_rate / 4
         )
 
         self._configured_tracking_frequency = se_cmd.config.se.tracking.frequency
