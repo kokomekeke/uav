@@ -564,7 +564,7 @@ class ScanEngine(Loop):
             pass
 
     def _loop(self) -> None:
-        q_timeout = 1.0
+        q_timeout = 0.5
         assert (
             self._cs_commands_q is not None
             and self._cs_responses_q is not None
@@ -582,9 +582,13 @@ class ScanEngine(Loop):
                 self.initialize()
             case ScanEngineState.MANUAL:
                 self._discard_post_proc_output()
+                # MANUAL mode command handling needs a timeout, because there is no other
+                # action in this state and would spin the _loop function very quickly when
+                # there are no incoming commands.
                 self._handle_incoming_instruction(q_timeout)
             case ScanEngineState.SCANNING_IDLE:
                 self._discard_post_proc_output()
+                # Timeout is zero, only handle commands that are in the queue right now
                 if not self._handle_incoming_instruction(0.0):
                     # If there was an incoming command, the _loop iteration will be used
                     # to execute that command. Only go to the SCANNING_IN_PROGRESS state,
