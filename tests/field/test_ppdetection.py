@@ -7,10 +7,7 @@ import copy
 
 from pysagax.util.mat import normalize_angle
 import numpy as np
-from pysagax.util.protobuf_spectrum_utils import (
-    convert_iterable_to_spectrum_data,
-    create_spectrum_with_freq_dict,
-)
+from pysagax.util.protobuf_spectrum_utils import Spectrum
 
 
 class TestDetectionAggregation:
@@ -129,37 +126,11 @@ class TestCalculateSNR:
 
         # Predefined spectrums. List of amplitudes for each bin in dB
         noise_bins_options = {
-            0: {10: 1, 11: 1, 12: 1, 13: 1, 17: 1, 18: 1, 19: 1, 20: 1},
-            1: {
-                0.0: 1,
-                0.1: 1,
-                0.2: 1,
-                0.3: 1,
-                0.4: 1,
-                0.5: 1,
-                0.6: 1,
-                0.7: 1,
-                0.8: 1,
-                0.9: 1,
-                1: 1,
-            },
-            2: {-5: 0, -4: 2, -3: 0, -2: 2, 2: 2, 3: 0, 4: 1, 5: 1},
-            3: {
-                10: -100,
-                11: -90,
-                12: -80,
-                13: -70,
-                17: -70,
-                18: -80,
-                19: -90,
-                20: -100,
-            },
-            4: {
-                14: -20,
-                14.5: 30,
-                15.5: 20,
-                16: -30,
-            },  # 7 bins, mixed positive & negative
+            0: [1, 1, 1, 1, 1, 1, 1, 1],
+            1: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            2: [0, 2, 0, 2, 2, 0, 1, 1],
+            3: [-100, -90, -80, -70, -70, -80, -90, -100],
+            4: [-20, 30, 20, -30],  # 7 bins, mixed positive & negative
             5: [-40, -50, -60, -20, -10, -20, -10, -20, -20, -10, -10],
         }
 
@@ -195,7 +166,7 @@ class TestCalculateSNR:
         }
 
         return {
-            "noise_bins": noise_bins_options[noise_bin_no],
+            "noise_bins": np.array(noise_bins_options[noise_bin_no]),
             "detections": detections[detections_no],
         }
 
@@ -284,39 +255,14 @@ class TestCalculateSNR:
 
 
 class TestDetectRoi:
-    @pytest.fixture()
-    def make_detect_roi_test_cases(self, request):
-        signal_bins_no = request.param[0]
-        roi_no = request.param[1]
-        azimuth_no = request.param[2]
-        elevation_no = request.param[3]
-
-        signal_bins_options = {0: {13: -10, 14: -5, 15: -2, 16: -8, 17: -10}}
-        roi_options = {
-            0: proto_cmd.ROIMask(roi_id=2, threshold=-6),
-            1: proto_cmd.ROIMask(roi_id=2, threshold=-1),
-        }
-        azimuth_spectrum_options = {
-            0: {10: 0, 11: 1, 12: 2, 13: 3, 14: 4, 15: 5, 16: 6, 17: 7, 18: 8, 19: 9},
-        }
-        elevation_spectrum_options = {
-            0: {10: 10, 11: 9, 12: 8, 13: 7, 14: 6, 15: 5, 16: 4, 17: 3, 18: 2, 19: 1},
-        }
-        return {
-            "signal_bins": signal_bins_options[signal_bins_no],
-            "roi": roi_options[roi_no],
-            "azimuth_spectrum_with_freq": azimuth_spectrum_options[azimuth_no],
-            "elevation_spectrum_with_freq": elevation_spectrum_options[elevation_no],
-        }
-
     @pytest.mark.parametrize(
-        ["make_detect_roi_test_cases", "expected"],
+        ["signal_bins", "roi", "azimuth_spectrum", "elevation_spectrum", "expected"],
         [
-            # [make_detect_roi_test_cases, expected], where params for make_detect_roi_test_cases is a list of:
-            #   signal_bins_no, roi_no, azimuth_no, elevation_no
-            #   and expected is a dict of Detections (the output of _detect_roi() )
             [
-                [0, 0, 0, 0],
+                Spectrum([-10, -5, -2, -8, -10], 15, 5),
+                proto_cmd.ROIMask(roi_id=2, threshold=-6),
+                Spectrum([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 15, 10),
+                Spectrum([10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0], 15, 10),
                 {
                     2: proto_data.Detection(
                         roi_id=2,
@@ -329,21 +275,55 @@ class TestDetectRoi:
                 },
             ],
             # no detection:
-            [[0, 1, 0, 0], {}],
+            [
+                Spectrum([-10, -5, -2, -8, -10], 15, 5),
+                proto_cmd.ROIMask(roi_id=2, threshold=-1),
+                Spectrum([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 15, 10),
+                Spectrum([10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0], 15, 10),
+                {},
+            ],
+            # no azimuth and elevation spectrum was provided by CS:
+            [
+                Spectrum([-10, -5, -2, -8, -10], 15, 5),
+                proto_cmd.ROIMask(roi_id=2, threshold=-6),
+                None,
+                None,
+                {
+                    2: proto_data.Detection(
+                        roi_id=2,
+                        frequency=15,
+                        # bandwidth #TODO
+                        strength=-2,
+                    )
+                },
+            ],
+            # wrong azimuth and elevation spectrum was provided by CS:
+            [
+                Spectrum([-10, -5, -2, -8, -10], 15, 5),
+                proto_cmd.ROIMask(roi_id=2, threshold=-6),
+                Spectrum([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 35, 10),
+                Spectrum([10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0], 35, 10),
+                {
+                    2: proto_data.Detection(
+                        roi_id=2,
+                        frequency=15,
+                        # bandwidth #TODO
+                        strength=-2,
+                    )
+                },
+            ],
         ],
-        indirect=["make_detect_roi_test_cases"],  # passing the parameters to a fixture
     )
-    def test_detect_roi(self, make_detect_roi_test_cases, expected):
+    def test_detect_roi(
+        self, signal_bins, roi, azimuth_spectrum, elevation_spectrum, expected
+    ):
+        """
+        singal_bins: the part of the spectrum that was filtered out by the ROI window
+        azimuth and elevation spectrums are not filtered to the ROI
+        """
         pp = PPDetection()
         results = pp._detect_roi(
-            signal_bins=make_detect_roi_test_cases["signal_bins"],
-            noise_bins={},
-            roi=make_detect_roi_test_cases["roi"],
-            azimuth_spectrum_with_freq=make_detect_roi_test_cases[
-                "azimuth_spectrum_with_freq"
-            ],
-            elevation_spectrum_with_freq=make_detect_roi_test_cases[
-                "elevation_spectrum_with_freq"
-            ],
+            signal_bins, [], roi, azimuth_spectrum, elevation_spectrum
         )
+
         assert results == expected
