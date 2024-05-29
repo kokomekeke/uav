@@ -110,8 +110,8 @@ class Spectrum:
     """
 
     def __init__(self, data: np.ndarray | list, f_center: float, span: float) -> None:
-        assert len(data) # The class currently cant handle spectrums with 0 bins
-        
+        assert len(data)  # The class currently cant handle spectrums with 0 bins
+
         self.data = np.array(data)
         self.f_center = f_center
         self.span = span
@@ -176,14 +176,14 @@ class Spectrum:
             min(roi_f_stop, self.f_stop) if roi_f_stop is not None else self.f_stop
         )
         if slice_f_start > slice_f_stop:
-            raise Exception("Supplied ROI is outside of the spectrum")
+            raise IndexError("Supplied ROI is outside of the spectrum")
 
         # get the corresponding indices:
         start_index = self.get_index_from_freq(slice_f_start, rounding_mode="ceil")
         stop_index = self.get_index_from_freq(slice_f_stop, rounding_mode="floor")
 
         if start_index > stop_index:
-            raise Exception("Supplied ROI is narrower the the width of a single bin.")
+            raise IndexError("Supplied ROI is narrower the the width of a single bin.")
 
         sliced_data = self.data[start_index : stop_index + 1]
 
@@ -198,7 +198,9 @@ class Spectrum:
 
         spectrum = Spectrum(sliced_data, slice_center, slice_span)
         if return_noise_bins:
-            noise_bins = self.data[:start_index] + self.data[stop_index + 1]
+            noise_bins = np.concatenate(
+                (self.data[:start_index], self.data[stop_index + 1 :])
+            )
             return spectrum, noise_bins
         return spectrum
 

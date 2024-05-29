@@ -419,6 +419,56 @@ class TestSpectrum:
         assert result.span - expected.span < 1e-6
 
     @pytest.mark.parametrize(
+        ["spectrum", "roi_f_start", "roi_f_stop", "expected", "expected_noise_bins"],
+        [
+            [
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+                9,
+                11,
+                Spectrum([102, 103, 104], 10, 2),
+                [101, 105],
+            ],
+            [
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+                8.75,
+                9.25,
+                Spectrum([102], 9, 1),
+                [101, 103, 104, 105],
+            ],
+            [
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+                5,
+                15,
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+                [],
+            ],
+            # Test with 1 bin (the span of the returned spectrum will be 0, but a spectrum with 1 bin is not really useful anyway):
+            [Spectrum([3.0], 10, 4), 5, 10, Spectrum([3], 10, 4), []],
+            [Spectrum([3.0], 10, 4), 0, 10, Spectrum([3], 10, 4), []],
+            # # # 1001 bins from 1000Hz to 2000Hz:
+            [
+                Spectrum([i for i in range(1000, 2001)], 1500, 1000),
+                1700,
+                2100,
+                Spectrum([i for i in range(1700, 2001)], 1850, 300),
+                [i for i in range(1000, 1700)],
+            ],
+        ],
+    )
+    def test_get_spectrum_from_freq_range_noise_bins(
+        self, spectrum, roi_f_start, roi_f_stop, expected, expected_noise_bins
+    ):
+        """Tests _get_spectrum_from_freq_range() with return_noise_bins=True"""
+        result, noise_bins = spectrum._get_spectrum_from_freq_range(
+            roi_f_start, roi_f_stop, return_noise_bins=True
+        )
+
+        assert (result.data == expected.data).all()
+        assert result.f_center - expected.f_center < 1e-6
+        assert result.span - expected.span < 1e-6
+        assert (np.abs(noise_bins - np.array(expected_noise_bins)) < 1e-6).all()
+
+    @pytest.mark.parametrize(
         ["spectrum", "roi", "expected"],
         [
             [
@@ -517,7 +567,7 @@ class TestSpectrum:
         ],
     )
     def test_apply_roi_outside_spectrum(self, spectrum, roi):
-        with pytest.raises(Exception):
+        with pytest.raises(IndexError):
             result = spectrum.apply_roi(roi)
 
     @pytest.mark.parametrize(
