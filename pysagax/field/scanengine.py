@@ -304,6 +304,7 @@ class ScanEngine(Loop):
         self._source_device_type = source_device_type
         self._source_device_path = source_device_path
         self._auto_config: Optional[proto_cmd.Command] = None
+        self._last_config_command: Optional[proto_cmd.Command] = None
         if auto_config:
             command = proto_cmd.Command()
             command.kind = proto_cmd.Command.WRITE
@@ -438,7 +439,7 @@ class ScanEngine(Loop):
             self._logger.error("Could not set CS Source to NULL")
         command.config.cs.source_type = self._source_device_type
         command.config.cs.source_path = self._source_device_path
-        self._cs_commands_q.put((command, self._instruction_cs_timeout))
+        self._cs_commands_q.put((command, self._config_cs_timeout))
 
     def configure_scanning(self, se_cmd: proto_cmd.Command) -> None:
         """
@@ -455,6 +456,7 @@ class ScanEngine(Loop):
         )
         command.config.cs.source_type = self._source_device_type
         command.config.cs.source_path = self._source_device_path
+        self._last_config_command = se_cmd
         self._cs_commands_q.put((command, self._config_cs_timeout))
 
     def configure_tracking(self, se_cmd: proto_cmd.Command) -> None:
@@ -485,6 +487,7 @@ class ScanEngine(Loop):
 
         self._configured_tracking_frequency = se_cmd.config.se.tracking.frequency
         self._configured_tracking_bandwidth = se_cmd.config.se.tracking.bandwidth
+        self._last_config_command = se_cmd
         self._cs_commands_q.put((command, self._config_cs_timeout))
 
     def configure_manual(self, se_cmd: proto_cmd.Command) -> None:
@@ -501,6 +504,7 @@ class ScanEngine(Loop):
         if cs_command.HasField("config"):
             cs_command.config.Clear()
             cs_command.config.cs.CopyFrom(se_cmd.config.cs)
+        self._last_config_command = se_cmd
         self._cs_commands_q.put((cs_command, self._config_cs_timeout))
 
     def manual_command(self, cs_command: proto_cmd.Command) -> None:
@@ -694,6 +698,8 @@ class ScanEngine(Loop):
                         self._post_proc_to_scan_engine_q.get(timeout=q_timeout)
                     )
                     self._received_data_count += 1
+                    # This config is working, so next time CS crashes, it can be auto-loaded
+                    self._auto_config = self._last_config_command
                     if self._received_data_count == self._expected_data_count:
                         self.done()
                         self._logger.info(
@@ -710,6 +716,8 @@ class ScanEngine(Loop):
                     post_proc_data: proto_data.Measurement = (
                         self._post_proc_to_scan_engine_q.get(timeout=q_timeout)
                     )
+                    # This config is working, so next time CS crashes, it can be auto-loaded
+                    self._auto_config = self._last_config_command
                     self.done()
                     # TODO adjust params
                 except queue.Empty:
