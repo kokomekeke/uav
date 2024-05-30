@@ -15,7 +15,7 @@ message Telemetry {
         float cpu_usage = 1;
         int64 disk_usage = 2;
         float temperature = 3;
-		string hostname = 10;
+        string hostname = 10;
     }
     Hardware hardware = 5;
 
@@ -54,7 +54,8 @@ message Telemetry {
         uint64 length = 3;
     }
     Recording recording = 10;
-	HeadingStatus heading = 11;
+    HeadingStatus heading = 11;
+    string scanengine_state = 12;
 }
 
 message Detection {
@@ -122,7 +123,7 @@ message Measurement {
     repeated float quaternion = 8;
     bool overflow = 9;
     repeated int32 peaks = 10;
-	HeadingData heading_data = 11;
+    HeadingData heading_data = 11;
 
     // Spectrum data
     repeated Spectrum data = 13;

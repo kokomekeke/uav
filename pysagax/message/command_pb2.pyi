@@ -108,6 +108,11 @@ class _InstructionEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._En
       parameter: target [StreamTarget] - level parameter will be ignored
       response:  success [bool]
     """
+    CS_SCAN_START: _Instruction.ValueType  # 30
+    """Message only for CoreService, it is required to upload a scan plan
+    before using this command.
+      response: success [bool]
+    """
 
 class Instruction(_Instruction, metaclass=_InstructionEnumTypeWrapper):
     """Types of instructions that can be sent"""
@@ -193,6 +198,11 @@ STREAM_STOP: Instruction.ValueType  # 26
   parameter: target [StreamTarget] - level parameter will be ignored
   response:  success [bool]
 """
+CS_SCAN_START: Instruction.ValueType  # 30
+"""Message only for CoreService, it is required to upload a scan plan
+before using this command.
+  response: success [bool]
+"""
 global___Instruction = Instruction
 
 @typing_extensions.final
@@ -224,6 +234,43 @@ class ROIMask(google.protobuf.message.Message):
 global___ROIMask = ROIMask
 
 @typing_extensions.final
+class FreqList(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    IQ_RATE_FIELD_NUMBER: builtins.int
+    CENTER_FREQS_FIELD_NUMBER: builtins.int
+    iq_rate: builtins.int
+    @property
+    def center_freqs(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.float]: ...
+    def __init__(
+        self,
+        *,
+        iq_rate: builtins.int = ...,
+        center_freqs: collections.abc.Iterable[builtins.float] | None = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing_extensions.Literal["center_freqs", b"center_freqs", "iq_rate", b"iq_rate"]) -> None: ...
+
+global___FreqList = FreqList
+
+@typing_extensions.final
+class FreqRange(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    START_FIELD_NUMBER: builtins.int
+    STOP_FIELD_NUMBER: builtins.int
+    start: builtins.float
+    stop: builtins.float
+    def __init__(
+        self,
+        *,
+        start: builtins.float = ...,
+        stop: builtins.float = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing_extensions.Literal["start", b"start", "stop", b"stop"]) -> None: ...
+
+global___FreqRange = FreqRange
+
+@typing_extensions.final
 class CoreServiceConfig(google.protobuf.message.Message):
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
@@ -252,6 +299,7 @@ class CoreServiceConfig(google.protobuf.message.Message):
     SOURCE_TYPE_FIELD_NUMBER: builtins.int
     SOURCE_SUBDEV_FIELD_NUMBER: builtins.int
     TYPE_FIELD_NUMBER: builtins.int
+    SCAN_PLAN_FIELD_NUMBER: builtins.int
     center_frequency: builtins.float
     """CoreService parameters"""
     iq_rate: builtins.int
@@ -265,6 +313,8 @@ class CoreServiceConfig(google.protobuf.message.Message):
     source_type: builtins.str
     source_subdev: builtins.str
     type: global___CoreServiceConfig.Type.ValueType
+    @property
+    def scan_plan(self) -> global___FreqList: ...
     def __init__(
         self,
         *,
@@ -278,8 +328,10 @@ class CoreServiceConfig(google.protobuf.message.Message):
         source_type: builtins.str = ...,
         source_subdev: builtins.str = ...,
         type: global___CoreServiceConfig.Type.ValueType = ...,
+        scan_plan: global___FreqList | None = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing_extensions.Literal["bin_count", b"bin_count", "burst_stride", b"burst_stride", "center_frequency", b"center_frequency", "channel_gain", b"channel_gain", "iq_rate", b"iq_rate", "playback_speed", b"playback_speed", "source_path", b"source_path", "source_subdev", b"source_subdev", "source_type", b"source_type", "type", b"type"]) -> None: ...
+    def HasField(self, field_name: typing_extensions.Literal["scan_plan", b"scan_plan"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing_extensions.Literal["bin_count", b"bin_count", "burst_stride", b"burst_stride", "center_frequency", b"center_frequency", "channel_gain", b"channel_gain", "iq_rate", b"iq_rate", "playback_speed", b"playback_speed", "scan_plan", b"scan_plan", "source_path", b"source_path", "source_subdev", b"source_subdev", "source_type", b"source_type", "type", b"type"]) -> None: ...
 
 global___CoreServiceConfig = CoreServiceConfig
 
@@ -311,6 +363,7 @@ class Config(google.protobuf.message.Message):
     CONFIG_ID_FIELD_NUMBER: builtins.int
     CS_FIELD_NUMBER: builtins.int
     PP_FIELD_NUMBER: builtins.int
+    SE_FIELD_NUMBER: builtins.int
     HEADING_FIELD_NUMBER: builtins.int
     config_id: builtins.int
     """Increments with every change. Used to validate streamed data against config"""
@@ -318,6 +371,8 @@ class Config(google.protobuf.message.Message):
     def cs(self) -> global___CoreServiceConfig: ...
     @property
     def pp(self) -> global___PostProcessingConfig: ...
+    @property
+    def se(self) -> global___ScanEngineConfig: ...
     @property
     def heading(self) -> pysagax.message.heading_pb2.HeadingConfig:
         """Heading source selection"""
@@ -327,12 +382,87 @@ class Config(google.protobuf.message.Message):
         config_id: builtins.int = ...,
         cs: global___CoreServiceConfig | None = ...,
         pp: global___PostProcessingConfig | None = ...,
+        se: global___ScanEngineConfig | None = ...,
         heading: pysagax.message.heading_pb2.HeadingConfig | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing_extensions.Literal["cs", b"cs", "heading", b"heading", "pp", b"pp"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing_extensions.Literal["config_id", b"config_id", "cs", b"cs", "heading", b"heading", "pp", b"pp"]) -> None: ...
+    def HasField(self, field_name: typing_extensions.Literal["cs", b"cs", "heading", b"heading", "pp", b"pp", "se", b"se"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing_extensions.Literal["config_id", b"config_id", "cs", b"cs", "heading", b"heading", "pp", b"pp", "se", b"se"]) -> None: ...
 
 global___Config = Config
+
+@typing_extensions.final
+class ScanEngineConfig(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    class _Mode:
+        ValueType = typing.NewType("ValueType", builtins.int)
+        V: typing_extensions.TypeAlias = ValueType
+
+    class _ModeEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[ScanEngineConfig._Mode.ValueType], builtins.type):
+        DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+        MANUAL: ScanEngineConfig._Mode.ValueType  # 0
+        SCANNING: ScanEngineConfig._Mode.ValueType  # 1
+        TRACKING: ScanEngineConfig._Mode.ValueType  # 2
+
+    class Mode(_Mode, metaclass=_ModeEnumTypeWrapper): ...
+    MANUAL: ScanEngineConfig.Mode.ValueType  # 0
+    SCANNING: ScanEngineConfig.Mode.ValueType  # 1
+    TRACKING: ScanEngineConfig.Mode.ValueType  # 2
+
+    MODE_FIELD_NUMBER: builtins.int
+    SCANNING_FIELD_NUMBER: builtins.int
+    TRACKING_FIELD_NUMBER: builtins.int
+    mode: global___ScanEngineConfig.Mode.ValueType
+    @property
+    def scanning(self) -> global___ScanningConfig: ...
+    @property
+    def tracking(self) -> global___TrackingConfig: ...
+    def __init__(
+        self,
+        *,
+        mode: global___ScanEngineConfig.Mode.ValueType = ...,
+        scanning: global___ScanningConfig | None = ...,
+        tracking: global___TrackingConfig | None = ...,
+    ) -> None: ...
+    def HasField(self, field_name: typing_extensions.Literal["parameter", b"parameter", "scanning", b"scanning", "tracking", b"tracking"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing_extensions.Literal["mode", b"mode", "parameter", b"parameter", "scanning", b"scanning", "tracking", b"tracking"]) -> None: ...
+    def WhichOneof(self, oneof_group: typing_extensions.Literal["parameter", b"parameter"]) -> typing_extensions.Literal["scanning", "tracking"] | None: ...
+
+global___ScanEngineConfig = ScanEngineConfig
+
+@typing_extensions.final
+class ScanningConfig(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    RANGES_FIELD_NUMBER: builtins.int
+    @property
+    def ranges(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___FreqRange]: ...
+    def __init__(
+        self,
+        *,
+        ranges: collections.abc.Iterable[global___FreqRange] | None = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing_extensions.Literal["ranges", b"ranges"]) -> None: ...
+
+global___ScanningConfig = ScanningConfig
+
+@typing_extensions.final
+class TrackingConfig(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    FREQUENCY_FIELD_NUMBER: builtins.int
+    BANDWIDTH_FIELD_NUMBER: builtins.int
+    frequency: builtins.float
+    bandwidth: builtins.float
+    def __init__(
+        self,
+        *,
+        frequency: builtins.float = ...,
+        bandwidth: builtins.float = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing_extensions.Literal["bandwidth", b"bandwidth", "frequency", b"frequency"]) -> None: ...
+
+global___TrackingConfig = TrackingConfig
 
 @typing_extensions.final
 class SystemInfo(google.protobuf.message.Message):

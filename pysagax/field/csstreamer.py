@@ -38,6 +38,7 @@ class CSStreamer(Loop):
     ) -> None:
         self._stream_queue_out = stream_queue_out
         self._telemetry_queue_out = telemetry_queue_out
+        self._logger.info(f"ZMQ SUB connecting to ZMQ PUB on {self._host}:{self._port}")
         self._sub = SUB(self._host, self._port)
         all_groups = [group.value for group in DataType]
         self._sub.connect(group=all_groups)

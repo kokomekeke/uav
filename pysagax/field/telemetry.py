@@ -33,6 +33,7 @@ class Telemetry(Loop):
         self._cs_telemetry_queue: Optional[Queue] = None
         self._heading_status_queue: Optional[Queue] = None
         self._latest_packets_proxy: Optional[DictProxy] = None
+        self._latest_se_proxy: Optional[DictProxy] = None
         self._telemetry_packet = proto_data.Telemetry()
         self._sysinfo_packet = proto_cmd.SystemInfo()
         self._heading_status_packet = proto_heading.HeadingStatus()
@@ -47,6 +48,7 @@ class Telemetry(Loop):
         cs_telemetry_queue: Queue[proto_data.Telemetry],
         heading_status_queue: Queue[Any],
         latest_packets_proxy: Optional[DictProxy] = None,
+        latest_se_proxy: Optional[DictProxy] = None,
         *args,
         **kwargs,
     ) -> None:
@@ -54,6 +56,7 @@ class Telemetry(Loop):
         self._cs_telemetry_queue = cs_telemetry_queue
         self._heading_status_queue = heading_status_queue
         self._latest_packets_proxy = latest_packets_proxy
+        self._latest_se_proxy = latest_se_proxy
         return super()._call(*args, **kwargs)
 
     def _get_from_cs(self) -> None:
@@ -127,6 +130,11 @@ class Telemetry(Loop):
         self._telemetry_packet.heading.status = (
             "Running"
             if time.time() < self._latest_heading_status_time + 6
+            else "Unknown"
+        )
+        self._telemetry_packet.scanengine_state = (
+            self._latest_se_proxy["state"]
+            if self._latest_se_proxy is not None and "state" in self._latest_se_proxy
             else "Unknown"
         )
         self._telemetry_packet.hardware.hostname = self._hostname

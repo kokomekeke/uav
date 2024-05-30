@@ -17,6 +17,8 @@ import click
 from coloredlogs import install
 from rich.logging import RichHandler
 
+from pysagax.field.scanengine import ScanEngine
+
 try:
     import tomllib
 except ModuleNotFoundError:
@@ -48,9 +50,19 @@ class Commander:
         cs_host: str,
         cs_command_port: int,
         cs_stream_port: int,
+        cs_command_config_timeout: int,
+        cs_command_instruction_timeout: int,
         heading_host: str,
         heading_control_port: int,
         heading_stream_port: int,
+        scanning_iq_rate: int,
+        scanning_useful_bandwidth: int,
+        scanning_averaging_burst_count: int,
+        scanning_target_resolution_bandwidth: int,
+        source_device_type: str,
+        source_device_path: str,
+        auto_config: str,
+        cs_reset_on_fail: bool,
     ) -> None:
 
         self._logger = getLogger("Commander")
@@ -62,9 +74,12 @@ class Commander:
         self._stream_packets_q = self._manager.Queue(maxsize=1)
         self._cs_commands_q = self._manager.Queue()
         self._cs_responses_q = self._manager.Queue()
+        self._se_commands_q = self._manager.Queue()
+        self._se_responses_q = self._manager.Queue()
         self._stream_conf_q = self._manager.Queue()
         self._post_proc_commands_q = self._manager.Queue()
         self._post_proc_responses_q = self._manager.Queue()
+        self._post_proc_to_scan_engine_q = self._manager.Queue()
         self._pp_heading_sync_input_q = self._manager.Queue()
         self._pp_detection_input_q = self._manager.Queue()
         self._pp_events_input_q = self._manager.Queue()
@@ -79,12 +94,28 @@ class Commander:
         self._heading_status_q = self._manager.Queue()
 
         self._latest_telemetry_proxy = self._manager.dict()
+        self._latest_se_proxy = self._manager.dict()
         self._latest_config_id_value = self._manager.Value("i", 0)
 
-        self._communicator = Communicator(level=level, port=command_port)
+        self._communicator = Communicator(
+            level=level, port=command_port
+        )
         self._streamer = Streamer(level=level)
 
         self._interpreter = Interpreter(
+            level=level,
+        )
+        self._scanengine = ScanEngine(
+            scanning_iq_rate,
+            scanning_useful_bandwidth,
+            scanning_averaging_burst_count,
+            scanning_target_resolution_bandwidth,
+            cs_command_config_timeout,
+            cs_command_instruction_timeout,
+            source_device_type,
+            source_device_path,
+            auto_config,
+            cs_reset_on_fail,
             level=level,
         )
         self._cs_command = CSCommand(level=level, address=cs_host, port=cs_command_port)
@@ -117,14 +148,25 @@ class Commander:
             self._interpreter,
             self._commands_q,
             self._responses_q,
-            self._cs_responses_q,
-            self._cs_commands_q,
+            self._se_responses_q,
+            self._se_commands_q,
             self._stream_conf_q,
             self._heading_commands_q,
             self._post_proc_commands_q,
             self._post_proc_responses_q,
+            self._latest_se_proxy,
             self._latest_telemetry_proxy,
             self._latest_config_id_value,
+        )
+        scanengine_future = self._pool.submit(
+            self._scanengine,
+            self._cs_commands_q,
+            self._cs_responses_q,
+            self._se_commands_q,
+            self._se_responses_q,
+            self._post_proc_to_scan_engine_q,
+            self._latest_se_proxy,
+            self._latest_telemetry_proxy,
         )
         cs_command_future = self._pool.submit(
             self._cs_command,
@@ -147,6 +189,7 @@ class Commander:
             self._pp_events_input_q,
             self._post_proc_commands_q,
             self._post_proc_responses_q,
+            self._post_proc_to_scan_engine_q,
         )
         pp_events_future = self._pool.submit(
             self._pp_events,
@@ -165,6 +208,7 @@ class Commander:
             self._telemetry_in_q,
             self._heading_status_q,
             self._latest_telemetry_proxy,
+            self._latest_se_proxy,
         )
         heading_future = self._pool.submit(
             self._heading,
@@ -181,6 +225,7 @@ class Commander:
                 (
                     communicator_future,
                     interpreter_future,
+                    scanengine_future,
                     cs_command_future,
                     streamer_future,
                     pp_heading_sync_future,
@@ -265,13 +310,25 @@ def set_default_config(ctx, param, conf_path):
 @click.option(
     "--cs-command-port",
     help="CoreService command (ZMQ REP) port",
-    default=6000,
+    default=12938,
     show_default=True,
 )
 @click.option(
     "--cs-stream-port",
     help="CoreService stream (ZMQ PUB) port",
-    default=6001,
+    default=12939,
+    show_default=True,
+)
+@click.option(
+    "--cs-command-config-timeout",
+    help="Timeout for CoreService CONFIG commands [ms]",
+    default=30000,
+    show_default=True,
+)
+@click.option(
+    "--cs-command-instruction-timeout",
+    help="Timeout for CoreService commands except for CONFIG [ms]",
+    default=1000,
     show_default=True,
 )
 @click.option(
@@ -293,21 +350,74 @@ def set_default_config(ctx, param, conf_path):
     show_default=True,
 )
 @click.option(
+    "--scanning-iq-rate",
+    help="IQ Rate in scanning mode [Hz]",
+    default=5000000,
+    show_default=True,
+)
+@click.option(
+    "--scanning-useful-bandwidth",
+    help="Useful BW in scanning mode [Hz]",
+    default=4000000,
+    show_default=True,
+)
+@click.option(
+    "--scanning-averaging-burst-count",
+    help="Number of bursts to averaging in scanning mode",
+    default=3,
+    show_default=True,
+)
+@click.option(
+    "--scanning-target-resolution-bandwidth",
+    help="Target resolution bandwidth for scanning [Hz]",
+    default=6250,
+    show_default=True,
+)
+@click.option(
     "--disk-path",
     default="/",
     show_default=True,
     help="Path of the disk which is to be displayed in telemetry",
 )
+@click.option(
+    "--source-device-type",
+    default="UHD",
+    show_default=True,
+    help="Default device type configured by ScanEngine",
+)
+@click.option(
+    "--source-device-path",
+    default="",
+    show_default=True,
+    help="Default device path configured by ScanEngine",
+)
+@click.option(
+    "--auto-config",
+    default='{"se": {"mode": "TRACKING", "tracking": {"frequency": 446000000.0,"bandwidth": 62500}}}',
+    show_default=True,
+    help="JSON-encoded protobuf configuration command",
+)
+@click.option('--cs_reset-on-fail', is_flag=True, help="Reset CS source on command fail")
 def main(
     level: str,
     disk_path: str,
     command_port: int,
     cs_host: str,
     cs_command_port: int,
+    cs_command_config_timeout: int,
+    cs_command_instruction_timeout: int,
     cs_stream_port: int,
     heading_host: str,
     heading_control_port: int,
     heading_stream_port: int,
+    scanning_iq_rate: int,
+    scanning_useful_bandwidth: int,
+    scanning_averaging_burst_count: int,
+    scanning_target_resolution_bandwidth: int,
+    source_device_type: str,
+    source_device_path: str,
+    auto_config: str,
+    cs_reset_on_fail: bool,
 ) -> None:
     """Root command of CLI"""
 
@@ -328,9 +438,19 @@ def main(
         cs_host,
         cs_command_port,
         cs_stream_port,
+        cs_command_config_timeout,
+        cs_command_instruction_timeout,
         heading_host,
         heading_control_port,
         heading_stream_port,
+        scanning_iq_rate,
+        scanning_useful_bandwidth,
+        scanning_averaging_burst_count,
+        scanning_target_resolution_bandwidth,
+        source_device_type,
+        source_device_path,
+        auto_config,
+        cs_reset_on_fail
     )
     commander.start()
 

@@ -48,7 +48,9 @@ class Heading(Loop):
         self._queue_in.put(proto_heading.HeadingConfig())
         self._queue_out = queue_out
         self._queue_status = queue_status
+        self._logger.info(f"ZMQ REQ connecting to ZMQ REP on {self._address}:{self._port_control}")
         self._conn_control = REQ(self._address, self._port_control)
+        self._logger.info(f"ZMQ SUB connecting to ZMQ PUB on {self._address}:{self._port_stream}")
         self._conn_stream = SUB(self._address, self._port_stream)
 
         return super()._call(*args, **kwargs)
