@@ -177,7 +177,7 @@ def main():
         i = np.real(samples)
         q = np.imag(samples)
 
-        decimate = min(1, int(lenc // max_points))
+        decimate = max(1, int(lenc // max_points))
         decimate, init_i = downsample(i, decimate)
         decimate, init_q = downsample(q, decimate)
 
