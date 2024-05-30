@@ -113,6 +113,8 @@ class _InstructionEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._En
     before using this command.
       response: success [bool]
     """
+    CS_CALIBRATE_START: _Instruction.ValueType  # 31
+    CS_CALIBRATE_ABORT: _Instruction.ValueType  # 32
 
 class Instruction(_Instruction, metaclass=_InstructionEnumTypeWrapper):
     """Types of instructions that can be sent"""
@@ -203,6 +205,8 @@ CS_SCAN_START: Instruction.ValueType  # 30
 before using this command.
   response: success [bool]
 """
+CS_CALIBRATE_START: Instruction.ValueType  # 31
+CS_CALIBRATE_ABORT: Instruction.ValueType  # 32
 global___Instruction = Instruction
 
 @typing_extensions.final
@@ -447,7 +451,7 @@ class ScanningConfig(google.protobuf.message.Message):
 global___ScanningConfig = ScanningConfig
 
 @typing_extensions.final
-class TrackingConfig(google.protobuf.message.Message):
+class TrackedSignal(google.protobuf.message.Message):
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     FREQUENCY_FIELD_NUMBER: builtins.int
@@ -461,6 +465,22 @@ class TrackingConfig(google.protobuf.message.Message):
         bandwidth: builtins.float = ...,
     ) -> None: ...
     def ClearField(self, field_name: typing_extensions.Literal["bandwidth", b"bandwidth", "frequency", b"frequency"]) -> None: ...
+
+global___TrackedSignal = TrackedSignal
+
+@typing_extensions.final
+class TrackingConfig(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    SIGNALS_FIELD_NUMBER: builtins.int
+    @property
+    def signals(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___TrackedSignal]: ...
+    def __init__(
+        self,
+        *,
+        signals: collections.abc.Iterable[global___TrackedSignal] | None = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing_extensions.Literal["signals", b"signals"]) -> None: ...
 
 global___TrackingConfig = TrackingConfig
 

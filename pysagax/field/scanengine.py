@@ -470,23 +470,25 @@ class ScanEngine(Loop):
         command.instruction = proto_cmd.CONFIG
         command.kind = proto_cmd.Command.WRITE
 
-        tracking_bw = self.to_supported_iq_rate(
-            int(se_cmd.config.se.tracking.bandwidth / self._useful_bandwidth_ratio) * 2
-        )
+        if len(se_cmd.config.se.tracking.signals) == 1:
+            signal = se_cmd.config.se.tracking.signals[0]
+            tracking_bw = self.to_supported_iq_rate(
+                int(signal.bandwidth / self._useful_bandwidth_ratio) * 2
+            )
 
-        # Do not switch to lower IQ rate for tracking, only higher if needed
-        command.config.cs.iq_rate = max(tracking_bw, self._iq_rate)
+            # Do not switch to lower IQ rate for tracking, only higher if needed
+            command.config.cs.iq_rate = max(tracking_bw, self._iq_rate)
 
-        # Tracked signal should be on the center of the positive side
-        # of the baseband signal
-        command.config.cs.center_frequency = (
-            se_cmd.config.se.tracking.frequency - command.config.cs.iq_rate / 4
-        )
+            # Tracked signal should be on the center of the positive side
+            # of the baseband signal
+            command.config.cs.center_frequency = (
+                signal.frequency - command.config.cs.iq_rate / 4
+            )
+            self._configured_tracking_frequency = signal.frequency
+            self._configured_tracking_bandwidth = signal.bandwidth
         command.config.cs.source_type = self._source_device_type
         command.config.cs.source_path = self._source_device_path
 
-        self._configured_tracking_frequency = se_cmd.config.se.tracking.frequency
-        self._configured_tracking_bandwidth = se_cmd.config.se.tracking.bandwidth
         self._last_config_command = se_cmd
         self._cs_commands_q.put((command, self._config_cs_timeout))
 
@@ -552,8 +554,9 @@ class ScanEngine(Loop):
             ScanEngineState.TRACKING_IN_PROGRESS: proto_cmd.ScanEngineConfig.TRACKING,
         }[self.state]
         if se_config.mode == proto_cmd.ScanEngineConfig.TRACKING:
-            se_config.tracking.frequency = self._configured_tracking_frequency
-            se_config.tracking.bandwidth = self._configured_tracking_bandwidth
+            signal = se_config.tracking.signals.add()
+            signal.frequency = self._configured_tracking_frequency
+            signal.bandwidth = self._configured_tracking_bandwidth
         if se_config.mode == proto_cmd.ScanEngineConfig.SCANNING:
             for ran in self._configured_freq_ranges:
                 pb_ran = se_config.scanning.ranges.add()
