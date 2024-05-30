@@ -27,6 +27,8 @@ Example::
 import numpy as np
 import matplotlib.pyplot as plt
 
+format_freq = True
+
 
 class FastImshow:
     """
@@ -136,7 +138,7 @@ class FastImshow:
         )
         self.ax.figure.canvas.draw_idle()
         self.ax.yaxis.set_major_formatter(  # type: ignore
-            mpl.ticker.FuncFormatter(lambda x, pos: f"{x/1e6:.3f}M")  # type: ignore
+            mpl.ticker.FuncFormatter(lambda x, pos: f"{x/1e6:.3f}M" if format_freq else f"{x:.2f}")  # type: ignore
         )
 
         self.ax.callbacks.connect("xlim_changed", self.ax_update)
@@ -170,7 +172,7 @@ class FastImshow:
     # help="Path to sigmf-collection or containing folder.",
 )
 def main(fftsize, stride, show, save, filename):
-
+    global format_freq
     if not show and not save:
         show = [0]
         print(
@@ -187,10 +189,9 @@ def main(fftsize, stride, show, save, filename):
     elif filename.endswith(".sigmf-meta"):
         collection = SigMFCollection([filename])
     else:
-        print("Unknown file type. Extension must be .sigmf-collection or .sigmf-meta")
-        return
+        collection = None
 
-    streams = collection.get_stream_names()
+    streams = [filename] if collection is None else collection.get_stream_names()
     os.chdir(os.path.dirname(filename) or ".")
     plots_shown = 0
     auto_stride: bool = bool(stride == 0)
@@ -200,20 +201,28 @@ def main(fftsize, stride, show, save, filename):
             continue
 
         print(f"Reading {stream}")
-        assert collection
-        signal_sigmf = collection.get_SigMFFile(stream_name=stream)
-        assert isinstance(signal_sigmf, SigMFFile)
-        # signal = sigmffile.fromfile(filename)
-        # Get some metadata and all annotations
-        sample_rate = signal_sigmf.get_global_field(SigMFFile.SAMPLE_RATE_KEY)
+        if collection is None:
+            sample_count = os.path.getsize(filename) // 4
+            sample_rate = sample_count
+            signal_duration = sample_count / sample_rate
+            freq_center = 0
+            data_file = filename
+            format_freq = False
+        else:
+            signal_sigmf = collection.get_SigMFFile(stream_name=stream)
+            assert isinstance(signal_sigmf, SigMFFile)
+            # signal = sigmffile.fromfile(filename)
+            # Get some metadata and all annotations
+            sample_rate = signal_sigmf.get_global_field(SigMFFile.SAMPLE_RATE_KEY)
+            sample_count = signal_sigmf.sample_count
+            signal_duration = sample_count / sample_rate
+            capture = signal_sigmf.get_capture_info(0)
+            freq_center = capture.get(SigMFFile.FREQUENCY_KEY, 0)
+            data_file = str(signal_sigmf.data_file)
         if auto_stride:
-            stride = int(max(sample_rate // 10, fftsize))
+            stride = int(min(sample_count // 20, max(sample_rate // 10, fftsize)))
             print(f"Using stride: {stride}")
-        sample_count = signal_sigmf.sample_count
-        signal_duration = sample_count / sample_rate
         # Get capture info associated with the start of annotation
-        capture = signal_sigmf.get_capture_info(0)
-        freq_center = capture.get(SigMFFile.FREQUENCY_KEY, 0)
         print(
             f"{stream} - {signal_duration:.2f} seconds \n    Count: {sample_count} samples \n    Center: {freq_center/1e6:.3f}M \n    IQ: {sample_rate/1e6:.3f}M\n"
         )
@@ -223,7 +232,7 @@ def main(fftsize, stride, show, save, filename):
         samples_ba = bytearray()
         read_samp_count = 0
         stride_count = 0
-        with open(str(signal_sigmf.data_file), "rb") as bin_file:
+        with open(data_file, "rb") as bin_file:
             while read_samp_count + stride <= sample_count:
                 a = bin_file.read(fftsize * 4)
                 samples_ba += a
@@ -232,7 +241,7 @@ def main(fftsize, stride, show, save, filename):
                 stride_count += 1
         reduced_sample_count = len(samples_ba)
         print(
-            f"Read {reduced_sample_count} samples from {str(signal_sigmf.data_file)} ({sample_count} total with stride {stride}) "
+            f"Read {reduced_sample_count} samples from {data_file} ({sample_count} total with stride {stride}) "
         )
         print(f"Calculating FFT {fftsize}")
         # print(f"lenc={lenc}")
@@ -257,7 +266,7 @@ def main(fftsize, stride, show, save, filename):
 
         if index in save:
             np.savez(
-                str(signal_sigmf.data_file),
+                data_file,
                 spectrum=Sxx,
                 sample_rate=sample_rate,
                 freq_center=freq_center,
@@ -267,7 +276,7 @@ def main(fftsize, stride, show, save, filename):
                 reduced_sample_count=reduced_sample_count,
                 fftsize=fftsize,
             )
-            print(f"Saved npz for {str(signal_sigmf.data_file)}")
+            print(f"Saved npz for {data_file}")
         if index in show:
             fig = plt.figure()
             ax = fig.add_subplot(111)
@@ -279,8 +288,8 @@ def main(fftsize, stride, show, save, filename):
                 extent=[
                     0,
                     sample_count / sample_rate,
-                    freq_center - sample_rate / 2,
-                    freq_center + sample_rate / 2,
+                    freq_center - sample_rate / 2 if format_freq else -0.5,
+                    freq_center + sample_rate / 2 if format_freq else 0.5,
                 ],
                 tgt_res=1024,
             )

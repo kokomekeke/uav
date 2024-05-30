@@ -12,11 +12,14 @@ from os.path import isfile, join
 import struct
 
 # from scipy import signal as sg
-from sigmf import SigMFFile, sigmffile
+from sigmf import SigMFFile, sigmffile, SigMFCollection
+from typing import Optional
 
 max_points = 1000
 datas = []
 lines = []
+lined = {}
+fig = None
 
 
 def downsample(y, decim):
@@ -70,6 +73,8 @@ def ax_update(event_ax):
 
 
 def on_pick(event):
+    global lined
+    global fig
     # On the pick event, find the original line corresponding to the legend
     # proxy line, and toggle its visibility.
     legline = event.artist
@@ -84,52 +89,96 @@ def on_pick(event):
 
 def main():
     global max_points
+    global fig
+    global lined
     parser = ArgumentParser(description="SigMF disp")
 
-    parser.add_argument("filename")
+    parser.add_argument("filename", nargs="+")
     args = parser.parse_args()
-    filename = args.filename
 
-    if os.path.isdir(filename):
+    filename: str = args.filename[0]
+    collection: Optional[SigMFCollection] = None
+    streams = []
+    infobox = True
+    title = ""
+    if len(args.filename) == 1 and filename.endswith(".sigmf-collection"):
+
+        collection_file = sigmffile.fromfile(filename)
+        assert isinstance(collection_file, SigMFCollection)
+        collection = collection_file
+        streams = collection.get_stream_names()
+        title = filename
+    elif len(args.filename) == 1 and os.path.isdir(filename):
         filename = os.path.join(filename, "recording.sigmf-collection")
 
-    collection = sigmffile.fromfile(filename)
-    streams = collection.get_stream_names()
-
-    fig, (ax0, ax1) = plt.subplots(
-        ncols=2, gridspec_kw={"width_ratios": [7, 2]}, num="CS SigMF File Viewer"
-    )
-
+        collection_file = sigmffile.fromfile(filename)
+        assert isinstance(collection_file, SigMFCollection)
+        collection = collection_file
+        streams = collection.get_stream_names()
+        title = filename
+    else:
+        title = ", ".join(args.filename)
+        if all(fn.endswith(".sigmf-meta") for fn in args.filename):
+            collection = SigMFCollection(
+                args.filename,
+                metadata={
+                    "collection": {
+                        SigMFCollection.AUTHOR_KEY: "sigmf@sigmf.org",
+                        SigMFCollection.DESCRIPTION_KEY: "SigMF",
+                    }
+                },
+            )
+            streams = collection.get_stream_names()
+        else:
+            streams = args.filename
+            infobox = False
+    if infobox:
+        fig, (ax0, ax1) = plt.subplots(
+            ncols=2, gridspec_kw={"width_ratios": [7, 2]}, num=title
+        )
+    else:
+        fig, (ax0) = plt.subplots(ncols=1, num=title)
+        ax1 = None
     # X axis parameter:
     xaxis = np.array([2, 8])
 
     # Y axis parameter:
     yaxis = np.array([4, 9])
-    ax0.set_title(filename)
+    ax0.set_title(title)
     global datas
     global lines
 
     lined = {}  # Will map legend lines to original lines.
 
     metadata = ""
-    os.chdir(os.path.dirname(filename))
+    sigmf_dirname = os.path.dirname(filename)
+    if sigmf_dirname:
+        os.chdir(sigmf_dirname)
     for stream in streams:
-        signal = collection.get_SigMFFile(stream_name=stream)
-        # signal = sigmffile.fromfile(filename)
-        # Get some metadata and all annotations
-        sample_rate = signal.get_global_field(SigMFFile.SAMPLE_RATE_KEY)
-        sample_count = signal.sample_count
-        signal_duration = sample_count / sample_rate
-        # Get capture info associated with the start of annotation
-        capture = signal.get_capture_info(0)
-        freq_center = capture.get(SigMFFile.FREQUENCY_KEY, 0)
-        freq_min = freq_center - 0.5 * sample_rate
-        freq_max = freq_center + 0.5 * sample_rate
+        if collection is not None:
+            signal = collection.get_SigMFFile(stream_name=stream)
+            assert isinstance(signal, SigMFFile)
+            # signal = sigmffile.fromfile(filename)
+            # Get some metadata and all annotations
+            sample_rate = signal.get_global_field(SigMFFile.SAMPLE_RATE_KEY)
+            sample_count = signal.sample_count
+            signal_duration = sample_count / sample_rate
+            # Get capture info associated with the start of annotation
+            capture = signal.get_capture_info(0)
+            freq_center = capture.get(SigMFFile.FREQUENCY_KEY, 0)
+            freq_min = freq_center - 0.5 * sample_rate
+            freq_max = freq_center + 0.5 * sample_rate
 
-        metadata += f"{stream} - {signal_duration:.2f} seconds \n    Count: {sample_count} samples \n    Center: {freq_center/1e6:.3f}M \n    IQ: {sample_rate/1e6:.3f}M\n"
+            metadata += f"{stream} - {signal_duration:.2f} seconds \n    Count: {sample_count} samples \n    Center: {freq_center/1e6:.3f}M \n    IQ: {sample_rate/1e6:.3f}M\n"
 
-        # Get the samples corresponding to annotation
-        samples = signal.read_samples()
+            # Get the samples corresponding to annotation
+            samples = signal.read_samples()
+        else:
+            samples_buf = np.fromfile(stream, np.int16)
+            samples = samples_buf.astype(np.float32).view(np.complex64) * (
+                1.0 / 32768.0
+            )
+            metadata += f"{stream} \n"
         lenc = samples.shape[0]
         # print(f"lenc={lenc}")
         i = np.real(samples)
@@ -176,21 +225,22 @@ def main():
         lined[legline] = origline
 
     fig.canvas.mpl_connect("pick_event", on_pick)
+    if infobox:
+        assert ax1 is not None
+        ax1.text(
+            0,
+            1,
+            metadata,
+            horizontalalignment="left",
+            verticalalignment="top",
+            transform=ax1.transAxes,
+        )
+        # hide x-axis
+        ax1.get_xaxis().set_visible(False)
 
-    ax1.text(
-        0,
-        1,
-        metadata,
-        horizontalalignment="left",
-        verticalalignment="top",
-        transform=ax1.transAxes,
-    )
-    # hide x-axis
-    ax1.get_xaxis().set_visible(False)
-
-    # hide y-axis
-    ax1.get_yaxis().set_visible(False)
-    ax1.axis("off")
+        # hide y-axis
+        ax1.get_yaxis().set_visible(False)
+        ax1.axis("off")
 
     plt.show()
 
