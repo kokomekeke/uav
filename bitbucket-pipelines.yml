@@ -1,0 +1,12 @@
+pipelines:
+  default:
+    - step:
+        runs-on:
+          - self.hosted
+          - linux.shell
+          - sagax.default
+        name: Pytest and build wheel
+        artifacts:
+          - artifacts/**
+        script:
+          - bash ./bitbucket-runner.sh

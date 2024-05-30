@@ -34,6 +34,15 @@ dependencies = [
     "sigmf",
 ]
 
+[project.optional-dependencies]
+test = [
+    "black",
+    "mypy",
+    "pytest",
+    "pytest-cov",
+    "pytest-mock",
+]
+
 [tool.versioneer]
 VCS = "git"
 style = "pep440"

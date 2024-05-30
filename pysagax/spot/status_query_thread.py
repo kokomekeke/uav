@@ -27,10 +27,6 @@ class StatusQueryThread(threading.Thread):
         self.ct_tab.config_update()
         self.status_frame.config_update()
 
-    def source_config_status_handler(self, resp):
-        self.source_manager.source_config_status_handler(resp)
-        self.status_frame.config_update()
-
     def source_telemetry_handler(self, resp) -> None:
         # telemetry packet is handed over to the same handler used by stream connection
         telemetry = resp.telemetry
@@ -54,9 +50,6 @@ class StatusQueryThread(threading.Thread):
         )
         self.comm.set_response_handler(proto_cmd.POSITION, self.source_position_handler)
         self.comm.set_response_handler(proto_cmd.CONFIG, self.source_config_handler)
-        self.comm.set_response_handler(
-            proto_cmd.CONFIG_STATUS, self.source_config_status_handler
-        )
         self.comm.set_response_handler(proto_cmd.INFO, self.source_sysinfo_handler)
 
         self.source_manager = client.source_manager
@@ -70,19 +63,11 @@ class StatusQueryThread(threading.Thread):
         ]
         self.commands = self.commands_from_instructions(self.instruction_list)
 
-        # instructions for querying during configuring CoreService
-        self.configuring_instruction_list = [
-            proto_cmd.CONFIG_STATUS,
-            # proto_cmd.TELEMETRY,
-        ]
-        self.configuring_commands = self.commands_from_instructions(
-            self.configuring_instruction_list
-        )
-
     def commands_from_instructions(self, instruction_list: list[proto_cmd.Instruction]):
         commands = []
         for i in instruction_list:
             cmd = proto_cmd.Command()
+            cmd.kind = proto_cmd.Command.CommandKind.READ
             cmd.instruction = i
             commands.append(cmd)
         return commands
@@ -90,11 +75,8 @@ class StatusQueryThread(threading.Thread):
     def run(self) -> None:
         while self.comm.is_alive():
             if self.source_manager.cs_status is not CoreServiceStatus.WORKING:
-                if self.source_manager.is_cs_configuring:
-                    self.comm.enqueue_commands(self.configuring_commands)
-                else:
-                    self.comm.enqueue_commands(self.commands)
-            time.sleep(0.5)  # TODO: define a value for it in config
+                self.comm.enqueue_commands(self.commands)
+            time.sleep(5)  # TODO: define a value for it in config
         self._disconnect_actions()
 
     def _disconnect_actions(self) -> None:

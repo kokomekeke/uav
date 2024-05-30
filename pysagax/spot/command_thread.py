@@ -114,7 +114,7 @@ class CommandThread(threading.Thread):
                 command.kind == proto_cmd.Command.WRITE
                 and command.instruction == proto_cmd.CONFIG
             ):
-                timeout_ms = 30000
+                timeout_ms = 90000
             raw_response = self._connection.send(
                 command.SerializeToString(), timeout=timeout_ms
             )
@@ -129,9 +129,6 @@ class CommandThread(threading.Thread):
                     f"\n#############\nERROR IN '{proto_cmd.Instruction.Name(command.instruction)}' COMMAND RESPONSE: {response.error.description}"
                     f"\n#############\n"
                 )
-                if response.instruction != proto_cmd.CONFIG_STATUS:
-                    cmd = proto_cmd.Command(instruction=proto_cmd.CONFIG_STATUS)
-                    self.enqueue_commands(cmd)
                 # TODO: dont run response handlers if error in response,
                 #      OR make response handlers that check the error field
                 continue  # skipping response handler
