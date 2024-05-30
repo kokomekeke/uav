@@ -2,12 +2,11 @@ import pytest
 from pysagax.util.protobuf_spectrum_utils import (
     protobuf_spectrum_to_numpy,
     convert_iterable_to_spectrum_data,
-    create_spectrum_with_freq_dict,
-    apply_roi_on_spectrum,
 )
 import pysagax.message.data_pb2 as proto_data
 import pysagax.message.command_pb2 as proto_cmd
 import numpy as np
+from pysagax.util.protobuf_spectrum_utils import Spectrum
 
 
 @pytest.mark.parametrize(
@@ -94,104 +93,443 @@ def test_spectrum_utils_chained(spectrum_array, data_type):
     assert len(s.data) == byte_per_bin * len(spectrum_array)
 
 
-@pytest.mark.parametrize(
-    ["spectrum", "center_freq", "bandwidth", "expected"],
-    [
-        [[1.0, 2.0, 3.0, 4.0, 5.0], 10, 4, {8: 1, 9: 2, 10: 3, 11: 4, 12: 5}],
+class TestSpectrum:
+    @pytest.mark.parametrize(
+        ["data", "f_center", "span", "exp_delta_f", "exp_start"],
         [
-            [-1, -2, -3, -4, -5],
-            1000,
-            400,
-            {800: -1, 900: -2, 1000: -3, 1100: -4, 1200: -5},
+            [[1, 2, 3], 10, 2, 1, 9],
+            [[2], 10, 2, 2, 10],
+            [[i for i in range(1000, 2001)], 1500, 1000, 1, 1000],
         ],
-        [[], 1000, 400, {}],
-        [[1], 1000, 0, {1000: 1}],
-        [[1, 2], 1000, 1000, {500: 1, 1500: 2}],
-    ],
-)
-def test_create_spectrum_with_freq_dict(spectrum, center_freq, bandwidth, expected):
-    s = proto_data.Spectrum()
-    s.data = convert_iterable_to_spectrum_data(spectrum)
-    s.data_type = proto_data.Spectrum.DataType.FLOAT32
-    s.center_frequency = center_freq
-    s.bandwidth = bandwidth
+    )
+    def test_init(self, data, f_center, span, exp_delta_f, exp_start):
+        spectrum = Spectrum(data, f_center, span)
+        assert spectrum.delta_f == exp_delta_f
+        assert spectrum.f_start == exp_start
 
-    spectrum_with_freqs = create_spectrum_with_freq_dict(s)
-    assert expected == spectrum_with_freqs
+    @pytest.mark.parametrize(
+        ["data", "data_type", "f_center", "span", "exp_delta_f", "exp_start"],
+        [
+            [[1, 2, 3], proto_data.Spectrum.DataType.INT16, 10, 2, 1, 9],
+            [[2], proto_data.Spectrum.DataType.INT16, 10, 2, 2, 10],
+            [
+                [i for i in range(1000, 2001)],
+                proto_data.Spectrum.DataType.INT16,
+                1500,
+                1000,
+                1,
+                1000,
+            ],
+        ],
+    )
+    def test_from_proto_spectrum(
+        self, data, data_type, f_center, span, exp_delta_f, exp_start
+    ):
+        proto_s = proto_data.Spectrum(data_type=data_type)
+        proto_s.data = convert_iterable_to_spectrum_data(data, proto_s.data_type)
+        proto_s.center_frequency = f_center
+        proto_s.bandwidth = span
 
+        spectrum = Spectrum.from_proto_spectrum(proto_s)
 
-def test_create_spectrum_with_freq_dict_empty_spectrum():
-    s = proto_data.Spectrum()
-    spectrum_with_freqs = create_spectrum_with_freq_dict(s)
-    assert spectrum_with_freqs == {}
+        assert np.all(spectrum.data == data)
+        assert spectrum.f_center == f_center
+        assert spectrum.delta_f == exp_delta_f
+        assert spectrum.f_start == exp_start
 
+    @pytest.mark.parametrize(
+        ["spectrum", "freq", "expected"],
+        [
+            [Spectrum([101, 102, 103, 104, 105], 10, 4), 10, 2],
+            [Spectrum([101, 102, 103, 104, 105], 10, 4), 12, 4],
+            [Spectrum([101, 102, 103, 104, 105], 10, 4), 8, 0],
+            [Spectrum([101, 102, 103, 104, 105], 10, 4), 10.4, 2],
+            [Spectrum([101, 102, 103, 104, 105], 10, 4), 9.6, 2],
+            [Spectrum([101, 102, 103, 104, 105], 10, 4), 10, 2],
+            # Test with 1 bin:
+            [Spectrum([3.0], 10, 4), 8, 0],
+            [Spectrum([3.0], 10, 4), 9, 0],
+            [Spectrum([3.0], 10, 4), 10, 0],
+            [Spectrum([3.0], 10, 4), 12, 0],
+            # 1001 bins from 1000Hz to 2000Hz:
+            [Spectrum([i for i in range(1000, 2001)], 1500, 1000), 1248, 248],
+            [Spectrum([i for i in range(1000, 2001)], 1500, 1000), 1247.6, 248],
+            [Spectrum([i for i in range(1000, 2001)], 1500, 1000), 1248.4, 248],
+            [Spectrum([i for i in range(1000, 2001)], 1500, 1000), 999.6, 0],
+            [Spectrum([i for i in range(1000, 2001)], 1500, 1000), 2000.4, 1000],
+        ],
+    )
+    def test_get_index_from_freq(self, spectrum, freq, expected):
 
-@pytest.mark.parametrize(
-    ["spectrum", "roi", "exp_signal_bins", "exp_noise_bins"],
-    [
-        [  # CASE 1:
-            {10: 0, 11: 1, 12: 2, 13: 3, 14: 4, 15: 5, 16: 6, 17: 7, 18: 8, 19: 9},
-            proto_cmd.ROIMask(center_frequency=15, span=5),
-            {13: 3, 14: 4, 15: 5, 16: 6, 17: 7},
-            {10: 0, 11: 1, 12: 2, 18: 8, 19: 9},
+        index = spectrum.get_index_from_freq(freq)
+        assert index == expected
+
+    @pytest.mark.parametrize(
+        ["spectrum", "freq"],
+        [
+            # Test with 1 bin:
+            [Spectrum([3.0], 10, 4), 7.9],
+            [Spectrum([3.0], 10, 4), 12.1],
+            # 1001 bins from 1000Hz to 2000Hz:
+            [Spectrum([i for i in range(1000, 2001)], 1500, 1000), 999.4],
+            [Spectrum([i for i in range(1000, 2001)], 1500, 1000), 2000.6],
         ],
-        [  # CASE 2:
-            {10: 0, 11: 1, 12: 2, 13: 3, 14: 4, 15: 5, 16: 6, 17: 7, 18: 8, 19: 9},
-            proto_cmd.ROIMask(center_frequency=15, span=1),
-            {15: 5},
-            {10: 0, 11: 1, 12: 2, 13: 3, 14: 4, 16: 6, 17: 7, 18: 8, 19: 9},
+    )
+    def test_get_index_from_freq_error(self, spectrum, freq):
+        """Tests when the given frequency is outside of the span of the spectrum"""
+        with pytest.raises(ValueError):
+            spectrum.get_index_from_freq(freq)
+
+    @pytest.mark.parametrize(
+        ["spectrum", "freq", "expected"],
+        [
+            [Spectrum([101, 102, 103, 104, 105], 10, 4), 10, 103],
+            [Spectrum([101, 102, 103, 104, 105], 10, 4), 12, 105],
+            [Spectrum([101, 102, 103, 104, 105], 10, 4), 8, 101],
+            [Spectrum([101, 102, 103, 104, 105], 10, 4), 10.4, 103],
+            [Spectrum([101, 102, 103, 104, 105], 10, 4), 9.6, 103],
+            # Test with 1 bin:
+            [Spectrum([3.0], 10, 4), 8, 3],
+            [Spectrum([3.0], 10, 4), 9, 3],
+            [Spectrum([3.0], 10, 4), 10, 3],
+            [Spectrum([3.0], 10, 4), 12, 3],
+            # 1001 bins from 1000Hz to 2000Hz:
+            [Spectrum([i for i in range(1000, 2001)], 1500, 1000), 1248, 1248],
+            [Spectrum([i for i in range(1000, 2001)], 1500, 1000), 1247.6, 1248],
+            [Spectrum([i for i in range(1000, 2001)], 1500, 1000), 1248.4, 1248],
+            [Spectrum([i for i in range(1000, 2001)], 1500, 1000), 999.6, 1000],
+            [Spectrum([i for i in range(1000, 2001)], 1500, 1000), 2000.4, 2000],
         ],
-        [  # CASE 3: roi outside of spectrum:
-            {10: 0, 11: 1, 12: 2, 13: 3, 14: 4, 15: 5, 16: 6, 17: 7, 18: 8, 19: 9},
-            proto_cmd.ROIMask(center_frequency=5, span=5),
-            {},
-            {10: 0, 11: 1, 12: 2, 13: 3, 14: 4, 15: 5, 16: 6, 17: 7, 18: 8, 19: 9},
+    )
+    def test_get_value_from_freq(self, spectrum, freq, expected):
+        amplitude = spectrum.get_value_from_freq(freq)
+        assert amplitude == expected
+
+    @pytest.mark.parametrize(
+        ["spectrum", "index", "expected"],
+        [
+            [Spectrum([101, 102, 103, 104, 105], 10, 4), 2, 10],
+            [Spectrum([101, 102, 103, 104, 105], 10, 4), 4, 12],
+            [Spectrum([101, 102, 103, 104, 105], 10, 4), 0, 8],
+            # Test with 1 bin:
+            [Spectrum([3.0], 10, 4), 0, 10],
+            # 1001 bins from 1000Hz to 2000Hz:
+            [Spectrum([i for i in range(1000, 2001)], 1500, 1000), 248, 1248],
+            [Spectrum([i for i in range(1000, 2001)], 1500, 1000), 0, 1000],
+            [Spectrum([i for i in range(1000, 2001)], 1500, 1000), 1000, 2000],
         ],
-        [  # CASE4: roi larger than spectrum:
-            {10: 0, 11: 1, 12: 2, 13: 3, 14: 4, 15: 5, 16: 6, 17: 7, 18: 8, 19: 9},
-            proto_cmd.ROIMask(center_frequency=10, span=25),
-            {10: 0, 11: 1, 12: 2, 13: 3, 14: 4, 15: 5, 16: 6, 17: 7, 18: 8, 19: 9},
-            {},
+    )
+    def test_get_freq_from_index(self, spectrum, index, expected):
+        freq = spectrum.get_freq_from_index(index)
+        assert freq - expected < 1e-6
+
+    @pytest.mark.parametrize(
+        ["spectrum", "index"],
+        [
+            [Spectrum([101, 102, 103, 104, 105], 10, 4), -1],
+            [Spectrum([101, 102, 103, 104, 105], 10, 4), 5],
+            [Spectrum([101, 102, 103, 104, 105], 10, 4), 14],
+            # Test with 1 bin:
+            [Spectrum([3.0], 10, 4), -1],
+            [Spectrum([3.0], 10, 4), 1],
+            # 1001 bins from 1000Hz to 2000Hz:
+            [Spectrum([i for i in range(1000, 2001)], 1500, 1000), -112],
+            [Spectrum([i for i in range(1000, 2001)], 1500, 1000), 5424],
         ],
-        [  # CASE 5: roi span so small, no signal bins:
-            {10: 0, 11: 1, 12: 2, 13: 3, 14: 4, 15: 5, 16: 6, 17: 7, 18: 8, 19: 9},
-            proto_cmd.ROIMask(center_frequency=14.5, span=0.25),
-            {},
-            {10: 0, 11: 1, 12: 2, 13: 3, 14: 4, 15: 5, 16: 6, 17: 7, 18: 8, 19: 9},
+    )
+    def test_get_freq_from_index_out_of_range(self, spectrum, index):
+        with pytest.raises(IndexError):
+            freq = spectrum.get_freq_from_index(index)
+
+    @pytest.mark.parametrize(
+        ["spectrum", "roi_f_start", "roi_f_stop", "expected"],
+        [
+            [
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+                9,
+                11,
+                Spectrum([102, 103, 104], 10, 2),
+            ],
+            [
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+                8.75,
+                9.25,
+                Spectrum([102], 9, 1),
+            ],
+            [
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+                9.5,
+                10.5,
+                Spectrum([103], 10, 1),
+            ],
+            [
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+                9.1,
+                10.9,
+                Spectrum([103], 10, 1.9),
+            ],
+            [
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+                5,
+                15,
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+            ],
+            # Test with 1 bin (the span of the returned spectrum will be 0, but a spectrum with 1 bin is not really useful anyway):
+            [Spectrum([3.0], 10, 4), 5, 10, Spectrum([3], 10, 4)],
+            [Spectrum([3.0], 10, 4), 0, 10, Spectrum([3], 10, 4)],
+            # # # 1001 bins from 1000Hz to 2000Hz:
+            [
+                Spectrum([i for i in range(1000, 2001)], 1500, 1000),
+                1699,
+                1701,
+                Spectrum([1699, 1700, 1701], 1700, 2),
+            ],
+            [
+                Spectrum([i for i in range(1000, 2001)], 1500, 1000),
+                1600,
+                1800,
+                Spectrum([i for i in range(1600, 1801)], 1700, 200),
+            ],
+            [
+                Spectrum([i for i in range(1000, 2001)], 1500, 1000),
+                700,
+                2700,
+                Spectrum([i for i in range(1000, 2001)], 1500, 1000),
+            ],
+            [
+                Spectrum([i for i in range(1000, 2001)], 1500, 1000),
+                1700,
+                2100,
+                Spectrum([i for i in range(1700, 2001)], 1850, 300),
+            ],
         ],
-        [  # CASE 6: bins at edge of roi should be signal bins:
-            {10: 0, 11: 1, 12: 2, 13: 3, 14: 4, 15: 5, 16: 6, 17: 7, 18: 8, 19: 9},
-            proto_cmd.ROIMask(center_frequency=15, span=2),
-            {14: 4, 15: 5, 16: 6},
-            {10: 0, 11: 1, 12: 2, 13: 3, 17: 7, 18: 8, 19: 9},
+    )
+    def test_get_spectrum_from_freq_range(
+        self, spectrum, roi_f_start, roi_f_stop, expected
+    ):
+        result = spectrum._get_spectrum_from_freq_range(roi_f_start, roi_f_stop)
+
+        assert (result.data == expected.data).all()
+        assert result.f_center - expected.f_center < 1e-6
+        assert result.span - expected.span < 1e-6
+
+    @pytest.mark.parametrize(
+        ["spectrum", "roi_f_start", "roi_f_stop", "expected", "expected_noise_bins"],
+        [
+            [
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+                9,
+                11,
+                Spectrum([102, 103, 104], 10, 2),
+                [101, 105],
+            ],
+            [
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+                8.75,
+                9.25,
+                Spectrum([102], 9, 1),
+                [101, 103, 104, 105],
+            ],
+            [
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+                5,
+                15,
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+                [],
+            ],
+            # Test with 1 bin (the span of the returned spectrum will be 0, but a spectrum with 1 bin is not really useful anyway):
+            [Spectrum([3.0], 10, 4), 5, 10, Spectrum([3], 10, 4), []],
+            [Spectrum([3.0], 10, 4), 0, 10, Spectrum([3], 10, 4), []],
+            # # # 1001 bins from 1000Hz to 2000Hz:
+            [
+                Spectrum([i for i in range(1000, 2001)], 1500, 1000),
+                1700,
+                2100,
+                Spectrum([i for i in range(1700, 2001)], 1850, 300),
+                [i for i in range(1000, 1700)],
+            ],
         ],
-        [  # CASE 7: same as CASE 1 but with proto_data.Spectrum as input instead of a spectrum with freq dict
-            proto_data.Spectrum(
-                center_frequency=14.5,
-                bandwidth=9,
-                data=convert_iterable_to_spectrum_data(
-                    {
-                        10: 0,
-                        11: 1,
-                        12: 2,
-                        13: 3,
-                        14: 4,
-                        15: 5,
-                        16: 6,
-                        17: 7,
-                        18: 8,
-                        19: 9,
-                    }.values(),
-                    type=proto_data.Spectrum.DataType.INT16,
-                ),
-            ),
-            proto_cmd.ROIMask(center_frequency=15, span=5),
-            {13: 3, 14: 4, 15: 5, 16: 6, 17: 7},
-            {10: 0, 11: 1, 12: 2, 18: 8, 19: 9},
+    )
+    def test_get_spectrum_from_freq_range_noise_bins(
+        self, spectrum, roi_f_start, roi_f_stop, expected, expected_noise_bins
+    ):
+        """Tests _get_spectrum_from_freq_range() with return_noise_bins=True"""
+        result, noise_bins = spectrum._get_spectrum_from_freq_range(
+            roi_f_start, roi_f_stop, return_noise_bins=True
+        )
+
+        assert (result.data == expected.data).all()
+        assert result.f_center - expected.f_center < 1e-6
+        assert result.span - expected.span < 1e-6
+        assert (np.abs(noise_bins - np.array(expected_noise_bins)) < 1e-6).all()
+
+    @pytest.mark.parametrize(
+        ["spectrum", "roi", "expected"],
+        [
+            [
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+                proto_cmd.ROIMask(center_frequency=10, span=2),
+                Spectrum([102, 103, 104], 10, 2),
+            ],
+            [
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+                proto_cmd.ROIMask(center_frequency=9, span=0.5),
+                Spectrum([102], 9, 1),
+            ],
+            [
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+                proto_cmd.ROIMask(center_frequency=10, span=1),
+                Spectrum([103], 10, 1),
+            ],
+            [
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+                proto_cmd.ROIMask(center_frequency=10, span=1.9),
+                Spectrum([103], 10, 1.9),
+            ],
+            [
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+                proto_cmd.ROIMask(center_frequency=10, span=10),
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+            ],
+            # Test with 1 bin (the span of the returned spectrum will be 0, but a spectrum with 1 bin is not really useful anyway):
+            [
+                Spectrum([3.0], 10, 4),
+                proto_cmd.ROIMask(center_frequency=10, span=10),
+                Spectrum([3], 10, 4),
+            ],
+            [
+                Spectrum([3.0], 10, 4),
+                proto_cmd.ROIMask(center_frequency=5, span=10),
+                Spectrum([3], 10, 4),
+            ],
+            # # # 1001 bins from 1000Hz to 2000Hz:
+            [
+                Spectrum([i for i in range(1000, 2001)], 1500, 1000),
+                proto_cmd.ROIMask(center_frequency=1700, span=2),
+                Spectrum([1699, 1700, 1701], 1700, 2),
+            ],
+            [
+                Spectrum([i for i in range(1000, 2001)], 1500, 1000),
+                proto_cmd.ROIMask(center_frequency=1700, span=200),
+                Spectrum([i for i in range(1600, 1801)], 1700, 200),
+            ],
+            [
+                Spectrum([i for i in range(1000, 2001)], 1500, 1000),
+                proto_cmd.ROIMask(center_frequency=1700, span=2000),
+                Spectrum([i for i in range(1000, 2001)], 1500, 1000),
+            ],
+            [
+                Spectrum([i for i in range(1000, 2001)], 1500, 1000),
+                proto_cmd.ROIMask(center_frequency=1900, span=400),
+                Spectrum([i for i in range(1700, 2001)], 1850, 300),
+            ],
         ],
-    ],
-)
-def test_apply_roi_on_spectrum(spectrum, roi, exp_signal_bins, exp_noise_bins):
-    signal_bins, noise_bins = apply_roi_on_spectrum(spectrum, roi)
-    assert signal_bins == exp_signal_bins
-    assert noise_bins == exp_noise_bins
+    )
+    def test_apply_roi(self, spectrum, roi, expected):
+        """ "
+        Runs the same test cases as in test_get_spectrum_from_freq_range(),
+        but the desired frequency range is expressed as a proto_cmd.ROIMask object
+        """
+        spectrum
+        result = spectrum.apply_roi(roi)
+        assert (result.data == expected.data).all()
+        assert result.f_center - expected.f_center < 1e-6
+        assert result.span - expected.span < 1e-6
+
+    @pytest.mark.parametrize(
+        ["spectrum", "roi"],
+        [
+            [
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+                proto_cmd.ROIMask(center_frequency=6, span=2),
+            ],
+            [
+                Spectrum([101, 102, 103, 104, 105], 10, 4),
+                proto_cmd.ROIMask(center_frequency=19, span=0.5),
+            ],
+            # Test with 1 bin (the span of the returned spectrum will be 0, but a spectrum with 1 bin is not really useful anyway):
+            [Spectrum([3.0], 10, 4), proto_cmd.ROIMask(center_frequency=14, span=1)],
+            [Spectrum([3.0], 10, 4), proto_cmd.ROIMask(center_frequency=5, span=1)],
+            # # 1001 bins from 1000Hz to 2000Hz:
+            [
+                Spectrum([i for i in range(1000, 2001)], 1500, 1000),
+                proto_cmd.ROIMask(center_frequency=2700, span=2),
+            ],
+            [
+                Spectrum([i for i in range(1000, 2001)], 1500, 1000),
+                proto_cmd.ROIMask(center_frequency=2700, span=200),
+            ],
+        ],
+    )
+    def test_apply_roi_outside_spectrum(self, spectrum, roi):
+        with pytest.raises(IndexError):
+            result = spectrum.apply_roi(roi)
+
+    @pytest.mark.parametrize(
+        ["freq", "expected"],
+        [
+            [9, 102],
+            [9.8, 103],
+        ],
+    )
+    def test_getitem_freq(self, freq, expected):
+        s = Spectrum([101, 102, 103, 104, 105], 10, 4)
+        assert s[freq] == expected
+
+    @pytest.mark.parametrize(
+        ["f_start", "f_stop", "expected"],
+        [
+            [8, 11, Spectrum([101, 102, 103, 104], 9.5, 3)],
+            [9.8, 11.9, Spectrum([103, 104], 10.5, 1)],
+            [9.8, 10.9, Spectrum([103], 10, 1)],
+        ],
+    )
+    def test_getitem_slice(self, f_start, f_stop, expected):
+        s = Spectrum([101, 102, 103, 104, 105], 10, 4)
+        result = s[f_start:f_stop]
+        assert (result.data == expected.data).all()
+        assert result.f_center == expected.f_center
+        assert result.span == expected.span
+
+    @pytest.mark.parametrize(
+        ["roi", "expected"],
+        [
+            [
+                proto_cmd.ROIMask(center_frequency=9.2, span=4),
+                Spectrum([101, 102, 103, 104], 9.5, 3),
+            ],
+            [
+                proto_cmd.ROIMask(center_frequency=10.5, span=2),
+                Spectrum([103, 104], 10.5, 1),
+            ],
+            [
+                proto_cmd.ROIMask(center_frequency=10.4, span=1.1),
+                Spectrum([103], 10, 1),
+            ],
+        ],
+    )
+    def test_getitem_roi(self, roi, expected):
+        s = Spectrum([101, 102, 103, 104, 105], 10, 4)
+        result = s[roi]
+        assert (result.data == expected.data).all()
+        assert result.f_center == expected.f_center
+        assert result.span == expected.span
+
+    @pytest.mark.parametrize(
+        "spectrum_array",
+        [
+            np.array([1, 2, 5, 4, 3]),
+        ],
+    )
+    def test_numpy_array_interface(self, spectrum_array: np.ndarray):
+        """Tests some numpy functions if they give the same results on a spectrum as on the data array of the spectrum"""
+
+        s = Spectrum(spectrum_array, 10, 4)
+
+        assert (np.max(s) == np.max(spectrum_array)).all()
+        assert (np.argmax(s) == np.argmax(spectrum_array)).all()
+        assert (np.exp(s) == np.exp(spectrum_array)).all()
+        assert (np.sin(s) == np.sin(spectrum_array)).all()
+        assert (np.diag(s) == np.diag(spectrum_array)).all()
+        assert (np.max(s) == np.max(spectrum_array)).all()
+        assert (np.max(s) == np.max(spectrum_array)).all()

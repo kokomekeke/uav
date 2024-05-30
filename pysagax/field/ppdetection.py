@@ -16,8 +16,7 @@ from google.protobuf.timestamp_pb2 import Timestamp
 
 from pysagax.common.loop import Loop
 
-from pysagax.util.protobuf_spectrum_utils import protobuf_spectrum_to_numpy
-from pysagax.util.protobuf_spectrum_utils import create_spectrum_with_freq_dict
+from pysagax.util.protobuf_spectrum_utils import Spectrum
 
 
 class DetectionAggregator:
@@ -130,6 +129,26 @@ class PPDetection(Loop):
 
         return super()._call(*args, **kwargs)
 
+    def _get_spectrum_by_type(
+        self,
+        packet: proto_data.Measurement,
+        spectrum_type: proto_data.Spectrum.SpectrumType,
+    ) -> Optional[Spectrum]:
+        """
+        Returns the first spectrum of a given type in the packet in as a Spectrum object.
+        Returns None if no spectrum of the given type was in the packet
+        """
+        spectrums = [d for d in packet.data if d.spectrum_type == spectrum_type]
+        spectrum = None
+        try:
+            if len(spectrums):
+                spectrum = Spectrum.from_proto_spectrum(spectrums[0])
+        except:
+            self._logger.critical(
+                f"Spectrum packet with spectrum_type as {proto_data.Spectrum.SpectrumType.Name(spectrum_type)} can't be decoded."
+            )
+        return spectrum
+
     def _process_spectrum(
         self, packet: proto_data.Measurement
     ) -> dict[int, proto_data.Detection]:
@@ -139,36 +158,36 @@ class PPDetection(Loop):
         # detections: a dictionary of roi_id -> Detection
         detections = {d.event_id: d for d in packet.detection}
 
-        magnitude_spectrums = [
-            d
-            for d in packet.data
-            if d.spectrum_type == proto_data.Spectrum.SpectrumType.MAGNITUDE
-        ]
+        magnitude_spectrum = self._get_spectrum_by_type(
+            packet, proto_data.Spectrum.SpectrumType.MAGNITUDE
+        )
+        azimuth_spectrum = self._get_spectrum_by_type(
+            packet, proto_data.Spectrum.SpectrumType.AZIMUTH
+        )
+        elevation_spectrum = self._get_spectrum_by_type(
+            packet, proto_data.Spectrum.SpectrumType.ELEVATION
+        )
+
         # can't do detection or SNR calculation without magnitude spectrum or roi masks
-        if not len(magnitude_spectrums) or not len(self._current_config.roi):
+        if not len(magnitude_spectrum.data) or not len(self._current_config.roi):
             return detections
-        spectrum = magnitude_spectrums[0]
-        spectrum_with_freq = create_spectrum_with_freq_dict(spectrum)
 
         # run roi detection for each segment of the roi mask
         for roi in self._current_config.roi:
             # Separating spectrum to signal (inside the roi) and noise (outside the roi) bins
-            roi_min = roi.center_frequency - roi.span / 2
-            roi_max = roi.center_frequency + roi.span / 2
-            signal_bins = {
-                f: a
-                for f, a in spectrum_with_freq.items()
-                if roi_min <= f and f <= roi_max
-            }
-            noise_bins = {
-                f: a
-                for f, a in spectrum_with_freq.items()
-                if not (roi_min < f and f < roi_max)
-            }
-
-            new_detections = self._detect_roi(signal_bins, noise_bins, roi)
+            try:
+                roi_spectrum, noise_bins = magnitude_spectrum.apply_roi(
+                    roi, return_noise_bins=True
+                )
+            except IndexError as e:
+                # The intersection of the ROI and the spectrum contains no bins
+                self._logger.info(e)
+                continue
+            new_detections = self._detect_roi(
+                roi_spectrum, noise_bins, roi, azimuth_spectrum, elevation_spectrum
+            )
             new_detections = self._calculate_snr(
-                signal_bins, noise_bins, new_detections, roi
+                roi_spectrum, noise_bins, new_detections
             )
             detections = detections | new_detections
 
@@ -176,32 +195,55 @@ class PPDetection(Loop):
 
     def _detect_roi(
         self,
-        signal_bins: dict[float, float | int],
-        noise_bins: dict[float, float | int],
+        signal_bins: Spectrum,
+        noise_bins: np.ndarray[float | int],
         roi: proto_cmd.ROIMask,
+        azimuth_spectrum: Optional[Spectrum],
+        elevation_spectrum: Optional[Spectrum],
     ) -> dict[int, proto_data.Detection]:
         """
         Detecting signals that are more powerful than the ROI threshold.
         Returns a possibly empty list of detections with the following fields filled:
                 event_id, roi_id, frequency, bandwidth, strength, azimuth, elevation, snr
         """
-        # TODO: iterate over spectrum to find the frequencies that are stronger than the threshold
-        # TODO: also find the bandwidth for those signals
-        # TODO: get the corresponding azimuth and elevation
-        #       (center frequency/strongest bin/avg over the signal's bandwidth)
-        # TODO: calculate strength (in dBFS)
+        # finding the peak of the signal
+        peak_index = np.argmax(signal_bins)
+        peak_freq = signal_bins.get_freq_from_index(peak_index)
+        peak_amplitude = signal_bins[peak_freq]
 
-        # TODO: maybe keep track of detections over time (eg. by assigning a consistent event_id)
-        #       simple event_id: the index of the bin for the center freq or
-        #       look for existing event_ids that are very close/within the bandwidth to be consistent
-        #       probably a more sophisticated event_id would be better in the longrun.
+        if peak_amplitude < roi.threshold:
+            # No signal detected
+            return {}
 
-        return {}
+        d = proto_data.Detection()
+        d.roi_id = roi.roi_id
+        d.frequency = peak_freq
+        d.bandwidth  # TODO
+        d.strength = peak_amplitude
+
+        # TODO: alternatively we could aggregate multiple azimuth bins within the bandwidth of the signal
+        if azimuth_spectrum is not None:
+            try:
+                d.azimuth = azimuth_spectrum[peak_freq]
+            except:
+                self._logger.critical("Can't detect azimuth")
+        else:
+            self._logger.debug("Azimuth spectrum not provided by CoreService")
+
+        if elevation_spectrum is not None:
+            try:
+                d.elevation = elevation_spectrum[peak_freq]
+            except:
+                self._logger.critical("Can't detect elevation")
+        else:
+            self._logger.debug("Elevation spectrum not provided by CoreService")
+
+        return {roi.roi_id: d}
 
     def _calculate_snr(
         self,
-        signal_bins: dict[float, float | int],
-        noise_bins: dict[float, float | int],
+        signal_bins: Spectrum,
+        noise_bins: np.ndarray[float | int],
         detections: dict[int, proto_data.Detection],
     ) -> dict[int, proto_data.Detection]:
         """
@@ -213,7 +255,7 @@ class PPDetection(Loop):
         if len(noise_bins) == 0:
             return detections
 
-        noise_db = sum(noise_bins.values()) / len(noise_bins)
+        noise_db = noise_bins.mean()
         for event_id, detection in detections.items():
             signal_db = detection.strength
             snr = signal_db - noise_db
