@@ -25,7 +25,7 @@ is_magnitude = False
 
 def downsample(y, decim):
     global is_magnitude
-    if decim == 1:
+    if decim <= 1:
         if is_magnitude:
             return 1, np.log10(np.abs(y))
         else:
