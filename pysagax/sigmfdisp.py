@@ -25,23 +25,6 @@ is_magnitude = False
 
 def downsample(y, decim):
     global is_magnitude
-    # total_decim = 1
-    # if decim > 1:
-    #     while decim > 10:
-    #         if decim % 2 != 0:
-    #             decim += 1
-    #         if decim % 4 == 0:
-    #             y = sg.decimate(y, 4, ftype="iir")
-    #             decim = decim // 4
-    #             total_decim *= 4
-    #         else:
-    #             y = sg.decimate(y, 2, ftype="iir")
-    #             decim = decim // 2
-    #             total_decim *= 2
-    #
-    #     total_decim *= decim
-    #     return total_decim, sg.decimate(y, decim, ftype="iir")
-    # else:
     if decim == 1:
         if is_magnitude:
             return 1, np.log10(np.abs(y))
@@ -108,7 +91,6 @@ def main():
     args = parser.parse_args()
 
     is_magnitude = args.dB
-    print(is_magnitude)
     filename: str = args.filename[0]
     collection: Optional[SigMFCollection] = None
     streams = []
