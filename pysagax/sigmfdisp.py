@@ -20,9 +20,11 @@ datas = []
 lines = []
 lined = {}
 fig = None
+is_magnitude = False
 
 
 def downsample(y, decim):
+    global is_magnitude
     # total_decim = 1
     # if decim > 1:
     #     while decim > 10:
@@ -41,7 +43,10 @@ def downsample(y, decim):
     #     return total_decim, sg.decimate(y, decim, ftype="iir")
     # else:
     if decim == 1:
-        return 1, y
+        if is_magnitude:
+            return 1, np.log10(np.abs(y))
+        else:
+            return 1, y
     new_len = y.shape[0] // decim
     z = np.zeros(new_len)
     stat_len = decim * 2
@@ -50,8 +55,12 @@ def downsample(y, decim):
         i_start = i * decim
         i_end = min(i_start + stat_len - 1, y.shape[0])
         stat_range = y[i_start:i_end]
-        z[i] = np.min(stat_range)
-        z[i + 1] = np.max(stat_range)
+        if is_magnitude:
+            z[i] = 20 * np.log10(np.abs(np.max(stat_range)))
+            z[i + 1] = z[i]
+        else:
+            z[i] = np.min(stat_range)
+            z[i + 1] = np.max(stat_range)
     return decim, z
 
 
@@ -91,11 +100,15 @@ def main():
     global max_points
     global fig
     global lined
+    global is_magnitude
     parser = ArgumentParser(description="SigMF disp")
-
+    parser.add_argument("-m", "--dB", action="store_true")  # on/off flag
     parser.add_argument("filename", nargs="+")
+
     args = parser.parse_args()
 
+    is_magnitude = args.dB
+    print(is_magnitude)
     filename: str = args.filename[0]
     collection: Optional[SigMFCollection] = None
     streams = []
@@ -166,8 +179,6 @@ def main():
             # Get capture info associated with the start of annotation
             capture = signal.get_capture_info(0)
             freq_center = capture.get(SigMFFile.FREQUENCY_KEY, 0)
-            freq_min = freq_center - 0.5 * sample_rate
-            freq_max = freq_center + 0.5 * sample_rate
 
             metadata += f"{stream} - {signal_duration:.2f} seconds \n    Count: {sample_count} samples \n    Center: {freq_center/1e6:.3f}M \n    IQ: {sample_rate/1e6:.3f}M\n"
 
@@ -194,7 +205,13 @@ def main():
         linei.set_label(f"{stream} - I")
         (lineq,) = ax0.plot(x_range, init_q, lw=1, alpha=0.9)
         lineq.set_label(f"{stream} - Q")
-        ax0.set_ylim(-1.0, 1.0)  # set the ylim to bottom, top
+        if is_magnitude:
+            ax0.yaxis.set_major_formatter(  # type: ignore
+                mpl.ticker.FuncFormatter(lambda x, _: f"{x:.2f}dB")  # type: ignore
+            )
+            ax0.set_ylim(-100.0, 0.0)  # set the ylim to bottom, top
+        else:
+            ax0.set_ylim(-1.0, 1.0)  # set the ylim to bottom, top
 
         if "_N" in stream:
             linei.set_color("#eeee00")
