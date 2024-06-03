@@ -486,6 +486,23 @@ class ScanEngine(Loop):
             )
             self._configured_tracking_frequency = signal.frequency
             self._configured_tracking_bandwidth = signal.bandwidth
+        elif len(se_cmd.config.se.tracking.signals) >= 2:
+            signal_min = min(
+                signal.frequency - signal.bandwidth
+                for signal in se_cmd.config.se.tracking.signals
+            )
+            signal_max = max(
+                signal.frequency + signal.bandwidth
+                for signal in se_cmd.config.se.tracking.signals
+            )
+            tracking_bw = self.to_supported_iq_rate(
+                int((signal_max - signal_min) * 1.25)
+            )
+
+            # Do not switch to lower IQ rate for tracking, only higher if needed
+            command.config.cs.iq_rate = max(tracking_bw, self._iq_rate)
+            command.config.cs.center_frequency = (signal_min + signal_max) / 2
+
         command.config.cs.source_type = self._source_device_type
         command.config.cs.source_path = self._source_device_path
 
