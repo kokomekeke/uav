@@ -301,8 +301,9 @@ class PPDetection(Loop):
         try:
             conf_request = self._conf_queue_in.get(timeout=0, block=False)
             self._protobuf_to_log(conf_request)
-            self._current_config = conf_request
-            self._conf_queue_out.put(None)
+            self._current_config = conf_request.config.pp
+            response = proto_cmd.Response(config=conf_request.config)
+            self._conf_queue_out.put(response)
         except queue.Empty:
             pass
 

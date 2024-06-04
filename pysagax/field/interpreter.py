@@ -163,11 +163,18 @@ class Interpreter(Loop):
                         else:
                             response.config.cs.CopyFrom(se_response.config.cs)
                             response.config.se.CopyFrom(se_response.config.se)
-
                     else:
                         self._config_status_message = proto_cmd.ConfigStatus()
                         self._config_status_message.start_time.GetCurrentTime()
                         self._config_status_message.finish_time.GetCurrentTime()
+                    if command.config.HasField("pp"):
+                        pp_response = self._postproc_configure(command)
+                        if pp_response is not None:
+                            if pp_response.HasField("error"):
+                                response.error.CopyFrom(pp_response.error)
+                                response.success = False
+                            else:
+                                response.config.pp.CopyFrom(pp_response.config.pp)
                     # self._config(response, command.config)
                 else:
                     self._config(response)
