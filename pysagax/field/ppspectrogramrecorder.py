@@ -3,6 +3,8 @@ from multiprocessing.managers import ValueProxy
 from queue import Queue
 import queue
 from time import sleep
+from datetime import datetime
+import os
 
 from typing import Any, Optional
 
@@ -20,6 +22,21 @@ Mode = Enum("Mode", ["PASS", "RECORD", "PLAYBACK"])
 class PPSpectrogramRecorder(Loop):
     """
     Background process for recording/replaying Measurement stream.
+
+    Currently it can be configured from CLI or config file.
+
+
+    mode:
+        PASS: incoming packets are pushed without saving to file.
+        RECORD: incoming packets are pushed and saved to a file
+        PLAYBACK: pushed packets are read from a file.
+
+    path: the path of the recording file that is to be recorded or played back.
+        The path is extended with the current timestamp for recordings.
+
+    recording_dtype: useful for reducing recording file sizes
+        ORIGINAL: keep the original data type for the recordings
+        INT8, INT16, FLOAT32: cast the spectrum data to one of these datatypes before saving to file.
     """
 
     def __init__(
@@ -38,14 +55,13 @@ class PPSpectrogramRecorder(Loop):
                 recording_dtype.upper()
             )
             self._logger.info(
-                f"Spectrogram recording will use {proto_data.Spectrum.DataType.Name(self.recording_dtype)}."
+                f"Spectrogram recording will use {proto_data.Spectrum.DataType.Name(self.recording_dtype)} data type."
             )
         else:
             self.recording_dtype = None
 
         self.mode = Mode[mode.upper()]
         self.path = path
-        # TODO: in recording mode use timestamped file names i guess
         self._logger.info(
             f"Initialized with mode='{self.mode.name}' and path='{path}'."
         )
@@ -68,7 +84,6 @@ class PPSpectrogramRecorder(Loop):
             # TODO new_path, new_mode  = command_queue.get_nowait
             new_mode = self.mode
             new_path = self.path
-            pass
         except queue.Empty:
             return
         self._change_mode(new_path, new_mode)
@@ -76,7 +91,6 @@ class PPSpectrogramRecorder(Loop):
     def _change_mode(self, new_path: str, new_mode: Mode):
         if new_mode == self.mode and self.path == new_path:
             # no state change
-            # TODO: use self._file_streamer.path() ??
             return
         self._exit_current_mode()
         self._enter_new_mode(new_path, new_mode)
@@ -99,10 +113,16 @@ class PPSpectrogramRecorder(Loop):
             case Mode.PASS:
                 pass
             case Mode.RECORD:
+                # Inserting a timestamp before the file extension
+                start_time_string = datetime.now().strftime("%Y%m%d_%H%M%S")
+                name, extension = os.path.splitext(new_path)
+                new_path = f"{name}_{start_time_string}{extension}"
+
                 self._file_streamer = FileStreamer(path=new_path, mode="record")
             case Mode.PLAYBACK:
                 self._file_streamer = FileStreamer(path=new_path, mode="playback")
         self.mode = new_mode
+        self.path = new_path
 
     def _get_packet(self, timeout=1) -> proto_data.Measurement:
         # reading measurement packet

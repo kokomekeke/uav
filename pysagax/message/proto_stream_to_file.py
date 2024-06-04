@@ -17,12 +17,26 @@ from queue import Empty
 
 from pysagax.message.data_types import DataType
 
-T = TypeVar("YourProtoClass", bound=Message)  # TODO
-
 FileStreamMode: TypeAlias = Literal["record", "playback"]
 
 
 class FileStreamer:
+    """
+    Class that makes it possible for protobuf message streams to be recorded to or read back from files.
+
+    Initialization:
+        path: path of the recording file.
+        mode: either playback or record.
+
+    Modes:
+        Record: appends protobuf packets recieved through the put() method to the opened file
+        Playback: the get() method returns the next packet from the file with the same amount of delay that the packet was saved to file.
+            If no packet is available before the timeout runs out, a queue.Empty is raised.
+            the read_all() method returns a list of all the protobuf packets cointained in the file.
+
+    The structure of the saved files are detailed in the docstring for _read()
+    """
+
     def __init__(self, path: str, mode: FileStreamMode) -> None:
         self.path = path
         self.mode = mode
@@ -35,13 +49,13 @@ class FileStreamer:
         else:
             raise Exception(f"Undefined FileStreamMode '{self.mode}'")
 
-        # for playback timing. The difference of the first packets read time and save time
+        # for playback timing. The difference of the first packet's read time and save time
         self._stream_delay: Optional[float] = None
 
-        self._packet_buffer = None
-        self._ts_buffer = None
+        self._packet_buffer: Optional[Message] = None
+        self._ts_buffer: Optional[float] = None
 
-    def get(self, timeout=1):
+    def get(self, timeout: float = 1) -> Message:
         """
         Returns packets from the protobuf file recording with the same speed as they were saved.
         Throws queue.Empty if no packet can be returned before timeout expires.
@@ -84,18 +98,17 @@ class FileStreamer:
 
         return packet
 
-    def put(self, packet):
+    def put(self, packet: Message) -> None:
         if self.mode != "record":
             raise Exception(f"Can't use put() in {self.mode} mode")
-        # TODO: assert isinstance(packet
-        # TODO: add option to cast measurment/spectrum to int16 for saving disk space
         self._write(packet)
 
-    def read_all(self):
-        #TODO: make random access-like reading possigle:
-        #TODO: -seekable
-        #TODO: -after opening, create an index of the start of each timestamp-time-packet triplet
-        #TODO: -then make it seekable by time or by packet number.
+    def read_all(self) -> tuple[list[float], list[Message]]:
+        """Returns a list of all the packets contained in the file and a list of the save times for the packets."""
+        # TODO: make random access-like reading possible:
+        # TODO: -seekable
+        # TODO: -after opening, create an index of the start of each timestamp-time-packet triplet
+        # TODO: -then make it seekable by time or by packet number.
         if self.mode != "playback":
             raise Exception(f"Can't use read_all() in {self.mode} mode")
         time_list = []
@@ -108,10 +121,10 @@ class FileStreamer:
             time_list.append(time)
         return time_list, packet_list
 
-    def close(self):
+    def close(self) -> None:
         self.file_io.close()
 
-    def _read_varint(self, offset: int = 0) -> Optional[int]:
+    def _read_varint(self, offset: int = 0) -> int:
         """Read a varint from the stream."""
         if offset > 0:
             self.file_io.seek(offset)
@@ -126,7 +139,7 @@ class FileStreamer:
         varint, _ = _DecodeVarint(buf, 0)
         return varint
 
-    def _read(self):  # TODO typing,  -> Optional[T]:
+    def _read(self) -> tuple[float, Message] | tuple[None, None]:
         """
         Read a single length-delimited message from the stream.
 
@@ -140,6 +153,7 @@ class FileStreamer:
             message length (varint) +
             protbuf message (message length bytes)
         """
+        # reading the next message and its metadata
         time_b = self.file_io.read(8)
         if len(time_b) == 0:
             return None, None  # reached EOF
@@ -147,12 +161,13 @@ class FileStreamer:
         msg_type = str(self.file_io.read(1), "utf-8")
         size = self._read_varint()
         buf = self.file_io.read(size)
+
+        # decoding the message based on the msg_type byte
         msg = DataType.to_message(DataType(msg_type))
-        # msg = proto_class_name()
         msg.ParseFromString(buf)
         return timestamp, msg
 
-    def _write(self, msg: T):
+    def _write(self, msg: Message) -> None:
         """
         Write a single length-delimited message to the stream.
 
@@ -165,5 +180,6 @@ class FileStreamer:
         msg_type = DataType.from_message(msg).value.encode("utf-8")
         self.file_io.write(time_b)
         self.file_io.write(msg_type)
+        # write the length of the message to the filestream in varint representation
         _EncodeVarint(self.file_io.write, msg.ByteSize())
         self.file_io.write(msg.SerializeToString())
