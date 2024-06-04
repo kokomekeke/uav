@@ -1,8 +1,10 @@
 import enum
 import logging
 from multiprocessing.managers import DictProxy
+import pickle
 import queue
 from queue import Queue
+import time
 from typing import Any, Generator, Optional, overload
 
 import google.protobuf.json_format
@@ -70,10 +72,11 @@ class FreqRangeInternal:
 class ScanEngineState(enum.Enum):
     INIT = 0
     MANUAL = 1
-    SCANNING_IDLE = 2
-    TRACKING_IDLE = 3
-    SCANNING_IN_PROGRESS = 4
-    TRACKING_IN_PROGRESS = 5
+    CALIBRATION = 2
+    SCANNING_IDLE = 3
+    TRACKING_IDLE = 4
+    SCANNING_IN_PROGRESS = 5
+    TRACKING_IN_PROGRESS = 6
 
 
 class StateMachine(Machine):
@@ -107,6 +110,9 @@ class ScanEngine(Loop):
 
     @overload
     def launch(self, *args, **kwargs) -> bool: ...  # type: ignore
+
+    @overload
+    def launch_calibration(self, *args, **kwargs) -> bool: ...  # type: ignore
 
     @overload
     def done(self, *args, **kwargs) -> bool: ...  # type: ignore
@@ -206,6 +212,32 @@ class ScanEngine(Loop):
             "conditions": "check_cs_response",
         },
         {
+            "trigger": "launch_calibration",
+            "source": ScanEngineState.TRACKING_IDLE,
+            "dest": ScanEngineState.CALIBRATION,
+            "prepare": "command_calibration",
+            "conditions": "check_cs_response",
+        },
+        {
+            "trigger": "launch_calibration",
+            "source": ScanEngineState.SCANNING_IDLE,
+            "dest": ScanEngineState.CALIBRATION,
+            "prepare": "command_calibration",
+            "conditions": "check_cs_response",
+        },
+        {
+            "trigger": "launch_calibration",
+            "source": ScanEngineState.MANUAL,
+            "dest": ScanEngineState.CALIBRATION,
+            "prepare": "command_calibration",
+            "conditions": "check_cs_response",
+        },
+        {
+            "trigger": "done",
+            "source": ScanEngineState.CALIBRATION,
+            "dest": ScanEngineState.INIT,
+        },
+        {
             "trigger": "done",
             "source": ScanEngineState.TRACKING_IN_PROGRESS,
             "dest": ScanEngineState.TRACKING_IDLE,
@@ -248,8 +280,9 @@ class ScanEngine(Loop):
         scanning_useful_bandwidth: int,
         scanning_averaging_burst_count: int,
         scanning_target_resolution_bandwidth: int,
-        timeout_config_ms: int = 30000,
+        timeout_config_ms: int = -1,
         timeout_instruction_ms: int = 1000,
+        calibration_interval_seconds: float = 300.0,
         source_device_type: str = "",
         source_device_path: str = "",
         auto_config: str = "",
@@ -291,12 +324,12 @@ class ScanEngine(Loop):
             initial=ScanEngineState.INIT,
             queued=True,
             auto_transitions=False,
+            ignore_invalid_triggers=True,
         )
         self._latest_cs_response: Optional[proto_cmd.Response] = None
         self._configured_freq_ranges: list[FreqRangeInternal] = []
         self._configured_tracking_frequency = 0.0
         self._configured_tracking_bandwidth = 0.0
-        # self._machine.generate_pyi()
         self._expected_data_count: int = 0
         self._received_data_count: int = 0
         self._config_cs_timeout = timeout_config_ms
@@ -318,6 +351,16 @@ class ScanEngine(Loop):
                     f"Malformed Command.Config Protobuf JSON in auto config param: {self._auto_config}"
                 )
         self._reset_on_error = reset_on_error
+        self._last_calibration_timestamp: float = 0.0
+        self._calibration_interval_seconds: float = calibration_interval_seconds
+
+    def needs_calibration(self) -> bool:
+        if self._calibration_interval_seconds <= 0:
+            return False
+        return (
+            self._last_calibration_timestamp + self._calibration_interval_seconds
+            <= time.time()
+        )
 
     def to_supported_iq_rate(self, iq: int) -> int:
         """
@@ -535,6 +578,16 @@ class ScanEngine(Loop):
         assert self._cs_commands_q is not None
         self._cs_commands_q.put((cs_command, self._instruction_cs_timeout))
 
+    def command_calibration(self):
+        """
+        Action on the SCANNING_IDLE / TRACKING_IDLE / MANUAL -> CALIBRATION transition.
+        Sends the CS_SCAN_START command to CoreService.
+        """
+        assert self._cs_commands_q is not None
+        command = proto_cmd.Command()
+        command.instruction = proto_cmd.CS_CALIBRATE_START
+        self._cs_commands_q.put((command, self._instruction_cs_timeout))
+
     def command_scanning(self):
         """
         Action on the SCANNING_IDLE -> SCANNING_IN_PROGRESS transition.
@@ -651,6 +704,7 @@ class ScanEngine(Loop):
             proto_cmd.REC_STOP,
             proto_cmd.CS_PING,
             proto_cmd.POSITION,
+            proto_cmd.CS_CALIBRATE_ABORT,
         ]:
             self.manual_command(command)
             self.check_cs_response()
@@ -692,6 +746,20 @@ class ScanEngine(Loop):
             case ScanEngineState.INIT:
                 self._discard_post_proc_output()
                 self.initialize()
+            case ScanEngineState.CALIBRATION:
+                if "Telemetry" not in self._latest_telemetry_proxy:
+                    self._logger.error("Could not obtain Telemetry object")
+                    return
+                telemetry_object: proto_data.Telemetry = pickle.loads(
+                    self._latest_telemetry_proxy["Telemetry"]
+                )
+                if telemetry_object.source.status in [
+                    telemetry_object.source.ENABLED,
+                    telemetry_object.source.RUNNING,
+                ]:
+                    self.done()
+                else:
+                    self._handle_incoming_instruction(q_timeout)
             case ScanEngineState.MANUAL:
                 self._discard_post_proc_output()
                 # MANUAL mode command handling needs a timeout, because there is no other
@@ -705,11 +773,25 @@ class ScanEngine(Loop):
                     # If there was an incoming command, the _loop iteration will be used
                     # to execute that command. Only go to the SCANNING_IN_PROGRESS state,
                     # if there aren't any commands left in the queue.
-                    self.launch()
+                    if (
+                        self.needs_calibration()
+                        and self._last_config_command == self._auto_config
+                    ):
+                        # Automatic calibration if needs calibration
+                        # and the last config is proven to be working
+                        self.launch_calibration()
+                    else:
+                        self.launch()
             case ScanEngineState.TRACKING_IDLE:
                 self._discard_post_proc_output()
                 if not self._handle_incoming_instruction(0.0):
-                    self.launch()
+                    if (
+                        self.needs_calibration()
+                        and self._last_config_command == self._auto_config
+                    ):
+                        self.launch_calibration()
+                    else:
+                        self.launch()
             case ScanEngineState.SCANNING_IN_PROGRESS:
                 try:
                     # Scanning in progress: no commands allowed, the FSM is waiting

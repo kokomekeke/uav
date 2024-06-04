@@ -1,5 +1,5 @@
 import multiprocessing
-from multiprocessing.managers import DictProxy
+import pickle
 from queue import Queue
 from typing import Any, Callable, Optional
 import pytest
@@ -143,7 +143,7 @@ def se() -> ScanEngine:
 
 def loop_se_with_cs_control(
     se: ScanEngine, action: Optional[Callable[[ScanEngine], Any]] = None
-) -> None:
+) -> proto_cmd.Command:
     assert se._cs_commands_q is not None
     assert se._cs_responses_q is not None
     prep_response = proto_cmd.Response()
@@ -155,6 +155,7 @@ def loop_se_with_cs_control(
         action(se)
     caught_cmd, _ = se._cs_commands_q.get_nowait()
     assert caught_cmd
+    return caught_cmd
 
 
 @pytest.mark.parametrize("fail_config", [True, False])
@@ -281,8 +282,9 @@ def test_conf_tracking_state_machine(
     se_conf_command.kind = proto_cmd.Command.WRITE
     se_conf_command.instruction = proto_cmd.CONFIG
     se_conf_command.config.se.mode = proto_cmd.ScanEngineConfig.TRACKING
-    se_conf_command.config.se.tracking.frequency = 446e6
-    se_conf_command.config.se.tracking.bandwidth = 2.5e6
+    signal = se_conf_command.config.se.tracking.signals.add()
+    signal.frequency = 446e6
+    signal.bandwidth = 2.5e6
     se._se_commands_q.put(se_conf_command)
 
     # Prepare mock CoreService Config Response
@@ -301,7 +303,7 @@ def test_conf_tracking_state_machine(
     assert cs_conf_command.kind == proto_cmd.Command.WRITE
     assert cs_conf_command.config.cs.iq_rate == pytest.approx(5.6e6)
     assert cs_conf_command.config.cs.center_frequency == pytest.approx(
-        se_conf_command.config.se.tracking.frequency - 5.6e6 / 4
+        signal.frequency - 5.6e6 / 4
     )
 
     # Validate response received from ScanEngine
@@ -313,12 +315,12 @@ def test_conf_tracking_state_machine(
         return
     else:
         assert se.state == ScanEngineState.TRACKING_IDLE
-        assert se_conf_response.config.se.tracking.frequency == pytest.approx(
-            se_conf_command.config.se.tracking.frequency
-        )
-        assert se_conf_response.config.se.tracking.bandwidth == pytest.approx(
-            se_conf_command.config.se.tracking.bandwidth
-        )
+        assert se_conf_response.config.se.tracking.signals[
+            0
+        ].frequency == pytest.approx(signal.frequency)
+        assert se_conf_response.config.se.tracking.signals[
+            0
+        ].bandwidth == pytest.approx(signal.bandwidth)
 
     # On the next FSM iteration tracking should start automatically
     # Prepare mock CoreService ScanStart Response
@@ -426,3 +428,101 @@ def test_se_command_passthrough(
             if i % 2
             else proto_cmd.Command.READ
         )
+
+
+def test_se_calibration(
+    se: ScanEngine,
+) -> None:
+    se._calibration_interval_seconds = 1
+    assert se._se_commands_q is not None
+    assert se._se_responses_q is not None
+    assert se._cs_commands_q is not None
+    assert se._cs_responses_q is not None
+    assert se._post_proc_to_scan_engine_q is not None
+    assert se._latest_telemetry_proxy is not None
+
+    loop_se_with_cs_control(se)
+    # Initial state
+    assert se.state == ScanEngineState.MANUAL
+
+    # ScanEngine Config command
+    se_conf_command = proto_cmd.Command()
+    se_conf_command.kind = proto_cmd.Command.WRITE
+    se_conf_command.instruction = proto_cmd.CONFIG
+    se_conf_command.config.se.mode = proto_cmd.ScanEngineConfig.SCANNING
+    test_range = se_conf_command.config.se.scanning.ranges.add()
+    test_range.start = 440e6
+    test_range.stop = 450e6
+    se._se_commands_q.put(se_conf_command)
+
+    # Prepare mock CoreService Config Response
+    cs_conf_response = proto_cmd.Response()
+    se._cs_responses_q.put(cs_conf_response)
+
+    # Do FSM loop
+    se._loop()
+
+    # Validate command sent to CoreService
+    cs_conf_command, _ = se._cs_commands_q.get_nowait()
+    assert isinstance(cs_conf_command, proto_cmd.Command)
+    assert cs_conf_command.instruction == proto_cmd.CONFIG
+    assert cs_conf_command.kind == proto_cmd.Command.WRITE
+    assert len(cs_conf_command.config.cs.scan_plan.center_freqs) >= 2
+
+    # Validate response received from ScanEngine
+    se_conf_response = se._se_responses_q.get_nowait()
+    assert isinstance(se_conf_response, proto_cmd.Response)
+    assert se.state == ScanEngineState.SCANNING_IDLE
+    assert se_conf_response.config.se.scanning.ranges[0] == test_range
+
+    # On the next FSM iteration scanning should start automatically
+    # Prepare mock CoreService ScanStart Response
+    cs_scan_start_response = proto_cmd.Response()
+    se._cs_responses_q.put(cs_scan_start_response)
+    se._cs_responses_q.put(proto_cmd.Response())
+
+    # Do FSM loop
+    se._loop()
+
+    # Validate command sent to CoreService
+    cs_scan_start_command, _ = se._cs_commands_q.get_nowait()
+    assert isinstance(cs_scan_start_command, proto_cmd.Command)
+    assert cs_scan_start_command.instruction == proto_cmd.CS_SCAN_START
+
+    # Validate ScanEngine FSM state
+    assert se.state == ScanEngineState.SCANNING_IN_PROGRESS
+
+    # Internal variable should now be set to expect postproc data
+    expected_burst_count = se._expected_data_count
+    assert expected_burst_count > 0
+
+    # Mock postproc data burst packets
+    for burst_index in range(expected_burst_count):
+        assert se.state == ScanEngineState.SCANNING_IN_PROGRESS
+        se._post_proc_to_scan_engine_q.put(proto_data.Measurement())
+        se._loop()
+
+    # After all expected postproc packets received,
+    # FSM should automatically return to SCANNING_IDLE
+    assert se.state == ScanEngineState.SCANNING_IDLE
+
+    # Do FSM loop
+    assert loop_se_with_cs_control(se).instruction == proto_cmd.CS_CALIBRATE_START
+
+    # Now we have to be in CALIBRATION state
+    assert se.state == ScanEngineState.CALIBRATION
+    telemetry = proto_data.Telemetry()
+    telemetry.source.status = proto_data.Telemetry.Source.DISABLED
+    se._latest_telemetry_proxy["Telemetry"] = pickle.dumps(telemetry)
+
+    se._loop()
+    assert se.state == ScanEngineState.CALIBRATION
+
+    telemetry.source.status = proto_data.Telemetry.Source.RUNNING
+    se._latest_telemetry_proxy["Telemetry"] = pickle.dumps(telemetry)
+    se._loop()
+    assert se.state == ScanEngineState.INIT
+
+    # Should return to Scanning automatically
+    loop_se_with_cs_control(se)
+    assert se.state == ScanEngineState.SCANNING_IDLE

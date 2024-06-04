@@ -52,6 +52,7 @@ class Commander:
         cs_stream_port: int,
         cs_command_config_timeout: int,
         cs_command_instruction_timeout: int,
+        calibration_interval_seconds: float,
         heading_host: str,
         heading_control_port: int,
         heading_stream_port: int,
@@ -97,9 +98,7 @@ class Commander:
         self._latest_se_proxy = self._manager.dict()
         self._latest_config_id_value = self._manager.Value("i", 0)
 
-        self._communicator = Communicator(
-            level=level, port=command_port
-        )
+        self._communicator = Communicator(level=level, port=command_port)
         self._streamer = Streamer(level=level)
 
         self._interpreter = Interpreter(
@@ -112,6 +111,7 @@ class Commander:
             scanning_target_resolution_bandwidth,
             cs_command_config_timeout,
             cs_command_instruction_timeout,
+            calibration_interval_seconds,
             source_device_type,
             source_device_path,
             auto_config,
@@ -332,6 +332,12 @@ def set_default_config(ctx, param, conf_path):
     show_default=True,
 )
 @click.option(
+    "--calibration-interval-seconds",
+    help="Automatic radio interface calibration interval [s]",
+    default=300.0,
+    show_default=True,
+)
+@click.option(
     "--heading-host",
     help="Hostname of Heading module (PySAGAX-Heading)",
     default="127.0.0.1",
@@ -397,7 +403,9 @@ def set_default_config(ctx, param, conf_path):
     show_default=True,
     help="JSON-encoded protobuf configuration command",
 )
-@click.option('--cs_reset-on-fail', is_flag=True, help="Reset CS source on command fail")
+@click.option(
+    "--cs-reset-on-fail", is_flag=True, help="Reset CS source on command fail"
+)
 def main(
     level: str,
     disk_path: str,
@@ -406,6 +414,7 @@ def main(
     cs_command_port: int,
     cs_command_config_timeout: int,
     cs_command_instruction_timeout: int,
+    calibration_interval_seconds: float,
     cs_stream_port: int,
     heading_host: str,
     heading_control_port: int,
@@ -440,6 +449,7 @@ def main(
         cs_stream_port,
         cs_command_config_timeout,
         cs_command_instruction_timeout,
+        calibration_interval_seconds,
         heading_host,
         heading_control_port,
         heading_stream_port,
@@ -450,7 +460,7 @@ def main(
         source_device_type,
         source_device_path,
         auto_config,
-        cs_reset_on_fail
+        cs_reset_on_fail,
     )
     commander.start()
 
