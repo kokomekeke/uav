@@ -140,44 +140,9 @@ class Interpreter(Loop):
         match command.instruction:
             case proto_cmd.PING:
                 response.ping_data = command.ping_data
+
             case proto_cmd.CONFIG:
-                # Check whether command is a query or a setting
-                if (
-                    command.HasField("parameter")
-                    or command.kind == proto_cmd.Command.WRITE
-                ) and command.kind != proto_cmd.Command.READ:
-                    response.success = True
-                    if command.config.HasField("heading"):  # Heading part is set
-                        assert self._heading_conf_queue_out is not None
-                        self._heading_conf_queue_out.put(command.config.heading)
-                    if command.config.HasField("cs") or command.config.HasField("se"):
-                        assert (
-                            self._se_queue_in is not None
-                            and self._se_queue_out is not None
-                        )
-                        self._se_queue_out.put(command)
-                        se_response = self._se_queue_in.get()
-                        if se_response.HasField("error"):
-                            response.error.CopyFrom(se_response.error)
-                            response.success = False
-                        else:
-                            response.config.cs.CopyFrom(se_response.config.cs)
-                            response.config.se.CopyFrom(se_response.config.se)
-                    else:
-                        self._config_status_message = proto_cmd.ConfigStatus()
-                        self._config_status_message.start_time.GetCurrentTime()
-                        self._config_status_message.finish_time.GetCurrentTime()
-                    if command.config.HasField("pp"):
-                        pp_response = self._postproc_configure(command)
-                        if pp_response is not None:
-                            if pp_response.HasField("error"):
-                                response.error.CopyFrom(pp_response.error)
-                                response.success = False
-                            else:
-                                response.config.pp.CopyFrom(pp_response.config.pp)
-                    # self._config(response, command.config)
-                else:
-                    self._config(response)
+                self._process_config_command(command, response)
 
             case proto_cmd.TELEMETRY:
                 self._telemetry(response)
@@ -210,19 +175,69 @@ class Interpreter(Loop):
                 | proto_cmd.POSITION
             ):
                 response.CopyFrom(self._se_control(command))
+
             case proto_cmd.STREAM_START | proto_cmd.STREAM_STOP:
                 assert self._stream_conf_queue_out is not None
                 self._stream_conf_queue_out.put(command)
+
             case proto_cmd.CONFIG_STATUS:
                 if self._config_status_message is None:
                     response.error.description = "No available config status"
                 else:
                     response.config_status.CopyFrom(self._config_status_message)
+
             case _:
                 response.error.description = "Unknown command"
 
         # Send response to Communicator
         return response  # .SerializeToString()
+
+    def _process_config_command(
+        self, command: proto_cmd.Command, response: proto_cmd.Response
+    ) -> None:
+        """
+        Processes CONFIG commands, and modifies the given response based on the
+        responses from the related modules
+        """
+        # Check whether command is a query or a setting
+        if command.kind == proto_cmd.Command.READ or not (
+            command.HasField("parameter") or command.kind == proto_cmd.Command.WRITE
+        ):
+            # querying current state
+            self._config(response)
+            return
+
+        # Setting new config:
+
+        response.success = True
+        if command.config.HasField("heading"):  # Heading part is set
+            assert self._heading_conf_queue_out is not None
+            self._heading_conf_queue_out.put(command.config.heading)
+
+        if command.config.HasField("cs") or command.config.HasField("se"):
+            assert self._se_queue_in is not None and self._se_queue_out is not None
+            self._se_queue_out.put(command)
+            se_response = self._se_queue_in.get()
+            if se_response.HasField("error"):
+                response.error.CopyFrom(se_response.error)
+                response.success = False
+            else:
+                response.config.cs.CopyFrom(se_response.config.cs)
+                response.config.se.CopyFrom(se_response.config.se)
+        else:
+            self._config_status_message = proto_cmd.ConfigStatus()
+            self._config_status_message.start_time.GetCurrentTime()
+            self._config_status_message.finish_time.GetCurrentTime()
+
+        if command.config.HasField("pp"):
+            pp_response = self._postproc_configure(command)
+            if pp_response is not None:
+                if pp_response.HasField("error"):
+                    response.error.CopyFrom(pp_response.error)
+                    response.success = False
+                else:
+                    response.config.pp.CopyFrom(pp_response.config.pp)
+        # self._config(response, command.config)
 
     def _postproc_configure(self, command: Any) -> Any:
         assert self._postproc_conf_queue_out is not None
@@ -289,9 +304,6 @@ class Interpreter(Loop):
         response.info.MergeFrom(system_info_object)
 
     def _se_control(self, command: proto_cmd.Command) -> proto_cmd.Response:
-        assert (
-            self._se_queue_in is not None
-            and self._se_queue_out is not None
-        )
+        assert self._se_queue_in is not None and self._se_queue_out is not None
         self._se_queue_out.put(command)
         return self._se_queue_in.get()
