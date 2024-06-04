@@ -14,7 +14,7 @@ from pysagax.common.loop import Loop
 from enum import Enum
 
 # class Mode(Enum):
-Mode = Enum("Mode",["PASS", "RECORD", "PLAYBACK"] )
+Mode = Enum("Mode", ["PASS", "RECORD", "PLAYBACK"])
 
 
 class PPSpectrogramRecorder(Loop):
@@ -29,10 +29,8 @@ class PPSpectrogramRecorder(Loop):
 
         self.mode = Mode.PASS
         # self.mode = Mode.RECORD
-        self.mode = Mode.PLAYBACK
+        # self.mode = Mode.PLAYBACK
         self.path = "pysagax/gany/proto_file_stream/test.protorec"
-        print("SUCCESSFUL INIT")
-
 
     def __call__(
         self,
@@ -43,15 +41,13 @@ class PPSpectrogramRecorder(Loop):
     ) -> None:
         self._queue_in = queue_in
         self._queue_out = queue_out
-        print("PREPICKE")
         self._enter_new_mode(self.path, self.mode)
-        print("SUCCESSFUL CALL")
         return super()._call(*args, **kwargs)
 
     def _read_commands(self):
         """Gets commands and handles state transitions"""
         try:
-            #TODO new_path, new_mode  = command_queue.get_nowait
+            # TODO new_path, new_mode  = command_queue.get_nowait
             new_mode = self.mode
             new_path = "pysagax/gany/proto_file_stream/test.protorec"
             pass
@@ -59,7 +55,7 @@ class PPSpectrogramRecorder(Loop):
             return
         self._change_mode(new_path, new_mode)
 
-    def _change_mode(self, new_path: str, new_mode: Mode):        
+    def _change_mode(self, new_path: str, new_mode: Mode):
         if new_mode == self.mode and self.path == new_path:
             # no state change
             # TODO: use self._file_streamer.path() ??
@@ -67,7 +63,7 @@ class PPSpectrogramRecorder(Loop):
         self._exit_current_mode()
         self._enter_new_mode(new_path, new_mode)
 
-    def _exit_current_mode(self):    
+    def _exit_current_mode(self):
         # Exiting current state:
         match self.mode:
             case Mode.PASS:
@@ -93,12 +89,9 @@ class PPSpectrogramRecorder(Loop):
     def _get_packet(self, timeout=1) -> proto_data.Measurement:
         # reading measurement packet
         if self.mode in [Mode.PASS, Mode.RECORD]:
-            print("READ QUEUE")
             packet = self._queue_in.get(block=True, timeout=timeout)
         elif self.mode in [Mode.PLAYBACK]:
-            print("READ FILE")
             packet = self._file_streamer.get(timeout)
-            sleep(1/20) #TODO
         else:
             raise Exception("Undefined mode")
         return packet
@@ -106,13 +99,10 @@ class PPSpectrogramRecorder(Loop):
     def _put_packet(self, packet):
         # pushing measurement packet
         if self.mode == Mode.RECORD:
-            print("WRITE FILE")
             self._file_streamer.put(packet)
 
         self._queue_out.put(packet)
         self._logger.debug(f"Record/Playback finished on packet {packet.packet_id}")
-        print("WRITE QUEUE")
-
 
     def _loop(self) -> None:
         assert self._queue_in is not None
@@ -120,12 +110,10 @@ class PPSpectrogramRecorder(Loop):
 
         self._read_commands()
         try:
-            print("START LOOP")
             packet = self._get_packet(timeout=1)
 
-            self._put_packet(packet)
             assert isinstance(packet, proto_data.Measurement)
 
-
+            self._put_packet(packet)
         except queue.Empty:
             pass
