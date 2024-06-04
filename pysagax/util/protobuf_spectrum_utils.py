@@ -29,7 +29,14 @@ def convert_iterable_to_spectrum_data(
     Converts numpy array, list or dict_values
     to bytes that can be added to proto_data.Spectrum.data.
     """
-    return np.fromiter(array, PROTOBUF_NUMPY_TYPE_MAPPING[dtype]).tobytes()
+    array_np = np.array(array)
+    # Changing float nan, inf and -inf values to integers
+    array_np = np.nan_to_num(array_np,
+                             copy=False,
+                             posinf=np.iinfo(np.int32).max,
+                             neginf=np.iinfo(np.int32).min,
+                            )
+    return np.fromiter(array_np, PROTOBUF_NUMPY_TYPE_MAPPING[dtype]).tobytes()
 
 
 def cast_spectrum_data_type(
