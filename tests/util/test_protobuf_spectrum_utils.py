@@ -2,6 +2,8 @@ import pytest
 from pysagax.util.protobuf_spectrum_utils import (
     protobuf_spectrum_to_numpy,
     convert_iterable_to_spectrum_data,
+    cast_spectrum_data_type,
+    cast_all_spectrums_in_measurement,
 )
 import pysagax.message.data_pb2 as proto_data
 import pysagax.message.command_pb2 as proto_cmd
@@ -91,6 +93,411 @@ def test_spectrum_utils_chained(spectrum_array, data_type):
         case proto_data.Spectrum.DataType.FLOAT32:
             byte_per_bin = 4
     assert len(s.data) == byte_per_bin * len(spectrum_array)
+
+
+class TestSpectrumCasting:
+    """Tests cast_spectrum_data_type() and cast_all_spectrums_in_measurement()"""
+
+    @pytest.mark.parametrize(
+        ["spectrum", "dtype", "expected"],
+        [
+            [  # CASE 1
+                proto_data.Spectrum(
+                    channel_id=1,
+                    spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                    data_type=proto_data.Spectrum.DataType.FLOAT32,
+                    data=convert_iterable_to_spectrum_data(
+                        [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT32
+                    ),
+                ),
+                proto_data.Spectrum.DataType.INT16,
+                proto_data.Spectrum(
+                    channel_id=1,
+                    spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                    data_type=proto_data.Spectrum.DataType.INT16,
+                    data=convert_iterable_to_spectrum_data(
+                        [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.INT16
+                    ),
+                ),
+            ],
+            [  # CASE 2: float to int with rounding
+                proto_data.Spectrum(
+                    channel_id=1,
+                    spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                    data_type=proto_data.Spectrum.DataType.FLOAT32,
+                    data=convert_iterable_to_spectrum_data(
+                        [i / 10 for i in range(1000)],
+                        proto_data.Spectrum.DataType.FLOAT32,
+                    ),
+                ),
+                proto_data.Spectrum.DataType.INT8,
+                proto_data.Spectrum(
+                    channel_id=1,
+                    spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                    data_type=proto_data.Spectrum.DataType.INT8,
+                    data=convert_iterable_to_spectrum_data(
+                        [i / 10 for i in range(1000)], proto_data.Spectrum.DataType.INT8
+                    ),
+                ),
+            ],
+            [  # CASE 3: int to float with rounding
+                proto_data.Spectrum(
+                    channel_id=1,
+                    spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                    data_type=proto_data.Spectrum.DataType.INT16,
+                    data=convert_iterable_to_spectrum_data(
+                        [i / 10 for i in range(1000)],
+                        proto_data.Spectrum.DataType.INT16,
+                    ),
+                ),
+                proto_data.Spectrum.DataType.FLOAT32,
+                proto_data.Spectrum(
+                    channel_id=1,
+                    spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                    data_type=proto_data.Spectrum.DataType.FLOAT32,
+                    data=convert_iterable_to_spectrum_data(
+                        [np.floor(i / 10) for i in range(1000)],
+                        proto_data.Spectrum.DataType.FLOAT32,
+                    ),
+                ),
+            ],
+        ],
+    )
+    def test_cast_spectrum_data_type(self, spectrum, dtype, expected):
+        """Tests cast_spectrum_data_type with inplace=False"""
+        original_spectrum = proto_data.Spectrum()
+        original_spectrum.CopyFrom(spectrum)
+
+        result = cast_spectrum_data_type(spectrum, dtype)
+
+        assert result == expected
+        # inplace = False -> spectrum shouldn't change
+        assert spectrum == original_spectrum
+
+    @pytest.mark.parametrize(
+        ["spectrum", "dtype", "expected"],
+        [
+            [  # CASE 1
+                proto_data.Spectrum(
+                    channel_id=1,
+                    spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                    data_type=proto_data.Spectrum.DataType.FLOAT32,
+                    data=convert_iterable_to_spectrum_data(
+                        [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT32
+                    ),
+                ),
+                proto_data.Spectrum.DataType.INT16,
+                proto_data.Spectrum(
+                    channel_id=1,
+                    spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                    data_type=proto_data.Spectrum.DataType.INT16,
+                    data=convert_iterable_to_spectrum_data(
+                        [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.INT16
+                    ),
+                ),
+            ],
+            [  # CASE 2: float to int with rounding
+                proto_data.Spectrum(
+                    channel_id=1,
+                    spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                    data_type=proto_data.Spectrum.DataType.FLOAT32,
+                    data=convert_iterable_to_spectrum_data(
+                        [i / 10 for i in range(1000)],
+                        proto_data.Spectrum.DataType.FLOAT32,
+                    ),
+                ),
+                proto_data.Spectrum.DataType.INT8,
+                proto_data.Spectrum(
+                    channel_id=1,
+                    spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                    data_type=proto_data.Spectrum.DataType.INT8,
+                    data=convert_iterable_to_spectrum_data(
+                        [i / 10 for i in range(1000)], proto_data.Spectrum.DataType.INT8
+                    ),
+                ),
+            ],
+            [  # CASE 3: int to float with rounding
+                proto_data.Spectrum(
+                    channel_id=1,
+                    spectrum_type=proto_data.Spectrum.SpectrumType.AZIMUTH,
+                    data_type=proto_data.Spectrum.DataType.INT16,
+                    data=convert_iterable_to_spectrum_data(
+                        [i / 10 for i in range(1000)],
+                        proto_data.Spectrum.DataType.INT16,
+                    ),
+                ),
+                proto_data.Spectrum.DataType.FLOAT32,
+                proto_data.Spectrum(
+                    channel_id=1,
+                    spectrum_type=proto_data.Spectrum.SpectrumType.AZIMUTH,
+                    data_type=proto_data.Spectrum.DataType.FLOAT32,
+                    data=convert_iterable_to_spectrum_data(
+                        [np.floor(i / 10) for i in range(1000)],
+                        proto_data.Spectrum.DataType.FLOAT32,
+                    ),
+                ),
+            ],
+        ],
+    )
+    def test_cast_spectrum_data_type_inplace(self, spectrum, dtype, expected):
+        """Tests cast_spectrum_data_type with inplace=True"""
+        original_spectrum = proto_data.Spectrum()
+        original_spectrum.CopyFrom(spectrum)
+
+        result = cast_spectrum_data_type(spectrum, dtype, inplace=True)
+
+        assert result == None
+        assert spectrum == expected
+        # inplace = True -> spectrum should change
+        assert spectrum != original_spectrum
+
+    @pytest.mark.parametrize(
+        ["measurement", "dtype", "expected"],
+        [
+            [  # CASE 1
+                proto_data.Measurement(
+                    data=[
+                        proto_data.Spectrum(
+                            channel_id=1,
+                            spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                            data_type=proto_data.Spectrum.DataType.FLOAT32,
+                            data=convert_iterable_to_spectrum_data(
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT32
+                            ),
+                        )
+                    ],
+                    quaternion=[1, 2, 3, 4],
+                ),
+                proto_data.Spectrum.DataType.INT16,
+                proto_data.Measurement(
+                    data=[
+                        proto_data.Spectrum(
+                            channel_id=1,
+                            spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                            data_type=proto_data.Spectrum.DataType.INT16,
+                            data=convert_iterable_to_spectrum_data(
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.INT16
+                            ),
+                        )
+                    ],
+                    quaternion=[1, 2, 3, 4],
+                ),
+            ],
+            [  # CASE 2: multiple spectrums with different data and spectrum types
+                proto_data.Measurement(
+                    data=[
+                        proto_data.Spectrum(
+                            channel_id=1,
+                            spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                            data_type=proto_data.Spectrum.DataType.INT16,
+                            data=convert_iterable_to_spectrum_data(
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.INT16
+                            ),
+                        ),
+                        proto_data.Spectrum(
+                            channel_id=2,
+                            spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                            data_type=proto_data.Spectrum.DataType.INT8,
+                            data=convert_iterable_to_spectrum_data(
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.INT8
+                            ),
+                        ),
+                        proto_data.Spectrum(
+                            channel_id=0,
+                            spectrum_type=proto_data.Spectrum.SpectrumType.ELEVATION,
+                            data_type=proto_data.Spectrum.DataType.INT8,
+                            data=convert_iterable_to_spectrum_data(
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.INT8
+                            ),
+                        ),
+                        proto_data.Spectrum(
+                            channel_id=0,
+                            spectrum_type=proto_data.Spectrum.SpectrumType.AZIMUTH,
+                            data_type=proto_data.Spectrum.DataType.FLOAT32,
+                            data=convert_iterable_to_spectrum_data(
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT32
+                            ),
+                        ),
+                    ],
+                    quaternion=[1, 2, 3, 4],
+                ),
+                proto_data.Spectrum.DataType.FLOAT32,
+                proto_data.Measurement(
+                    data=[
+                        proto_data.Spectrum(
+                            channel_id=1,
+                            spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                            data_type=proto_data.Spectrum.DataType.FLOAT32,
+                            data=convert_iterable_to_spectrum_data(
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT32
+                            ),
+                        ),
+                        proto_data.Spectrum(
+                            channel_id=2,
+                            spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                            data_type=proto_data.Spectrum.DataType.FLOAT32,
+                            data=convert_iterable_to_spectrum_data(
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT32
+                            ),
+                        ),
+                        proto_data.Spectrum(
+                            channel_id=0,
+                            spectrum_type=proto_data.Spectrum.SpectrumType.ELEVATION,
+                            data_type=proto_data.Spectrum.DataType.FLOAT32,
+                            data=convert_iterable_to_spectrum_data(
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT32
+                            ),
+                        ),
+                        proto_data.Spectrum(
+                            channel_id=0,
+                            spectrum_type=proto_data.Spectrum.SpectrumType.AZIMUTH,
+                            data_type=proto_data.Spectrum.DataType.FLOAT32,
+                            data=convert_iterable_to_spectrum_data(
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT32
+                            ),
+                        ),
+                    ],
+                    quaternion=[1, 2, 3, 4],
+                ),
+            ],
+        ],
+    )
+    def test_cast_all_spectrums_in_measurement(self, measurement, dtype, expected):
+        """Tests cast_all_spectrums_in_measurement with inplace=False"""
+        original_measurement = proto_data.Measurement()
+        original_measurement.CopyFrom(measurement)
+
+        result = cast_all_spectrums_in_measurement(measurement, dtype)
+
+        # assert result == None
+        assert result == expected
+        # inplace = False -> spectrum shouldn't change
+        assert measurement == original_measurement
+
+    @pytest.mark.parametrize(
+        ["measurement", "dtype", "expected"],
+        [
+            [  # CASE 1
+                proto_data.Measurement(
+                    data=[
+                        proto_data.Spectrum(
+                            channel_id=1,
+                            spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                            data_type=proto_data.Spectrum.DataType.FLOAT32,
+                            data=convert_iterable_to_spectrum_data(
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT32
+                            ),
+                        )
+                    ],
+                    quaternion=[1, 2, 3, 4],
+                ),
+                proto_data.Spectrum.DataType.INT16,
+                proto_data.Measurement(
+                    data=[
+                        proto_data.Spectrum(
+                            channel_id=1,
+                            spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                            data_type=proto_data.Spectrum.DataType.INT16,
+                            data=convert_iterable_to_spectrum_data(
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.INT16
+                            ),
+                        )
+                    ],
+                    quaternion=[1, 2, 3, 4],
+                ),
+            ],
+            [  # CASE 2: multiple spectrums with different data and spectrum types
+                proto_data.Measurement(
+                    data=[
+                        proto_data.Spectrum(
+                            channel_id=1,
+                            spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                            data_type=proto_data.Spectrum.DataType.INT16,
+                            data=convert_iterable_to_spectrum_data(
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.INT16
+                            ),
+                        ),
+                        proto_data.Spectrum(
+                            channel_id=2,
+                            spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                            data_type=proto_data.Spectrum.DataType.INT8,
+                            data=convert_iterable_to_spectrum_data(
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.INT8
+                            ),
+                        ),
+                        proto_data.Spectrum(
+                            channel_id=0,
+                            spectrum_type=proto_data.Spectrum.SpectrumType.ELEVATION,
+                            data_type=proto_data.Spectrum.DataType.INT8,
+                            data=convert_iterable_to_spectrum_data(
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.INT8
+                            ),
+                        ),
+                        proto_data.Spectrum(
+                            channel_id=0,
+                            spectrum_type=proto_data.Spectrum.SpectrumType.AZIMUTH,
+                            data_type=proto_data.Spectrum.DataType.FLOAT32,
+                            data=convert_iterable_to_spectrum_data(
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT32
+                            ),
+                        ),
+                    ],
+                    quaternion=[1, 2, 3, 4],
+                ),
+                proto_data.Spectrum.DataType.FLOAT32,
+                proto_data.Measurement(
+                    data=[
+                        proto_data.Spectrum(
+                            channel_id=1,
+                            spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                            data_type=proto_data.Spectrum.DataType.FLOAT32,
+                            data=convert_iterable_to_spectrum_data(
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT32
+                            ),
+                        ),
+                        proto_data.Spectrum(
+                            channel_id=2,
+                            spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                            data_type=proto_data.Spectrum.DataType.FLOAT32,
+                            data=convert_iterable_to_spectrum_data(
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT32
+                            ),
+                        ),
+                        proto_data.Spectrum(
+                            channel_id=0,
+                            spectrum_type=proto_data.Spectrum.SpectrumType.ELEVATION,
+                            data_type=proto_data.Spectrum.DataType.FLOAT32,
+                            data=convert_iterable_to_spectrum_data(
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT32
+                            ),
+                        ),
+                        proto_data.Spectrum(
+                            channel_id=0,
+                            spectrum_type=proto_data.Spectrum.SpectrumType.AZIMUTH,
+                            data_type=proto_data.Spectrum.DataType.FLOAT32,
+                            data=convert_iterable_to_spectrum_data(
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT32
+                            ),
+                        ),
+                    ],
+                    quaternion=[1, 2, 3, 4],
+                ),
+            ],
+        ],
+    )
+    def test_cast_all_spectrums_in_measurement_inplace(
+        self, measurement, dtype, expected
+    ):
+        """Tests cast_all_spectrums_in_measurement with inplace=True"""
+        original_measurement = proto_data.Measurement()
+        original_measurement.CopyFrom(measurement)
+
+        result = cast_all_spectrums_in_measurement(measurement, dtype, inplace=True)
+
+        assert result == None
+        assert measurement == expected
+        # inplace = True -> spectrum should change
+        assert measurement != original_measurement
 
 
 class TestSpectrum:
