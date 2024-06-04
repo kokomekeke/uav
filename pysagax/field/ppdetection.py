@@ -171,7 +171,7 @@ class PPDetection(Loop):
         )
 
         # can't do detection or SNR calculation without magnitude spectrum or roi masks
-        if not len(magnitude_spectrum.data) or not len(self._current_config.roi):
+        if magnitude_spectrum is None or not len(self._current_config.roi):
             return detections
 
         # run roi detection for each segment of the roi mask
