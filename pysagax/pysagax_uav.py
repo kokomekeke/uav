@@ -296,8 +296,6 @@ def set_default_config(ctx, param, conf_path):
 
 def validate_spectrogram_mode_and_path(ctx, param, path):
     mode = ctx.params.get("spectrogram_mode")
-    print(ctx.params)
-    print("mode", mode, "path", path, "type", type(path))
     if mode in ["record", "playback"] and path is None:
         raise click.BadParameter(
             "spectrogram-path is required when mode is 'record' or 'playback'."
