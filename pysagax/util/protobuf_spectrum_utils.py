@@ -31,11 +31,12 @@ def convert_iterable_to_spectrum_data(
     """
     array_np = np.array(array)
     # Changing float nan, inf and -inf values to integers
-    array_np = np.nan_to_num(array_np,
-                             copy=False,
-                             posinf=np.iinfo(np.int32).max,
-                             neginf=np.iinfo(np.int32).min,
-                            )
+    array_np = np.nan_to_num(
+        array_np,
+        copy=False,
+        posinf=np.iinfo(np.int32).max,
+        neginf=np.iinfo(np.int32).min,
+    )
     return np.fromiter(array_np, PROTOBUF_NUMPY_TYPE_MAPPING[dtype]).tobytes()
 
 
@@ -56,7 +57,7 @@ def cast_spectrum_data_type(
         working_spectrum.CopyFrom(spectrum)
 
     if working_spectrum.data_type != dtype:
-        # Don't do these steps if they're unnecessary 
+        # Don't do these steps if they're unnecessary
         data_np = protobuf_spectrum_to_numpy(spectrum)
         working_spectrum.data = convert_iterable_to_spectrum_data(data_np, dtype)
         working_spectrum.data_type = dtype
@@ -74,7 +75,6 @@ def cast_all_spectrums_in_measurement(
     Converts all the spectrums contained in a protbuf Measurement message to the desired DataType.
     If inplace is True, the given measurement is modified.
     If inplace is False, the given measurement is unchanged, and a new measurement packet is returned.
-
     """
     if inplace:
         working_measurement = measurement
