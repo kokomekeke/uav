@@ -31,6 +31,7 @@ from pysagax.field.csstreamer import CSStreamer
 from pysagax.field.heading import Heading
 from pysagax.field.interpreter import Interpreter
 from pysagax.field.ppheadingsync import PPHeadingSync
+from pysagax.field.ppspectrogramrecorder import PPSpectrogramRecorder
 from pysagax.field.ppdetection import PPDetection
 from pysagax.field.ppevents import PPEvents
 from pysagax.field.ppstreamprep import PPStreamPreparation
@@ -81,6 +82,7 @@ class Commander:
         self._post_proc_responses_q = self._manager.Queue()
         self._post_proc_to_scan_engine_q = self._manager.Queue()
         self._pp_heading_sync_input_q = self._manager.Queue()
+        self._pp_spectrogram_recorder_input_q = self._manager.Queue()
         self._pp_detection_input_q = self._manager.Queue()
         self._pp_events_input_q = self._manager.Queue()
         self._pp_streamprep_input_q = self._manager.Queue()
@@ -121,6 +123,7 @@ class Commander:
         self._cs_command = CSCommand(level=level, address=cs_host, port=cs_command_port)
 
         self._pp_heading_sync = PPHeadingSync(level=level)
+        self._pp_spectrogram_recorder = PPSpectrogramRecorder(level=level)
         self._pp_detection = PPDetection(level=level)
         self._pp_events = PPEvents(level=level)
         self._pp_streamprep = PPStreamPreparation(level=level)
@@ -179,9 +182,14 @@ class Commander:
         pp_heading_sync_future = self._pool.submit(
             self._pp_heading_sync,
             self._pp_heading_sync_input_q,
-            self._pp_detection_input_q,
+            self._pp_spectrogram_recorder_input_q,
             self._heading_data_q,
             self._latest_config_id_value,
+        )
+        pp_file_stream_future = self._pool.submit(
+            self._pp_spectrogram_recorder,
+            self._pp_spectrogram_recorder_input_q,
+            self._pp_detection_input_q,
         )
         pp_detection_future = self._pool.submit(
             self._pp_detection,
@@ -229,6 +237,7 @@ class Commander:
                     cs_command_future,
                     streamer_future,
                     pp_heading_sync_future,
+                    pp_file_stream_future,
                     pp_detection_future,
                     pp_events_future,
                     pp_streamprep_future,
