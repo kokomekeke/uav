@@ -64,6 +64,8 @@ class Commander:
         source_device_path: str,
         auto_config: str,
         cs_reset_on_fail: bool,
+        spectrogram_mode: str,
+        spectrogram_path: str,
     ) -> None:
 
         self._logger = getLogger("Commander")
@@ -123,7 +125,7 @@ class Commander:
         self._cs_command = CSCommand(level=level, address=cs_host, port=cs_command_port)
 
         self._pp_heading_sync = PPHeadingSync(level=level)
-        self._pp_spectrogram_recorder = PPSpectrogramRecorder(level=level)
+        self._pp_spectrogram_recorder = PPSpectrogramRecorder(level=level, mode=spectrogram_mode, path=spectrogram_path)
         self._pp_detection = PPDetection(level=level)
         self._pp_events = PPEvents(level=level)
         self._pp_streamprep = PPStreamPreparation(level=level)
@@ -288,6 +290,17 @@ def set_default_config(ctx, param, conf_path):
     return conf_path
 
 
+def validate_spectrogram_mode_and_path(ctx, param, path):
+    mode = ctx.params.get("spectrogram_mode")
+    print(ctx.params)
+    print("mode", mode, "path", path, "type", type(path))
+    if mode in ["record", "playback"] and path is None:
+        raise click.BadParameter(
+            "spectrogram-path is required when mode is 'record' or 'playback'."
+        )
+    return path
+
+
 @click.command()
 @click.version_option(version=__version__, prog_name="PysagaxUAV")
 @click.option(
@@ -407,6 +420,18 @@ def set_default_config(ctx, param, conf_path):
     help="JSON-encoded protobuf configuration command",
 )
 @click.option('--cs_reset-on-fail', is_flag=True, help="Reset CS source on command fail")
+@click.option(
+    "--spectrogram-mode",
+    type=click.Choice(["pass", "record", "playback"]),
+    default="pass",
+    help="Spectrogram file streamer mode. The --spectrogram-path option is required when mode is 'record' or 'playback'.",
+)
+@click.option(
+    "--spectrogram-path",
+    type=click.Path(),
+    callback=validate_spectrogram_mode_and_path,
+    help="File path for spectrogram recording or playback.",
+)
 def main(
     level: str,
     disk_path: str,
@@ -427,6 +452,8 @@ def main(
     source_device_path: str,
     auto_config: str,
     cs_reset_on_fail: bool,
+    spectrogram_mode: str,
+    spectrogram_path: str,
 ) -> None:
     """Root command of CLI"""
 
@@ -459,7 +486,9 @@ def main(
         source_device_type,
         source_device_path,
         auto_config,
-        cs_reset_on_fail
+        cs_reset_on_fail,
+        spectrogram_mode,
+        spectrogram_path,
     )
     commander.start()
 

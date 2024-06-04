@@ -22,15 +22,18 @@ class PPSpectrogramRecorder(Loop):
     Background process for recording/replaying Measurement stream.
     """
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, 
+        mode: str,
+        path: str,
+        *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._queue_in: Optional[Queue] = None
         self._queue_out: Optional[Queue] = None
 
-        self.mode = Mode.PASS
-        # self.mode = Mode.RECORD
-        # self.mode = Mode.PLAYBACK
-        self.path = "pysagax/gany/proto_file_stream/test.protorec"
+        self.mode = Mode[mode.upper()]
+        self.path = path
+        #TODO: in recording mode use timestamped file names i guess
+        self._logger.info(f"Initialized with mode='{self.mode.name}' and path='{path}'.")
 
     def __call__(
         self,
@@ -49,7 +52,7 @@ class PPSpectrogramRecorder(Loop):
         try:
             # TODO new_path, new_mode  = command_queue.get_nowait
             new_mode = self.mode
-            new_path = "pysagax/gany/proto_file_stream/test.protorec"
+            new_path = self.path
             pass
         except queue.Empty:
             return

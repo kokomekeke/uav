@@ -92,9 +92,21 @@ class FileStreamer:
         self._write(packet)
 
     def read_all(self):
+        #TODO: make random access-like reading possigle:
+        #TODO: -seekable
+        #TODO: -after opening, create an index of the start of each timestamp-time-packet triplet
+        #TODO: -then make it seekable by time or by packet number.
         if self.mode != "playback":
             raise Exception(f"Can't use read_all() in {self.mode} mode")
-        pass
+        time_list = []
+        packet_list = []
+        while True:
+            time, packet = self._read()
+            if packet is None:
+                break
+            packet_list.append(packet)
+            time_list.append(time)
+        return time_list, packet_list
 
     def close(self):
         self.file_io.close()
