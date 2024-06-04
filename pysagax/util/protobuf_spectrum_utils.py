@@ -23,13 +23,68 @@ def protobuf_spectrum_to_numpy(spectrum: proto_data.Spectrum) -> np.ndarray:
 
 def convert_iterable_to_spectrum_data(
     array: np.ndarray | list | ValuesView,
-    type: proto_data.Spectrum.DataType.ValueType = proto_data.Spectrum.DataType.FLOAT32,
-):
+    dtype: proto_data.Spectrum.DataType.ValueType = proto_data.Spectrum.DataType.FLOAT32,
+) -> bytes:
     """
     Converts numpy array, list or dict_values
     to bytes that can be added to proto_data.Spectrum.data.
     """
-    return np.fromiter(array, PROTOBUF_NUMPY_TYPE_MAPPING[type]).tobytes()
+    array_np = np.array(array)
+    # Changing float nan, inf and -inf values to integers
+    array_np = np.nan_to_num(
+        array_np,
+        copy=False,
+        posinf=np.iinfo(np.int32).max,
+        neginf=np.iinfo(np.int32).min,
+    )
+    return np.fromiter(array_np, PROTOBUF_NUMPY_TYPE_MAPPING[dtype]).tobytes()
+
+
+def cast_spectrum_data_type(
+    spectrum: proto_data.Spectrum,
+    dtype: proto_data.Spectrum.DataType.ValueType,
+    inplace: bool = False,
+) -> Optional[proto_data.Spectrum]:
+    """
+    Converts the data field of a protobuf Spectrum message to the desired DataType.
+    If inplace is True, the given spectrum is modified.
+    If inplace is False, the given spectrum is unchanged, and a different spectrum message is returned
+    """
+    if inplace:
+        working_spectrum = spectrum
+    else:
+        working_spectrum = proto_data.Spectrum()
+        working_spectrum.CopyFrom(spectrum)
+
+    if working_spectrum.data_type != dtype:
+        # Don't do these steps if they're unnecessary
+        data_np = protobuf_spectrum_to_numpy(spectrum)
+        working_spectrum.data = convert_iterable_to_spectrum_data(data_np, dtype)
+        working_spectrum.data_type = dtype
+
+    if not inplace:
+        return working_spectrum
+
+
+def cast_all_spectrums_in_measurement(
+    measurement: proto_data.Measurement,
+    dtype=proto_data.Spectrum.DataType.ValueType,
+    inplace: bool = False,
+) -> Optional[proto_data.Measurement]:
+    """
+    Converts all the spectrums contained in a protbuf Measurement message to the desired DataType.
+    If inplace is True, the given measurement is modified.
+    If inplace is False, the given measurement is unchanged, and a new measurement packet is returned.
+    """
+    if inplace:
+        working_measurement = measurement
+    else:
+        working_measurement = proto_data.Measurement()
+        working_measurement.CopyFrom(measurement)
+    for i in range(len(working_measurement.data)):
+        cast_spectrum_data_type(working_measurement.data[i], dtype, inplace=True)
+    if not inplace:
+        return working_measurement
 
 
 class Spectrum:

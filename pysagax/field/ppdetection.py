@@ -171,7 +171,7 @@ class PPDetection(Loop):
         )
 
         # can't do detection or SNR calculation without magnitude spectrum or roi masks
-        if not len(magnitude_spectrum.data) or not len(self._current_config.roi):
+        if magnitude_spectrum is None or not len(self._current_config.roi):
             return detections
 
         # run roi detection for each segment of the roi mask
@@ -301,8 +301,9 @@ class PPDetection(Loop):
         try:
             conf_request = self._conf_queue_in.get(timeout=0, block=False)
             self._protobuf_to_log(conf_request)
-            self._current_config = conf_request
-            self._conf_queue_out.put(None)
+            self._current_config = conf_request.config.pp
+            response = proto_cmd.Response(config=conf_request.config)
+            self._conf_queue_out.put(response)
         except queue.Empty:
             pass
 

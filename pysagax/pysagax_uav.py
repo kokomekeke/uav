@@ -31,6 +31,7 @@ from pysagax.field.csstreamer import CSStreamer
 from pysagax.field.heading import Heading
 from pysagax.field.interpreter import Interpreter
 from pysagax.field.ppheadingsync import PPHeadingSync
+from pysagax.field.ppspectrogramrecorder import PPSpectrogramRecorder
 from pysagax.field.ppdetection import PPDetection
 from pysagax.field.ppevents import PPEvents
 from pysagax.field.ppstreamprep import PPStreamPreparation
@@ -64,11 +65,14 @@ class Commander:
         source_device_path: str,
         auto_config: str,
         cs_reset_on_fail: bool,
+        spectrogram_mode: str,
+        spectrogram_path: str,
+        spectrogram_recording_dtype: str,
     ) -> None:
 
         self._logger = getLogger("Commander")
         self._manager = multiprocessing.Manager()
-        self._pool = ProcessPoolExecutor(max_workers=12)
+        self._pool = ProcessPoolExecutor(max_workers=14)
 
         self._commands_q = self._manager.Queue(maxsize=1)
         self._responses_q = self._manager.Queue(maxsize=1)
@@ -82,6 +86,7 @@ class Commander:
         self._post_proc_responses_q = self._manager.Queue()
         self._post_proc_to_scan_engine_q = self._manager.Queue()
         self._pp_heading_sync_input_q = self._manager.Queue()
+        self._pp_spectrogram_recorder_input_q = self._manager.Queue()
         self._pp_detection_input_q = self._manager.Queue()
         self._pp_events_input_q = self._manager.Queue()
         self._pp_streamprep_input_q = self._manager.Queue()
@@ -121,6 +126,12 @@ class Commander:
         self._cs_command = CSCommand(level=level, address=cs_host, port=cs_command_port)
 
         self._pp_heading_sync = PPHeadingSync(level=level)
+        self._pp_spectrogram_recorder = PPSpectrogramRecorder(
+            level=level,
+            mode=spectrogram_mode,
+            path=spectrogram_path,
+            recording_dtype=spectrogram_recording_dtype,
+        )
         self._pp_detection = PPDetection(level=level)
         self._pp_events = PPEvents(level=level)
         self._pp_streamprep = PPStreamPreparation(level=level)
@@ -179,9 +190,14 @@ class Commander:
         pp_heading_sync_future = self._pool.submit(
             self._pp_heading_sync,
             self._pp_heading_sync_input_q,
-            self._pp_detection_input_q,
+            self._pp_spectrogram_recorder_input_q,
             self._heading_data_q,
             self._latest_config_id_value,
+        )
+        pp_file_stream_future = self._pool.submit(
+            self._pp_spectrogram_recorder,
+            self._pp_spectrogram_recorder_input_q,
+            self._pp_detection_input_q,
         )
         pp_detection_future = self._pool.submit(
             self._pp_detection,
@@ -229,6 +245,7 @@ class Commander:
                     cs_command_future,
                     streamer_future,
                     pp_heading_sync_future,
+                    pp_file_stream_future,
                     pp_detection_future,
                     pp_events_future,
                     pp_streamprep_future,
@@ -277,6 +294,15 @@ def set_default_config(ctx, param, conf_path):
         # Can we use the logger instead of print?
         print(f"Config file wasn't found at '{conf_path}'")
     return conf_path
+
+
+def validate_spectrogram_mode_and_path(ctx, param, path):
+    mode = ctx.params.get("spectrogram_mode")
+    if mode in ["record", "playback"] and path is None:
+        raise click.BadParameter(
+            "spectrogram-path is required when mode is 'record' or 'playback'."
+        )
+    return path
 
 
 @click.command()
@@ -406,6 +432,24 @@ def set_default_config(ctx, param, conf_path):
 @click.option(
     "--cs-reset-on-fail", is_flag=True, help="Reset CS source on command fail"
 )
+@click.option(
+    "--spectrogram-mode",
+    type=click.Choice(["pass", "record", "playback"]),
+    default="pass",
+    help="Spectrogram file streamer mode. The --spectrogram-path option is required when mode is 'record' or 'playback'.",
+)
+@click.option(
+    "--spectrogram-path",
+    type=click.Path(),
+    callback=validate_spectrogram_mode_and_path,
+    help="File path for spectrogram recording or playback.",
+)
+@click.option(
+    "--spectrogram-recording-dtype",
+    type=click.Choice(["ORIGINAL", "INT8", "INT16", "FLOAT32"]),
+    default="ORIGINAL",
+    help="Data type to be used for making spectrogram recordings.",
+)
 def main(
     level: str,
     disk_path: str,
@@ -427,6 +471,9 @@ def main(
     source_device_path: str,
     auto_config: str,
     cs_reset_on_fail: bool,
+    spectrogram_mode: str,
+    spectrogram_path: str,
+    spectrogram_recording_dtype: str,
 ) -> None:
     """Root command of CLI"""
 
@@ -461,6 +508,9 @@ def main(
         source_device_path,
         auto_config,
         cs_reset_on_fail,
+        spectrogram_mode,
+        spectrogram_path,
+        spectrogram_recording_dtype,
     )
     commander.start()
 
