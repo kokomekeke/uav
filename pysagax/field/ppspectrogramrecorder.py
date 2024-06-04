@@ -9,11 +9,11 @@ from typing import Any, Optional
 import pysagax.message.data_pb2 as proto_data
 import pysagax.message.heading_pb2 as proto_heading
 from pysagax.message.proto_stream_to_file import FileStreamer
+from pysagax.util.protobuf_spectrum_utils import cast_all_spectrums_in_measurement
 
 from pysagax.common.loop import Loop
 from enum import Enum
 
-# class Mode(Enum):
 Mode = Enum("Mode", ["PASS", "RECORD", "PLAYBACK"])
 
 
@@ -22,18 +22,33 @@ class PPSpectrogramRecorder(Loop):
     Background process for recording/replaying Measurement stream.
     """
 
-    def __init__(self, 
+    def __init__(
+        self,
         mode: str,
         path: str,
-        *args, **kwargs) -> None:
+        recording_dtype: Optional[str] = None,
+        *args,
+        **kwargs,
+    ) -> None:
         super().__init__(*args, **kwargs)
         self._queue_in: Optional[Queue] = None
         self._queue_out: Optional[Queue] = None
+        if recording_dtype is not None and recording_dtype.upper() != "ORIGINAL":
+            self.recording_dtype = proto_data.Spectrum.DataType.Value(
+                recording_dtype.upper()
+            )
+            self._logger.info(
+                f"Spectrogram recording will use {proto_data.Spectrum.DataType.Name(self.recording_dtype)}."
+            )
+        else:
+            self.recording_dtype = None
 
         self.mode = Mode[mode.upper()]
         self.path = path
-        #TODO: in recording mode use timestamped file names i guess
-        self._logger.info(f"Initialized with mode='{self.mode.name}' and path='{path}'.")
+        # TODO: in recording mode use timestamped file names i guess
+        self._logger.info(
+            f"Initialized with mode='{self.mode.name}' and path='{path}'."
+        )
 
     def __call__(
         self,
@@ -100,11 +115,16 @@ class PPSpectrogramRecorder(Loop):
         return packet
 
     def _put_packet(self, packet):
+        self._queue_out.put(packet)
+
         # pushing measurement packet
         if self.mode == Mode.RECORD:
+            if self.recording_dtype is not None:
+                cast_all_spectrums_in_measurement(
+                    packet, self.recording_dtype, inplace=True
+                )
             self._file_streamer.put(packet)
 
-        self._queue_out.put(packet)
         self._logger.debug(f"Record/Playback finished on packet {packet.packet_id}")
 
     def _loop(self) -> None:

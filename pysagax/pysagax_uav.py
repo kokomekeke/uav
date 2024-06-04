@@ -66,11 +66,12 @@ class Commander:
         cs_reset_on_fail: bool,
         spectrogram_mode: str,
         spectrogram_path: str,
+        spectrogram_recording_dtype: str,
     ) -> None:
 
         self._logger = getLogger("Commander")
         self._manager = multiprocessing.Manager()
-        self._pool = ProcessPoolExecutor(max_workers=12)
+        self._pool = ProcessPoolExecutor(max_workers=14)
 
         self._commands_q = self._manager.Queue(maxsize=1)
         self._responses_q = self._manager.Queue(maxsize=1)
@@ -101,9 +102,7 @@ class Commander:
         self._latest_se_proxy = self._manager.dict()
         self._latest_config_id_value = self._manager.Value("i", 0)
 
-        self._communicator = Communicator(
-            level=level, port=command_port
-        )
+        self._communicator = Communicator(level=level, port=command_port)
         self._streamer = Streamer(level=level)
 
         self._interpreter = Interpreter(
@@ -125,7 +124,12 @@ class Commander:
         self._cs_command = CSCommand(level=level, address=cs_host, port=cs_command_port)
 
         self._pp_heading_sync = PPHeadingSync(level=level)
-        self._pp_spectrogram_recorder = PPSpectrogramRecorder(level=level, mode=spectrogram_mode, path=spectrogram_path)
+        self._pp_spectrogram_recorder = PPSpectrogramRecorder(
+            level=level,
+            mode=spectrogram_mode,
+            path=spectrogram_path,
+            recording_dtype=spectrogram_recording_dtype,
+        )
         self._pp_detection = PPDetection(level=level)
         self._pp_events = PPEvents(level=level)
         self._pp_streamprep = PPStreamPreparation(level=level)
@@ -419,7 +423,9 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     show_default=True,
     help="JSON-encoded protobuf configuration command",
 )
-@click.option('--cs_reset-on-fail', is_flag=True, help="Reset CS source on command fail")
+@click.option(
+    "--cs_reset-on-fail", is_flag=True, help="Reset CS source on command fail"
+)
 @click.option(
     "--spectrogram-mode",
     type=click.Choice(["pass", "record", "playback"]),
@@ -431,6 +437,12 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     type=click.Path(),
     callback=validate_spectrogram_mode_and_path,
     help="File path for spectrogram recording or playback.",
+)
+@click.option(
+    "--spectrogram-recording-dtype",
+    type=click.Choice(["ORIGINAL", "INT8", "INT16", "FLOAT32"]),
+    default="ORIGINAL",
+    help="Data type to be used for making spectrogram recordings.",
 )
 def main(
     level: str,
@@ -454,6 +466,7 @@ def main(
     cs_reset_on_fail: bool,
     spectrogram_mode: str,
     spectrogram_path: str,
+    spectrogram_recording_dtype: str,
 ) -> None:
     """Root command of CLI"""
 
@@ -489,6 +502,7 @@ def main(
         cs_reset_on_fail,
         spectrogram_mode,
         spectrogram_path,
+        spectrogram_recording_dtype,
     )
     commander.start()
 
