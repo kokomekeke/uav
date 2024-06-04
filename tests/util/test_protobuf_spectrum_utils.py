@@ -161,6 +161,27 @@ class TestSpectrumCasting:
                     ),
                 ),
             ],
+            [  # CASE 4: same input and output dtype
+                proto_data.Spectrum(
+                    channel_id=1,
+                    spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                    data_type=proto_data.Spectrum.DataType.INT16,
+                    data=convert_iterable_to_spectrum_data(
+                        [i / 10 for i in range(1000)],
+                        proto_data.Spectrum.DataType.INT16,
+                    ),
+                ),
+                proto_data.Spectrum.DataType.INT16,
+                proto_data.Spectrum(
+                    channel_id=1,
+                    spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                    data_type=proto_data.Spectrum.DataType.INT16,
+                    data=convert_iterable_to_spectrum_data(
+                        [np.floor(i / 10) for i in range(1000)],
+                        proto_data.Spectrum.DataType.INT16,
+                    ),
+                ),
+            ],
         ],
     )
     def test_cast_spectrum_data_type(self, spectrum, dtype, expected):

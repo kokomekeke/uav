@@ -47,9 +47,13 @@ def cast_spectrum_data_type(
     else:
         working_spectrum = proto_data.Spectrum()
         working_spectrum.CopyFrom(spectrum)
-    data_np = protobuf_spectrum_to_numpy(spectrum)
-    working_spectrum.data = convert_iterable_to_spectrum_data(data_np, dtype)
-    working_spectrum.data_type = dtype
+
+    if working_spectrum.data_type != dtype:
+        # Don't do these steps if they're unnecessary 
+        data_np = protobuf_spectrum_to_numpy(spectrum)
+        working_spectrum.data = convert_iterable_to_spectrum_data(data_np, dtype)
+        working_spectrum.data_type = dtype
+
     if not inplace:
         return working_spectrum
 
