@@ -311,6 +311,8 @@ message Command {
 
         // Recording length
         uint64 rec_length_secs = 9;
+
+        FreqList calibration_freqs = 11;
     }
 }
 
