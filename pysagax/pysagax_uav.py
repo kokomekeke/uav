@@ -54,6 +54,7 @@ class Commander:
         cs_command_config_timeout: int,
         cs_command_instruction_timeout: int,
         calibration_interval_seconds: float,
+        calibration_resolution_bw: float,
         heading_host: str,
         heading_control_port: int,
         heading_stream_port: int,
@@ -117,6 +118,7 @@ class Commander:
             cs_command_config_timeout,
             cs_command_instruction_timeout,
             calibration_interval_seconds,
+            calibration_resolution_bw,
             source_device_type,
             source_device_path,
             auto_config,
@@ -364,6 +366,12 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     show_default=True,
 )
 @click.option(
+    "--calibration-resolution-bw",
+    help="Resolution bandwidth of calibration [Hz]",
+    default=0.5e6,
+    show_default=True,
+)
+@click.option(
     "--heading-host",
     help="Hostname of Heading module (PySAGAX-Heading)",
     default="127.0.0.1",
@@ -459,6 +467,7 @@ def main(
     cs_command_config_timeout: int,
     cs_command_instruction_timeout: int,
     calibration_interval_seconds: float,
+    calibration_resolution_bw: float,
     cs_stream_port: int,
     heading_host: str,
     heading_control_port: int,
@@ -497,6 +506,7 @@ def main(
         cs_command_config_timeout,
         cs_command_instruction_timeout,
         calibration_interval_seconds,
+        calibration_resolution_bw,
         heading_host,
         heading_control_port,
         heading_stream_port,
