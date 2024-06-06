@@ -1,12 +1,16 @@
 import enum
 import logging
-from multiprocessing.managers import DictProxy
+import math
+import pickle
 import queue
+import time
+from multiprocessing.managers import DictProxy
 from queue import Queue
 from typing import Any, Generator, Optional, overload
 
 import google.protobuf.json_format
 from transitions import Machine
+
 import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.data_pb2 as proto_data
 from pysagax.common.loop import Loop
@@ -56,6 +60,8 @@ class FreqRangeInternal:
         https://sagaxcommunications.atlassian.net/wiki/spaces/ALTS/pages/245071917/Scan+Engine#Scan-algoritmus
         """
         number_of_jumps = -int(-self.bandwidth // useful_bandwidth)  # ceil
+        if number_of_jumps == 0:
+            return None
         jump_bandwidth = self.bandwidth / float(number_of_jumps)
         for i in range(number_of_jumps):
             freq = self.start + (i + 0.5) * jump_bandwidth
@@ -70,10 +76,11 @@ class FreqRangeInternal:
 class ScanEngineState(enum.Enum):
     INIT = 0
     MANUAL = 1
-    SCANNING_IDLE = 2
-    TRACKING_IDLE = 3
-    SCANNING_IN_PROGRESS = 4
-    TRACKING_IN_PROGRESS = 5
+    CALIBRATION = 2
+    SCANNING_IDLE = 3
+    TRACKING_IDLE = 4
+    SCANNING_IN_PROGRESS = 5
+    TRACKING_IN_PROGRESS = 6
 
 
 class StateMachine(Machine):
@@ -107,6 +114,9 @@ class ScanEngine(Loop):
 
     @overload
     def launch(self, *args, **kwargs) -> bool: ...  # type: ignore
+
+    @overload
+    def launch_calibration(self, *args, **kwargs) -> bool: ...  # type: ignore
 
     @overload
     def done(self, *args, **kwargs) -> bool: ...  # type: ignore
@@ -206,6 +216,32 @@ class ScanEngine(Loop):
             "conditions": "check_cs_response",
         },
         {
+            "trigger": "launch_calibration",
+            "source": ScanEngineState.TRACKING_IDLE,
+            "dest": ScanEngineState.CALIBRATION,
+            "prepare": "command_calibration",
+            "conditions": "check_cs_response",
+        },
+        {
+            "trigger": "launch_calibration",
+            "source": ScanEngineState.SCANNING_IDLE,
+            "dest": ScanEngineState.CALIBRATION,
+            "prepare": "command_calibration",
+            "conditions": "check_cs_response",
+        },
+        {
+            "trigger": "launch_calibration",
+            "source": ScanEngineState.MANUAL,
+            "dest": ScanEngineState.CALIBRATION,
+            "prepare": "command_calibration",
+            "conditions": "check_cs_response",
+        },
+        {
+            "trigger": "done",
+            "source": ScanEngineState.CALIBRATION,
+            "dest": ScanEngineState.INIT,
+        },
+        {
             "trigger": "done",
             "source": ScanEngineState.TRACKING_IN_PROGRESS,
             "dest": ScanEngineState.TRACKING_IDLE,
@@ -248,8 +284,10 @@ class ScanEngine(Loop):
         scanning_useful_bandwidth: int,
         scanning_averaging_burst_count: int,
         scanning_target_resolution_bandwidth: int,
-        timeout_config_ms: int = 30000,
+        timeout_config_ms: int = -1,
         timeout_instruction_ms: int = 1000,
+        calibration_interval_seconds: float = 300.0,
+        calibration_resolution_bw: float = 0.5e6,
         source_device_type: str = "",
         source_device_path: str = "",
         auto_config: str = "",
@@ -291,12 +329,12 @@ class ScanEngine(Loop):
             initial=ScanEngineState.INIT,
             queued=True,
             auto_transitions=False,
+            ignore_invalid_triggers=True,
         )
         self._latest_cs_response: Optional[proto_cmd.Response] = None
         self._configured_freq_ranges: list[FreqRangeInternal] = []
         self._configured_tracking_frequency = 0.0
         self._configured_tracking_bandwidth = 0.0
-        # self._machine.generate_pyi()
         self._expected_data_count: int = 0
         self._received_data_count: int = 0
         self._config_cs_timeout = timeout_config_ms
@@ -318,6 +356,36 @@ class ScanEngine(Loop):
                     f"Malformed Command.Config Protobuf JSON in auto config param: {self._auto_config}"
                 )
         self._reset_on_error = reset_on_error
+        self._last_calibration_timestamp: float = 0.0
+        self._calibration_interval_seconds: float = calibration_interval_seconds
+        self._calibration_freq_list = proto_cmd.FreqList()
+        self._calibration_resolution_bw = calibration_resolution_bw
+
+    def to_calibration_resolution_bw_raster(
+        self, start: float, stop: float
+    ) -> tuple[float, float]:
+        """
+        Aligns frequency ranges to calibration raster in a way that the output of the
+        scan algorithm on calibration frequencies will result in a list of center freqs
+        exactly on this raster
+        """
+        return (
+            (math.floor(start / self._calibration_resolution_bw) - 0.5)
+            * self._calibration_resolution_bw,
+            (math.ceil(stop / self._calibration_resolution_bw) + 0.5)
+            * self._calibration_resolution_bw,
+        )
+
+    def needs_calibration(self) -> bool:
+        """
+        This is used as a condition to tell if the FSM should go to a calibration state or not
+        """
+        if self._calibration_interval_seconds <= 0:
+            return False
+        return (
+            self._last_calibration_timestamp + self._calibration_interval_seconds
+            <= time.time()
+        )
 
     def to_supported_iq_rate(self, iq: int) -> int:
         """
@@ -359,6 +427,9 @@ class ScanEngine(Loop):
         See https://sagaxcommunications.atlassian.net/wiki/spaces/ALTS/pages/245071917/Scan+Engine#Scan-algoritmus
         """
         freq_list = proto_cmd.FreqList()
+        freq_list.iq_rate = int(self._iq_rate)
+        self._calibration_freq_list = proto_cmd.FreqList()
+        self._calibration_freq_list.iq_rate = int(self._iq_rate)
         if not scan_conf.ranges:
             self._logger.warning("No scan ranges defined!")
             return freq_list
@@ -371,12 +442,18 @@ class ScanEngine(Loop):
                 freq_ranges_united[-1].merge(ran)
             else:
                 freq_ranges_united.append(ran)
-        freq_list.iq_rate = int(self._iq_rate)
         for ran in freq_ranges_united:
             freq_list.center_freqs.extend(
                 ran.center_freq_list(
                     self._useful_bandwidth, repeat=self._averaging_burst_count
                 )
+            )
+            calib_ran = FreqRangeInternal()
+            calib_ran.start, calib_ran.stop = self.to_calibration_resolution_bw_raster(
+                ran.start, ran.stop
+            )
+            self._calibration_freq_list.center_freqs.extend(
+                calib_ran.center_freq_list(self._calibration_resolution_bw, repeat=1)
             )
         self._configured_freq_ranges = freq_ranges_united
         self._expected_data_count = len(freq_list.center_freqs)
@@ -458,6 +535,7 @@ class ScanEngine(Loop):
         command.config.cs.source_path = self._source_device_path
         self._last_config_command = se_cmd
         self._cs_commands_q.put((command, self._config_cs_timeout))
+        self._last_calibration_timestamp = 0  # trigger calibration
 
     def configure_tracking(self, se_cmd: proto_cmd.Command) -> None:
         """
@@ -470,25 +548,62 @@ class ScanEngine(Loop):
         command.instruction = proto_cmd.CONFIG
         command.kind = proto_cmd.Command.WRITE
 
-        tracking_bw = self.to_supported_iq_rate(
-            int(se_cmd.config.se.tracking.bandwidth / self._useful_bandwidth_ratio) * 2
+        calib_range = FreqRangeInternal()
+        if len(se_cmd.config.se.tracking.signals) == 1:
+            signal = se_cmd.config.se.tracking.signals[0]
+            tracking_bw = self.to_supported_iq_rate(
+                int(signal.bandwidth / self._useful_bandwidth_ratio) * 2
+            )
+
+            # Do not switch to lower IQ rate for tracking, only higher if needed
+            command.config.cs.iq_rate = max(tracking_bw, self._iq_rate)
+
+            # Tracked signal should be on the center of the positive side
+            # of the baseband signal
+            command.config.cs.center_frequency = (
+                signal.frequency - command.config.cs.iq_rate / 4
+            )
+            self._configured_tracking_frequency = signal.frequency
+            self._configured_tracking_bandwidth = signal.bandwidth
+            calib_range.start = (
+                command.config.cs.center_frequency - command.config.cs.iq_rate / 2
+            )
+            calib_range.stop = (
+                command.config.cs.center_frequency + command.config.cs.iq_rate / 2
+            )
+        elif len(se_cmd.config.se.tracking.signals) >= 2:
+            signal_min = min(
+                signal.frequency - signal.bandwidth
+                for signal in se_cmd.config.se.tracking.signals
+            )
+            signal_max = max(
+                signal.frequency + signal.bandwidth
+                for signal in se_cmd.config.se.tracking.signals
+            )
+            tracking_bw = self.to_supported_iq_rate(
+                int((signal_max - signal_min) * 1.25)
+            )
+
+            # Do not switch to lower IQ rate for tracking, only higher if needed
+            command.config.cs.iq_rate = max(tracking_bw, self._iq_rate)
+            command.config.cs.center_frequency = (signal_min + signal_max) / 2
+            calib_range.start, calib_range.stop = signal_min, signal_max
+
+        calib_range.start, calib_range.stop = self.to_calibration_resolution_bw_raster(
+            calib_range.start, calib_range.stop
+        )
+        self._calibration_freq_list = proto_cmd.FreqList()
+        self._calibration_freq_list.iq_rate = command.config.cs.iq_rate
+        self._calibration_freq_list.center_freqs.extend(
+            calib_range.center_freq_list(self._calibration_resolution_bw, repeat=1)
         )
 
-        # Do not switch to lower IQ rate for tracking, only higher if needed
-        command.config.cs.iq_rate = max(tracking_bw, self._iq_rate)
-
-        # Tracked signal should be on the center of the positive side
-        # of the baseband signal
-        command.config.cs.center_frequency = (
-            se_cmd.config.se.tracking.frequency - command.config.cs.iq_rate / 4
-        )
         command.config.cs.source_type = self._source_device_type
         command.config.cs.source_path = self._source_device_path
 
-        self._configured_tracking_frequency = se_cmd.config.se.tracking.frequency
-        self._configured_tracking_bandwidth = se_cmd.config.se.tracking.bandwidth
         self._last_config_command = se_cmd
         self._cs_commands_q.put((command, self._config_cs_timeout))
+        self._last_calibration_timestamp = 0  # trigger calibration
 
     def configure_manual(self, se_cmd: proto_cmd.Command) -> None:
         """
@@ -515,6 +630,17 @@ class ScanEngine(Loop):
         """
         assert self._cs_commands_q is not None
         self._cs_commands_q.put((cs_command, self._instruction_cs_timeout))
+
+    def command_calibration(self):
+        """
+        Action on the SCANNING_IDLE / TRACKING_IDLE / MANUAL -> CALIBRATION transition.
+        Sends the CS_SCAN_START command to CoreService.
+        """
+        assert self._cs_commands_q is not None
+        command = proto_cmd.Command()
+        command.instruction = proto_cmd.CS_CALIBRATE_START
+        command.calibration_freqs.CopyFrom(self._calibration_freq_list)
+        self._cs_commands_q.put((command, self._instruction_cs_timeout))
 
     def command_scanning(self):
         """
@@ -552,8 +678,9 @@ class ScanEngine(Loop):
             ScanEngineState.TRACKING_IN_PROGRESS: proto_cmd.ScanEngineConfig.TRACKING,
         }[self.state]
         if se_config.mode == proto_cmd.ScanEngineConfig.TRACKING:
-            se_config.tracking.frequency = self._configured_tracking_frequency
-            se_config.tracking.bandwidth = self._configured_tracking_bandwidth
+            signal = se_config.tracking.signals.add()
+            signal.frequency = self._configured_tracking_frequency
+            signal.bandwidth = self._configured_tracking_bandwidth
         if se_config.mode == proto_cmd.ScanEngineConfig.SCANNING:
             for ran in self._configured_freq_ranges:
                 pb_ran = se_config.scanning.ranges.add()
@@ -624,6 +751,13 @@ class ScanEngine(Loop):
             response = proto_cmd.Response()
             response.config.se.CopyFrom(self.construct_config_report())
             return response
+        elif command.instruction == proto_cmd.CS_CALIBRATE_START:
+            self._calibration_freq_list.CopyFrom(command.calibration_freqs)
+            self.launch_calibration()
+            response = proto_cmd.Response()
+            response.instruction = proto_cmd.CS_CALIBRATE_START
+            response.success = True
+            return response
         elif command.instruction in [
             proto_cmd.SOURCE_START,
             proto_cmd.SOURCE_STOP,
@@ -631,6 +765,7 @@ class ScanEngine(Loop):
             proto_cmd.REC_STOP,
             proto_cmd.CS_PING,
             proto_cmd.POSITION,
+            proto_cmd.CS_CALIBRATE_ABORT,
         ]:
             self.manual_command(command)
             self.check_cs_response()
@@ -672,6 +807,20 @@ class ScanEngine(Loop):
             case ScanEngineState.INIT:
                 self._discard_post_proc_output()
                 self.initialize()
+            case ScanEngineState.CALIBRATION:
+                if "Telemetry" not in self._latest_telemetry_proxy:
+                    self._logger.error("Could not obtain Telemetry object")
+                    return
+                telemetry_object: proto_data.Telemetry = pickle.loads(
+                    self._latest_telemetry_proxy["Telemetry"]
+                )
+                if telemetry_object.source.status in [
+                    telemetry_object.source.ENABLED,
+                    telemetry_object.source.RUNNING,
+                ]:
+                    self.done()
+                else:
+                    self._handle_incoming_instruction(q_timeout)
             case ScanEngineState.MANUAL:
                 self._discard_post_proc_output()
                 # MANUAL mode command handling needs a timeout, because there is no other
@@ -685,11 +834,25 @@ class ScanEngine(Loop):
                     # If there was an incoming command, the _loop iteration will be used
                     # to execute that command. Only go to the SCANNING_IN_PROGRESS state,
                     # if there aren't any commands left in the queue.
-                    self.launch()
+                    if (
+                        self.needs_calibration()
+                        and self._last_config_command == self._auto_config
+                    ):
+                        # Automatic calibration if needs calibration
+                        # and the last config is proven to be working
+                        self.launch_calibration()
+                    else:
+                        self.launch()
             case ScanEngineState.TRACKING_IDLE:
                 self._discard_post_proc_output()
                 if not self._handle_incoming_instruction(0.0):
-                    self.launch()
+                    if (
+                        self.needs_calibration()
+                        and self._last_config_command == self._auto_config
+                    ):
+                        self.launch_calibration()
+                    else:
+                        self.launch()
             case ScanEngineState.SCANNING_IN_PROGRESS:
                 try:
                     # Scanning in progress: no commands allowed, the FSM is waiting

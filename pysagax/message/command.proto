@@ -100,6 +100,10 @@ enum Instruction {
     // before using this command.
     //   response: success [bool]
     CS_SCAN_START = 30;
+
+    CS_CALIBRATE_START = 31;
+
+    CS_CALIBRATE_ABORT = 32;
 }
 
 message ROIMask {
@@ -186,9 +190,15 @@ message ScanningConfig {
     repeated FreqRange ranges = 4;
 }
 
-message TrackingConfig {
+message TrackedSignal {
+
     float frequency = 2;
     float bandwidth = 3;
+}
+
+message TrackingConfig {
+    repeated TrackedSignal signals = 4;
+    reserved 2, 3;
 }
 
 
@@ -301,6 +311,8 @@ message Command {
 
         // Recording length
         uint64 rec_length_secs = 9;
+
+        FreqList calibration_freqs = 11;
     }
 }
 

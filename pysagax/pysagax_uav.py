@@ -53,6 +53,8 @@ class Commander:
         cs_stream_port: int,
         cs_command_config_timeout: int,
         cs_command_instruction_timeout: int,
+        calibration_interval_seconds: float,
+        calibration_resolution_bw: float,
         heading_host: str,
         heading_control_port: int,
         heading_stream_port: int,
@@ -115,6 +117,8 @@ class Commander:
             scanning_target_resolution_bandwidth,
             cs_command_config_timeout,
             cs_command_instruction_timeout,
+            calibration_interval_seconds,
+            calibration_resolution_bw,
             source_device_type,
             source_device_path,
             auto_config,
@@ -356,6 +360,18 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     show_default=True,
 )
 @click.option(
+    "--calibration-interval-seconds",
+    help="Automatic radio interface calibration interval [s]",
+    default=300.0,
+    show_default=True,
+)
+@click.option(
+    "--calibration-resolution-bw",
+    help="Resolution bandwidth of calibration [Hz]",
+    default=0.5e6,
+    show_default=True,
+)
+@click.option(
     "--heading-host",
     help="Hostname of Heading module (PySAGAX-Heading)",
     default="127.0.0.1",
@@ -422,7 +438,7 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     help="JSON-encoded protobuf configuration command",
 )
 @click.option(
-    "--cs_reset-on-fail", is_flag=True, help="Reset CS source on command fail"
+    "--cs-reset-on-fail", is_flag=True, help="Reset CS source on command fail"
 )
 @click.option(
     "--spectrogram-mode",
@@ -450,6 +466,8 @@ def main(
     cs_command_port: int,
     cs_command_config_timeout: int,
     cs_command_instruction_timeout: int,
+    calibration_interval_seconds: float,
+    calibration_resolution_bw: float,
     cs_stream_port: int,
     heading_host: str,
     heading_control_port: int,
@@ -487,6 +505,8 @@ def main(
         cs_stream_port,
         cs_command_config_timeout,
         cs_command_instruction_timeout,
+        calibration_interval_seconds,
+        calibration_resolution_bw,
         heading_host,
         heading_control_port,
         heading_stream_port,

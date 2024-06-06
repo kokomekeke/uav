@@ -113,6 +113,8 @@ class _InstructionEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._En
     before using this command.
       response: success [bool]
     """
+    CS_CALIBRATE_START: _Instruction.ValueType  # 31
+    CS_CALIBRATE_ABORT: _Instruction.ValueType  # 32
 
 class Instruction(_Instruction, metaclass=_InstructionEnumTypeWrapper):
     """Types of instructions that can be sent"""
@@ -203,6 +205,8 @@ CS_SCAN_START: Instruction.ValueType  # 30
 before using this command.
   response: success [bool]
 """
+CS_CALIBRATE_START: Instruction.ValueType  # 31
+CS_CALIBRATE_ABORT: Instruction.ValueType  # 32
 global___Instruction = Instruction
 
 @typing_extensions.final
@@ -447,7 +451,7 @@ class ScanningConfig(google.protobuf.message.Message):
 global___ScanningConfig = ScanningConfig
 
 @typing_extensions.final
-class TrackingConfig(google.protobuf.message.Message):
+class TrackedSignal(google.protobuf.message.Message):
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     FREQUENCY_FIELD_NUMBER: builtins.int
@@ -461,6 +465,22 @@ class TrackingConfig(google.protobuf.message.Message):
         bandwidth: builtins.float = ...,
     ) -> None: ...
     def ClearField(self, field_name: typing_extensions.Literal["bandwidth", b"bandwidth", "frequency", b"frequency"]) -> None: ...
+
+global___TrackedSignal = TrackedSignal
+
+@typing_extensions.final
+class TrackingConfig(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    SIGNALS_FIELD_NUMBER: builtins.int
+    @property
+    def signals(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___TrackedSignal]: ...
+    def __init__(
+        self,
+        *,
+        signals: collections.abc.Iterable[global___TrackedSignal] | None = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing_extensions.Literal["signals", b"signals"]) -> None: ...
 
 global___TrackingConfig = TrackingConfig
 
@@ -686,6 +706,7 @@ class Command(google.protobuf.message.Message):
     POSITION_FIELD_NUMBER: builtins.int
     TARGET_FIELD_NUMBER: builtins.int
     REC_LENGTH_SECS_FIELD_NUMBER: builtins.int
+    CALIBRATION_FREQS_FIELD_NUMBER: builtins.int
     id: builtins.int
     """Unique ID of command"""
     instruction: global___Instruction.ValueType
@@ -703,6 +724,8 @@ class Command(google.protobuf.message.Message):
         """Stream target"""
     rec_length_secs: builtins.int
     """Recording length"""
+    @property
+    def calibration_freqs(self) -> global___FreqList: ...
     def __init__(
         self,
         *,
@@ -714,10 +737,11 @@ class Command(google.protobuf.message.Message):
         position: builtins.int = ...,
         target: global___StreamTarget | None = ...,
         rec_length_secs: builtins.int = ...,
+        calibration_freqs: global___FreqList | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing_extensions.Literal["config", b"config", "parameter", b"parameter", "ping_data", b"ping_data", "position", b"position", "rec_length_secs", b"rec_length_secs", "target", b"target"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing_extensions.Literal["config", b"config", "id", b"id", "instruction", b"instruction", "kind", b"kind", "parameter", b"parameter", "ping_data", b"ping_data", "position", b"position", "rec_length_secs", b"rec_length_secs", "target", b"target"]) -> None: ...
-    def WhichOneof(self, oneof_group: typing_extensions.Literal["parameter", b"parameter"]) -> typing_extensions.Literal["ping_data", "config", "position", "target", "rec_length_secs"] | None: ...
+    def HasField(self, field_name: typing_extensions.Literal["calibration_freqs", b"calibration_freqs", "config", b"config", "parameter", b"parameter", "ping_data", b"ping_data", "position", b"position", "rec_length_secs", b"rec_length_secs", "target", b"target"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing_extensions.Literal["calibration_freqs", b"calibration_freqs", "config", b"config", "id", b"id", "instruction", b"instruction", "kind", b"kind", "parameter", b"parameter", "ping_data", b"ping_data", "position", b"position", "rec_length_secs", b"rec_length_secs", "target", b"target"]) -> None: ...
+    def WhichOneof(self, oneof_group: typing_extensions.Literal["parameter", b"parameter"]) -> typing_extensions.Literal["ping_data", "config", "position", "target", "rec_length_secs", "calibration_freqs"] | None: ...
 
 global___Command = Command
 
