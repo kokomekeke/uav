@@ -70,6 +70,57 @@ def test_center_freq_list(f0Max: tuple[float, float], B: float, expected_result)
 
 @pytest.mark.parametrize(
     [
+        "calib_raster",
+        "freq_ranges",
+        "expected_center_freqs",
+    ],
+    [
+        [
+            0.5e6,
+            [(400.2e6, 401.8e6), (120e6, 123e6)],
+            [
+                120e6,
+                120.5e6,
+                121e6,
+                121.5e6,
+                122e6,
+                122.5e6,
+                123e6,
+                400e6,
+                400.5e6,
+                401e6,
+                401.5e6,
+                402e6,
+            ],
+        ],
+    ],
+)
+def test_scan_calibration_ranges(
+    calib_raster, freq_ranges, expected_center_freqs
+) -> None:
+    """
+    Params:
+        calib_raster: calibration raster
+        freq_ranges: tuples of start and stop frequencies
+        expected_center_freqs: calibration center frequencies, output of scan algorithm
+    """
+    se = ScanEngine(10000000, 10000000, 1, 1)
+    se._calibration_resolution_bw = calib_raster
+    scan_conf = proto_cmd.ScanningConfig()
+    for ran in freq_ranges:
+        ran_pb = scan_conf.ranges.add()
+        ran_pb.start = ran[0]
+        ran_pb.stop = ran[1]
+    se._scan_algorithm(scan_conf)
+    assert len(expected_center_freqs) == len(se._calibration_freq_list.center_freqs)
+    for expected, actual in zip(
+        expected_center_freqs, se._calibration_freq_list.center_freqs
+    ):
+        assert actual == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    [
         "useful_bandwidth",
         "freq_ranges",
         "scanning_averaging_burst_count",
@@ -262,9 +313,9 @@ def test_conf_scanning_state_machine(
 
 
 @pytest.mark.parametrize("fail_config", [True, False])
-@pytest.mark.parametrize("fail_scan_start", [True, False])
+@pytest.mark.parametrize("fail_tr_start", [True, False])
 def test_conf_tracking_state_machine(
-    se: ScanEngine, fail_config: bool, fail_scan_start: bool
+    se: ScanEngine, fail_config: bool, fail_tr_start: bool
 ) -> None:
 
     assert se._se_commands_q is not None
@@ -325,7 +376,7 @@ def test_conf_tracking_state_machine(
     # On the next FSM iteration tracking should start automatically
     # Prepare mock CoreService ScanStart Response
     cs_tr_start_response = proto_cmd.Response()
-    if fail_scan_start:
+    if fail_tr_start:
         cs_tr_start_response.error.description = "Tr start failed"
     se._cs_responses_q.put(cs_tr_start_response)
     se._cs_responses_q.put(proto_cmd.Response())
@@ -339,7 +390,7 @@ def test_conf_tracking_state_machine(
     assert cs_scan_start_command.instruction == proto_cmd.SOURCE_START
 
     # Validate ScanEngine FSM state
-    if fail_scan_start:
+    if fail_tr_start:
         assert se.state == ScanEngineState.TRACKING_IDLE
         return
     else:

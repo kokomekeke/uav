@@ -1,14 +1,16 @@
 import enum
 import logging
-from multiprocessing.managers import DictProxy
+import math
 import pickle
 import queue
-from queue import Queue
 import time
+from multiprocessing.managers import DictProxy
+from queue import Queue
 from typing import Any, Generator, Optional, overload
 
 import google.protobuf.json_format
 from transitions import Machine
+
 import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.data_pb2 as proto_data
 from pysagax.common.loop import Loop
@@ -359,6 +361,16 @@ class ScanEngine(Loop):
         self._calibration_freq_list = proto_cmd.FreqList()
         self._calibration_resolution_bw = calibration_resolution_bw
 
+    def to_calibration_resolution_bw_raster(
+        self, start: float, stop: float
+    ) -> tuple[float, float]:
+        return (
+            (math.floor(start / self._calibration_resolution_bw) - 0.5)
+            * self._calibration_resolution_bw,
+            (math.ceil(stop / self._calibration_resolution_bw) + 0.5)
+            * self._calibration_resolution_bw,
+        )
+
     def needs_calibration(self) -> bool:
         if self._calibration_interval_seconds <= 0:
             return False
@@ -428,8 +440,12 @@ class ScanEngine(Loop):
                     self._useful_bandwidth, repeat=self._averaging_burst_count
                 )
             )
+            calib_ran = FreqRangeInternal()
+            calib_ran.start, calib_ran.stop = self.to_calibration_resolution_bw_raster(
+                ran.start, ran.stop
+            )
             self._calibration_freq_list.center_freqs.extend(
-                ran.center_freq_list(self._calibration_resolution_bw, repeat=1)
+                calib_ran.center_freq_list(self._calibration_resolution_bw, repeat=1)
             )
         self._configured_freq_ranges = freq_ranges_united
         self._expected_data_count = len(freq_list.center_freqs)
@@ -565,6 +581,9 @@ class ScanEngine(Loop):
             command.config.cs.center_frequency = (signal_min + signal_max) / 2
             calib_range.start, calib_range.stop = signal_min, signal_max
 
+        calib_range.start, calib_range.stop = self.to_calibration_resolution_bw_raster(
+            calib_range.start, calib_range.stop
+        )
         self._calibration_freq_list = proto_cmd.FreqList()
         self._calibration_freq_list.iq_rate = command.config.cs.iq_rate
         self._calibration_freq_list.center_freqs.extend(
