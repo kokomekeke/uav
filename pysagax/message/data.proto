@@ -97,6 +97,7 @@ message Spectrum {
     enum DataType {
         INT16 = 0;
         INT8 = 1;
+        FLOAT16 = 4;
         FLOAT32 = 5;
     }
     DataType data_type = 3;
