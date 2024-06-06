@@ -173,6 +173,9 @@ class Interpreter(Loop):
                 | proto_cmd.REC_STOP
                 | proto_cmd.CS_PING
                 | proto_cmd.POSITION
+                | proto_cmd.CS_CALIBRATE_START
+                | proto_cmd.CS_CALIBRATE_ABORT
+                | proto_cmd.CS_SCAN_START
             ):
                 response.CopyFrom(self._se_control(command))
 

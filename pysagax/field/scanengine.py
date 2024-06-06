@@ -659,7 +659,10 @@ class ScanEngine(Loop):
         """
         assert self._cs_commands_q is not None
         command = proto_cmd.Command()
-        command.instruction = proto_cmd.SOURCE_START
+        if self._telemetry().source.status == proto_data.Telemetry.Source.RUNNING:
+            command.instruction = proto_cmd.CS_PING
+        else:
+            command.instruction = proto_cmd.SOURCE_START
         self._cs_commands_q.put((command, self._instruction_cs_timeout))
 
     def construct_config_report(self) -> proto_cmd.ScanEngineConfig:
@@ -789,6 +792,16 @@ class ScanEngine(Loop):
         except queue.Empty:
             pass
 
+    def _telemetry(self) -> proto_data.Telemetry:
+        assert self._latest_telemetry_proxy is not None
+        if "Telemetry" not in self._latest_telemetry_proxy:
+            self._logger.error("Could not obtain Telemetry object")
+            return proto_data.Telemetry()
+        telemetry_object: proto_data.Telemetry = pickle.loads(
+            self._latest_telemetry_proxy["Telemetry"]
+        )
+        return telemetry_object
+
     def _loop(self) -> None:
         q_timeout = 0.5
         assert (
@@ -797,7 +810,6 @@ class ScanEngine(Loop):
             and self._se_commands_q is not None
             and self._se_responses_q is not None
             and self._post_proc_to_scan_engine_q is not None
-            and self._latest_telemetry_proxy is not None
         )
         if self._latest_se_proxy is not None:
             # This will be used in the telemetry packet.
@@ -808,15 +820,9 @@ class ScanEngine(Loop):
                 self._discard_post_proc_output()
                 self.initialize()
             case ScanEngineState.CALIBRATION:
-                if "Telemetry" not in self._latest_telemetry_proxy:
-                    self._logger.error("Could not obtain Telemetry object")
-                    return
-                telemetry_object: proto_data.Telemetry = pickle.loads(
-                    self._latest_telemetry_proxy["Telemetry"]
-                )
-                if telemetry_object.source.status in [
-                    telemetry_object.source.ENABLED,
-                    telemetry_object.source.RUNNING,
+                if self._telemetry().source.status in [
+                    proto_data.Telemetry.Source.ENABLED,
+                    proto_data.Telemetry.Source.RUNNING,
                 ]:
                     self.done()
                 else:
