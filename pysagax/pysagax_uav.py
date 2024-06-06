@@ -433,7 +433,7 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
 )
 @click.option(
     "--auto-config",
-    default='{"se": {"mode": "TRACKING", "tracking": {"frequency": 446000000.0,"bandwidth": 62500}}}',
+    default='{"se": {"mode": "TRACKING", "tracking": {"signals": [{"frequency": 446000000.0, "bandwidth": 62500.0}]}}}',
     show_default=True,
     help="JSON-encoded protobuf configuration command",
 )
