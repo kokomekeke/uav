@@ -6,7 +6,7 @@ from time import sleep
 from datetime import datetime
 import os
 
-from typing import Any, Optional
+from typing import Any, Optional, Literal
 
 import pysagax.message.data_pb2 as proto_data
 import pysagax.message.heading_pb2 as proto_heading
@@ -36,20 +36,23 @@ class PPSpectrogramRecorder(Loop):
 
     recording_dtype: useful for reducing recording file sizes
         ORIGINAL: keep the original data type for the recordings
-        INT8, INT16, FLOAT32: cast the spectrum data to one of these datatypes before saving to file.
+        INT8, INT16, FLOAT16, FLOAT32: cast the spectrum data to one of these datatypes before saving to file.
     """
 
     def __init__(
         self,
         mode: str,
         path: str,
-        recording_dtype: Optional[str] = None,
+        recording_dtype: Optional[
+            Literal["ORIGINAL", "INT8", "INT16", "FLOAT16", "FLOAT32"]
+        ] = None,
         *args,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._queue_in: Optional[Queue] = None
         self._queue_out: Optional[Queue] = None
+        self.recording_dtype: Optional[proto_data.Spectrum.DataType.ValueType] = None
         if recording_dtype is not None and recording_dtype.upper() != "ORIGINAL":
             self.recording_dtype = proto_data.Spectrum.DataType.Value(
                 recording_dtype.upper()

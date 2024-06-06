@@ -8,6 +8,7 @@ from typing import ValuesView, Literal, Optional
 PROTOBUF_NUMPY_TYPE_MAPPING: dict[proto_data.Spectrum.DataType.ValueType, np.dtype] = {
     proto_data.Spectrum.DataType.INT16: np.dtype(np.int16),
     proto_data.Spectrum.DataType.INT8: np.dtype(np.int8),
+    proto_data.Spectrum.DataType.FLOAT16: np.dtype(np.float16),
     proto_data.Spectrum.DataType.FLOAT32: np.dtype(np.float32),
 }
 
@@ -31,12 +32,14 @@ def convert_iterable_to_spectrum_data(
     """
     array_np = np.array(array)
     # Changing float nan, inf and -inf values to integers
-    array_np = np.nan_to_num(
-        array_np,
-        copy=False,
-        posinf=np.iinfo(np.int32).max,
-        neginf=np.iinfo(np.int32).min,
-    )
+    if dtype in [proto_data.Spectrum.DataType.INT8, proto_data.Spectrum.DataType.INT16]:
+        # numpy can't cast infinity to integer, so we change those to the maximum possible value
+        np.clip(
+            array_np,
+            a_min=np.iinfo(PROTOBUF_NUMPY_TYPE_MAPPING[dtype]).min,
+            a_max=np.iinfo(PROTOBUF_NUMPY_TYPE_MAPPING[dtype]).max,
+            out=array_np,
+        )
     return np.fromiter(array_np, PROTOBUF_NUMPY_TYPE_MAPPING[dtype]).tobytes()
 
 

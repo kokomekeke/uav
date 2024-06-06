@@ -454,7 +454,7 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
 )
 @click.option(
     "--spectrogram-recording-dtype",
-    type=click.Choice(["ORIGINAL", "INT8", "INT16", "FLOAT32"]),
+    type=click.Choice(["ORIGINAL", "INT8", "INT16", "FLOAT16", "FLOAT32"]),
     default="ORIGINAL",
     help="Data type to be used for making spectrogram recordings.",
 )
