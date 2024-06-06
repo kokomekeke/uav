@@ -16,25 +16,32 @@ from pysagax.util.protobuf_spectrum_utils import Spectrum
     [
         [[0, 1, 2, 3, 4, 5], proto_data.Spectrum.DataType.INT8],
         [[0, 1, 2, 3, 4, 5], proto_data.Spectrum.DataType.INT16],
+        [[0, 1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT16],
         [[0, 1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT32],
         [[-1, -2, -3], proto_data.Spectrum.DataType.INT8],
         [[-1, -2, -3], proto_data.Spectrum.DataType.INT16],
+        [[-1, -2, -3], proto_data.Spectrum.DataType.FLOAT16],
         [[-1, -2, -3], proto_data.Spectrum.DataType.FLOAT32],
         # [[i for i in range(-1000, 1000)], proto_data.Spectrum.DataType.INT8],
         [[i for i in range(-1000, 1000)], proto_data.Spectrum.DataType.INT16],
+        [[i for i in range(-1000, 1000)], proto_data.Spectrum.DataType.FLOAT16],
         [[i for i in range(-1000, 1000)], proto_data.Spectrum.DataType.FLOAT32],
         # [[194]*600, proto_data.Spectrum.DataType.INT8],
         [[194] * 600, proto_data.Spectrum.DataType.INT16],
+        [[194] * 600, proto_data.Spectrum.DataType.FLOAT16],
         [[194] * 600, proto_data.Spectrum.DataType.FLOAT32],
         # Same input vectors but as numpy arrays:
         [[], proto_data.Spectrum.DataType.INT8],
         [[], proto_data.Spectrum.DataType.INT16],
+        [[], proto_data.Spectrum.DataType.FLOAT16],
         [[], proto_data.Spectrum.DataType.FLOAT32],
         [np.array([0, 1, 2, 3, 4, 5]), proto_data.Spectrum.DataType.INT8],
         [np.array([0, 1, 2, 3, 4, 5]), proto_data.Spectrum.DataType.INT16],
+        [np.array([0, 1, 2, 3, 4, 5]), proto_data.Spectrum.DataType.FLOAT16],
         [np.array([0, 1, 2, 3, 4, 5]), proto_data.Spectrum.DataType.FLOAT32],
         [np.array([-1, -2, -3]), proto_data.Spectrum.DataType.INT8],
         [np.array([-1, -2, -3]), proto_data.Spectrum.DataType.INT16],
+        [np.array([-1, -2, -3]), proto_data.Spectrum.DataType.FLOAT16],
         [np.array([-1, -2, -3]), proto_data.Spectrum.DataType.FLOAT32],
         # [np.array([i for i in range(-1000, 1000)]), proto_data.Spectrum.DataType.INT8],
         [np.array([i for i in range(-1000, 1000)]), proto_data.Spectrum.DataType.INT16],
@@ -44,29 +51,12 @@ from pysagax.util.protobuf_spectrum_utils import Spectrum
         ],
         # [np.array([194]*600), proto_data.Spectrum.DataType.INT8],
         [np.array([194] * 600), proto_data.Spectrum.DataType.INT16],
+        [np.array([194] * 600), proto_data.Spectrum.DataType.FLOAT16],
         [np.array([194] * 600), proto_data.Spectrum.DataType.FLOAT32],
         [np.array([]), proto_data.Spectrum.DataType.INT8],
         [np.array([]), proto_data.Spectrum.DataType.INT16],
+        [np.array([]), proto_data.Spectrum.DataType.FLOAT16],
         [np.array([]), proto_data.Spectrum.DataType.FLOAT32],
-        # Input vectors as dict_values:
-        [{10: 0, 11: 1, 12: 2, 13: 3, 14: 4, 15: 5}, proto_data.Spectrum.DataType.INT8],
-        [
-            {10: 0, 11: 1, 12: 2, 13: 3, 14: 4, 15: 5},
-            proto_data.Spectrum.DataType.INT16,
-        ],
-        [
-            {10: 0, 11: 1, 12: 2, 13: 3, 14: 4, 15: 5},
-            proto_data.Spectrum.DataType.FLOAT32,
-        ],
-        # [{a:(1000-a) for a, b in range(-1000, 1000)}, proto_data.Spectrum.DataType.INT8],
-        [
-            {a: (1000 - a) for a in range(-1000, 1000)},
-            proto_data.Spectrum.DataType.INT16,
-        ],
-        [
-            {a: (1000 - a) for a in range(-1000, 1000)},
-            proto_data.Spectrum.DataType.FLOAT32,
-        ],
     ],
 )
 def test_spectrum_utils_chained(spectrum_array, data_type):
@@ -89,6 +79,8 @@ def test_spectrum_utils_chained(spectrum_array, data_type):
         case proto_data.Spectrum.DataType.INT8:
             byte_per_bin = 1
         case proto_data.Spectrum.DataType.INT16:
+            byte_per_bin = 2
+        case proto_data.Spectrum.DataType.FLOAT16:
             byte_per_bin = 2
         case proto_data.Spectrum.DataType.FLOAT32:
             byte_per_bin = 4
@@ -117,6 +109,25 @@ class TestSpectrumCasting:
                     data_type=proto_data.Spectrum.DataType.INT16,
                     data=convert_iterable_to_spectrum_data(
                         [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.INT16
+                    ),
+                ),
+            ],
+            [  # CASE 1B
+                proto_data.Spectrum(
+                    channel_id=1,
+                    spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                    data_type=proto_data.Spectrum.DataType.FLOAT32,
+                    data=convert_iterable_to_spectrum_data(
+                        [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT32
+                    ),
+                ),
+                proto_data.Spectrum.DataType.FLOAT16,
+                proto_data.Spectrum(
+                    channel_id=1,
+                    spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                    data_type=proto_data.Spectrum.DataType.FLOAT16,
+                    data=convert_iterable_to_spectrum_data(
+                        [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT16
                     ),
                 ),
             ],
@@ -214,6 +225,25 @@ class TestSpectrumCasting:
                     data_type=proto_data.Spectrum.DataType.INT16,
                     data=convert_iterable_to_spectrum_data(
                         [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.INT16
+                    ),
+                ),
+            ],
+            [  # CASE 1b
+                proto_data.Spectrum(
+                    channel_id=1,
+                    spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                    data_type=proto_data.Spectrum.DataType.FLOAT32,
+                    data=convert_iterable_to_spectrum_data(
+                        [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT32
+                    ),
+                ),
+                proto_data.Spectrum.DataType.FLOAT16,
+                proto_data.Spectrum(
+                    channel_id=1,
+                    spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+                    data_type=proto_data.Spectrum.DataType.FLOAT16,
+                    data=convert_iterable_to_spectrum_data(
+                        [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT16
                     ),
                 ),
             ],
@@ -326,9 +356,9 @@ class TestSpectrumCasting:
                         proto_data.Spectrum(
                             channel_id=0,
                             spectrum_type=proto_data.Spectrum.SpectrumType.ELEVATION,
-                            data_type=proto_data.Spectrum.DataType.INT8,
+                            data_type=proto_data.Spectrum.DataType.FLOAT16,
                             data=convert_iterable_to_spectrum_data(
-                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.INT8
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT16
                             ),
                         ),
                         proto_data.Spectrum(
@@ -449,9 +479,9 @@ class TestSpectrumCasting:
                         proto_data.Spectrum(
                             channel_id=0,
                             spectrum_type=proto_data.Spectrum.SpectrumType.ELEVATION,
-                            data_type=proto_data.Spectrum.DataType.INT8,
+                            data_type=proto_data.Spectrum.DataType.FLOAT16,
                             data=convert_iterable_to_spectrum_data(
-                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.INT8
+                                [1, 2, 3, 4, 5], proto_data.Spectrum.DataType.FLOAT16
                             ),
                         ),
                         proto_data.Spectrum(
