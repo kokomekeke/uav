@@ -58,6 +58,8 @@ class FreqRangeInternal:
         https://sagaxcommunications.atlassian.net/wiki/spaces/ALTS/pages/245071917/Scan+Engine#Scan-algoritmus
         """
         number_of_jumps = -int(-self.bandwidth // useful_bandwidth)  # ceil
+        if number_of_jumps == 0:
+            return None
         jump_bandwidth = self.bandwidth / float(number_of_jumps)
         for i in range(number_of_jumps):
             freq = self.start + (i + 0.5) * jump_bandwidth
