@@ -364,6 +364,11 @@ class ScanEngine(Loop):
     def to_calibration_resolution_bw_raster(
         self, start: float, stop: float
     ) -> tuple[float, float]:
+        """
+        Aligns frequency ranges to calibration raster in a way that the output of the
+        scan algorithm on calibration frequencies will result in a list of center freqs
+        exactly on this raster
+        """
         return (
             (math.floor(start / self._calibration_resolution_bw) - 0.5)
             * self._calibration_resolution_bw,
@@ -372,6 +377,9 @@ class ScanEngine(Loop):
         )
 
     def needs_calibration(self) -> bool:
+        """
+        This is used as a condition to tell if the FSM should go to a calibration state or not
+        """
         if self._calibration_interval_seconds <= 0:
             return False
         return (
