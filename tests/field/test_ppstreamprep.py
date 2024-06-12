@@ -50,6 +50,7 @@ def test_calculate_decim_factor(spectrum_data_count, spectrum_data_type):
         [[1, 2, 3, 4, 5, 6, 7, 8, 9], 3, [3, 6, 9]],
         [[10, 20, 30, 40, 50], 3, [30, 50]],
         [[10, 20, 30, 40, 50, 60, 70, 80, 90], 4, [40, 80, 90]],
+        [[10, 20, 30, 10, 50, 60, 70, 10, 90], 4, [30, 70, 90]],
     ],
 )
 def test_shrink_measurement_packet(original, decim_factor, expected):

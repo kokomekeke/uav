@@ -74,6 +74,10 @@ class PPStreamPreparation(Loop):
         return meas
 
     def _calculate_decim_factor(self, meas: proto_data.Measurement) -> int:
+        """
+        Calculate decimation factor for the measurement packet so that the
+        data will fit in the UDP packet size limit.
+        """
         spec_size = sum(len(data_part.data) for data_part in meas.data)
         fixed_size = len(meas.SerializeToString()) - spec_size
         return int(spec_size / (self._udp_max_size - fixed_size) + 1)
@@ -81,6 +85,7 @@ class PPStreamPreparation(Loop):
     def _shrink_measurement_packet(
         self, meas: proto_data.Measurement, decim_factor: int
     ) -> proto_data.Measurement:
+        """Decimate all spectrums in the packet using maximum value"""
         if decim_factor <= 1:
             return meas
         for i in range(len(meas.data)):
@@ -95,6 +100,10 @@ class PPStreamPreparation(Loop):
             decimated_spec_data = np.maximum.reduce(
                 [original_spec_data[d::decim_factor] for d in range(decim_factor)]
             )
+            # Reduce with maximum - we want to see the peaks on the magnitude spectrum
+            # In the case of angle spectrums it should not matter that much
+            # TODO: the values taken from the spectums will not necessarily be from
+            #       the exact same bin
             meas.data[i].data = convert_iterable_to_spectrum_data(
                 decimated_spec_data, meas.data[i].data_type
             )
