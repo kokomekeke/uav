@@ -48,8 +48,9 @@ def downsample(y, decim):
 
 
 def ax_update(event_ax):
-    new_lim = int(max(0, event_ax.get_xlim()[0])), int(
-        min(len(datas[0]), event_ax.get_xlim()[1])
+    new_lim = (
+        int(max(0, event_ax.get_xlim()[0])),
+        int(min(len(datas[0]), event_ax.get_xlim()[1])),
     )
     decimate = (new_lim[1] - new_lim[0]) // max_points
     if decimate < 1:
@@ -97,7 +98,6 @@ def main():
     infobox = True
     title = ""
     if len(args.filename) == 1 and filename.endswith(".sigmf-collection"):
-
         collection_file = sigmffile.fromfile(filename)
         assert isinstance(collection_file, SigMFCollection)
         collection = collection_file

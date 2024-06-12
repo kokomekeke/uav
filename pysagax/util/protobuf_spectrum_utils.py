@@ -71,7 +71,7 @@ def cast_spectrum_data_type(
 
 def cast_all_spectrums_in_measurement(
     measurement: proto_data.Measurement,
-    dtype=proto_data.Spectrum.DataType.ValueType,
+    dtype: proto_data.Spectrum.DataType.ValueType,
     inplace: bool = False,
 ) -> Optional[proto_data.Measurement]:
     """
