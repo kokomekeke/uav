@@ -90,15 +90,14 @@ class PPStreamPreparation(Loop):
             return meas
         for i in range(len(meas.data)):
             original_spec_data = protobuf_spectrum_to_numpy(meas.data[i])
-            extend_count = decim_factor - (len(original_spec_data) % decim_factor)
-            extend_count %= decim_factor
-            if extend_count:
-                # Count must be divisible by decim factor
-                original_spec_data = np.append(
-                    original_spec_data, np.full(extend_count, -np.inf)
-                )
+            end_index = len(original_spec_data)
+            end_index = end_index - end_index % decim_factor
+
             decimated_spec_data = np.maximum.reduce(
-                [original_spec_data[d::decim_factor] for d in range(decim_factor)]
+                [
+                    original_spec_data[d:end_index:decim_factor]
+                    for d in range(decim_factor)
+                ]
             )
             # Reduce with maximum - we want to see the peaks on the magnitude spectrum
             # In the case of angle spectrums it should not matter that much

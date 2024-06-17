@@ -57,9 +57,9 @@ def test_calculate_decim_factor(spectrum_data_count, spectrum_data_type):
     [
         [[1, 2, 3, 4], 1, [1, 2, 3, 4]],
         [[1, 2, 3, 4, 5, 6, 7, 8, 9], 3, [3, 6, 9]],
-        [[10, 20, 30, 40, 50], 3, [30, 50]],
-        [[10, 20, 30, 40, 50, 60, 70, 80, 90], 4, [40, 80, 90]],
-        [[10, 20, 30, 10, 50, 60, 70, 10, 90], 4, [30, 70, 90]],
+        [[10, 20, 30, 40, 50], 3, [30]],
+        [[10, 20, 30, 40, 50, 60, 70, 80, 90], 4, [40, 80]],
+        [[10, 20, 30, 10, 50, 60, 70, 10, 90], 4, [30, 70]],
     ],
 )
 def test_shrink_measurement_packet(original, decim_factor, expected):
@@ -78,21 +78,37 @@ def test_shrink_measurement_packet(original, decim_factor, expected):
         assert actual == expect
 
 
-
 def test_shrink_measurement_packet2():
     "nem csökkentjük eléggé a csomagméretet"
     packet = proto_data.Measurement()
-    packet.data.append(proto_data.Spectrum(
-        channel_id=1, spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE, 
-        data=convert_iterable_to_spectrum_data([1,2,3,4,], proto_data.Spectrum.DataType.FLOAT16),
-        data_type=proto_data.Spectrum.DataType.FLOAT16))
+    packet.data.append(
+        proto_data.Spectrum(
+            channel_id=1,
+            spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+            data=convert_iterable_to_spectrum_data(
+                [
+                    1,
+                    2,
+                    3,
+                    4,
+                ],
+                proto_data.Spectrum.DataType.FLOAT16,
+            ),
+            data_type=proto_data.Spectrum.DataType.FLOAT16,
+        )
+    )
     print("\n================\n", packet)
     print(protobuf_spectrum_to_numpy(packet.data[0]))
-    print("LEN", len(packet.SerializeToString()), " len w/o spectrum data: ", len(packet.SerializeToString()) - len(packet.data[0].data))
+    print(
+        "LEN",
+        len(packet.SerializeToString()),
+        " len w/o spectrum data: ",
+        len(packet.SerializeToString()) - len(packet.data[0].data),
+    )
 
     pp_streamprep = PPStreamPreparation()
-    pp_streamprep._udp_max_size=11
-    decim_factor= pp_streamprep._calculate_decim_factor(packet)
+    pp_streamprep._udp_max_size = 11
+    decim_factor = pp_streamprep._calculate_decim_factor(packet)
     shrunk = pp_streamprep._shrink_measurement_packet(packet, decim_factor)
 
     print(shrunk)
@@ -100,25 +116,36 @@ def test_shrink_measurement_packet2():
     print("LEN", len(shrunk.SerializeToString()), "max: ", pp_streamprep._udp_max_size)
 
     assert len(shrunk.SerializeToString()) <= pp_streamprep._udp_max_size
-
 
 
 def test_shrink_measurement_packet2b():
     "nem csökkentjük eléggé a csomagméretet"
     packet = proto_data.Measurement(overflow=True)
-    packet.data.append(proto_data.Spectrum(
-        channel_id=1, spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE, 
-        data=convert_iterable_to_spectrum_data([1,2,3,4,5,6,7,8, 9,10,11,12,13, 14, 15, 16], proto_data.Spectrum.DataType.FLOAT32),
-        # data=convert_iterable_to_spectrum_data([1,2,3,4,5,6,7,8,], proto_data.Spectrum.DataType.FLOAT32),
-        data_type=proto_data.Spectrum.DataType.FLOAT32))
+    packet.data.append(
+        proto_data.Spectrum(
+            channel_id=1,
+            spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+            data=convert_iterable_to_spectrum_data(
+                [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+                proto_data.Spectrum.DataType.FLOAT32,
+            ),
+            # data=convert_iterable_to_spectrum_data([1,2,3,4,5,6,7,8,], proto_data.Spectrum.DataType.FLOAT32),
+            data_type=proto_data.Spectrum.DataType.FLOAT32,
+        )
+    )
     print("\n================\n", packet)
     print(protobuf_spectrum_to_numpy(packet.data[0]))
-    print("LEN", len(packet.SerializeToString()), " len w/o spectrum data: ", len(packet.SerializeToString()) - len(packet.data[0].data))
+    print(
+        "LEN",
+        len(packet.SerializeToString()),
+        " len w/o spectrum data: ",
+        len(packet.SerializeToString()) - len(packet.data[0].data),
+    )
 
     pp_streamprep = PPStreamPreparation()
     # pp_streamprep._udp_max_size=21
-    pp_streamprep._udp_max_size=33
-    decim_factor= pp_streamprep._calculate_decim_factor(packet)
+    pp_streamprep._udp_max_size = 33
+    decim_factor = pp_streamprep._calculate_decim_factor(packet)
     shrunk = pp_streamprep._shrink_measurement_packet(packet, decim_factor)
 
     print(shrunk)
@@ -128,29 +155,57 @@ def test_shrink_measurement_packet2b():
     assert len(shrunk.SerializeToString()) <= pp_streamprep._udp_max_size
 
 
-
 def test_shrink_measurement_packet3():
     """feleslegesen csökkentjük a csomagméretet (nem kritikus)"""
     packet = proto_data.Measurement()
-    packet.data.append(proto_data.Spectrum(
-        channel_id=1, spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE, 
-        data=convert_iterable_to_spectrum_data([1,2,3,4,], proto_data.Spectrum.DataType.FLOAT16),
-        data_type=proto_data.Spectrum.DataType.FLOAT16))
+    packet.data.append(
+        proto_data.Spectrum(
+            channel_id=1,
+            spectrum_type=proto_data.Spectrum.SpectrumType.MAGNITUDE,
+            data=convert_iterable_to_spectrum_data(
+                [
+                    1,
+                    2,
+                    3,
+                    4,
+                ],
+                proto_data.Spectrum.DataType.FLOAT16,
+            ),
+            data_type=proto_data.Spectrum.DataType.FLOAT16,
+        )
+    )
     print("\n================\n", packet)
     print(protobuf_spectrum_to_numpy(packet.data[0]))
-    print("LEN", len(packet.SerializeToString()), " len w/o spectrum data: ", len(packet.SerializeToString()) - len(packet.data[0].data))
+    print(
+        "LEN",
+        len(packet.SerializeToString()),
+        " len w/o spectrum data: ",
+        len(packet.SerializeToString()) - len(packet.data[0].data),
+    )
     original_packet_len = len(packet.SerializeToString())
 
     pp_streamprep = PPStreamPreparation()
-    pp_streamprep._udp_max_size=16
-    decim_factor= pp_streamprep._calculate_decim_factor(packet)
+    pp_streamprep._udp_max_size = 17
+    decim_factor = pp_streamprep._calculate_decim_factor(packet)
     shrunk = pp_streamprep._shrink_measurement_packet(packet, decim_factor)
 
     print(shrunk)
     print(protobuf_spectrum_to_numpy(shrunk.data[0]))
-    print("LEN", len(shrunk.SerializeToString()), "max: ", pp_streamprep._udp_max_size, "original: ",original_packet_len)
+    print(
+        "LEN",
+        len(shrunk.SerializeToString()),
+        "max: ",
+        pp_streamprep._udp_max_size,
+        "original: ",
+        original_packet_len,
+    )
 
-    assert len(shrunk.SerializeToString()) <= pp_streamprep._udp_max_size #legyen kisebb, mint a max méret
-    # de feleslegesen ne se legyen csökkentve a csomagméret 
-    assert original_packet_len == len(shrunk.SerializeToString()) if original_packet_len <= pp_streamprep._udp_max_size else True
-    
+    assert (
+        len(shrunk.SerializeToString()) <= pp_streamprep._udp_max_size
+    )  # legyen kisebb, mint a max méret
+    # de feleslegesen ne se legyen csökkentve a csomagméret
+    assert (
+        original_packet_len == len(shrunk.SerializeToString())
+        if original_packet_len <= pp_streamprep._udp_max_size
+        else True
+    )
