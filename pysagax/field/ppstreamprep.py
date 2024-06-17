@@ -14,9 +14,11 @@ import numpy as np
 from pysagax.common.loop import Loop
 
 from pysagax.util.protobuf_spectrum_utils import (
+    convert_iterable_to_spectrum_data,
     protobuf_spectrum_to_numpy,
     cast_all_spectrums_in_measurement,
 )
+import pysagax.communication.broadcast as pysagax_broadcast
 
 
 class PPStreamPreparation(Loop):
@@ -32,6 +34,7 @@ class PPStreamPreparation(Loop):
         self._queue_in: Optional[Queue] = None
         self._queue_out: Optional[Queue] = None
         self._data_type: proto_data.Spectrum.DataType.ValueType = data_type
+        self._udp_max_size = pysagax_broadcast.MESSAGE_LIMIT
 
     def __call__(
         self,
@@ -70,6 +73,41 @@ class PPStreamPreparation(Loop):
 
         return meas
 
+    def _calculate_decim_factor(self, meas: proto_data.Measurement) -> int:
+        """
+        Calculate decimation factor for the measurement packet so that the
+        data will fit in the UDP packet size limit.
+        """
+        spec_size = sum(len(data_part.data) for data_part in meas.data)
+        fixed_size = len(meas.SerializeToString()) - spec_size
+        return int(spec_size / (self._udp_max_size - fixed_size) + 1)
+
+    def _shrink_measurement_packet(
+        self, meas: proto_data.Measurement, decim_factor: int
+    ) -> proto_data.Measurement:
+        """Decimate all spectrums in the packet using maximum value"""
+        if decim_factor <= 1:
+            return meas
+        for i in range(len(meas.data)):
+            original_spec_data = protobuf_spectrum_to_numpy(meas.data[i])
+            end_index = len(original_spec_data)
+            end_index = end_index - end_index % decim_factor
+
+            decimated_spec_data = np.maximum.reduce(
+                [
+                    original_spec_data[d:end_index:decim_factor]
+                    for d in range(decim_factor)
+                ]
+            )
+            # Reduce with maximum - we want to see the peaks on the magnitude spectrum
+            # In the case of angle spectrums it should not matter that much
+            # TODO: the values taken from the spectums will not necessarily be from
+            #       the exact same bin
+            meas.data[i].data = convert_iterable_to_spectrum_data(
+                decimated_spec_data, meas.data[i].data_type
+            )
+        return meas
+
     def _loop(self) -> None:
         assert self._queue_in is not None
         assert self._queue_out is not None
@@ -79,7 +117,9 @@ class PPStreamPreparation(Loop):
             assert isinstance(packet, proto_data.Measurement)
 
             packet = self._convert_spectrums(packet)
-
+            packet = self._shrink_measurement_packet(
+                packet, self._calculate_decim_factor(packet)
+            )
             self._logger.debug(
                 f"PostProcessing/Stream preparation finished on packet {packet.packet_id}"
             )
