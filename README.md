@@ -67,6 +67,16 @@ Most of the capabilities of the LENA system can be accessed through the UI witho
 
 Features:
 
+ * Select any supported source or recording
+ * Configure the parameters of the Source module
+ * Configure the heading and GPS source
+ * Control the playback of a recording
+ * Start or stop recording of a live source to SigMF on the receiver computer
+ * Display the spectrum on a magnitude and waterfall plot
+ * Display the result angle of the direction finding compensated with the heading of the receiver
+ * Display statistics of the post-processing phase
+ * Display live debug information from all modules of the receiver computer
+ * DFG server for Sagax GSYSTEM map visualization
 
 ```bash
 spotclient  # if wheel file is installed
