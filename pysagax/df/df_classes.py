@@ -220,7 +220,7 @@ class LenaDf(DfModule):
         self.bw: float = 0
 
         self.gain: int = 40
-        self.connect_string: str = 'UHD "serial=8002051,serial=8002065" "A:A A:B"'
+        self.connect_string: str = 'UHD'
 
         self.burst_stride: int = 4096
         self.bin_count: int = 4096
