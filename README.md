@@ -186,7 +186,15 @@ clizmqclient -p 12937 10.1.1.113  # Connects to CoreService ZMQ TCP stream port
 
 # pysagax-heading 
 
+```
+TODO
+```
+
 # pysagax-uav 
+
+```
+TODO
+```
 
 # sigmfdisp 
 
@@ -198,9 +206,23 @@ We can display the time-domain signal in a SigMF recording.
 sigmfdisp ./recording/recording.sigmf-collection
 sigmfdisp /var/sagax/cs/20240205_Mon_095610/2_E.sigmf-meta
 sigmfdisp /var/sagax/cs/20240205_Mon_095610/2_E.sigmf-data  # no metadata will be displayed
-
 ```
+
 # sigmfspectrum 
 
-TBD
+
+![SigMFSpectrum](screenshot_sigmfspectrum.png)
+
+Displays the spectrum of a SigMF recording efficiently, even for gigabyte sized recordings.
+To do that, the program reads bursts with large strides, and therefore the graph will not be detailed on its time axis.
+The main use case is to give an overview of a recording, and it can be useful to set the SigMF file associations to be opened using this software.
+When metadata is present, the axes will be displayed in MHz for frequency and seconds for time.
+
+```bash
+sigmfspectrum ./recording/recording.sigmf-collection --show 0 --show 1 --save 1
+# Channel 0 and 1 will be displayed, channel 1 spectrum will be saved to az npz file
+
+sigmfspectrum /var/sagax/cs/20240205_Mon_095610/2_E.sigmf-meta
+sigmfspectrum /var/sagax/cs/20240205_Mon_095610/2_E.sigmf-data  # no metadata will be displayed
+```
 
