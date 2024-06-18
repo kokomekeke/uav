@@ -26,6 +26,7 @@ from pysagax.heading.heading_sources import (
     HeadingEncoder,
     HeadingSource,
     HeadingStatic,
+    HeadingFlightInfo
 )
 
 
@@ -43,6 +44,7 @@ class HeadingRunner:
             "AHRSFTDI": HeadingAHRSFTDI,
             "Encoder": HeadingEncoder,
             "Static": HeadingStatic,
+            "FlightInfo": HeadingFlightInfo,
         }
         self._heading_sources_labels = dict()
         for key, value in self._heading_sources.items():
