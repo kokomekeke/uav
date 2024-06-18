@@ -17,6 +17,9 @@ from pysagax.df.compass_sensors import (
 from pysagax.util.read_from_conf import read_from_conf
 from pysagax.util.mat import normalize_angle, rotation_matrix_from_vectors
 
+from pysagax.communication.pub_sub import SUB
+import pysagax.message.flight_info_pb2 as flight_info
+
 
 class HeadingSource:
     def __init__(self, conf: Optional[dict[str, Any]] = None) -> None:
@@ -376,3 +379,80 @@ class HeadingAHRSFTDI(HeadingAHRS):
             self._status("#compass" + str(e))
             self.compass = None
             return False
+
+
+class HeadingFlightInfo(HeadingSource):
+    """
+    Heading data supplied by the DT46 drone in used in the ALTISS project.
+    The data arrives in protobuf packets using ZeroMQ's PUB/SUB pattern.
+    """
+
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
+        self.address: str = self.cr(
+            ["heading", "FlightInfo", "address"],
+            self.cr(["heading", "address"], "127.0.0.1"),
+        )
+        self.port: int = self.cr(
+            ["heading", "FlightInfo", "port"], self.cr(["heading", "port"], 42069)
+        )
+
+        self._sub: Optional[SUB] = None
+
+    def get_parameters(self) -> dict[str, list[Any]]:
+        return {
+            "address": ["text", self.address],
+            "port": ["number", self.port],
+        }
+
+    def update_parameter(self, key: str, value: Any) -> bool:
+        if super().update_parameter(key, value):
+            return True
+        if key == "address":
+            self.address = str(value)
+        if key == "port":
+            self.port = int(value)
+        else:
+            return False
+        return True
+
+    def initialize(self) -> bool:
+        try:
+            self._sub = SUB(address_server=self.address, port_server=self.port)
+            self._sub.connect()
+            self._status(f"FlightInfo connected on {self.address}:{self.port}")
+            return True
+        except:
+            self._status(f"FlightInfo faield to connect on {self.address}:{self.port}")
+            return False
+
+    def loop(self) -> None:
+        if not self._sub:
+            return
+
+        try:
+            packet_b = self._sub.receive(timeout=1000)
+            if packet_b is None:
+                # timeout
+                return
+            packet = flight_info.UAVFlightInfo()
+            packet.ParseFromString(packet_b)
+
+            self._gps(packet.position.latitude, packet.position.longitude)
+
+            self.update_heading(
+                yaw=packet.attitude.yaw / 180 * np.pi,
+                pitch=packet.attitude.pitch / 180 * np.pi,
+                roll=packet.attitude.roll / 180 * np.pi,
+            )
+            self._quaternion(self.quaternion)
+
+        except:
+            pass  # TODO: now what?
+
+            self._data_invalid()
+            self._status("Recieved invalid FlightInfo message.")
+
+    def close(self) -> None:
+        if self._sub:
+            self._sub.disconnect()
