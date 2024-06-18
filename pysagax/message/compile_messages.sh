@@ -1,7 +1,12 @@
 #!/bin/bash
 # Requires protoc 
 
-sources=("pysagax/message/command.proto" "pysagax/message/data.proto" "pysagax/message/heading.proto")
+sources=(
+    "pysagax/message/command.proto" 
+    "pysagax/message/data.proto" 
+    "pysagax/message/heading.proto" 
+    "pysagax/message/flight_info.proto"
+)
 target=$(dirname $(dirname $(dirname "${BASH_SOURCE[0]}")))  # project root dir
 set -x
 for i in "${sources[@]}"
