@@ -811,7 +811,7 @@ class CompassGraphWithDeviation(CompassGraph):
                 if self.deviation is not None and self.angle is not None:
                         start = self.angle-self.deviation
                         stop = self.angle+self.deviation
-                        count = int((stop - start) / 0.16)+1 # 1 point every ~10°
+                        count = int((stop - start) / 0.16) + 2 # 1 point every ~10°
                         self.marker_image = self.plot.fill_between(  # type: ignore
                                 np.linspace(start, stop, count),
                                 0,

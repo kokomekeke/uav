@@ -158,9 +158,12 @@ class PlotFrame(tkinter.Frame):
         )
         self.df_plot = self.fig_ref.add_subplot(grid_spec[0, 1], projection="polar")
 
+        self.df_current_graph = CompassGraph(self.df_plot, self.params).initialize(
+            "lightseagreen", "DF Angle"
+        )
         self.df_graph = (
             CompassGraphWithDeviation(self.df_plot, self.params)
-            .initialize("blue", "DF Angle")
+            .initialize("blue", "DF Mean")
             .make_plot()
         )
 
@@ -181,6 +184,7 @@ class PlotFrame(tkinter.Frame):
             for graph in [
                 self.magnitude_waterfall_graph,
                 self.magnitude_spectrum_graph,
+                self.df_current_graph,
                 self.df_graph,
                 self.compass_graph,
                 self.compass_df_graph,
@@ -240,6 +244,9 @@ class PlotFrame(tkinter.Frame):
         assert self.df_graph is not None  ##TODO: assert for all or no compass graphs?
 
         ##TODO: graph df_value_std (and latest df_value??)
+        self.df_current_graph.add_point(
+            self.master.aggregated_roi_results["df_value_latest"]
+        )
         self.df_graph.add_point(
             self.master.aggregated_roi_results["df_value_mean"],
             self.master.aggregated_roi_results["df_value_std"],
