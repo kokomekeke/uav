@@ -40,14 +40,20 @@ class HeadingSource:
             return default_value
         return read_from_conf(self.conf, keys, default_value)
 
-    def _gps(self, lat: float, lon: float) -> None:
+    def _gps(self, lat: float, lon: float, timestamp: Optional[float] = None) -> None:
         if self.gps_updated_callback:
-            self.gps_updated_callback(lat, lon)
+            self.gps_updated_callback(lat, lon, timestamp)
 
-    def _quaternion(self, quaternion: pyquaternion.Quaternion) -> None:
+    def _quaternion(
+        self, quaternion: pyquaternion.Quaternion, timestamp: Optional[float] = None
+    ) -> None:
         if self.quaternion_updated_callback:
             self.quaternion_updated_callback(
-                quaternion[0], quaternion[1], quaternion[2], quaternion[3]
+                quaternion[0],
+                quaternion[1],
+                quaternion[2],
+                quaternion[3],
+                timestamp,
             )
 
     def _offset(self, offset: float) -> None:
@@ -438,14 +444,16 @@ class HeadingFlightInfo(HeadingSource):
             packet = flight_info.UAVFlightInfo()
             packet.ParseFromString(packet_b)
 
-            self._gps(packet.position.latitude, packet.position.longitude)
+            timestamp_s = float(packet.position.timestamp_unix) / 1e6  # convert us to s
+            self._gps(packet.position.latitude, packet.position.longitude, timestamp_s)
 
             self.update_heading(
                 yaw=packet.attitude.yaw / 180 * np.pi,
                 pitch=packet.attitude.pitch / 180 * np.pi,
                 roll=packet.attitude.roll / 180 * np.pi,
             )
-            self._quaternion(self.quaternion)
+            self._quaternion(self.quaternion, timestamp_s)
+            # TODO: add height information to heading data
 
         except:
             pass  # TODO: now what?

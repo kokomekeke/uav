@@ -26,7 +26,7 @@ from pysagax.heading.heading_sources import (
     HeadingEncoder,
     HeadingSource,
     HeadingStatic,
-    HeadingFlightInfo
+    HeadingFlightInfo,
 )
 
 
@@ -61,20 +61,45 @@ class HeadingRunner:
     def log_status(self, status: str):
         self._logger.info(status)
 
-    def gps_callback(self, lat: float, lon: float) -> None:
+    def _update_packet_timestamp(self, timestamp: Optional[float]) -> None:
+        """
+        If provided, set timestamp as packet.timestamp, else set it as current time.
+        timestamp: UNIX timestamp in seconds.
+        """
+        if timestamp is not None:
+            self._heading_data.timestamp.seconds = int(timestamp)
+            self._heading_data.timestamp.nanos = int(timestamp % 1 * 1e9)
+        else:
+            self._heading_data.timestamp.GetCurrentTime()
+
+    def gps_callback(
+        self, lat: float, lon: float, timestamp: Optional[float] = None
+    ) -> None:
+        """timestamp: use if provided by heading source. UNIX timestamp in seconds."""
         self._heading_data.gps_lat = lat
         self._heading_data.gps_lon = lon
         self._logger.debug(f"GPS callback lat={lat} lon={lon}")
-        self._heading_data.timestamp.GetCurrentTime()
+        self._update_packet_timestamp(timestamp)
         self._last_update_time = time.time()
         self.push_data()
 
-    def quaternion_callback(self, q0: float, q1: float, q2: float, q3: float) -> None:
+    def quaternion_callback(
+        self,
+        q0: float,
+        q1: float,
+        q2: float,
+        q3: float,
+        timestamp: Optional[float] = None,
+    ) -> None:
+        """
+        q0, q1, q2, q3: quaternion in scalar first form: [w, x, y, z]
+        timestamp: use if provided by heading source. UNIX timestamp in seconds.
+        """
         del self._heading_data.quaternion[:]
         for q in [q0, q1, q2, q3]:
             self._heading_data.quaternion.append(q)
         self._logger.debug(f"Quaternion callback [{q0} {q1} {q2} {q3}]")
-        self._heading_data.timestamp.GetCurrentTime()
+        self._update_packet_timestamp(timestamp)
         self._last_update_time = time.time()
         self.push_data()
 
