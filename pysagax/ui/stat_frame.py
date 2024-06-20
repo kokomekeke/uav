@@ -235,10 +235,14 @@ class StatFrame(tkinter.Frame):
             self.lat_string.set(f"{heading.gps_lat:.2f}")
             self.lon_string.set(f"{heading.gps_lon:.2f}")
             self.altitude_string.set(f"TBD")
-            attitude_quat = Rotation.from_quat(heading.quaternion)
-            yaw, pitch, roll = attitude_quat.as_euler("ZYX", degrees=True)
-            # is converting quaternion to/from YPR correct??????? 
-            #       DEFINITELY NOT
-            self.yaw_string.set(f"{yaw:.2f}°")
-            self.pitch_string.set(f"{pitch:.2f}°")
-            self.roll_string.set(f"{roll:.2f}°")
+            if len(heading.quaternion) == 4:
+                # Scipy's Rotation uses [x, y, z, w] order for quaternions
+                # pyquaternion's yaw_pitch_roll() seems to be wrong so I used Scipy
+                attitude = Rotation.from_quat(
+                    heading.quaternion[1:] + heading.quaternion[:1]
+                )
+                yaw, pitch, roll = attitude.as_euler("ZYX", degrees=True)
+
+                self.yaw_string.set(f"{yaw:.2f}°")
+                self.pitch_string.set(f"{pitch:.2f}°")
+                self.roll_string.set(f"{roll:.2f}°")
