@@ -9,8 +9,10 @@ services:
     ports:
       - 5432:5432
     volumes:
-      - ~/apps/postgres:/var/lib/postgresql/data
+      - postgresdata:/var/lib/postgresql/data
     environment:
       - POSTGRES_PASSWORD=S3cret
       - POSTGRES_USER=pysagax_gnd
       - POSTGRES_DB=comint
+volumes:
+  postgresdata:
