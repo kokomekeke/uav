@@ -33,6 +33,7 @@ dependencies = [
     "click",
     "sigmf",
     "transitions",
+    "sqlalchemy",
 ]
 
 [project.optional-dependencies]

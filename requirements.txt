@@ -18,3 +18,4 @@ protobuf~=4.25.2
 click~=8.1.7
 sigmf~=1.2.0
 transitions~=0.9.1
+sqlalchemy~=1.4.52
