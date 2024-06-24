@@ -839,6 +839,7 @@ class ScanEngine(Loop):
                     proto_data.Telemetry.Source.ENABLED,
                     proto_data.Telemetry.Source.RUNNING,
                 ]:
+                    self._last_calibration_timestamp = time.time()
                     self.done()
                 else:
                     self._handle_incoming_instruction(q_timeout)
