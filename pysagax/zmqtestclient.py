@@ -169,7 +169,7 @@ class ZMQConnectionThread(threading.Thread):
             try:
                 command = self.send_queue.get(timeout=2)
                 raw_response = self._zmq.send(
-                    command.SerializeToString(), timeout=20000
+                    command.SerializeToString(), timeout=1000000
                 )
                 if raw_response is not None:
                     response = proto.Response()
