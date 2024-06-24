@@ -125,17 +125,22 @@ class HeadingData(google.protobuf.message.Message):
     GPS_TIME_FIELD_NUMBER: builtins.int
     GPS_LAT_FIELD_NUMBER: builtins.int
     GPS_LON_FIELD_NUMBER: builtins.int
+    ALTITUDE_FIELD_NUMBER: builtins.int
     OFFSET_FIELD_NUMBER: builtins.int
     packet_id: builtins.int
     gps_lat: builtins.float
     gps_lon: builtins.float
+    altitude: builtins.float
+    """altitude (WGS84) in meter"""
     offset: builtins.float
     @property
     def timestamp(self) -> google.protobuf.timestamp_pb2.Timestamp:
         """System time of the acquisition, used to synchronize heading to signal"""
 
     @property
-    def quaternion(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.float]: ...
+    def quaternion(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.float]:
+        """in scalar-first form: [w, x, y, z]"""
+
     @property
     def gps_time(self) -> google.protobuf.timestamp_pb2.Timestamp:
         """Timestamp from the GPS if present, can be used to adjust system clock"""
@@ -149,9 +154,10 @@ class HeadingData(google.protobuf.message.Message):
         gps_time: google.protobuf.timestamp_pb2.Timestamp | None = ...,
         gps_lat: builtins.float = ...,
         gps_lon: builtins.float = ...,
+        altitude: builtins.float = ...,
         offset: builtins.float = ...,
     ) -> None: ...
     def HasField(self, field_name: typing.Literal["gps_time", b"gps_time", "timestamp", b"timestamp"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["gps_lat", b"gps_lat", "gps_lon", b"gps_lon", "gps_time", b"gps_time", "offset", b"offset", "packet_id", b"packet_id", "quaternion", b"quaternion", "timestamp", b"timestamp"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["altitude", b"altitude", "gps_lat", b"gps_lat", "gps_lon", b"gps_lon", "gps_time", b"gps_time", "offset", b"offset", "packet_id", b"packet_id", "quaternion", b"quaternion", "timestamp", b"timestamp"]) -> None: ...
 
 global___HeadingData = HeadingData

@@ -103,6 +103,16 @@ class HeadingRunner:
         self._last_update_time = time.time()
         self.push_data()
 
+    def altitude_callback(
+        self, altitude: float, timestamp: Optional[float] = None
+    ) -> None:
+        """timestamp: use if provided by heading source. UNIX timestamp in seconds."""
+        self._heading_data.altitude = altitude
+        self._logger.debug(f"Altitude callback ({altitude}")
+        self._update_packet_timestamp(timestamp)
+        self._last_update_time = time.time()
+        self.push_data()
+
     def offset_callback(self, offset: float) -> None:
         self._heading_data.offset = offset
         self._logger.debug(f"Offset callback offset={offset}")
@@ -113,6 +123,7 @@ class HeadingRunner:
     def invalid_callback(self) -> None:
         self._heading_data.gps_lat = 0
         self._heading_data.gps_lon = 0
+        self._heading_data.altitude = 0
         del self._heading_data.quaternion[:]
         self._logger.warning("Invalidate callback")
         self._heading_data.timestamp.GetCurrentTime()
@@ -166,6 +177,7 @@ class HeadingRunner:
             self._current_heading_source_label = config.selected_source_type
         self._heading_source.gps_updated_callback = self.gps_callback
         self._heading_source.quaternion_updated_callback = self.quaternion_callback
+        self._heading_source.altitude_updated_callback = self.altitude_callback
         self._heading_source.offset_updated_callback = self.offset_callback
         self._heading_source.data_invalid_callback = self.invalid_callback
         self._heading_source.status_updates_callback = self.log_status
@@ -221,7 +233,10 @@ class HeadingRunner:
 @click.option("--lat", help="Static GPS Lat", type=float, default=47.5226)
 @click.option("--lon", help="Static GPS Lon", type=float, default=19.0646)
 @click.option("--ang", help="Static Angle Degrees", type=float, default=120)
-def main(level: str, lat: float, lon: float, ang: float) -> None:
+@click.option(
+    "--alt", help="Static Altitude (above ground, meters)", type=float, default=0
+)
+def main(level: str, lat: float, lon: float, ang: float, alt: float) -> None:
     """Root command of CLI"""
 
     # Validate logging level format
@@ -235,7 +250,7 @@ def main(level: str, lat: float, lon: float, ang: float) -> None:
 
     # TODO: Implement config file
     heading_runner = HeadingRunner(
-        level=level, defaults={"lat": lat, "lon": lon, "angle": ang}
+        level=level, defaults={"lat": lat, "lon": lon, "angle": ang, "alt": alt}
     )
     heading_runner.start()
 

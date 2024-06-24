@@ -23,9 +23,14 @@ import pysagax.message.flight_info_pb2 as flight_info
 
 class HeadingSource:
     def __init__(self, conf: Optional[dict[str, Any]] = None) -> None:
-        self.gps_updated_callback: Optional[Callable[[float, float], None]] = None
+        self.gps_updated_callback: Optional[
+            Callable[[float, float, Optional[float]], None]
+        ] = None
         self.quaternion_updated_callback: Optional[
-            Callable[[float, float, float, float], None]
+            Callable[[float, float, float, float, Optional[float]], None]
+        ] = None
+        self.altitude_updated_callback: Optional[
+            Callable[[float, Optional[float]], None]
         ] = None
         self.offset_updated_callback: Optional[Callable[[float], None]] = None
         self.data_invalid_callback: Optional[Callable[[], None]] = None
@@ -55,6 +60,10 @@ class HeadingSource:
                 quaternion[3],
                 timestamp,
             )
+
+    def _altitude(self, altitude: float, timestamp: Optional[float] = None) -> None:
+        if self.altitude_updated_callback:
+            self.altitude_updated_callback(altitude, timestamp)
 
     def _offset(self, offset: float) -> None:
         if self.offset_updated_callback:
@@ -114,6 +123,9 @@ class HeadingStatic(HeadingSource):
         self.angle: float = self.cr(
             ["heading", "static", "angle"], self.cr(["heading", "angle"], 0)
         )
+        self.altitude: float = self.cr(
+            ["heading", "static", "altitude"], self.cr(["heading", "altitude"], 0)
+        )
 
     def update_parameter(self, key: str, value: Any) -> bool:
         if super().update_parameter(key, value):
@@ -128,6 +140,9 @@ class HeadingStatic(HeadingSource):
         elif key == "lon":
             self.lon = float(value)
             self._gps(self.lat, self.lon)
+        elif key == "altitude":
+            self.altitude = float(value)
+            self._altitude(self.altitude)
         else:
             return False
         return True
@@ -137,6 +152,7 @@ class HeadingStatic(HeadingSource):
             "lat": ["number", self.lat],
             "lon": ["number", self.lon],
             "angle": ["0-360", self.angle],
+            "altitude": ["number", self.altitude],
         }
 
     def loop(self) -> None:
@@ -177,6 +193,9 @@ class HeadingEncoder(HeadingSource):
         elif key == "lon":
             self.lon = float(value)
             self._gps(self.lat, self.lon)
+        elif key == "altitude":
+            self.altitude = float(value)
+            self._altitude(self.altitude)
         else:
             return False
         return True
@@ -416,7 +435,7 @@ class HeadingFlightInfo(HeadingSource):
             return True
         if key == "address":
             self.address = str(value)
-        if key == "port":
+        elif key == "port":
             self.port = int(value)
         else:
             return False
@@ -446,6 +465,7 @@ class HeadingFlightInfo(HeadingSource):
 
             timestamp_s = float(packet.position.timestamp_unix) / 1e6  # convert us to s
             self._gps(packet.position.latitude, packet.position.longitude, timestamp_s)
+            self._altitude(packet.position.ellipsoid_height, timestamp_s)
 
             self.update_heading(
                 yaw=packet.attitude.yaw / 180 * np.pi,
@@ -453,13 +473,10 @@ class HeadingFlightInfo(HeadingSource):
                 roll=packet.attitude.roll / 180 * np.pi,
             )
             self._quaternion(self.quaternion, timestamp_s)
-            # TODO: add height information to heading data
 
         except:
-            pass  # TODO: now what?
-
             self._data_invalid()
-            self._status("Recieved invalid FlightInfo message.")
+            self._status("Received invalid FlightInfo message.")
 
     def close(self) -> None:
         if self._sub:

@@ -232,9 +232,9 @@ class StatFrame(tkinter.Frame):
         self.snr_string.set(f"{snr:.2f}")
         
         if heading is not None:
-            self.lat_string.set(f"{heading.gps_lat:.2f}")
-            self.lon_string.set(f"{heading.gps_lon:.2f}")
-            self.altitude_string.set(f"TBD")
+            self.lat_string.set(f"{heading.gps_lat:.2f}°")
+            self.lon_string.set(f"{heading.gps_lon:.2f}°")
+            self.altitude_string.set(f"{heading.altitude:.2f} m ")
             if len(heading.quaternion) == 4:
                 # Scipy's Rotation uses [x, y, z, w] order for quaternions
                 # pyquaternion's yaw_pitch_roll() seems to be wrong so I used Scipy
