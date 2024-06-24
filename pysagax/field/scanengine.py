@@ -151,6 +151,7 @@ class ScanEngine(Loop):
             "dest": ScanEngineState.SCANNING_IDLE,
             "prepare": "configure_scanning",
             "conditions": "check_cs_response",
+            "before": "trigger_calibration",
         },
         {
             "trigger": "switch_scanning",
@@ -158,6 +159,7 @@ class ScanEngine(Loop):
             "dest": ScanEngineState.SCANNING_IDLE,
             "prepare": "configure_scanning",
             "conditions": "check_cs_response",
+            "before": "trigger_calibration",
         },
         {
             "trigger": "switch_tracking",
@@ -172,6 +174,7 @@ class ScanEngine(Loop):
             "dest": ScanEngineState.TRACKING_IDLE,
             "prepare": "configure_tracking",
             "conditions": "check_cs_response",
+            "before": "trigger_calibration",
         },
         {
             "trigger": "switch_tracking",
@@ -179,6 +182,7 @@ class ScanEngine(Loop):
             "dest": ScanEngineState.TRACKING_IDLE,
             "prepare": "configure_tracking",
             "conditions": "check_cs_response",
+            "before": "trigger_calibration",
         },
         {
             "trigger": "off",
@@ -388,6 +392,10 @@ class ScanEngine(Loop):
             <= time.time()
         )
 
+    def trigger_calibration(self) -> bool:
+        self._last_calibration_timestamp = 0
+        return True
+
     def to_supported_iq_rate(self, iq: int) -> int:
         """
         This is important for certain SDR radios which support a limited set of IQ rates.
@@ -542,7 +550,6 @@ class ScanEngine(Loop):
         self._last_config_command = se_cmd
         self._latest_cs_command = command
         self._cs_commands_q.put((command, self._config_cs_timeout))
-        self._last_calibration_timestamp = 0  # trigger calibration
 
     def configure_tracking(self, se_cmd: proto_cmd.Command) -> None:
         """
@@ -611,7 +618,6 @@ class ScanEngine(Loop):
         self._last_config_command = se_cmd
         self._latest_cs_command = command
         self._cs_commands_q.put((command, self._config_cs_timeout))
-        self._last_calibration_timestamp = 0  # trigger calibration
 
     def configure_manual(self, se_cmd: proto_cmd.Command) -> None:
         """
