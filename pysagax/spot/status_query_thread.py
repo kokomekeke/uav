@@ -34,6 +34,7 @@ class StatusQueryThread(threading.Thread):
 
     def source_sysinfo_handler(self, resp) -> None:
         assert isinstance(resp, proto_cmd.Response)
+        self.source_manager.system_info_handler(resp)
         self.client.update_system_info(resp.info)
 
     def __init__(self, client) -> None:

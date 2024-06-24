@@ -15,7 +15,8 @@ STREAM_LEVEL = {
     "TELEMETRY": proto_cmd.StreamTarget.StreamLevel.TELEMETRY,
     "DETECTION": proto_cmd.StreamTarget.StreamLevel.DETECTION,
     "SPECTRUM": proto_cmd.StreamTarget.StreamLevel.SPECTRUM,
-} # TODO: list protobuf enum names and values more elegantly
+}  # TODO: list protobuf enum names and values more elegantly
+
 
 class DebugTab(ttk.Frame):
     def __init__(
@@ -24,14 +25,40 @@ class DebugTab(ttk.Frame):
         send_commands_function: Callable[[str], None],
         abort_commands_function: Callable[[], None],
         source_manager: SourceManager,
-        client
+        client,
     ) -> None:
         super().__init__(master)
         self.source_manager: SourceManager = source_manager
         self.send_commands_function = send_commands_function
         self.abort_commands_function = abort_commands_function
         self.client = client
-        
+
+        self._pack_stream_controls()
+
+        self.buttons_frame = ttk.Frame(self)
+        self.ping_pysagax_button = tkinter.Button(
+            self.buttons_frame,
+            text="Ping pysagax-UAV",
+            command=self.ping_pysagax_commands,
+        )
+        self.ping_pysagax_button.pack(side=tkinter.BOTTOM, anchor="w")
+
+        self.ping_cs_button = tkinter.Button(
+            self.buttons_frame, text="ping CoreService", command=self.ping_cs_commands
+        )
+        self.ping_cs_button.pack(side=tkinter.BOTTOM, anchor="w")
+
+        self.cs_restart_button = tkinter.Button(
+            self.buttons_frame, text="Restart CS", command=self.cs_restart_commands
+        )
+        self.cs_restart_button.pack(side=tkinter.BOTTOM, anchor="w")
+        self.pysagax_restart_button = tkinter.Button(
+            self.buttons_frame,
+            text="Restart PysagaxUAV",
+            command=self.pysagax_restart_commands,
+        )
+        self.pysagax_restart_button.pack(side=tkinter.BOTTOM, anchor="w")
+        self.buttons_frame.pack(side=tkinter.LEFT, anchor="ne")
         self.stream_packet_stat_string = tkinter.StringVar(value="stream packet stats")
         self.stream_packet_label = tkinter.Label(
             self,
@@ -40,39 +67,25 @@ class DebugTab(ttk.Frame):
             anchor="w",
             justify="left",
         )
-        self.stream_packet_label.pack(side=tkinter.TOP, anchor="e")
+        self.stream_packet_label.pack(side=tkinter.LEFT, anchor="ne")
 
-        self._pack_stream_controls()
-
-        self.ping_pysagax_button = tkinter.Button(self, text="Ping pysagax-UAV", command=self.ping_pysagax_commands)
-        self.ping_pysagax_button.pack(side=tkinter.BOTTOM, anchor="w")
-
-        self.ping_cs_button = tkinter.Button(self, text="ping CoreService", command=self.ping_cs_commands)
-        self.ping_cs_button.pack(side=tkinter.BOTTOM, anchor="w")
-
-        self.cs_restart_button = tkinter.Button(
-            self, text="Restart CS", command=self.cs_restart_commands
-        )
-        self.cs_restart_button.pack(side=tkinter.BOTTOM, anchor="w")
-        self.pysagax_restart_button = tkinter.Button(
-            self, text="Restart PysagaxUAV", command=self.pysagax_restart_commands
-        )
-        self.pysagax_restart_button.pack(side=tkinter.BOTTOM, anchor="w")
-    
     def _pack_stream_controls(self):
         self.stream_controls_frame = ttk.Frame(self)
-        self.stream_controls_frame.pack(side=tkinter.LEFT, anchor="n")
         self.stream_controls_frame.columnconfigure(0, weight=2)
         self.stream_controls_frame.columnconfigure(1, weight=1)
-        
+
         self.stream_level_str = tkinter.StringVar(value="SPECTRUM")
 
-        self.telemetry_level_combo = ttk.Combobox(self.stream_controls_frame, textvariable=self.stream_level_str)
+        self.telemetry_level_combo = ttk.Combobox(
+            self.stream_controls_frame, textvariable=self.stream_level_str
+        )
         self.telemetry_level_combo["values"] = list(STREAM_LEVEL.keys())
         self.telemetry_level_combo.grid(row=0, column=0, columnspan=1)
 
         self.stream_target_ip_str = tkinter.StringVar(value="target IP:")
-        self.stream_target_ip_label = tkinter.Label(self.stream_controls_frame, textvariable=self.stream_target_ip_str)
+        self.stream_target_ip_label = tkinter.Label(
+            self.stream_controls_frame, textvariable=self.stream_target_ip_str
+        )
         self.stream_target_ip_label.grid(row=0, column=1)
 
         self.heartbeat_to_entry = EntryWithLabel(
@@ -90,19 +103,20 @@ class DebugTab(ttk.Frame):
             "1",
         )
         self.config_stream_button = tkinter.Button(
-            self.stream_controls_frame, text="Configure stream", command=self.configure_stream_commands
+            self.stream_controls_frame,
+            text="Configure stream",
+            command=self.configure_stream_commands,
         )
         self.config_stream_button.grid(row=3, column=0)
-        
-
+        self.stream_controls_frame.pack(side=tkinter.LEFT, anchor="ne")
 
     def ping_cs_commands(self) -> None:
-        self.abort_commands_function() # is aborting needed? 
+        self.abort_commands_function()  # is aborting needed?
         cmd = proto_cmd.Command(instruction=proto_cmd.CS_PING, ping_data="debug")
         self.send_commands_function(cmd)
-        
+
     def ping_pysagax_commands(self) -> None:
-        self.abort_commands_function() # is aborting needed? 
+        self.abort_commands_function()  # is aborting needed?
         cmd = proto_cmd.Command(instruction=proto_cmd.PING, ping_data="debug")
         self.send_commands_function(cmd)
 
@@ -123,7 +137,12 @@ class DebugTab(ttk.Frame):
         print(f"CS PING response: ", resp.ping_data)
 
     def update_stream_packet_stats(self, stats) -> None:
-        stat_string = str(stats).replace(": {", ":{\n\t").replace(",", ",\n\t").replace("},\n\t", "},\n")
+        stat_string = (
+            str(stats)
+            .replace(": {", ":{\n\t")
+            .replace(",", ",\n\t")
+            .replace("},\n\t", "},\n")
+        )
         self.stream_packet_stat_string.set(stat_string)
         pass
 
@@ -138,7 +157,7 @@ class DebugTab(ttk.Frame):
         cmd_stream_stop.target.heartbeat_timeout = int(self.heartbeat_to_entry.get())
         cmd_stream_stop.target.telemetry_timeout = int(self.telemetry_to_entry.get())
 
-        cmd_stream_start = proto_cmd.Command(instruction= proto_cmd.STREAM_START)
+        cmd_stream_start = proto_cmd.Command(instruction=proto_cmd.STREAM_START)
         cmd_stream_start.target.id = 1
         cmd_stream_start.target.level = STREAM_LEVEL[self.stream_level_str.get()]
         cmd_stream_start.target.address = get_ip(host_address)
