@@ -537,8 +537,8 @@ class ScanEngine(Loop):
         command.config.cs.scan_plan.CopyFrom(
             self._scan_algorithm(se_cmd.config.se.scanning)
         )
-        command.config.cs.source_type = self._source_device_type
-        command.config.cs.source_path = self._source_device_path
+        # command.config.cs.source_type = self._source_device_type
+        # command.config.cs.source_path = self._source_device_path
         self._last_config_command = se_cmd
         self._latest_cs_command = command
         self._cs_commands_q.put((command, self._config_cs_timeout))
@@ -605,8 +605,8 @@ class ScanEngine(Loop):
             calib_range.center_freq_list(self._calibration_resolution_bw, repeat=1)
         )
 
-        command.config.cs.source_type = self._source_device_type
-        command.config.cs.source_path = self._source_device_path
+        # command.config.cs.source_type = self._source_device_type
+        # command.config.cs.source_path = self._source_device_path
 
         self._last_config_command = se_cmd
         self._latest_cs_command = command
