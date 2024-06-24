@@ -224,7 +224,7 @@ class SourceManager:
             self.get_single_roi_mask(roi_center, roi_span, roi_threshold)
         )
         # TODO: heading?
-        # TODO: mean_window
+        cmd.config.pp.mean_window = 1
         # TODO: cmd.config.cs.type = LIVE/RECORDED #why is it needed???
         return [cmd]
 

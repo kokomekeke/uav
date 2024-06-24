@@ -258,7 +258,6 @@ class ClientWindow(tkinter.Frame):
 
         # TODO: signal_db, noise_db = self.calculate_snr(packet)
         if len(packet.detection):
-            print(packet.detection)
             signal_db = packet.detection[0].strength
             noise_db = signal_db - packet.detection[0].snr
         else:
@@ -291,7 +290,7 @@ class ClientWindow(tkinter.Frame):
                 "df_value_mean": packet.detection[0].mean_azimuth,
                 "df_value_std": packet.detection[0].deviation,
                 "df_elevation_latest": packet.detection[0].elevation,
-                "df_elevation_mean":  packet.detection[0].mean_elevation,
+                "df_elevation_mean": packet.detection[0].mean_elevation,
                 "df_elevation_std": 0,
             }
             snr = packet.detection[0].snr
@@ -305,7 +304,9 @@ class ClientWindow(tkinter.Frame):
                 "df_elevation_std": None,
             }
             snr = float("-inf")
-        self.stat_frame.update_stats(self.aggregated_roi_results, snr, packet.heading_data)
+        self.stat_frame.update_stats(
+            self.aggregated_roi_results, snr, packet.heading_data
+        )
 
         # if isinstance(packet, CoreServiceEOFPacket):
         #         self.info_update_handler(
@@ -766,6 +767,7 @@ class Client:
         cmd = proto_cmd.Command()
         cmd.instruction = proto_cmd.CONFIG
         cmd.config.pp.roi.extend(roi_mask)
+        cmd.config.pp.mean_window = 1
         self.send_commands(cmd)
         self.update_roi_settings(roi_mask)
 
