@@ -67,8 +67,10 @@ class ClientWindow(tkinter.Frame):
 
         # aggregated and current roi results, coming from StreaAndCompassProcess
         self.aggregated_roi_results = {
+            "df_value_latest": None,
             "df_value_mean": None,
             "df_value_std": None,
+            "df_elevation_latest": None,
             "df_elevation_mean": None,
             "df_elevation_std": None,
         }
@@ -255,7 +257,12 @@ class ClientWindow(tkinter.Frame):
         self.update_stream_packet_lb(packet)
 
         # TODO: signal_db, noise_db = self.calculate_snr(packet)
-        signal_db, noise_db = 0, 0
+        if len(packet.detection):
+            print(packet.detection)
+            signal_db = packet.detection[0].strength
+            noise_db = signal_db - packet.detection[0].snr
+        else:
+            signal_db, noise_db = 0, 0
 
         # TODO: updating ROI on waterfall
         # if len(packet.detection):
@@ -279,27 +286,26 @@ class ClientWindow(tkinter.Frame):
 
         # TODO: rethink roi results
         if len(packet.detection):
-            latest_roi_resutls = {"df_value": 3, "df_elevation": 0}
             self.aggregated_roi_results = {
-                "df_value_mean": packet.detection[0].azimuth,
+                "df_value_latest": packet.detection[0].azimuth,
+                "df_value_mean": packet.detection[0].mean_azimuth,
                 "df_value_std": packet.detection[0].deviation,
-                "df_elevation_mean": 0,
+                "df_elevation_latest": packet.detection[0].elevation,
+                "df_elevation_mean":  packet.detection[0].mean_elevation,
                 "df_elevation_std": 0,
             }
-            self.aggregated_roi_results["df_value_std"] = packet.detection[0].deviation
-            latest_roi_resutls = {
-                "df_value": packet.detection[0].azimuth,
-                "df_elevation": packet.detection[0].elevation,
-            }
+            snr = packet.detection[0].snr
         else:
-            latest_roi_resutls = {"df_value": None, "df_elevation": None}
             self.aggregated_roi_results = {
+                "df_value_latest": None,
                 "df_value_mean": None,
                 "df_value_std": None,
+                "df_elevation_latest": None,
                 "df_elevation_mean": None,
                 "df_elevation_std": None,
             }
-        self.stat_frame.update_stats(latest_roi_resutls, self.aggregated_roi_results)
+            snr = float("-inf")
+        self.stat_frame.update_stats(self.aggregated_roi_results, snr, packet.heading_data)
 
         # if isinstance(packet, CoreServiceEOFPacket):
         #         self.info_update_handler(

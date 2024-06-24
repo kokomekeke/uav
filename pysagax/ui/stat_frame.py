@@ -9,6 +9,9 @@ import numpy as np
 
 from pysagax.util.mat import normalize_angle
 
+import pysagax.message.heading_pb2 as proto_heading
+from scipy.spatial.transform import Rotation
+
 
 class StatFrame(tkinter.Frame):
     def __init__(self, master: tkinter.Misc, *args: Any, **kwargs: Any):
@@ -24,6 +27,12 @@ class StatFrame(tkinter.Frame):
 
         self.quality_value_string = tkinter.StringVar(value="NaN")
         self.snr_string = tkinter.StringVar(value="NaN")
+        self.lat_string = tkinter.StringVar(value="NaN")
+        self.lon_string = tkinter.StringVar(value="NaN")
+        self.altitude_string = tkinter.StringVar(value="NaN")
+        self.yaw_string = tkinter.StringVar(value="NaN")
+        self.pitch_string = tkinter.StringVar(value="NaN")
+        self.roll_string = tkinter.StringVar(value="NaN")
 
         self.columnconfigure(0, weight=1, minsize=50)
         self.columnconfigure(1, weight=1, minsize=60)
@@ -94,10 +103,35 @@ class StatFrame(tkinter.Frame):
             column=1, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=3
         )
 
+        # SNR
         snr_label = ttk.Label(self, text="SNR:")
         snr_label.grid(column=2, row=3, sticky=tkinter.W, padx=5, pady=5)
         snr_disp = ttk.Label(self, textvariable=self.snr_string, **display_kwargs)
         snr_disp.grid(column=3, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
+
+        # # HEADING DATA
+        lat_lon_label = ttk.Label(self, text="Lat, Lon:")
+        lat_lon_label.grid(column=0, row=5, sticky=tkinter.W, padx=5, pady=5)
+        lat_disp = ttk.Label(self, textvariable=self.lat_string, **display_kwargs)
+        lat_disp.grid(column=1, row=5, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
+        lon_disp = ttk.Label(self, textvariable=self.lon_string, **display_kwargs)
+        lon_disp.grid(column=2, row=5, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
+
+        altitude_label = ttk.Label(self, text="Altitude (m):")
+        altitude_label.grid(column=0, row=6, sticky=tkinter.W, padx=5, pady=5)
+        altitude_disp = ttk.Label(self, textvariable=self.altitude_string, **display_kwargs)
+        altitude_disp.grid(column=1, row=6, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
+
+        attitude_label = ttk.Label(self, text="Attitude (YPR, deg):")
+        attitude_label.grid(column=0, row=7, sticky=tkinter.W, padx=5, pady=5)
+        yaw_disp = ttk.Label(self, textvariable=self.yaw_string, **display_kwargs)
+        yaw_disp.grid(column=1, row=7, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
+        pitch_disp = ttk.Label(self, textvariable=self.pitch_string, **display_kwargs)
+        pitch_disp.grid(column=2, row=7, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
+        roll_disp = ttk.Label(self, textvariable=self.roll_string, **display_kwargs)
+        roll_disp.grid(column=3, row=7, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
+
+
 
         self.peak_chart = tkinter.Canvas(
             self,
@@ -167,7 +201,9 @@ class StatFrame(tkinter.Frame):
             self.peak_chart.itemconfig(self.peak_texts[i], text=text)
 
     def update_stats(
-        self, latest_roi_results: dict[str, Any], aggregated_roi_results: dict[str, Any]
+        self, aggregated_roi_results: dict[str, Any],
+        snr = float("-inf"),
+        heading: proto_heading.HeadingData | None = None
     ) -> None:
         rad_to_deg = (
             lambda x: normalize_angle(x * 180 / np.pi, high=360.0, low=0.0)
@@ -175,7 +211,7 @@ class StatFrame(tkinter.Frame):
             else 0
         )
 
-        self.df_value_string.set(f"{rad_to_deg(latest_roi_results['df_value']):.2f}°")
+
         self.df_value_mean_string.set(
             f"{rad_to_deg(aggregated_roi_results['df_value_mean']):.2f}°"
         )
@@ -184,7 +220,7 @@ class StatFrame(tkinter.Frame):
         )
 
         self.df_elev_string.set(
-            f"{rad_to_deg(latest_roi_results['df_elevation']):.2f}°"
+            f"{rad_to_deg(aggregated_roi_results['df_elevation_latest']):.2f}°"
         )
         self.df_elev_mean_string.set(
             f"{rad_to_deg(aggregated_roi_results['df_elevation_mean']):.2f}°"
@@ -192,3 +228,21 @@ class StatFrame(tkinter.Frame):
         self.df_elev_deviation_string.set(
             f"{rad_to_deg(aggregated_roi_results['df_elevation_std']):.2f}°"
         )
+
+        self.snr_string.set(f"{snr:.2f}")
+        
+        if heading is not None:
+            self.lat_string.set(f"{heading.gps_lat:.2f}°")
+            self.lon_string.set(f"{heading.gps_lon:.2f}°")
+            self.altitude_string.set(f"{heading.altitude:.2f} m ")
+            if len(heading.quaternion) == 4:
+                # Scipy's Rotation uses [x, y, z, w] order for quaternions
+                # pyquaternion's yaw_pitch_roll() seems to be wrong so I used Scipy
+                attitude = Rotation.from_quat(
+                    heading.quaternion[1:] + heading.quaternion[:1]
+                )
+                yaw, pitch, roll = attitude.as_euler("ZYX", degrees=True)
+
+                self.yaw_string.set(f"{yaw:.2f}°")
+                self.pitch_string.set(f"{pitch:.2f}°")
+                self.roll_string.set(f"{roll:.2f}°")

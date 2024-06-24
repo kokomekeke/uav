@@ -26,6 +26,7 @@ from pysagax.heading.heading_sources import (
     HeadingEncoder,
     HeadingSource,
     HeadingStatic,
+    HeadingFlightInfo,
 )
 
 
@@ -43,6 +44,7 @@ class HeadingRunner:
             "AHRSFTDI": HeadingAHRSFTDI,
             "Encoder": HeadingEncoder,
             "Static": HeadingStatic,
+            "FlightInfo": HeadingFlightInfo,
         }
         self._heading_sources_labels = dict()
         for key, value in self._heading_sources.items():
@@ -59,20 +61,55 @@ class HeadingRunner:
     def log_status(self, status: str):
         self._logger.info(status)
 
-    def gps_callback(self, lat: float, lon: float) -> None:
+    def _update_packet_timestamp(self, timestamp: Optional[float]) -> None:
+        """
+        If provided, set timestamp as packet.timestamp, else set it as current time.
+        timestamp: UNIX timestamp in seconds.
+        """
+        if timestamp is not None:
+            self._heading_data.timestamp.seconds = int(timestamp)
+            self._heading_data.timestamp.nanos = int(timestamp % 1 * 1e9)
+        else:
+            self._heading_data.timestamp.GetCurrentTime()
+
+    def gps_callback(
+        self, lat: float, lon: float, timestamp: Optional[float] = None
+    ) -> None:
+        """timestamp: use if provided by heading source. UNIX timestamp in seconds."""
         self._heading_data.gps_lat = lat
         self._heading_data.gps_lon = lon
         self._logger.debug(f"GPS callback lat={lat} lon={lon}")
-        self._heading_data.timestamp.GetCurrentTime()
+        self._update_packet_timestamp(timestamp)
         self._last_update_time = time.time()
         self.push_data()
 
-    def quaternion_callback(self, q0: float, q1: float, q2: float, q3: float) -> None:
+    def quaternion_callback(
+        self,
+        q0: float,
+        q1: float,
+        q2: float,
+        q3: float,
+        timestamp: Optional[float] = None,
+    ) -> None:
+        """
+        q0, q1, q2, q3: quaternion in scalar first form: [w, x, y, z]
+        timestamp: use if provided by heading source. UNIX timestamp in seconds.
+        """
         del self._heading_data.quaternion[:]
         for q in [q0, q1, q2, q3]:
             self._heading_data.quaternion.append(q)
         self._logger.debug(f"Quaternion callback [{q0} {q1} {q2} {q3}]")
-        self._heading_data.timestamp.GetCurrentTime()
+        self._update_packet_timestamp(timestamp)
+        self._last_update_time = time.time()
+        self.push_data()
+
+    def altitude_callback(
+        self, altitude: float, timestamp: Optional[float] = None
+    ) -> None:
+        """timestamp: use if provided by heading source. UNIX timestamp in seconds."""
+        self._heading_data.altitude = altitude
+        self._logger.debug(f"Altitude callback ({altitude}")
+        self._update_packet_timestamp(timestamp)
         self._last_update_time = time.time()
         self.push_data()
 
@@ -86,6 +123,7 @@ class HeadingRunner:
     def invalid_callback(self) -> None:
         self._heading_data.gps_lat = 0
         self._heading_data.gps_lon = 0
+        self._heading_data.altitude = 0
         del self._heading_data.quaternion[:]
         self._logger.warning("Invalidate callback")
         self._heading_data.timestamp.GetCurrentTime()
@@ -139,6 +177,7 @@ class HeadingRunner:
             self._current_heading_source_label = config.selected_source_type
         self._heading_source.gps_updated_callback = self.gps_callback
         self._heading_source.quaternion_updated_callback = self.quaternion_callback
+        self._heading_source.altitude_updated_callback = self.altitude_callback
         self._heading_source.offset_updated_callback = self.offset_callback
         self._heading_source.data_invalid_callback = self.invalid_callback
         self._heading_source.status_updates_callback = self.log_status
@@ -194,7 +233,10 @@ class HeadingRunner:
 @click.option("--lat", help="Static GPS Lat", type=float, default=47.5226)
 @click.option("--lon", help="Static GPS Lon", type=float, default=19.0646)
 @click.option("--ang", help="Static Angle Degrees", type=float, default=120)
-def main(level: str, lat: float, lon: float, ang: float) -> None:
+@click.option(
+    "--alt", help="Static Altitude (above ground, meters)", type=float, default=0
+)
+def main(level: str, lat: float, lon: float, ang: float, alt: float) -> None:
     """Root command of CLI"""
 
     # Validate logging level format
@@ -208,7 +250,7 @@ def main(level: str, lat: float, lon: float, ang: float) -> None:
 
     # TODO: Implement config file
     heading_runner = HeadingRunner(
-        level=level, defaults={"lat": lat, "lon": lon, "angle": ang}
+        level=level, defaults={"lat": lat, "lon": lon, "angle": ang, "alt": alt}
     )
     heading_runner.start()
 
