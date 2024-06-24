@@ -641,6 +641,7 @@ class ScanEngine(Loop):
         command.instruction = proto_cmd.CS_CALIBRATE_START
         command.calibration_freqs.CopyFrom(self._calibration_freq_list)
         self._cs_commands_q.put((command, self._instruction_cs_timeout))
+        time.sleep(0.3)
 
     def command_scanning(self):
         """
