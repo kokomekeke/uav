@@ -846,11 +846,49 @@ def on_close() -> None:
         root.destroy()
 
 
+class Splash(tkinter.Toplevel):
+    # FROM https://stackoverflow.com/a/38678891
+    def __init__(self, parent):
+        tkinter.Toplevel.__init__(self, parent)
+        self.title("Loading")
+
+        icon_image_fn = "spot.png"
+        if os.path.isfile(f"pysagax/{icon_image_fn}"):
+            self.icon_image = tkinter.PhotoImage(
+                file=f"pysagax/{icon_image_fn}"
+            )
+        else:
+            import importlib.resources
+
+            self.icon_image = tkinter.PhotoImage(
+                file=str(importlib.resources.files("pysagax").joinpath(icon_image_fn))
+            )
+
+        self.icon_image_zoomed = self.icon_image.zoom(10, 10)
+        self.icon_frame = tkinter.Frame(self, width=320, height=320)
+        self.icon_frame.place(anchor="center", relx=0.5, rely=0.5)
+        
+        self.icon_frame.pack(side=tkinter.RIGHT)
+        self.icon_label = tkinter.Label(
+            self.icon_frame, image=self.icon_image_zoomed, width=320, height=320
+        )
+        self.icon_label.pack()
+        self.update()
+
+    def destroy(self):
+        # self.icon_frame.destroy()
+        tkinter.BaseWidget.destroy(self)
+
+
 def main() -> None:
     global ex
     global root
     global conf
     global icon_image
+    root = tkinter.Tk()
+    root.withdraw()  # don't show client window until everything is drawn and deiconify() is called
+    splash = Splash(root)
+    icon_image = splash.icon_image
     parser = argparse.ArgumentParser(description="SPOTClient")
     parser.add_argument(
         "config", nargs="?", default="/var/sagax/spotclient/spotclient.toml"
@@ -865,21 +903,13 @@ def main() -> None:
     else:
         print("Config file not found")
     multiprocessing.set_start_method("spawn")
-    root = tkinter.Tk()
-    icon_image_fn = "spot.png"
-    if os.path.isfile(f"pysagax/{icon_image_fn}"):
-        icon_image = tkinter.PhotoImage(file=f"pysagax/{icon_image_fn}")
-    else:
-        import importlib.resources
-
-        icon_image = tkinter.PhotoImage(
-            file=str(importlib.resources.files("pysagax").joinpath(icon_image_fn))
-        )
     root.iconphoto(False, icon_image)
     root.geometry("1200x850")
     root.wm_title(f"SPOTClient {pysagax.__version__}")
     root.protocol("WM_DELETE_WINDOW", on_close)
     ex = Client(root)
+    root.deiconify()
+    splash.destroy()
     root.mainloop()
 
 
