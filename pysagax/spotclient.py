@@ -291,7 +291,7 @@ class ClientWindow(tkinter.Frame):
                 "df_value_std": packet.detection[0].deviation,
                 "df_elevation_latest": packet.detection[0].elevation,
                 "df_elevation_mean": packet.detection[0].mean_elevation,
-                "df_elevation_std": 0,
+                "df_elevation_std": float("nan"),
             }
             snr = packet.detection[0].snr
         else:
