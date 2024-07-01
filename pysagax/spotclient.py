@@ -266,11 +266,12 @@ class ClientWindow(tkinter.Frame):
         # TODO: updating ROI on waterfall
         # if len(packet.detection):
         #    self.plot_frame.draw_roi_window(packet.detection[0].frequency, packet.detection[0].bandwidth, -120)
-        self.plot_frame.plot_spectrum_packet(
-            packet.data[0],
-            signal_db,
-            noise_db,
-        )
+        if len(packet.data):
+            self.plot_frame.plot_spectrum_packet(
+                packet.data[0],
+                signal_db,
+                noise_db,
+            )
 
         self.stat_frame.update_peak_plot(packet.peaks)
 
