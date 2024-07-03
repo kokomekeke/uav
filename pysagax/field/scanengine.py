@@ -392,7 +392,7 @@ class ScanEngine(Loop):
             <= time.time()
         )
 
-    def trigger_calibration(self) -> bool:
+    def trigger_calibration(self, *args, **kwargs) -> bool:
         self._last_calibration_timestamp = 0
         return True
 
