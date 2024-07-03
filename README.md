@@ -189,8 +189,8 @@ After starting the program, you will need to send a STREAM START command to PySA
 ```
 
 ```bash
-zmqtestclient -p 5050  # Listens on UDP port 5050 for PySAGAX-UAV
-zmqtestclient -p 5050 -c 10.1.1.113:5556  # Does the same, but starts stream automatically (we have to specify the command host for that)
+clizmqclient -p 5050  # Listens on UDP port 5050 for PySAGAX-UAV
+clizmqclient -p 5050 -c 10.1.1.113:5556  # Does the same, but starts stream automatically (we have to specify the command host for that)
 clizmqclient -p 12937 10.1.1.113  # Connects to CoreService ZMQ TCP stream port
 ```
 
