@@ -199,6 +199,7 @@ clizmqclient -p 12937 10.1.1.113  # Connects to CoreService ZMQ TCP stream port
 Provides the heading data [GPS location, altitude, attitude (orientation relative to the horizontal plane)] for PysagaxUAV. Recieves configuration commands from PysagaxUAV. Can connect to different sources that generate heading data, and forwards the received data to PysagaxUAV using our HeadingData protobuf message structure.
 
 Supported heading sources:
+
  * Static: custom data (gps coords and azimuth) configured from commands
  * Aaronia GPS sensor
  * DT46 flight info server
@@ -216,6 +217,7 @@ pysagax-heading --lat 47.4951 --lon 18.9258 --ang 27 --alt 15
 PysagaxUAV is the central software that receives data and gives commands to the different tools that we use. Filters, aggregates and analyzes the raw data it received, based on its configuration to generate high-level COMINT events that are of interest in a particular application of the LENA product. Streams results of post-processing to the ground-based client. 
 
 Command and communication tasks:
+
  * Command connection: receive and answer commands from ground-based client
  * Streamer: stream processed data to client
  * CS command: configure CoreService and handle its responses
@@ -229,6 +231,7 @@ Command and communication tasks:
 
 
 Post-processing steps:
+
  * Synchronize heading data from pysagax-heading and measurement data from CoreService.
  * Generate detections: signals that are stronger than the configured threshold.
  * Calculate basic signal properties: occupied bandwidth and signal-to-noise ratio
