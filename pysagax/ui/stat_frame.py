@@ -119,8 +119,12 @@ class StatFrame(tkinter.Frame):
 
         altitude_label = ttk.Label(self, text="Altitude (m):")
         altitude_label.grid(column=0, row=6, sticky=tkinter.W, padx=5, pady=5)
-        altitude_disp = ttk.Label(self, textvariable=self.altitude_string, **display_kwargs)
-        altitude_disp.grid(column=1, row=6, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
+        altitude_disp = ttk.Label(
+            self, textvariable=self.altitude_string, **display_kwargs
+        )
+        altitude_disp.grid(
+            column=1, row=6, sticky=tkinter.E + tkinter.W, padx=5, pady=3
+        )
 
         attitude_label = ttk.Label(self, text="Attitude (YPR, deg):")
         attitude_label.grid(column=0, row=7, sticky=tkinter.W, padx=5, pady=5)
@@ -130,8 +134,6 @@ class StatFrame(tkinter.Frame):
         pitch_disp.grid(column=2, row=7, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
         roll_disp = ttk.Label(self, textvariable=self.roll_string, **display_kwargs)
         roll_disp.grid(column=3, row=7, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
-
-
 
         self.peak_chart = tkinter.Canvas(
             self,
@@ -172,7 +174,7 @@ class StatFrame(tkinter.Frame):
         if len(peaks) != 4:
             return
         max_width = self.peak_chart.winfo_width()
-        adc_resolution = 2 ** 15 - 1
+        adc_resolution = 2**15 - 1
 
         peaks = [int(peak) for peak in peaks]
         peaks_dbfs = [
@@ -183,9 +185,11 @@ class StatFrame(tkinter.Frame):
             400 / adc_resolution
         )  # min value of the scale (aprox. noise level)
         bar_widths = [
-            2 + (1 - peak / min_dbfs_level) * (max_width - 4)
-            if peak != float("-inf")
-            else 0
+            (
+                2 + (1 - peak / min_dbfs_level) * (max_width - 4)
+                if peak != float("-inf")
+                else 0
+            )
             for peak in peaks_dbfs
         ]  # logarithmic scaling
 
@@ -201,17 +205,20 @@ class StatFrame(tkinter.Frame):
             self.peak_chart.itemconfig(self.peak_texts[i], text=text)
 
     def update_stats(
-        self, aggregated_roi_results: dict[str, Any],
-        snr = float("-inf"),
-        heading: proto_heading.HeadingData | None = None
+        self,
+        aggregated_roi_results: dict[str, Any],
+        snr=float("-inf"),
+        heading: proto_heading.HeadingData | None = None,
     ) -> None:
-        rad_to_deg = (
-            lambda x: normalize_angle(x * 180 / np.pi, high=360.0, low=0.0)
+        rad_to_deg = lambda x: (
+            normalize_angle(x * 180 / np.pi, high=360.0, low=0.0)
             if x is not None
             else 0
         )
 
-
+        self.df_value_string.set(
+            f"{rad_to_deg(aggregated_roi_results['df_value_latest']):.2f}°"
+        )
         self.df_value_mean_string.set(
             f"{rad_to_deg(aggregated_roi_results['df_value_mean']):.2f}°"
         )
@@ -230,7 +237,7 @@ class StatFrame(tkinter.Frame):
         )
 
         self.snr_string.set(f"{snr:.2f}")
-        
+
         if heading is not None:
             self.lat_string.set(f"{heading.gps_lat:.2f}°")
             self.lon_string.set(f"{heading.gps_lon:.2f}°")

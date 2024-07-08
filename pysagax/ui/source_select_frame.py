@@ -33,8 +33,14 @@ class SourceSelectFrame(tkinter.Frame):
         )
         self.source_combo.bind("<<ComboboxSelected>>", self.source_combo_update)
 
+        # defining custom combobox style for source path: wider dropdown menu
+        ttk.Style().configure("WideDropdown.TCombobox", postoffset=(0, 0, 500, 0))
         self.source_file_path_combo = ttk.Combobox(
-            self, textvariable=self.source_file_path_string, width=11, state="disabled"
+            self,
+            textvariable=self.source_file_path_string,
+            width=11,
+            state="disabled",
+            style="WideDropdown.TCombobox",
         )
         self.source_file_path_combo.grid(
             column=1, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5, columnspan=3
