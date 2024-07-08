@@ -25,6 +25,14 @@ $PYENV_HOME/bin/python -m pip uninstall -y setuptools
 $PYENV_HOME/bin/python -m pip install -U setuptools
 $PYENV_HOME/bin/python -m pip install 'build<0.10.0'
 $PYENV_HOME/bin/python -m pip install versioneer wheel
+
+if command -v protoc &> /dev/null
+then
+    ./pysagax/message/compile_messages.sh
+fi
+
+$PYENV_HOME/bin/python -m versioneer install
+
 # $PYENV_HOME/bin/pip install -r requirements.txt
 $PYENV_HOME/bin/python -m build --wheel --no-isolation
 $PYENV_HOME/bin/python -m pip install $SETUP_DIST/*.whl
