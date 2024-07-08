@@ -62,3 +62,6 @@ pysagax.egg-info
 artifacts/
 build/
 .venv
+
+pysagax/message
+
