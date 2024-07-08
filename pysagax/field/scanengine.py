@@ -365,6 +365,7 @@ class ScanEngine(Loop):
         self._calibration_interval_seconds: float = calibration_interval_seconds
         self._calibration_freq_list = proto_cmd.FreqList()
         self._calibration_resolution_bw = calibration_resolution_bw
+        self._calibration_identifier: str = "default"
 
     def to_calibration_resolution_bw_raster(
         self, start: float, stop: float
@@ -656,7 +657,7 @@ class ScanEngine(Loop):
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CS_CALIBRATE_START
         command.calib_command.calibration_freqs.CopyFrom(self._calibration_freq_list)
-        command.calib_command.identifier = "default"
+        command.calib_command.identifier = self._calibration_identifier
         self._latest_cs_command = command
         self._cs_commands_q.put((command, self._instruction_cs_timeout))
         time.sleep(0.3)
@@ -780,6 +781,7 @@ class ScanEngine(Loop):
             self._calibration_freq_list.CopyFrom(
                 command.calib_command.calibration_freqs
             )
+            self._calibration_identifier = command.calib_command.identifier
             self.launch_calibration()
             response = proto_cmd.Response()
             response.instruction = proto_cmd.CS_CALIBRATE_START
@@ -793,6 +795,8 @@ class ScanEngine(Loop):
             proto_cmd.CS_PING,
             proto_cmd.POSITION,
             proto_cmd.CS_CALIBRATE_ABORT,
+            proto_cmd.CS_READ_PHASEDIFFS_FROM_FILE,
+            proto_cmd.CS_COMPENSATE_WITH_PHASEDIFFS_STOP,
         ]:
             self.manual_command(command)
             self.check_cs_response()
