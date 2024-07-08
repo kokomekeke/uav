@@ -63,6 +63,8 @@ def plot_spectrogram(meta, spectrogram, timestamps, radians=False, ax_to_share=N
     fig, ax = plt.subplots()
     fig.suptitle(f"{s_type}: cf = {center_freq:.2e}Hz; span = {span:.2e}Hz; channel_id = {channel}")
     show = ax.imshow if threshold is None else ax.matshow
+    show = ax.matshow #TODO: decide if matshow or imshow is the better! 
+    # TODO: or better: create a flag because both can be superior in certain cases
     image = show(#ax.imshow( # use matshow() for no anti aliasing!
         spectrogram,
         cmap=cmap,  # type: ignore
@@ -77,13 +79,13 @@ def plot_spectrogram(meta, spectrogram, timestamps, radians=False, ax_to_share=N
         ax_to_share.sharey(ax)
         ax_to_share.sharex(ax)
 
-
-    plt.subplots_adjust(bottom=0.25)
-    from matplotlib.widgets import Slider
-    ax_slider = plt.axes([0.1, 0.1, 0.8, 0.03])
-    slider = Slider(ax_slider, 'Threshold', -100, 0, valinit=-79,)# orientation="vertical")
-    slider.on_changed(lambda val:update(val, spectrogram, slider, image, fig))
-    ax.format_coord = format_coord
+    # TODO: make flag for enabling slider
+    # plt.subplots_adjust(bottom=0.25)
+    # from matplotlib.widgets import Slider
+    # ax_slider = plt.axes([0.1, 0.1, 0.8, 0.03])
+    # slider = Slider(ax_slider, 'Threshold', -100, 0, valinit=-79,)# orientation="vertical")
+    # slider.on_changed(lambda val:update(val, spectrogram, slider, image, fig))
+    # ax.format_coord = format_coord
     return ax
 
 def update(val, spectrogram, slider, im, fig):

@@ -38,9 +38,9 @@ min_drift = 0.
 def plot_spectrogram(spectrogram_file):
 
     subprocess.run(
-        ["python", "pysagax/gany/proto_file_stream/spectrogram_viewer.py", "-p", spectrogram_file],
+        ["python", "tools/spectrogram_recordings/spectrogram_viewer.py", "-p", spectrogram_file],
         check=True,
-        stdout = subprocess.DEVNULL, 
+        stdout = subprocess.DEVNULL if redraw_console else None, 
         stderr = subprocess.DEVNULL if redraw_console else None
     )
 
@@ -49,7 +49,8 @@ def pysagax_uav(spectrogram_file):
 
     subprocess.run(['python', 'pysagax/pysagax_uav.py', '--spectrogram-mode', 'playback', '--spectrogram-path',
                      spectrogram_file, '--level', 'INFO' if redraw_console else 'DEBUG'],
-                       check=True, stdout = subprocess.DEVNULL, 
+                       check=True, 
+                       stdout = subprocess.DEVNULL if redraw_console else None, 
                        stderr = subprocess.DEVNULL if redraw_console else None)
 
 
