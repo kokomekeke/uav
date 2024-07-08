@@ -28,7 +28,14 @@ $PYENV_HOME/bin/python -m pip install versioneer wheel
 
 if command -v protoc &> /dev/null
 then
-    ./pysagax/message/compile_messages.sh
+    if command -v protoc-gen-mypy &> /dev/null
+    then
+        ./pysagax/message/compile_messages.sh
+    else
+        echo "protoc-gen-mypy not found, skipping"
+    fi
+else
+    echo "protoc not found, skipping"
 fi
 
 $PYENV_HOME/bin/python -m versioneer install
