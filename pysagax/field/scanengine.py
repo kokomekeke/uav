@@ -655,7 +655,8 @@ class ScanEngine(Loop):
         assert self._cs_commands_q is not None
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CS_CALIBRATE_START
-        command.calibration_freqs.CopyFrom(self._calibration_freq_list)
+        command.calib_command.calibration_freqs.CopyFrom(self._calibration_freq_list)
+        command.calib_command.identifier = "default"
         self._latest_cs_command = command
         self._cs_commands_q.put((command, self._instruction_cs_timeout))
         time.sleep(0.3)
@@ -776,7 +777,9 @@ class ScanEngine(Loop):
             response.config.se.CopyFrom(self.construct_config_report())
             return response
         elif command.instruction == proto_cmd.CS_CALIBRATE_START:
-            self._calibration_freq_list.CopyFrom(command.calibration_freqs)
+            self._calibration_freq_list.CopyFrom(
+                command.calib_command.calibration_freqs
+            )
             self.launch_calibration()
             response = proto_cmd.Response()
             response.instruction = proto_cmd.CS_CALIBRATE_START
