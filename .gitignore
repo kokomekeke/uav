@@ -63,5 +63,5 @@ artifacts/
 build/
 .venv
 
-pysagax/message
-
+pysagax/message/*_pb2.py
+pysagax/message/*_pb2.pyi
