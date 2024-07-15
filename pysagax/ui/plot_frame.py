@@ -1,5 +1,7 @@
 import math
 import tkinter
+import matplotlib.gridspec
+import matplotlib.layout_engine
 import numpy as np
 from tkinter import ttk
 from typing import Any, Callable, Optional
@@ -49,7 +51,7 @@ class PlotFrame(tkinter.Frame):
         self.canvas: Optional[FigureCanvasTkAgg] = None
         self.canvas_toolbar: Optional[NavigationToolbar2Tk] = None
 
-        self.params = GraphParameters()
+        self.params: list[GraphParameters] = []
 
         self.animation: Optional[matplotlib.animation.FuncAnimation] = None
         """
@@ -67,24 +69,22 @@ class PlotFrame(tkinter.Frame):
 
         self.fps = read_from_conf(self.conf, ["display", "fps"], 25)
 
-        self.max_bin_count = read_from_conf(self.conf, ["display", "max_bin_count"], 1024)
-
-        self.params.waterfall_size = read_from_conf(
-            self.conf, ["display", "waterfall_size"], 200
-        )  # Amount of spectrum lines to be displayed on the waterfall diagram.
+        self.max_bin_count = read_from_conf(
+            self.conf, ["display", "max_bin_count"], 1024
+        )
 
         self.make_plots = read_from_conf(self.conf, ["display", "make_plots"], True)
 
         self.create_canvas()
         self._draw_empty_plot()
-        
+
     def _draw_empty_plot(self) -> None:
         # this gets called on startup to fill the graph area with an empty plot
         spectrum = proto_data.Spectrum()
         spectrum.spectrum_type = proto_data.Spectrum.SpectrumType.MAGNITUDE
         spectrum.data_type = proto_data.Spectrum.DataType.INT16
         spectrum.channel_id = 0
-        spectrum.data = np.array([0,0,0]).astype(np.dtype(np.int16)).tobytes()
+        spectrum.data = np.array([0, 0, 0]).astype(np.dtype(np.int16)).tobytes()
         spectrum.center_frequency = 2
         spectrum.bandwidth = 1
         self.plot_spectrum_packet(spectrum=spectrum)
@@ -96,7 +96,9 @@ class PlotFrame(tkinter.Frame):
         """
         self.destroy_plot()
 
-        self.fig = pyplot.Figure(tight_layout=True)  # type: ignore
+        # constrained -> small outer margins; tight -> aligned x axis in plots
+        # TODO: achieve the pros of constrained and tight at the same time
+        self.fig = pyplot.Figure(layout="constrained")
         self.canvas = FigureCanvasTkAgg(self.fig, master=self)
         self.canvas.get_tk_widget().pack(
             side=tkinter.TOP, fill=tkinter.BOTH, expand=True
@@ -123,33 +125,65 @@ class PlotFrame(tkinter.Frame):
         Creates matplotlib animation on the GUI
         """
         self.create_canvas()
+        # sort params (and graphs) by center freq
+        self.params.sort(key=lambda p: p.center_frequency)
 
         assert self.fig_ref
         self.fig_ref.clf()
 
         grid_spec = self.fig_ref.add_gridspec(  # type: ignore
-            nrows=2, ncols=2, width_ratios=(3, 2), height_ratios=(1, 1)
+            nrows=2,
+            ncols=2,
+            width_ratios=(10, 2),
+            height_ratios=(1, 1),
+            wspace=0.01,
+            hspace=0.01,
         )
-        self.magnitude_waterfall_plot = self.fig_ref.add_subplot(grid_spec[1, 0])
-        self.magnitude_waterfall_graph = WaterfallMagnitudeGraph(
-            self.magnitude_waterfall_plot, self.params
-        )
-        self.magnitude_waterfall_graph.max_points = self.max_bin_count
-        self.magnitude_waterfall_graph.initialize()
 
-        # colorbar = self.fig_ref.colorbar(  # type: ignore
-        #     self.magnitude_waterfall_graph.image, format=lambda x, _: f"{x:.0f}dB"
-        # )     #TODO:show colorbar but keep waterfall and spectrum graphs the same width
-        self.magnitude_waterfall_graph.make_plot()
+        waterfall_grid_spec = matplotlib.gridspec.GridSpecFromSubplotSpec(
+            1, len(self.params), subplot_spec=grid_spec[1, 0], wspace=0.01, hspace=0.01
+        )
+        spectrum_grid_spec = matplotlib.gridspec.GridSpecFromSubplotSpec(
+            1, len(self.params), subplot_spec=grid_spec[0, 0], wspace=0.01, hspace=0.01
+        )
+        self.magnitude_waterfall_plot = []
+        self.magnitude_waterfall_graph = []
+        self.magnitude_spectrum_plot = []
+        self.magnitude_spectrum_graph = []
+        for i in range(len(self.params)):
+            self.magnitude_waterfall_plot.append(
+                self.fig_ref.add_subplot(waterfall_grid_spec[i])
+            )
+            self.magnitude_waterfall_graph.append(
+                WaterfallMagnitudeGraph(
+                    self.magnitude_waterfall_plot[i], self.params[i]
+                )
+            )
+            self.magnitude_waterfall_graph[i].max_points = self.max_bin_count
+            self.magnitude_waterfall_graph[i].initialize()
 
-        self.magnitude_spectrum_plot = self.fig_ref.add_subplot(
-            grid_spec[0, 0], sharex=self.magnitude_waterfall_plot
-        )
-        self.magnitude_spectrum_graph = MagnitudeSpectrumGraph(
-            self.magnitude_spectrum_plot, self.params
-        )
-        self.magnitude_spectrum_graph.vmin = self.spectrum_graph_min_db
-        self.magnitude_spectrum_graph.initialize(color="blue").make_plot()
+            # colorbar = self.fig_ref.colorbar(  # type: ignore
+            #     self.magnitude_waterfall_graph.image, format=lambda x, _: f"{x:.0f}dB"
+            # )     #TODO:show colorbar but keep waterfall and spectrum graphs the same width
+            self.magnitude_waterfall_graph[i].make_plot()
+
+            self.magnitude_spectrum_plot.append(
+                self.fig_ref.add_subplot(
+                    spectrum_grid_spec[i], sharex=self.magnitude_waterfall_plot[i]
+                )
+            )
+            self.magnitude_spectrum_graph.append(
+                MagnitudeSpectrumGraph(self.magnitude_spectrum_plot[i], self.params[i])
+            )
+            self.magnitude_spectrum_graph[i].vmin = self.spectrum_graph_min_db
+            self.magnitude_spectrum_graph[i].initialize(color="blue").make_plot()
+
+            # remove axis ticks and titles where redundant
+            self.magnitude_spectrum_plot[i].tick_params(labelbottom=False)
+            if i != 0:
+                self.magnitude_spectrum_plot[i].tick_params(labelleft=False)
+                self.magnitude_waterfall_plot[i].tick_params(labelleft=False)
+                self.magnitude_waterfall_plot[i].set_ylabel("")
 
         self.fig_ref.canvas.callbacks.connect("button_press_event", self.click_handler)  # type: ignore
 
@@ -158,20 +192,21 @@ class PlotFrame(tkinter.Frame):
         )
         self.df_plot = self.fig_ref.add_subplot(grid_spec[0, 1], projection="polar")
 
-        self.df_current_graph = CompassGraph(self.df_plot, self.params).initialize(
-            "lightseagreen", "DF Angle"
-        )
+        compass_graph_params = GraphParameters()
+        self.df_current_graph = CompassGraph(
+            self.df_plot, compass_graph_params
+        ).initialize("lightseagreen", "DF Angle")
         self.df_graph = (
-            CompassGraphWithDeviation(self.df_plot, self.params)
+            CompassGraphWithDeviation(self.df_plot, compass_graph_params)
             .initialize("blue", "DF Mean")
             .make_plot()
         )
 
-        self.compass_df_graph = CompassGraph(self.compass_plot, self.params).initialize(
-            "blue", "DF Heading"
-        )
+        self.compass_df_graph = CompassGraph(
+            self.compass_plot, compass_graph_params
+        ).initialize("blue", "DF Heading")
         self.compass_graph = (
-            CompassGraph(self.compass_plot, self.params)
+            CompassGraph(self.compass_plot, compass_graph_params)
             .initialize("red", "UAV Heading", nesw=True)
             .make_plot()
         )
@@ -181,9 +216,9 @@ class PlotFrame(tkinter.Frame):
 
         self.graph_list = [
             graph
-            for graph in [
-                self.magnitude_waterfall_graph,
-                self.magnitude_spectrum_graph,
+            for graph in self.magnitude_waterfall_graph
+            + self.magnitude_spectrum_graph
+            + [
                 self.df_current_graph,
                 self.df_graph,
                 self.compass_graph,
@@ -199,8 +234,6 @@ class PlotFrame(tkinter.Frame):
             blit=True,
             cache_frame_data=False,
         )
-        grid_spec.tight_layout(figure=self.fig_ref)
-        grid_spec.update()
 
     def update_imag(self, frame_number: int) -> list[matplotlib.artist.Artist]:
         self.update_sensors_and_graphs()
@@ -211,7 +244,10 @@ class PlotFrame(tkinter.Frame):
         return image_list
 
     def click_handler(self, event: Any) -> None:
-        if self.master.client.source_manager.cs_status == CoreServiceStatus.DISCONNECTED:
+        if (
+            self.master.client.source_manager.cs_status
+            == CoreServiceStatus.DISCONNECTED
+        ):
             return
         control_frame_ref = self.master.control_frame  ##Could be better?
         ##TODO: set roi span from graph
@@ -219,26 +255,33 @@ class PlotFrame(tkinter.Frame):
         ##TODO: don't excecute this code when not connected to CS
         if self.magnitude_spectrum_graph is None:
             return
-        if event.inaxes == self.magnitude_spectrum_graph.plot:
-            roi = proto_cmd.ROIMask()
-            roi.span = pysagax.si_to_float(control_frame_ref.roi_span_entry.get())
-            roi.center_frequency = self.magnitude_spectrum_graph.coord_to_freq(event.xdata)
-            roi.threshold = event.ydata
-            self.client.config_roi_settings([roi])
+        for magnitude_graph in self.magnitude_spectrum_graph:
+            if event.inaxes == magnitude_graph.plot:
+                roi = proto_cmd.ROIMask()
+                roi.span = pysagax.si_to_float(control_frame_ref.roi_span_entry.get())
+                roi.center_frequency = magnitude_graph.coord_to_freq(event.xdata)
+                roi.threshold = event.ydata
+                self.client.config_roi_settings([roi])
 
     def update_roi_graph(self, roi_mask: list[proto_cmd.ROIMask]):
         if len(roi_mask) != 1:
-            print("WARNING: the spectrum graph can only display a single-element ROI mask currently.")
+            print(
+                "WARNING: the spectrum graph can only display a single-element ROI mask currently."
+            )
             return
-        self._draw_roi_window(roi_mask[0].center_frequency, roi_mask[0].span, roi_mask[0].threshold)
-
-    def _draw_roi_window(self, roi_center: float, roi_width: float, roi_threshold: float) -> None:
-        self.magnitude_spectrum_graph.roi_center = self.magnitude_spectrum_graph.freq_to_coord(roi_center)
-        self.magnitude_spectrum_graph.roi_width = int(
-            roi_width * (self.params.bin_count / self.params.iq_rate)
+        self._draw_roi_window(
+            roi_mask[0].center_frequency, roi_mask[0].span, roi_mask[0].threshold
         )
-        self.magnitude_spectrum_graph.roi_threshold = roi_threshold
 
+    def _draw_roi_window(
+        self, roi_center: float, roi_width: float, roi_threshold: float
+    ) -> None:
+        # TODO for scanning spectrum
+        pass
+        for graph, param in zip(self.magnitude_spectrum_graph, self.params):
+            graph.roi_center = graph.freq_to_coord(roi_center)
+            graph.roi_width = int(roi_width * (param.bin_count / param.iq_rate))
+            graph.roi_threshold = roi_threshold
 
     def update_sensors_and_graphs(self) -> None:
         assert self.df_graph is not None  ##TODO: assert for all or no compass graphs?
@@ -265,11 +308,12 @@ class PlotFrame(tkinter.Frame):
         spectrum,
         signal_db: float = 0.0,
         noise_db: float = 0.0,
+        scanning: bool = True,
     ) -> None:
         if self.make_plots == False:
             return
-        
-        #Decoding spectrum data
+
+        # Decoding spectrum data
         spectrum_data = protobuf_spectrum_to_numpy(spectrum)
         bin_count = len(spectrum_data)
         center_frequency = spectrum.center_frequency
@@ -277,28 +321,40 @@ class PlotFrame(tkinter.Frame):
 
         if bin_count == 0 or iq_rate == 0:
             return
-        if (
-            self.redraw_canvas
-            or bin_count
-            != self.params.bin_count  # or restart if the dimensions change
-            or center_frequency
-            != self.params.center_frequency  # or restart if the axes change
-            or iq_rate != self.params.iq_rate
-        ):
+        spectrum_index = None
+        for i, param in enumerate(self.params):
+            if (
+                center_frequency == param.center_frequency
+                and bin_count == param.bin_count
+                and iq_rate == param.iq_rate
+            ):
+                spectrum_index = i
+
+        # TODO: tracking mode: limit to 1 graph when scanning is false
+
+        if self.redraw_canvas or spectrum_index is None:
             # Animation can be created, because at this point we know bin count and other properties
             # Also restart when bin count or any other parameter has changed
-            self.params.bin_count = bin_count
-            self.params.iq_rate = iq_rate
-            self.params.center_frequency = center_frequency
+
+            new_graph = GraphParameters()
+            new_graph.bin_count = bin_count
+            new_graph.iq_rate = iq_rate
+            new_graph.center_frequency = center_frequency
+            new_graph.waterfall_size = read_from_conf(
+                self.conf, ["display", "waterfall_size"], 200
+            )
+            self.params.append(new_graph)
+
+            spectrum_index = len(self.params) - 1
             self.create_anim()
             self.redraw_canvas = False
 
         assert self.magnitude_waterfall_graph is not None
         assert self.magnitude_spectrum_graph is not None
-        self.magnitude_waterfall_graph.add_data(spectrum_data)
-        self.magnitude_spectrum_graph.add_data(spectrum_data)
-        self.magnitude_spectrum_graph.signal_lvl = signal_db
-        self.magnitude_spectrum_graph.noise_lvl = noise_db
+        self.magnitude_waterfall_graph[spectrum_index].add_data(spectrum_data)
+        self.magnitude_spectrum_graph[spectrum_index].add_data(spectrum_data)
+        self.magnitude_spectrum_graph[spectrum_index].signal_lvl = signal_db
+        self.magnitude_spectrum_graph[spectrum_index].noise_lvl = noise_db
 
     def destroy_plot(self) -> None:
         if self.fig is not None:
@@ -312,10 +368,15 @@ class PlotFrame(tkinter.Frame):
 
     def enable_plotting(self) -> None:
         self.make_plots = True
+        self.params = []
         self.redraw_canvas = True
 
     def disable_plotting(self) -> None:
         self.make_plots = False
+        self.magnitude_waterfall_plot = []
+        self.magnitude_waterfall_graph = []
+        self.magnitude_spectrum_plot = []
+        self.magnitude_spectrum_graph = []
         self.destroy_plot()
 
     def reconfigure_plots(
@@ -328,7 +389,8 @@ class PlotFrame(tkinter.Frame):
         self.spectrum_graph_min_db = spectrum_graph_min_db
         self.fps = fps
         self.max_bin_count = max_bin_count
-        self.params.waterfall_size = waterfall_size
+        for param in self.params:
+            param.waterfall_size = waterfall_size
 
         self.redraw_canvas = True
 
@@ -348,9 +410,15 @@ class PlotFrame(tkinter.Frame):
 
 
 class PlotSettingsFrame(tkinter.Frame):
-    def __init__(self, master, plot_frame,
+    def __init__(
+        self,
+        master,
+        plot_frame,
         send_commands_function: Callable[[str], None],
-          conf, *args, **kwargs):
+        conf,
+        *args,
+        **kwargs,
+    ):
         tkinter.Frame.__init__(self, master, *args, **kwargs)
 
         self.send_commands_function = send_commands_function
@@ -435,18 +503,19 @@ class PlotSettingsFrame(tkinter.Frame):
 
         mean_window_width_label = tkinter.Label(self, text="Rolling avg window (s):")
         mean_window_width_label.grid(column=0, row=6, padx=5, pady=8, sticky=tkinter.S)
-        
+
         spectrum_selector_label = tkinter.Label(self, text="Spectrum channel:")
         spectrum_selector_label.grid(column=0, row=7, padx=5, pady=8, sticky=tkinter.S)
 
         self.channel_spectrum_combo = ttk.Combobox(self, width=1)
         self.channel_spectrum_combo["values"] = [0, 1, 2, 3]
-        self.channel_spectrum_combo.grid(column=1, row=7, padx=5, pady=8, sticky=tkinter.S)
+        self.channel_spectrum_combo.grid(
+            column=1, row=7, padx=5, pady=8, sticky=tkinter.S
+        )
         self.channel_spectrum_combo.bind(
             "<<ComboboxSelected>>", self.choose_spectrum_commands
         )
         self.channel_spectrum_combo.configure(state="disabled")
-
 
     def mean_window_width_slider_commands(self, event: Any) -> None:
         window_size = self.mean_window_width_slider_variable.get()
@@ -463,12 +532,16 @@ class PlotSettingsFrame(tkinter.Frame):
 
         max_bin_count = self.max_bin_count_entry.get()
         if max_bin_count <= 0:
-            max_bin_count = read_from_conf(self.conf, ["display", "max_bin_count"], 1024)
+            max_bin_count = read_from_conf(
+                self.conf, ["display", "max_bin_count"], 1024
+            )
             self.max_bin_count_entry.set(max_bin_count)
 
         waterfall_size = self.waterfall_size_entry.get()
         if waterfall_size <= 0:
-            waterfall_size = read_from_conf(self.conf, ["display", "waterfall_size"], 200)
+            waterfall_size = read_from_conf(
+                self.conf, ["display", "waterfall_size"], 200
+            )
             self.waterfall_size_entry.set(waterfall_size)
 
         self.plot_frame.reconfigure_plots(
@@ -489,9 +562,9 @@ class PlotSettingsFrame(tkinter.Frame):
         Turn plotting off
         """
         self.plot_frame.disable_plotting()
-        
+
     def choose_spectrum_commands(self, event: Any) -> None:
-        pass #TODO: implement using protobuf
+        pass  # TODO: implement using protobuf
         # self.send_commands_function(
         #     f"DEBUG:SpectrumChannel! {self.channel_spectrum_combo.current()};"
         # )
