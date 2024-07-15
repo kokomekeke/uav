@@ -1,7 +1,6 @@
 import math
 import tkinter
 import matplotlib.gridspec
-import matplotlib.layout_engine
 import numpy as np
 from tkinter import ttk
 from typing import Any, Callable, Optional
