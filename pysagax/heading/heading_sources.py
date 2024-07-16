@@ -497,7 +497,7 @@ class HeadingMavlink(HeadingSource):
             self.cr(["heading", "address"], "127.0.0.1"),
         )
         self.port: int = self.cr(
-            ["heading", "Mavlink", "port"], self.cr(["heading", "port"], 42069)
+            ["heading", "Mavlink", "port"], self.cr(["heading", "port"], 14540)
         )
 
         self._mavs: Any = None
