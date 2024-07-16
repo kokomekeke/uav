@@ -494,10 +494,7 @@ class HeadingMavlink(HeadingSource):
         super().__init__(*args)
         self.address: str = self.cr(
             ["heading", "Mavlink", "address"],
-            self.cr(["heading", "address"], "127.0.0.1"),
-        )
-        self.port: int = self.cr(
-            ["heading", "Mavlink", "port"], self.cr(["heading", "port"], 14540)
+            self.cr(["heading", "address"], "udpin:127.0.0.1:14540"),
         )
 
         self._mavs: Any = None
@@ -505,7 +502,6 @@ class HeadingMavlink(HeadingSource):
     def get_parameters(self) -> dict[str, list[Any]]:
         return {
             "address": ["text", self.address],
-            "port": ["number", self.port],
         }
 
     def update_parameter(self, key: str, value: Any) -> bool:
@@ -513,22 +509,17 @@ class HeadingMavlink(HeadingSource):
             return True
         if key == "address":
             self.address = str(value)
-        elif key == "port":
-            self.port = int(value)
         else:
             return False
         return True
 
     def initialize(self) -> bool:
         try:
-            self._mavs = mavutil.mavlink_connection(
-                f"udp:{self.address}:{self.port}",
-                input=True,
-            )
-            self._status(f"Mavlink listens on UDP {self.address}:{self.port}")
+            self._mavs = mavutil.mavlink_connection(self.address)
+            self._status(f"Mavlink listens on {self.address}")
             return True
-        except:
-            self._status(f"Mavlink fails on UDP {self.address}:{self.port}")
+        except Exception as e:
+            self._status(f"Mavlink fails on {self.address}: {str(e)}")
             return False
 
     def loop(self) -> None:
@@ -540,6 +531,7 @@ class HeadingMavlink(HeadingSource):
             timestamp_s = datetime.timestamp(datetime.now()) * 1000
             if msg is not None:
                 msg_type = msg.get_type()
+                self._status(f"Updated with {msg_type} on {timestamp_s}")
                 if "ATTITUDE" == msg_type:
                     roll = getattr(msg, "roll")
                     pitch = getattr(msg, "pitch")
@@ -560,7 +552,7 @@ class HeadingMavlink(HeadingSource):
 
         except TypeError as e:
             self._data_invalid()
-            self._status("Mavlink message invalid.")
+            self._status(f"Mavlink message invalid. {str(e)}")
 
     def close(self) -> None:
         if self._mavs:
