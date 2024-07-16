@@ -19,6 +19,8 @@ from pysagax.util.mat import normalize_angle, rotation_matrix_from_vectors
 
 from pysagax.communication.pub_sub import SUB
 import pysagax.message.flight_info_pb2 as flight_info
+from datetime import datetime
+from pymavlink import mavutil
 
 
 class HeadingSource:
@@ -481,3 +483,84 @@ class HeadingFlightInfo(HeadingSource):
     def close(self) -> None:
         if self._sub:
             self._sub.disconnect()
+
+
+class HeadingMavlink(HeadingSource):
+    """
+    Mavlink source
+    """
+
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
+        self.address: str = self.cr(
+            ["heading", "Mavlink", "address"],
+            self.cr(["heading", "address"], "127.0.0.1"),
+        )
+        self.port: int = self.cr(
+            ["heading", "Mavlink", "port"], self.cr(["heading", "port"], 14540)
+        )
+
+        self._mavs: Any = None
+
+    def get_parameters(self) -> dict[str, list[Any]]:
+        return {
+            "address": ["text", self.address],
+            "port": ["number", self.port],
+        }
+
+    def update_parameter(self, key: str, value: Any) -> bool:
+        if super().update_parameter(key, value):
+            return True
+        if key == "address":
+            self.address = str(value)
+        elif key == "port":
+            self.port = int(value)
+        else:
+            return False
+        return True
+
+    def initialize(self) -> bool:
+        try:
+            self._mavs = mavutil.mavlink_connection(
+                f"udp:{self.address}:{self.port}", input=True, source_system=self.sysid
+            )
+            self._status(f"Mavlink listens on UDP {self.address}:{self.port}")
+            return True
+        except:
+            self._status(f"Mavlink fails on UDP {self.address}:{self.port}")
+            return False
+
+    def loop(self) -> None:
+        if not self._mavs:
+            return
+
+        try:
+            msg = self._mavs.recv_msg()
+            timestamp_s = datetime.timestamp(datetime.now()) * 1000
+            if msg is not None:
+                msg_type = msg.get_type()
+                if "ATTITUDE" == msg_type:
+                    roll = getattr(msg, "roll")
+                    pitch = getattr(msg, "pitch")
+                    yaw = getattr(msg, "yaw")
+
+                    self.update_heading(
+                        yaw=yaw / 180 * np.pi,
+                        pitch=pitch / 180 * np.pi,
+                        roll=roll / 180 * np.pi,
+                    )
+                    self._quaternion(self.quaternion, timestamp_s)
+                if "GLOBAL_POSITION_INT" in msg_type:
+                    lat = getattr(msg, "lat")
+                    lon = getattr(msg, "lon")
+                    alt = getattr(msg, "alt")
+                    self._gps(lat, lon, timestamp_s)
+                    self._altitude(alt, timestamp_s)
+
+        except TypeError as e:
+            self._data_invalid()
+            self._status("Mavlink message invalid.")
+
+    def close(self) -> None:
+        if self._mavs:
+            self._mavs.close()
