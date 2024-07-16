@@ -522,7 +522,8 @@ class HeadingMavlink(HeadingSource):
     def initialize(self) -> bool:
         try:
             self._mavs = mavutil.mavlink_connection(
-                f"udp:{self.address}:{self.port}", input=True, source_system=self.sysid
+                f"udp:{self.address}:{self.port}",
+                input=True,
             )
             self._status(f"Mavlink listens on UDP {self.address}:{self.port}")
             return True
