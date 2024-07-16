@@ -20,7 +20,7 @@ from pysagax.util.mat import normalize_angle, rotation_matrix_from_vectors
 from pysagax.communication.pub_sub import SUB
 import pysagax.message.flight_info_pb2 as flight_info
 from datetime import datetime
-import mavutil
+from pymavlink import mavutil
 
 
 class HeadingSource:
