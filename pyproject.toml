@@ -33,6 +33,7 @@ dependencies = [
     "click",
     "sigmf",
     "transitions",
+    "pymavlink",
 ]
 
 [project.optional-dependencies]
