@@ -1,6 +1,6 @@
 [project]
 name = "pysagax"
-version = "0.4.3"
+version = "0.4.8"
 authors = [
   { name="Peter Rigo", email="peter.rigo@sagaxcommunications.com" },
   { name="Aron Szabo", email="aron.szabo@sagaxcommunications.com" },
@@ -33,6 +33,7 @@ dependencies = [
     "click",
     "sigmf",
     "transitions",
+    "pymavlink",
 ]
 
 [project.optional-dependencies]

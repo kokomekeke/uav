@@ -19,6 +19,8 @@ from pysagax.util.mat import normalize_angle, rotation_matrix_from_vectors
 
 from pysagax.communication.pub_sub import SUB
 import pysagax.message.flight_info_pb2 as flight_info
+from datetime import datetime
+from pymavlink import mavutil
 
 
 class HeadingSource:
@@ -456,7 +458,10 @@ class HeadingFlightInfo(HeadingSource):
             return
 
         try:
-            packet_b = self._sub.receive(timeout=1000)
+            # packet_b = self._sub.receive(timeout=1000)
+            packet_b, topic = self._sub.recv(timeout=1000)
+            if topic != "fi":
+                return
             if packet_b is None:
                 # timeout
                 return
@@ -481,3 +486,77 @@ class HeadingFlightInfo(HeadingSource):
     def close(self) -> None:
         if self._sub:
             self._sub.disconnect()
+
+
+class HeadingMavlink(HeadingSource):
+    """
+    Mavlink source
+    """
+
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
+        self.address: str = self.cr(
+            ["heading", "Mavlink", "address"],
+            self.cr(["heading", "address"], "udpin:127.0.0.1:14540"),
+        )
+
+        self._mavs: Any = None
+
+    def get_parameters(self) -> dict[str, list[Any]]:
+        return {
+            "address": ["text", self.address],
+        }
+
+    def update_parameter(self, key: str, value: Any) -> bool:
+        if super().update_parameter(key, value):
+            return True
+        if key == "address":
+            self.address = str(value)
+        else:
+            return False
+        return True
+
+    def initialize(self) -> bool:
+        try:
+            self._mavs = mavutil.mavlink_connection(self.address)
+            self._status(f"Mavlink listens on {self.address}")
+            return True
+        except Exception as e:
+            self._status(f"Mavlink fails on {self.address}: {str(e)}")
+            return False
+
+    def loop(self) -> None:
+        if not self._mavs:
+            return
+
+        try:
+            msg = self._mavs.recv_msg()
+            timestamp_s = datetime.timestamp(datetime.now()) * 1000
+            if msg is not None:
+                msg_type = msg.get_type()
+                self._status(f"Updated with {msg_type} on {timestamp_s}")
+                if "ATTITUDE" == msg_type:
+                    roll = getattr(msg, "roll")
+                    pitch = getattr(msg, "pitch")
+                    yaw = getattr(msg, "yaw")
+
+                    self.update_heading(
+                        yaw=yaw / 180 * np.pi,
+                        pitch=pitch / 180 * np.pi,
+                        roll=roll / 180 * np.pi,
+                    )
+                    self._quaternion(self.quaternion, timestamp_s)
+                if "GLOBAL_POSITION_INT" in msg_type:
+                    lat = getattr(msg, "lat")
+                    lon = getattr(msg, "lon")
+                    alt = getattr(msg, "alt")
+                    self._gps(lat, lon, timestamp_s)
+                    self._altitude(alt, timestamp_s)
+
+        except TypeError as e:
+            self._data_invalid()
+            self._status(f"Mavlink message invalid. {str(e)}")
+
+    def close(self) -> None:
+        if self._mavs:
+            self._mavs.close()

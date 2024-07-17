@@ -314,8 +314,8 @@ class AngleSpectrumGraph(GraphImage):
     def update(self) -> None:
         super().update()
         self.image.set_ydata(self.spectrum)  # type: ignore
-        self.marker_image.set_xdata(self.marker_bin)  # type: ignore
-        self.marker_image.set_ydata(self.marker_value)  # type: ignore
+        self.marker_image.set_xdata([self.marker_bin])  # type: ignore
+        self.marker_image.set_ydata([self.marker_value])  # type: ignore
 
     def add_data(self, data: npt.NDArray[np.float64]) -> None:
         super().add_data(data)
@@ -446,8 +446,8 @@ class MagnitudeSpectrumGraph(GraphImage):
         self.rect.set_y(self.roi_threshold)
         self.rect.set_width(self.roi_width)
         # self.rect.set_height( -self.roi_threshold)
-        self.marker_image.set_xdata(self.marker_bin)  # type: ignore
-        self.marker_image.set_ydata(self.marker_value)  # type: ignore
+        self.marker_image.set_xdata([self.marker_bin])  # type: ignore
+        self.marker_image.set_ydata([self.marker_value])  # type: ignore
 
         self.signal_lvl_line.set_data(self.plot.get_xlim(), [self.signal_lvl, self.signal_lvl])
         self.noise_lvl_line.set_data(self.plot.get_xlim(), [self.noise_lvl, self.noise_lvl])
