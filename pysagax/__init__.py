@@ -86,3 +86,9 @@ __all__ = [
 from . import _version
 
 __version__ = _version.get_versions()["version"]
+if "0+unknown" in __version__ or not __version__:
+    try:
+        import pkg_resources
+        __version__ = pkg_resources.get_distribution('pysagax').version
+    except:
+        __version__ = "0+unknown"
