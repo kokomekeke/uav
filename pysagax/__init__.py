@@ -86,3 +86,6 @@ __all__ = [
 from . import _version
 
 __version__ = _version.get_versions()["version"]
+if "0+unknown" in __version__:
+    import pkg_resources
+    __version__ = pkg_resources.get_distribution('pysagax').version
