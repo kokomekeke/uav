@@ -71,9 +71,9 @@ class HeadingSource:
         if self.offset_updated_callback:
             self.offset_updated_callback(offset)
 
-    def _data_invalid(self) -> None:
+    def _data_invalid(self, *args, **kwargs) -> None:
         if self.data_invalid_callback:
-            self.data_invalid_callback()
+            self.data_invalid_callback( *args, **kwargs)
 
     def _status(self, status: str) -> None:
         if self.status_updates_callback:
@@ -456,7 +456,7 @@ class HeadingFlightInfo(HeadingSource):
     def loop(self) -> None:
         if not self._sub:
             return
-
+        packet_b: Optional[bytes] = None
         try:
             packet_b = self._sub.receive(timeout=1000)
             if packet_b is None:
@@ -475,9 +475,8 @@ class HeadingFlightInfo(HeadingSource):
                 roll=packet.attitude.roll / 180 * np.pi,
             )
             self._quaternion(self.quaternion, timestamp_s)
-
-        except:
-            self._data_invalid()
+        except Exception as e:
+            self._data_invalid(f"{e} \n\t PACKET: {packet_b}", clear_values=False)
             self._status("Received invalid FlightInfo message.")
 
     def close(self) -> None:
