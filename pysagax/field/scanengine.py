@@ -877,6 +877,8 @@ class ScanEngine(Loop):
                         # and the last config is proven to be working
                         self.launch_calibration()
                     else:
+                        self._discard_post_proc_output()
+                        self._received_data_count = 0
                         self.launch()
             case ScanEngineState.TRACKING_IDLE:
                 self._discard_post_proc_output()
@@ -899,7 +901,6 @@ class ScanEngine(Loop):
                     # This config is working, so next time CS crashes, it can be auto-loaded
                     self._auto_config = self._last_config_command
                     if self._received_data_count >= self._expected_data_count:
-                        self._discard_post_proc_output()
                         self.done()
                         self._logger.info(
                             f"Scan finished, received {self._received_data_count} bursts"
@@ -909,7 +910,6 @@ class ScanEngine(Loop):
                     self._logger.error(
                         f"Scan mode timed out, received {self._received_data_count} of {self._expected_data_count} bursts"
                     )
-                    self._discard_post_proc_output()
                     self.done()
             case ScanEngineState.TRACKING_IN_PROGRESS:
                 try:
