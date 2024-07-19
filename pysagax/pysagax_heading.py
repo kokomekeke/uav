@@ -122,15 +122,16 @@ class HeadingRunner:
         self._last_update_time = time.time()
         self.push_data()
 
-    def invalid_callback(self) -> None:
-        self._heading_data.gps_lat = 0
-        self._heading_data.gps_lon = 0
-        self._heading_data.altitude = 0
-        del self._heading_data.quaternion[:]
-        self._logger.warning("Invalidate callback")
-        self._heading_data.timestamp.GetCurrentTime()
-        self._last_update_time = time.time()
-        self.push_data()
+    def invalid_callback(self, msg: str= "", clear_values: Optional[bool]=True) -> None:
+        if clear_values:
+            self._heading_data.gps_lat = 0
+            self._heading_data.gps_lon = 0
+            self._heading_data.altitude = 0
+            del self._heading_data.quaternion[:]
+            self._heading_data.timestamp.GetCurrentTime()
+            self._last_update_time = time.time()
+            self.push_data()
+        self._logger.warning(f"Invalidate callback: {msg}")
 
     def _protobuf_to_log(
         self, protobuf: typing.Any, format_str: str = "{}", level: int = logging.INFO
