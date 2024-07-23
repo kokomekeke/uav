@@ -371,7 +371,7 @@ class ScanEngine(Loop):
         self._calibration_resolution_bw = calibration_resolution_bw
         self._calibration_identifier: str = "default"
         self._cache_file: str = cache_file
-        self._cache = {"calibrated": {0: 0}}
+        self._cache = {"calibrated": {"0": 0}}
         if os.path.isfile(self._cache_file):
             with open(self._cache_file, "r") as cache_fp:
                 self._cache = json.load(cache_fp)
@@ -382,8 +382,8 @@ class ScanEngine(Loop):
 
     def _is_freq_calibrated(self, freq: int) -> bool:
         if "calibrated" in self._cache:
-            if freq in self._cache["calibrated"]:
-                last_calibrated = self._cache["calibrated"][freq]
+            if str(freq) in self._cache["calibrated"]:
+                last_calibrated = self._cache["calibrated"][str(freq)]
                 return (
                     time.time() - self._calibration_interval_seconds <= last_calibrated
                 )
@@ -391,9 +391,9 @@ class ScanEngine(Loop):
 
     def _set_freq_calibrated(self, freqs: typing.Iterable[int]) -> None:
         if "calibrated" not in self._cache:
-            self._cache["calibrated"] = {0: 0}
+            self._cache["calibrated"] = {"0": 0}
         for freq in freqs:
-            self._cache["calibrated"][freq] = int(time.time())
+            self._cache["calibrated"][str(freq)] = int(time.time())
         self._flush_cache()
 
     def to_calibration_resolution_bw_raster(
