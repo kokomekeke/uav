@@ -418,7 +418,7 @@ class ScanEngine(Loop):
         if self._calibration_interval_seconds <= 0:
             return False
         return any(
-            lambda fq: not self._is_freq_calibrated(int(fq))
+            not self._is_freq_calibrated(int(fq))
             for fq in self._calibration_freq_list.center_freqs
         )
         # return (
