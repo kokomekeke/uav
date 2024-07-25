@@ -366,7 +366,7 @@ class ScanEngine(Loop):
                 )
         self._reset_on_error = reset_on_error
         self._last_calibration_timestamp: float = 0.0
-        self._calibration_interval_seconds: float = calibration_interval_seconds
+        self._calibration_interval_seconds: float = 0.0  # calibration_interval_seconds
         self._calibration_interval_seconds_default: float = calibration_interval_seconds
         self._calibration_freq_list = proto_cmd.FreqList()
         self._calibration_resolution_bw = calibration_resolution_bw
@@ -420,7 +420,7 @@ class ScanEngine(Loop):
         """
         This is used as a condition to tell if the FSM should go to a calibration state or not
         """
-        if self._calibration_interval_seconds <= 0:
+        if self._calibration_interval_seconds <= 0.0:
             return False
         return any(
             not self._is_freq_calibrated(int(fq))
@@ -839,7 +839,7 @@ class ScanEngine(Loop):
             proto_cmd.AUTO_CALIBRATION_DISABLE,
         ]:
             self._calibration_interval_seconds = (
-                0
+                0.0
                 if command.instruction == proto_cmd.AUTO_CALIBRATION_DISABLE
                 else self._calibration_interval_seconds_default
             )
