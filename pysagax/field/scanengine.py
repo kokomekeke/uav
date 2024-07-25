@@ -367,6 +367,7 @@ class ScanEngine(Loop):
         self._reset_on_error = reset_on_error
         self._last_calibration_timestamp: float = 0.0
         self._calibration_interval_seconds: float = calibration_interval_seconds
+        self._calibration_interval_seconds_default: float = calibration_interval_seconds
         self._calibration_freq_list = proto_cmd.FreqList()
         self._calibration_resolution_bw = calibration_resolution_bw
         self._calibration_identifier: str = "default"
@@ -394,6 +395,10 @@ class ScanEngine(Loop):
             self._cache["calibrated"] = {"0": 0}
         for freq in freqs:
             self._cache["calibrated"][str(freq)] = int(time.time())
+        self._flush_cache()
+
+    def _clear_calibrated_list(self) -> None:
+        self._cache["calibrated"] = {"0": 0}
         self._flush_cache()
 
     def to_calibration_resolution_bw_raster(
@@ -827,6 +832,25 @@ class ScanEngine(Loop):
             self.launch_calibration()
             response = proto_cmd.Response()
             response.instruction = proto_cmd.CS_CALIBRATE_START
+            response.success = True
+            return response
+        elif command.instruction in [
+            proto_cmd.AUTO_CALIBRATION_ENABLE,
+            proto_cmd.AUTO_CALIBRATION_DISABLE,
+        ]:
+            self._calibration_interval_seconds = (
+                0
+                if command.instruction == proto_cmd.AUTO_CALIBRATION_DISABLE
+                else self._calibration_interval_seconds_default
+            )
+            response = proto_cmd.Response()
+            response.instruction = command.instruction
+            response.success = True
+            return response
+        elif command.instruction == proto_cmd.AUTO_CALIBRATION_TRIGGER:
+            self._clear_calibrated_list()
+            response = proto_cmd.Response()
+            response.instruction = proto_cmd.AUTO_CALIBRATION_TRIGGER
             response.success = True
             return response
         elif command.instruction in [
