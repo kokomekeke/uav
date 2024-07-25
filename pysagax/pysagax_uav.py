@@ -23,21 +23,23 @@ try:
     import tomllib
 except ModuleNotFoundError:
     import tomli as tomllib
+
 import os
 
+import pysagax.communication.broadcast as pysagax_broadcast
+from pysagax import __version__
 from pysagax.field.communicator import Communicator
 from pysagax.field.cscommand import CSCommand
 from pysagax.field.csstreamer import CSStreamer
 from pysagax.field.heading import Heading
 from pysagax.field.interpreter import Interpreter
-from pysagax.field.ppheadingsync import PPHeadingSync
-from pysagax.field.ppspectrogramrecorder import PPSpectrogramRecorder
 from pysagax.field.ppdetection import PPDetection
 from pysagax.field.ppevents import PPEvents
+from pysagax.field.ppheadingsync import PPHeadingSync
+from pysagax.field.ppspectrogramrecorder import PPSpectrogramRecorder
 from pysagax.field.ppstreamprep import PPStreamPreparation
 from pysagax.field.streamer import Streamer
 from pysagax.field.telemetry import Telemetry
-from pysagax import __version__
 
 
 class Commander:
@@ -69,6 +71,7 @@ class Commander:
         spectrogram_mode: str,
         spectrogram_path: str,
         spectrogram_recording_dtype: str,
+        measurement_udp_max_size: int,
     ) -> None:
 
         self._logger = getLogger("Commander")
@@ -136,7 +139,9 @@ class Commander:
         )
         self._pp_detection = PPDetection(level=level)
         self._pp_events = PPEvents(level=level)
-        self._pp_streamprep = PPStreamPreparation(level=level)
+        self._pp_streamprep = PPStreamPreparation(
+            level=level, udp_max_size=measurement_udp_max_size
+        )
         self._cs_streamer = CSStreamer(
             level=level, address=cs_host, port=cs_stream_port
         )
@@ -458,6 +463,12 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     default="ORIGINAL",
     help="Data type to be used for making spectrogram recordings.",
 )
+@click.option(
+    "--measurement-udp-max-size",
+    help="Max size for measurement UDP packets [bytes]",
+    default=pysagax_broadcast.MESSAGE_LIMIT,
+    show_default=True,
+)
 def main(
     level: str,
     disk_path: str,
@@ -483,6 +494,7 @@ def main(
     spectrogram_mode: str,
     spectrogram_path: str,
     spectrogram_recording_dtype: str,
+    measurement_udp_max_size: int,
 ) -> None:
     """Root command of CLI"""
 
@@ -521,6 +533,7 @@ def main(
         spectrogram_mode,
         spectrogram_path,
         spectrogram_recording_dtype,
+        measurement_udp_max_size,
     )
     commander.start()
 

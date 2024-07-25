@@ -28,13 +28,17 @@ class PPStreamPreparation(Loop):
     """
 
     def __init__(
-        self, data_type=proto_data.Spectrum.DataType.FLOAT16, *args, **kwargs
+        self,
+        data_type=proto_data.Spectrum.DataType.FLOAT16,
+        udp_max_size: int = pysagax_broadcast.MESSAGE_LIMIT,
+        *args,
+        **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._queue_in: Optional[Queue] = None
         self._queue_out: Optional[Queue] = None
         self._data_type: proto_data.Spectrum.DataType.ValueType = data_type
-        self._udp_max_size = pysagax_broadcast.MESSAGE_LIMIT
+        self._udp_max_size = udp_max_size
 
     def __call__(
         self,

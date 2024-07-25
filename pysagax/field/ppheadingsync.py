@@ -52,11 +52,26 @@ class PPHeadingSync(Loop):
     def _update_delta_t(self, target_time: int) -> None:
         """
         Updates delta_t values for the heading packets that are currently in the deque.
+
+        PPHeadingSync was designed to work on chronologically ordered packets. This method checks
+          the ordering so that a corrupted incoming stream doesn't halts the syncing.
         """
-        for i in range(len(self.heading_deque)):
+        current_oldest_ts = float("inf")
+        for i in reversed(range(len(self.heading_deque))):
             heading: proto_heading.HeadingData = self.heading_deque[i]["data"]
             if heading.HasField("timestamp"):
-                delta_t = abs(target_time - heading.timestamp.ToNanoseconds())
+                ts = heading.timestamp.ToNanoseconds()
+                if ts > current_oldest_ts:
+                    # packets should get older in reversed iteration, but this packet is newer
+                    # don't use this packet
+                    delta_t = float("inf")
+                    self._logger.warning(
+                        f"Heading data arrived in non-chronological order. The late packet will not be used."
+                    )
+                else:
+                    # properly ordered data
+                    delta_t = abs(target_time - ts)
+                    current_oldest_ts = ts
                 self.heading_deque[i]["delta_t"] = delta_t
 
     def _get_best_fitting_heading(

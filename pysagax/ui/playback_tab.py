@@ -6,9 +6,53 @@ from pysagax.source.source_manager import CoreServiceStatus, SourceStatus, Sourc
 
 from pysagax.ui.ui_helpers import en_if
 import pysagax.message.command_pb2 as proto_cmd
+import pysagax.message.data_pb2 as proto_data
 
 
 class PlaybackTab(ttk.Frame):
+
+    def telemetry_string_format(
+        self,
+        telem: Optional[proto_data.Telemetry],
+        sysinfo: Optional[proto_cmd.SystemInfo],
+    ) -> str:
+        if sysinfo is None:
+            sysinfo = proto_cmd.SystemInfo()
+            sysinfo.software.cs_version = "?"
+            sysinfo.software.pysagax_version = "?"
+        if telem is None:
+            return f"PySAGAX {sysinfo.software.pysagax_version}, CS {sysinfo.software.cs_version}\nNo telemetry"
+        return (
+            f"{telem.hardware.hostname}\n{telem.time.ToDatetime()} UTC\n"
+            f"PySAGAX {sysinfo.software.pysagax_version}, CS {sysinfo.software.cs_version}\n"
+            f"Disk usage: {'{:,}'.format(telem.hardware.disk_usage).replace(',', ' ')} MB / "
+            f"{'{:,}'.format(sysinfo.hardware.disk).replace(',', ' ')} MB\n"
+            f"Source module {proto_data.Telemetry.Source.Status.Name(telem.source.status)} "
+            f"{'{:,}'.format(telem.source.position).replace(',', ' ')} / "
+            f"{'{:,}'.format(telem.source.length).replace(',', ' ')} \n"
+            f"Recording module {proto_data.Telemetry.Recording.Status.Name(telem.recording.status)} "
+            f"{'{:,}'.format(telem.recording.length).replace(',', ' ')}\n"
+            f"Heading module {telem.heading.status} [{telem.heading.selected_source_type}]\n"
+            f"ScanEngine {telem.scanengine_state}"
+        )
+
+    def config_string_format(self, cp: Optional[proto_cmd.Response]) -> str:
+        if cp is None:
+            return "CONF unknown"
+        heading_conf_str = ", ".join(
+            f"{k}={v}" for k, v in cp.config.heading.parameters.items()
+        )
+        return (
+            f"CONFIG {cp.id}\n"
+            f"CS Source {cp.config.cs.source_type} [{cp.config.cs.source_path}]\n"
+            f"IQ = {'{:,}'.format(int(cp.config.cs.iq_rate)).replace(',', ' ')} Hz, "
+            f"Center = {'{:,}'.format(int(cp.config.cs.center_frequency)).replace(',', ' ')} Hz\n"
+            f"Bin count = {'{:,}'.format(cp.config.cs.bin_count).replace(',', ' ')}, "
+            f"Stride = {'{:,}'.format(cp.config.cs.burst_stride).replace(',', ' ')}\n"
+            f"Heading {cp.config.heading.selected_source_type} [{heading_conf_str}]\n"
+            f"ScanEngine: [{str(cp.config.se)}]"
+        )
+
     def update(
         self,
         current_position: Optional[int] = None,
@@ -21,9 +65,11 @@ class PlaybackTab(ttk.Frame):
         self.update_buttons()
         self.update_recording_status()
         self.telemetry_string.set(
-            f"TELEMETRY: \n{self.source_manager.latest_telemetry}"
+            f"{self.telemetry_string_format(self.source_manager.latest_telemetry, self.source_manager.latest_info)}"
         )
-        self.config_string.set(f"CONFIG: \n{self.source_manager.latest_config}")
+        self.config_string.set(
+            f"{self.config_string_format(self.source_manager.latest_config)}"
+        )
 
     def update_buttons(self) -> None:
         self.start_button.configure(

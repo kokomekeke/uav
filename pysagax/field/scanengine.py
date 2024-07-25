@@ -151,6 +151,7 @@ class ScanEngine(Loop):
             "dest": ScanEngineState.SCANNING_IDLE,
             "prepare": "configure_scanning",
             "conditions": "check_cs_response",
+            "before": "trigger_calibration",
         },
         {
             "trigger": "switch_scanning",
@@ -158,6 +159,7 @@ class ScanEngine(Loop):
             "dest": ScanEngineState.SCANNING_IDLE,
             "prepare": "configure_scanning",
             "conditions": "check_cs_response",
+            "before": "trigger_calibration",
         },
         {
             "trigger": "switch_tracking",
@@ -172,6 +174,7 @@ class ScanEngine(Loop):
             "dest": ScanEngineState.TRACKING_IDLE,
             "prepare": "configure_tracking",
             "conditions": "check_cs_response",
+            "before": "trigger_calibration",
         },
         {
             "trigger": "switch_tracking",
@@ -179,6 +182,7 @@ class ScanEngine(Loop):
             "dest": ScanEngineState.TRACKING_IDLE,
             "prepare": "configure_tracking",
             "conditions": "check_cs_response",
+            "before": "trigger_calibration",
         },
         {
             "trigger": "off",
@@ -331,6 +335,7 @@ class ScanEngine(Loop):
             auto_transitions=False,
             ignore_invalid_triggers=True,
         )
+        self._latest_cs_command: Optional[proto_cmd.Command] = None
         self._latest_cs_response: Optional[proto_cmd.Response] = None
         self._configured_freq_ranges: list[FreqRangeInternal] = []
         self._configured_tracking_frequency = 0.0
@@ -360,6 +365,7 @@ class ScanEngine(Loop):
         self._calibration_interval_seconds: float = calibration_interval_seconds
         self._calibration_freq_list = proto_cmd.FreqList()
         self._calibration_resolution_bw = calibration_resolution_bw
+        self._calibration_identifier: str = "default"
 
     def to_calibration_resolution_bw_raster(
         self, start: float, stop: float
@@ -386,6 +392,10 @@ class ScanEngine(Loop):
             self._last_calibration_timestamp + self._calibration_interval_seconds
             <= time.time()
         )
+
+    def trigger_calibration(self, *args, **kwargs) -> bool:
+        self._last_calibration_timestamp = 0
+        return True
 
     def to_supported_iq_rate(self, iq: int) -> int:
         """
@@ -470,6 +480,8 @@ class ScanEngine(Loop):
         if an error occurs.
         """
         assert self._cs_responses_q is not None
+        if self._latest_cs_command is None:
+            return True
         response: proto_cmd.Response = self._cs_responses_q.get()
         self._latest_cs_response = response
         if response.HasField("config"):
@@ -497,6 +509,7 @@ class ScanEngine(Loop):
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CONFIG
         command.kind = proto_cmd.Command.READ
+        self._latest_cs_command = command
         self._cs_commands_q.put((command, self._instruction_cs_timeout))
 
     def initialize_source(self) -> None:
@@ -510,12 +523,14 @@ class ScanEngine(Loop):
         command.instruction = proto_cmd.CONFIG
         command.kind = proto_cmd.Command.WRITE
         command.config.cs.source_type = "NULL"
+        self._latest_cs_command = command
         self._cs_commands_q.put((command, self._instruction_cs_timeout))
         response: proto_cmd.Response = self._cs_responses_q.get()
         if response.HasField("error"):
             self._logger.error("Could not set CS Source to NULL")
         command.config.cs.source_type = self._source_device_type
         command.config.cs.source_path = self._source_device_path
+        self._latest_cs_command = command
         self._cs_commands_q.put((command, self._config_cs_timeout))
 
     def configure_scanning(self, se_cmd: proto_cmd.Command) -> None:
@@ -534,8 +549,8 @@ class ScanEngine(Loop):
         command.config.cs.source_type = self._source_device_type
         command.config.cs.source_path = self._source_device_path
         self._last_config_command = se_cmd
+        self._latest_cs_command = command
         self._cs_commands_q.put((command, self._config_cs_timeout))
-        self._last_calibration_timestamp = 0  # trigger calibration
 
     def configure_tracking(self, se_cmd: proto_cmd.Command) -> None:
         """
@@ -602,8 +617,8 @@ class ScanEngine(Loop):
         command.config.cs.source_path = self._source_device_path
 
         self._last_config_command = se_cmd
+        self._latest_cs_command = command
         self._cs_commands_q.put((command, self._config_cs_timeout))
-        self._last_calibration_timestamp = 0  # trigger calibration
 
     def configure_manual(self, se_cmd: proto_cmd.Command) -> None:
         """
@@ -620,6 +635,7 @@ class ScanEngine(Loop):
             cs_command.config.Clear()
             cs_command.config.cs.CopyFrom(se_cmd.config.cs)
         self._last_config_command = se_cmd
+        self._latest_cs_command = cs_command
         self._cs_commands_q.put((cs_command, self._config_cs_timeout))
 
     def manual_command(self, cs_command: proto_cmd.Command) -> None:
@@ -629,6 +645,7 @@ class ScanEngine(Loop):
         Forwards the message to the CoreService.
         """
         assert self._cs_commands_q is not None
+        self._latest_cs_command = cs_command
         self._cs_commands_q.put((cs_command, self._instruction_cs_timeout))
 
     def command_calibration(self):
@@ -639,8 +656,11 @@ class ScanEngine(Loop):
         assert self._cs_commands_q is not None
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CS_CALIBRATE_START
-        command.calibration_freqs.CopyFrom(self._calibration_freq_list)
+        command.calib_command.calibration_freqs.CopyFrom(self._calibration_freq_list)
+        command.calib_command.identifier = self._calibration_identifier
+        self._latest_cs_command = command
         self._cs_commands_q.put((command, self._instruction_cs_timeout))
+        time.sleep(0.3)
 
     def command_scanning(self):
         """
@@ -650,6 +670,7 @@ class ScanEngine(Loop):
         assert self._cs_commands_q is not None
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CS_SCAN_START
+        self._latest_cs_command = command
         self._cs_commands_q.put((command, self._instruction_cs_timeout))
 
     def command_tracking(self):
@@ -660,9 +681,11 @@ class ScanEngine(Loop):
         assert self._cs_commands_q is not None
         command = proto_cmd.Command()
         if self._telemetry().source.status == proto_data.Telemetry.Source.RUNNING:
-            command.instruction = proto_cmd.CS_PING
+            self._latest_cs_command = None
+            return
         else:
             command.instruction = proto_cmd.SOURCE_START
+        self._latest_cs_command = command
         self._cs_commands_q.put((command, self._instruction_cs_timeout))
 
     def construct_config_report(self) -> proto_cmd.ScanEngineConfig:
@@ -755,7 +778,10 @@ class ScanEngine(Loop):
             response.config.se.CopyFrom(self.construct_config_report())
             return response
         elif command.instruction == proto_cmd.CS_CALIBRATE_START:
-            self._calibration_freq_list.CopyFrom(command.calibration_freqs)
+            self._calibration_freq_list.CopyFrom(
+                command.calib_command.calibration_freqs
+            )
+            self._calibration_identifier = command.calib_command.identifier
             self.launch_calibration()
             response = proto_cmd.Response()
             response.instruction = proto_cmd.CS_CALIBRATE_START
@@ -769,6 +795,8 @@ class ScanEngine(Loop):
             proto_cmd.CS_PING,
             proto_cmd.POSITION,
             proto_cmd.CS_CALIBRATE_ABORT,
+            proto_cmd.CS_READ_PHASEDIFFS_FROM_FILE,
+            proto_cmd.CS_COMPENSATE_WITH_PHASEDIFFS_STOP,
         ]:
             self.manual_command(command)
             self.check_cs_response()
@@ -824,6 +852,7 @@ class ScanEngine(Loop):
                     proto_data.Telemetry.Source.ENABLED,
                     proto_data.Telemetry.Source.RUNNING,
                 ]:
+                    self._last_calibration_timestamp = time.time()
                     self.done()
                 else:
                     self._handle_incoming_instruction(q_timeout)

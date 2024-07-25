@@ -67,8 +67,10 @@ class ClientWindow(tkinter.Frame):
 
         # aggregated and current roi results, coming from StreaAndCompassProcess
         self.aggregated_roi_results = {
+            "df_value_latest": None,
             "df_value_mean": None,
             "df_value_std": None,
+            "df_elevation_latest": None,
             "df_elevation_mean": None,
             "df_elevation_std": None,
         }
@@ -255,16 +257,21 @@ class ClientWindow(tkinter.Frame):
         self.update_stream_packet_lb(packet)
 
         # TODO: signal_db, noise_db = self.calculate_snr(packet)
-        signal_db, noise_db = 0, 0
+        if len(packet.detection):
+            signal_db = packet.detection[0].strength
+            noise_db = signal_db - packet.detection[0].snr
+        else:
+            signal_db, noise_db = 0, 0
 
         # TODO: updating ROI on waterfall
         # if len(packet.detection):
         #    self.plot_frame.draw_roi_window(packet.detection[0].frequency, packet.detection[0].bandwidth, -120)
-        self.plot_frame.plot_spectrum_packet(
-            packet.data[0],
-            signal_db,
-            noise_db,
-        )
+        if len(packet.data):
+            self.plot_frame.plot_spectrum_packet(
+                packet.data[0],
+                signal_db,
+                noise_db,
+            )
 
         self.stat_frame.update_peak_plot(packet.peaks)
 
@@ -279,27 +286,28 @@ class ClientWindow(tkinter.Frame):
 
         # TODO: rethink roi results
         if len(packet.detection):
-            latest_roi_resutls = {"df_value": 3, "df_elevation": 0}
             self.aggregated_roi_results = {
-                "df_value_mean": packet.detection[0].azimuth,
+                "df_value_latest": packet.detection[0].azimuth,
+                "df_value_mean": packet.detection[0].mean_azimuth,
                 "df_value_std": packet.detection[0].deviation,
-                "df_elevation_mean": 0,
-                "df_elevation_std": 0,
+                "df_elevation_latest": packet.detection[0].elevation,
+                "df_elevation_mean": packet.detection[0].mean_elevation,
+                "df_elevation_std": float("nan"),
             }
-            self.aggregated_roi_results["df_value_std"] = packet.detection[0].deviation
-            latest_roi_resutls = {
-                "df_value": packet.detection[0].azimuth,
-                "df_elevation": packet.detection[0].elevation,
-            }
+            snr = packet.detection[0].snr
         else:
-            latest_roi_resutls = {"df_value": None, "df_elevation": None}
             self.aggregated_roi_results = {
+                "df_value_latest": None,
                 "df_value_mean": None,
                 "df_value_std": None,
+                "df_elevation_latest": None,
                 "df_elevation_mean": None,
                 "df_elevation_std": None,
             }
-        self.stat_frame.update_stats(latest_roi_resutls, self.aggregated_roi_results)
+            snr = float("-inf")
+        self.stat_frame.update_stats(
+            self.aggregated_roi_results, snr, packet.heading_data
+        )
 
         # if isinstance(packet, CoreServiceEOFPacket):
         #         self.info_update_handler(
@@ -760,6 +768,7 @@ class Client:
         cmd = proto_cmd.Command()
         cmd.instruction = proto_cmd.CONFIG
         cmd.config.pp.roi.extend(roi_mask)
+        cmd.config.pp.mean_window = 1
         self.send_commands(cmd)
         self.update_roi_settings(roi_mask)
 
@@ -840,11 +849,49 @@ def on_close() -> None:
         root.destroy()
 
 
+class Splash(tkinter.Toplevel):
+    # FROM https://stackoverflow.com/a/38678891
+    def __init__(self, parent):
+        tkinter.Toplevel.__init__(self, parent)
+        self.title("Loading")
+
+        icon_image_fn = "spot.png"
+        if os.path.isfile(f"pysagax/{icon_image_fn}"):
+            self.icon_image = tkinter.PhotoImage(
+                file=f"pysagax/{icon_image_fn}"
+            )
+        else:
+            import importlib.resources
+
+            self.icon_image = tkinter.PhotoImage(
+                file=str(importlib.resources.files("pysagax").joinpath(icon_image_fn))
+            )
+
+        self.icon_image_zoomed = self.icon_image.zoom(10, 10)
+        self.icon_frame = tkinter.Frame(self, width=320, height=320)
+        self.icon_frame.place(anchor="center", relx=0.5, rely=0.5)
+        
+        self.icon_frame.pack(side=tkinter.RIGHT)
+        self.icon_label = tkinter.Label(
+            self.icon_frame, image=self.icon_image_zoomed, width=320, height=320
+        )
+        self.icon_label.pack()
+        self.update()
+
+    def destroy(self):
+        # self.icon_frame.destroy()
+        tkinter.BaseWidget.destroy(self)
+
+
 def main() -> None:
     global ex
     global root
     global conf
     global icon_image
+    root = tkinter.Tk()
+    root.withdraw()  # don't show client window until everything is drawn and deiconify() is called
+    splash = Splash(root)
+    icon_image = splash.icon_image
     parser = argparse.ArgumentParser(description="SPOTClient")
     parser.add_argument(
         "config", nargs="?", default="/var/sagax/spotclient/spotclient.toml"
@@ -859,21 +906,13 @@ def main() -> None:
     else:
         print("Config file not found")
     multiprocessing.set_start_method("spawn")
-    root = tkinter.Tk()
-    icon_image_fn = "spot.png"
-    if os.path.isfile(f"pysagax/{icon_image_fn}"):
-        icon_image = tkinter.PhotoImage(file=f"pysagax/{icon_image_fn}")
-    else:
-        import importlib.resources
-
-        icon_image = tkinter.PhotoImage(
-            file=str(importlib.resources.files("pysagax").joinpath(icon_image_fn))
-        )
     root.iconphoto(False, icon_image)
     root.geometry("1200x850")
     root.wm_title(f"SPOTClient {pysagax.__version__}")
     root.protocol("WM_DELETE_WINDOW", on_close)
     ex = Client(root)
+    root.deiconify()
+    splash.destroy()
     root.mainloop()
 
 

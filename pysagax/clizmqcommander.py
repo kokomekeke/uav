@@ -19,6 +19,7 @@ from pysagax.communication.req_rep_tcp import REQ
 parser = argparse.ArgumentParser(description="CLI ZMQ commander parameters")
 parser.add_argument("address")
 parser.add_argument("-p", "--port", type=int, default=5556)
+parser.add_argument("-t", "--timeout", type=int, default=200000)
 args = parser.parse_args()
 
 
@@ -80,12 +81,13 @@ class ZMQConnectionThread(threading.Thread):
         """
         Entry point of the thread
         """
+        global args
         self.connect()
         while not self.disconnect:
             try:
                 command = self.send_queue.get(timeout=2)
                 raw_response = self._zmq.send(
-                    command.SerializeToString(), timeout=20000
+                    command.SerializeToString(), timeout=args.timeout
                 )
                 if raw_response is not None:
                     response = proto.Response()

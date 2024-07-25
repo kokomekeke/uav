@@ -17,12 +17,20 @@ from pysagax.df.compass_sensors import (
 from pysagax.util.read_from_conf import read_from_conf
 from pysagax.util.mat import normalize_angle, rotation_matrix_from_vectors
 
+from pysagax.communication.pub_sub import SUB
+import pysagax.message.flight_info_pb2 as flight_info
+
 
 class HeadingSource:
     def __init__(self, conf: Optional[dict[str, Any]] = None) -> None:
-        self.gps_updated_callback: Optional[Callable[[float, float], None]] = None
+        self.gps_updated_callback: Optional[
+            Callable[[float, float, Optional[float]], None]
+        ] = None
         self.quaternion_updated_callback: Optional[
-            Callable[[float, float, float, float], None]
+            Callable[[float, float, float, float, Optional[float]], None]
+        ] = None
+        self.altitude_updated_callback: Optional[
+            Callable[[float, Optional[float]], None]
         ] = None
         self.offset_updated_callback: Optional[Callable[[float], None]] = None
         self.data_invalid_callback: Optional[Callable[[], None]] = None
@@ -37,15 +45,25 @@ class HeadingSource:
             return default_value
         return read_from_conf(self.conf, keys, default_value)
 
-    def _gps(self, lat: float, lon: float) -> None:
+    def _gps(self, lat: float, lon: float, timestamp: Optional[float] = None) -> None:
         if self.gps_updated_callback:
-            self.gps_updated_callback(lat, lon)
+            self.gps_updated_callback(lat, lon, timestamp)
 
-    def _quaternion(self, quaternion: pyquaternion.Quaternion) -> None:
+    def _quaternion(
+        self, quaternion: pyquaternion.Quaternion, timestamp: Optional[float] = None
+    ) -> None:
         if self.quaternion_updated_callback:
             self.quaternion_updated_callback(
-                quaternion[0], quaternion[1], quaternion[2], quaternion[3]
+                quaternion[0],
+                quaternion[1],
+                quaternion[2],
+                quaternion[3],
+                timestamp,
             )
+
+    def _altitude(self, altitude: float, timestamp: Optional[float] = None) -> None:
+        if self.altitude_updated_callback:
+            self.altitude_updated_callback(altitude, timestamp)
 
     def _offset(self, offset: float) -> None:
         if self.offset_updated_callback:
@@ -105,6 +123,9 @@ class HeadingStatic(HeadingSource):
         self.angle: float = self.cr(
             ["heading", "static", "angle"], self.cr(["heading", "angle"], 0)
         )
+        self.altitude: float = self.cr(
+            ["heading", "static", "altitude"], self.cr(["heading", "altitude"], 0)
+        )
 
     def update_parameter(self, key: str, value: Any) -> bool:
         if super().update_parameter(key, value):
@@ -119,6 +140,9 @@ class HeadingStatic(HeadingSource):
         elif key == "lon":
             self.lon = float(value)
             self._gps(self.lat, self.lon)
+        elif key == "altitude":
+            self.altitude = float(value)
+            self._altitude(self.altitude)
         else:
             return False
         return True
@@ -128,6 +152,7 @@ class HeadingStatic(HeadingSource):
             "lat": ["number", self.lat],
             "lon": ["number", self.lon],
             "angle": ["0-360", self.angle],
+            "altitude": ["number", self.altitude],
         }
 
     def loop(self) -> None:
@@ -168,6 +193,9 @@ class HeadingEncoder(HeadingSource):
         elif key == "lon":
             self.lon = float(value)
             self._gps(self.lat, self.lon)
+        elif key == "altitude":
+            self.altitude = float(value)
+            self._altitude(self.altitude)
         else:
             return False
         return True
@@ -376,3 +404,80 @@ class HeadingAHRSFTDI(HeadingAHRS):
             self._status("#compass" + str(e))
             self.compass = None
             return False
+
+
+class HeadingFlightInfo(HeadingSource):
+    """
+    Heading data supplied by the DT46 drone in used in the ALTISS project.
+    The data arrives in protobuf packets using ZeroMQ's PUB/SUB pattern.
+    """
+
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
+        self.address: str = self.cr(
+            ["heading", "FlightInfo", "address"],
+            self.cr(["heading", "address"], "127.0.0.1"),
+        )
+        self.port: int = self.cr(
+            ["heading", "FlightInfo", "port"], self.cr(["heading", "port"], 42069)
+        )
+
+        self._sub: Optional[SUB] = None
+
+    def get_parameters(self) -> dict[str, list[Any]]:
+        return {
+            "address": ["text", self.address],
+            "port": ["number", self.port],
+        }
+
+    def update_parameter(self, key: str, value: Any) -> bool:
+        if super().update_parameter(key, value):
+            return True
+        if key == "address":
+            self.address = str(value)
+        elif key == "port":
+            self.port = int(value)
+        else:
+            return False
+        return True
+
+    def initialize(self) -> bool:
+        try:
+            self._sub = SUB(address_server=self.address, port_server=self.port)
+            self._sub.connect()
+            self._status(f"FlightInfo connected on {self.address}:{self.port}")
+            return True
+        except:
+            self._status(f"FlightInfo faield to connect on {self.address}:{self.port}")
+            return False
+
+    def loop(self) -> None:
+        if not self._sub:
+            return
+
+        try:
+            packet_b = self._sub.receive(timeout=1000)
+            if packet_b is None:
+                # timeout
+                return
+            packet = flight_info.UAVFlightInfo()
+            packet.ParseFromString(packet_b)
+
+            timestamp_s = float(packet.position.timestamp_unix) / 1e6  # convert us to s
+            self._gps(packet.position.latitude, packet.position.longitude, timestamp_s)
+            self._altitude(packet.position.ellipsoid_height, timestamp_s)
+
+            self.update_heading(
+                yaw=packet.attitude.yaw / 180 * np.pi,
+                pitch=packet.attitude.pitch / 180 * np.pi,
+                roll=packet.attitude.roll / 180 * np.pi,
+            )
+            self._quaternion(self.quaternion, timestamp_s)
+
+        except:
+            self._data_invalid()
+            self._status("Received invalid FlightInfo message.")
+
+    def close(self) -> None:
+        if self._sub:
+            self._sub.disconnect()

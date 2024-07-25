@@ -138,7 +138,8 @@ class SourceManager:
         self.cs_status: CoreServiceStatus = CoreServiceStatus.DISCONNECTED
 
         self.latest_telemetry: Optional[proto_data.Telemetry] = None
-        self.latest_config: Optional[proto_cmd.Config] = None
+        self.latest_config: Optional[proto_cmd.Response] = None
+        self.latest_info: Optional[proto_cmd.SystemInfo] = None
 
         self.default_source_file_path = "/home/sagax/Generator/"
 
@@ -147,6 +148,9 @@ class SourceManager:
             self.cs_status = CoreServiceStatus.WORKING
         else:
             self.cs_status = CoreServiceStatus.CONNECTED
+
+    def system_info_handler(self, resp) -> None:
+        self.latest_info = resp.info
 
     def source_config_handler(self, resp) -> None:
         self.latest_config = resp
@@ -220,7 +224,7 @@ class SourceManager:
             self.get_single_roi_mask(roi_center, roi_span, roi_threshold)
         )
         # TODO: heading?
-        # TODO: mean_window
+        cmd.config.pp.mean_window = 1
         # TODO: cmd.config.cs.type = LIVE/RECORDED #why is it needed???
         return [cmd]
 

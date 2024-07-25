@@ -189,21 +189,62 @@ After starting the program, you will need to send a STREAM START command to PySA
 ```
 
 ```bash
-zmqtestclient -p 5050  # Listens on UDP port 5050 for PySAGAX-UAV
-zmqtestclient -p 5050 -c 10.1.1.113:5556  # Does the same, but starts stream automatically (we have to specify the command host for that)
+clizmqclient -p 5050  # Listens on UDP port 5050 for PySAGAX-UAV
+clizmqclient -p 5050 -c 10.1.1.113:5556  # Does the same, but starts stream automatically (we have to specify the command host for that)
 clizmqclient -p 12937 10.1.1.113  # Connects to CoreService ZMQ TCP stream port
 ```
 
 # pysagax-heading 
 
+Provides the heading data [GPS location, altitude, attitude (orientation relative to the horizontal plane)] for PysagaxUAV. Recieves configuration commands from PysagaxUAV. Can connect to different sources that generate heading data, and forwards the received data to PysagaxUAV using our HeadingData protobuf message structure.
+
+Supported heading sources:
+
+ * Static: custom data (gps coords and azimuth) configured from commands
+ * Aaronia GPS sensor
+ * DT46 flight info server
+ * Encoder at Ócsa Base
+ * RAC's Giga drone
+
+Usage with defining a static heading of our system's location and orientation (with gps coordinates, a 27° pitch relative to North and a height over ground of 15 metres):
+```bash
+pysagax-heading --lat 47.4951 --lon 18.9258 --ang 27 --alt 15
 ```
-TODO
-```
+
 
 # pysagax-uav 
 
-```
-TODO
+PysagaxUAV is the central software that receives data and gives commands to the different tools that we use. Filters, aggregates and analyzes the raw data it received, based on its configuration to generate high-level COMINT events that are of interest in a particular application of the LENA product. Streams results of post-processing to the ground-based client. 
+
+Command and communication tasks:
+
+ * Command connection: receive and answer commands from ground-based client
+ * Streamer: stream processed data to client
+ * CS command: configure CoreService and handle its responses
+ * CS streamer: receive raw measurement data from core service (magnitude and angle spectrums)
+ * ScanEngine: generate scan-plans for core service
+ * Heading: communicate with the pysagax-heading service
+ * Interpreter: handle and forward the commands and responses to the desired module
+ * Telemetry: collecting telemetry data
+ * Post-processing: see below
+ * Saving the measurement stream to a spectrogram file and reading back the file
+
+
+Post-processing steps:
+
+ * Synchronize heading data from pysagax-heading and measurement data from CoreService.
+ * Generate detections: signals that are stronger than the configured threshold.
+ * Calculate basic signal properties: occupied bandwidth and signal-to-noise ratio
+ * Aggregate the detections: time-based averaging of the DF angles
+ * Generate COMINT events: high-level results that aims to differentiate sources that use the same frequency.
+
+A number of configuration parameters can be passed to the module via CLI options or a config file. CLI options overwrite the values in the config file if both are found. A few examples:
+
+```bash
+pysagax-uav --help # displays all available config options
+pysagax-uav -c config.toml # define config file location. The default is /var/sagax/pysagaxuav/pysagaxuav.toml
+pysagax-uav --spectrogram-mode record --spectrogram-path spectrogram.protorec # record the measurement stream to file
+pysagax-uav --spectrogram-mode playback --spectrogram-path spectrogram.protorec # play back spectrogram recordings
 ```
 
 # sigmfdisp 

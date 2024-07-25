@@ -104,6 +104,10 @@ enum Instruction {
     CS_CALIBRATE_START = 31;
 
     CS_CALIBRATE_ABORT = 32;
+
+    CS_COMPENSATE_WITH_PHASEDIFFS_STOP = 34;
+
+    CS_READ_PHASEDIFFS_FROM_FILE = 36;
 }
 
 message ROIMask {
@@ -281,6 +285,12 @@ message CommandError {
 }
 
 
+message CalibrationCommand {
+    FreqList calibration_freqs = 11;
+    string identifier = 12;
+
+}
+
 message Command {
     // Common message encapsulating all possible commands
 
@@ -312,8 +322,9 @@ message Command {
         // Recording length
         uint64 rec_length_secs = 9;
 
-        FreqList calibration_freqs = 11;
+        CalibrationCommand calib_command = 12;
     }
+    reserved 11;
 }
 
 message ConfigStatus {

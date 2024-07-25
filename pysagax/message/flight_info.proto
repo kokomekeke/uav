@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package pysagax.message;
+import "google/protobuf/timestamp.proto";
+
+enum UTMFlightState {
+  STATE_UNKNOWN = 0;
+  STATE_GROUND = 1;
+  STATE_AIRBORNE = 2;
+  STATE_EMERGENCY = 3;
+  STATE_NOCTRL = 4;
+}
+
+
+message Position {
+  float latitude = 1;         		// latitude in degree
+  float longitude = 2;        		// longitude in degree
+  float ellipsoid_height = 3;  	// altitude (WGS84) in meter
+  uint64 timestamp_unix = 4;   	// time of applicability of position (microseconds since UNIX epoch).
+}
+
+
+message Attitude {
+  float yaw = 1;                 		// yaw in degree
+  float pitch = 2;               		// pitch in degree
+  float roll = 3;                			// roll in degree
+  uint64 timestamp_from_boot = 4; 	// time since system boot in ms
+}
+
+
+message Mission {
+  float air_speed = 1;
+  float ground_speed = 2;             	// ground speed in meter/s
+  uint32 altitude_mls = 3;            	// MLS altitude in meter/s
+  uint32 battery_level = 4;           	// remaining battery energy in % 
+  uint32 battery_voltage = 5;         	// missing - battery voltage in volt
+  bool payload_bay_status = 6;       	// payload bay open (1) or not (0)
+  uint32 flight_mode = 7;             	// missing - current flight mode
+  UTMFlightState flight_status = 8;   	// current flight status
+}
+
+
+enum FlightDataUpdate {
+  UPDATE_POSITION = 0;
+  UPDATE_ATTITUDE = 1;
+  UPDATE_MISSION = 2;
+}
+
+
+message UAVFlightInfo {
+  google.protobuf.Timestamp timestamp = 1;    // message timestamp
+  Position position = 2;               		// position message
+  Attitude attitude = 3;               		// attitude message
+  Mission mission = 4;                 		// mission message
+  FlightDataUpdate data_update = 5;          	// indicate updated field
+}
