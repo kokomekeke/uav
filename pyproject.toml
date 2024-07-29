@@ -34,6 +34,13 @@ dependencies = [
     "sigmf",
     "transitions",
     "sqlalchemy",
+    "flask",
+    "marshmallow",
+    "flask-marshmallow",
+    "flask-sqlalchemy",
+    "flask-marshmallow-openapi",
+    "marshmallow-sqlalchemy",
+    "psycopg2",
 ]
 
 [project.optional-dependencies]

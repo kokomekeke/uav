@@ -27,4 +27,5 @@ class Monitoring(Loop):
         return super()._call(*args, **kwargs)
 
     def _loop(self) -> None:
+        time.sleep(1000)
         pass

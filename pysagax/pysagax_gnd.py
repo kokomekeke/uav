@@ -15,10 +15,10 @@ from typing import Any, Optional
 
 import click
 from coloredlogs import install
+from flask import Flask
 from rich.logging import RichHandler
 
 from pysagax.field.scanengine import ScanEngine
-from pysagax.gnd.api import API
 from pysagax.gnd.cievents import CIEvents
 from pysagax.gnd.commaggregate import CommAggregate
 from pysagax.gnd.commandengine import CommandEngine
@@ -30,6 +30,7 @@ try:
     import tomllib
 except ModuleNotFoundError:
     import tomli as tomllib
+
 import os
 
 from pysagax import __version__
@@ -50,12 +51,11 @@ class Commander:
         self._pool = ProcessPoolExecutor(max_workers=14)
 
         self._db = ComIntDatabase(db_url)
-        if initialize_db:
-            self._db.initialize_db()
-            return
         # self._example_q = self._manager.Queue(maxsize=1)
         # self._example_proxy = self._manager.dict()
-        self._api = API(level=level)
+        if initialize_db:
+            self._db.initialize_db(self._db.get_app_instance())
+            return
         self._cievents = CIEvents(level=level)
         self._commaggregate = CommAggregate(level=level)
         self._commandengine = CommandEngine(level=level)
@@ -67,7 +67,6 @@ class Commander:
 
         self._logger.debug("Starting Commander")
 
-        api_future = self._pool.submit(self._api)
         cievents_future = self._pool.submit(self._cievents)
         commaggregate_future = self._pool.submit(self._commaggregate)
         commandengine_future = self._pool.submit(self._commandengine)
@@ -80,7 +79,6 @@ class Commander:
         while True:
             done, running = wait(
                 (
-                    api_future,
                     cievents_future,
                     commaggregate_future,
                     commandengine_future,
@@ -159,7 +157,7 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     default="postgresql+psycopg2://pysagax_gnd:S3cret@localhost/comint",
     show_default=True,
 )
-@click.option('--initialize-db', is_flag=True)
+@click.option("--initialize-db", is_flag=True)
 def main(
     level: str,
     db_url: str,
@@ -203,6 +201,10 @@ def setup_logging(
     install(level=level, fmt=format, style="{")
 
     # TODO: Implement log files
+
+
+def create_app():
+    main()
 
 
 if __name__ == "__main__":
