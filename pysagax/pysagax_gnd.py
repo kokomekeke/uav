@@ -57,7 +57,7 @@ class Commander:
             self._db.initialize_db(self._db.get_app_instance())
             return
         self._cievents = CIEvents(level=level)
-        self._commaggregate = CommAggregate(level=level)
+        self._commaggregate = CommAggregate(level=level, db=self._db)
         self._commandengine = CommandEngine(level=level)
         self._monitoring = Monitoring(level=level)
         self._ppgeoloc = PPGeoLoc(level=level)

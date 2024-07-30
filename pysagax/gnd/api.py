@@ -2,7 +2,7 @@ import textwrap
 
 import flask
 import marshmallow as ma
-from flask import jsonify
+from flask import jsonify, make_response
 from flask_marshmallow.sqla import SQLAlchemyAutoSchema
 from flask_marshmallow_openapi import Securities, open_api
 
@@ -33,6 +33,12 @@ class UAVCreateSchema(ma.Schema):
     uav_label = ma.fields.String(allow_none=True, required=False)
     uav_address = ma.fields.String(allow_none=False, required=True)
     active = ma.fields.Boolean(allow_none=False, required=True)
+
+
+class UAVUpdateSchema(ma.Schema):
+    uav_label = ma.fields.String(allow_none=True, required=False)
+    uav_address = ma.fields.String(allow_none=False, required=False)
+    active = ma.fields.Boolean(allow_none=False, required=False)
 
 
 class UAVEventSchema(SQLAlchemyAutoSchema):
@@ -87,6 +93,10 @@ uavs_schema = UAVSchema(many=True)
 uav_schema = UAVSchema()
 
 
+def not_found_error(message):
+    return make_response(jsonify(message), 404)
+
+
 @open_api.get_list(ComIntDetectionSchema)
 @api.route("/comintdetection/")
 def comintdetection_list():
@@ -112,6 +122,8 @@ def uav_list():
 @api.route("/uav/<int:id>", methods=["GET"])
 def uav_detail(id):
     uav = UAVEntity.query.get(id)
+    if uav is None:
+        return not_found_error(f"UAV {id} not found.")
     return uav_schema.jsonify(uav)
 
 
@@ -128,14 +140,19 @@ def uav_create():
     return uav_schema.jsonify(new_uav)
 
 
-@open_api.patch(request_schema=UAVCreateSchema, response_schema=UAVSchema)
+@open_api.patch(request_schema=UAVUpdateSchema, response_schema=UAVSchema)
 @api.route("/uav/<int:id>", methods=["PATCH"])
 def uav_update(id):
-    data = UAVCreateSchema(many=False).load(flask.request.json)
+    data = UAVUpdateSchema(many=False).load(flask.request.json)
     uav = UAVEntity.query.get(id)
-    uav.active = data["active"]
-    uav.uav_label = data["uav_label"]
-    uav.uav_address = data["uav_address"]
+    if uav is None:
+        return not_found_error(f"UAV {id} not found.")
+    if "active" in data:
+        uav.active = data["active"]
+    if "uav_label" in data:
+        uav.uav_label = data["uav_label"]
+    if "uav_address" in data:
+        uav.uav_address = data["uav_address"]
     db.session.commit()
     return uav_schema.jsonify(uav)
 
@@ -145,6 +162,8 @@ def uav_update(id):
 @api.route("/uav/<int:id>", methods=["DELETE"])
 def user_delete(id):
     uav = UAVEntity.query.get(id)
+    if uav is None:
+        return not_found_error(f"UAV {id} not found.")
     db.session.delete(uav)
     db.session.commit()
 

@@ -3,10 +3,12 @@ import logging
 from queue import Queue
 import time
 
-from typing import Optional
+from typing import Any, Optional
+
+import sqlalchemy
 
 from pysagax.common.loop import Loop
-
+from pysagax.gnd.database import ComIntDatabase, UAVEntity
 
 
 class CommAggregate(Loop):
@@ -14,9 +16,12 @@ class CommAggregate(Loop):
 
     def __init__(
         self,
+        db: ComIntDatabase,
         *args,
         **kwargs,
     ) -> None:
+        self._db: ComIntDatabase = db
+        self._app: Optional[Any] = None
         Loop.__init__(self, *args, **kwargs)
 
     def __call__(
@@ -24,8 +29,20 @@ class CommAggregate(Loop):
         *args,
         **kwargs,
     ) -> None:
+        self._app = self._db.get_app_instance()
         return super()._call(*args, **kwargs)
 
     def _loop(self) -> None:
-        time.sleep(1000)
+        assert self._app
+        with self._app.app_context():
+            all_uavs = UAVEntity.query.filter_by(active=True).all()
+            for uav in all_uavs:
+                uav.last_seen = sqlalchemy.func.now()
+            self._db.commit()
+            print(
+                ", ".join(
+                    f"{uav.uav_label} ({uav.uav_address})" or "None" for uav in all_uavs
+                )
+            )
+        time.sleep(1)
         pass

@@ -121,6 +121,10 @@ class ComIntDatabase:
         db.init_app(app)
         return app
 
+    def commit(self) -> None:
+        global db
+        db.session.commit()
+
     def initialize_db(self, app) -> None:
         global db
         with app.app_context():
