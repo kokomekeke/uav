@@ -694,16 +694,18 @@ class ScanEngine(Loop):
         assert self._cs_commands_q is not None
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CS_CALIBRATE_START
-        filtered_calibration_freq_list = proto_cmd.FreqList()
-        filtered_centers = list(
-            filter(
-                lambda fq: not self._is_freq_calibrated(int(fq)),
-                self._calibration_freq_list.center_freqs,
-            )
-        )
-        filtered_calibration_freq_list.iq_rate = self._calibration_freq_list.iq_rate
-        filtered_calibration_freq_list.center_freqs.extend(filtered_centers)
-        command.calib_command.calibration_freqs.CopyFrom(filtered_calibration_freq_list)
+        # filtered_calibration_freq_list = proto_cmd.FreqList()
+        # filtered_centers = list(
+        #     filter(
+        #         lambda fq: not self._is_freq_calibrated(int(fq)),
+        #         self._calibration_freq_list.center_freqs,
+        #     )
+        # )
+        # filtered_calibration_freq_list.iq_rate = self._calibration_freq_list.iq_rate
+        # filtered_calibration_freq_list.center_freqs.extend(filtered_centers)
+        # command.calib_command.calibration_freqs.CopyFrom(filtered_calibration_freq_list)
+        # TODO when CoreService supports that
+        command.calib_command.calibration_freqs.CopyFrom(self._calibration_freq_list)
         command.calib_command.identifier = self._calibration_identifier
         self._latest_cs_command = command
         self._cs_commands_q.put((command, self._instruction_cs_timeout))
