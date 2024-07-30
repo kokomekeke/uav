@@ -97,15 +97,19 @@ def not_found_error(message):
     return make_response(jsonify(message), 404)
 
 
-@open_api.get_list(ComIntDetectionSchema)
-@api.route("/comintdetection/")
-def comintdetection_list():
-    all_detections = ComIntDetectionEntity.query.all()
+@open_api.get(response_schema=ComIntDetectionSchema, is_list=True, has_id_in_path=True)
+@api.route("/comintdetection/list_from/<int:id>", methods=["GET"])
+def comintdetection_list(id):
+    all_detections = (
+        ComIntDetectionEntity.query.order_by(ComIntDetectionEntity.detection_id.desc())
+        .filter(ComIntDetectionEntity.detection_id >= id)
+        .all()
+    )
     return jsonify(comintdetections_schema.dump(all_detections))
 
 
 @open_api.get_detail(ComIntDetectionSchema)
-@api.route("/comintdetection/<id>", methods=["GET"])
+@api.route("/comintdetection/<int:id>", methods=["GET"])
 def comintdetection_detail(id):
     comintdetection = ComIntDetectionEntity.query.get(id)
     return comintdetection_schema.jsonify(comintdetection)
@@ -114,7 +118,7 @@ def comintdetection_detail(id):
 @open_api.get_list(UAVSchema)
 @api.route("/uav/")
 def uav_list():
-    all_uavs = UAVEntity.query.all()
+    all_uavs = UAVEntity.query.order_by(UAVEntity.uav_id.asc()).all()
     return jsonify(uavs_schema.dump(all_uavs))
 
 

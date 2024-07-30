@@ -35,7 +35,7 @@ class CommAggregate(Loop):
     def _loop(self) -> None:
         assert self._app
         with self._app.app_context():
-            all_uavs = UAVEntity.query.filter_by(active=True).all()
+            all_uavs = UAVEntity.query.order_by(UAVEntity.uav_id.asc()).filter_by(active=True).all()
             for uav in all_uavs:
                 uav.last_seen = sqlalchemy.func.now()
             self._db.commit()
