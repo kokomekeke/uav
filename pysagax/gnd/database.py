@@ -125,6 +125,11 @@ class ComIntDatabase:
         global db
         db.session.commit()
 
+    def rollback(self) -> None:
+        global db
+        db.session.rollback()
+        db.session.remove()
+
     def initialize_db(self, app) -> None:
         global db
         with app.app_context():
