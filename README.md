@@ -247,6 +247,28 @@ pysagax-uav --spectrogram-mode record --spectrogram-path spectrogram.protorec # 
 pysagax-uav --spectrogram-mode playback --spectrogram-path spectrogram.protorec # play back spectrogram recordings
 ```
 
+# pysagax-gnd
+
+ComInt Operation extension modules. The following three processes should be started in parallel:
+
+** PostgreSQL Database using Docker **
+
+```bash
+docker-compose up
+```
+
+** Ground server main component **
+
+```bash
+pysagax-gnd
+```
+
+** REST API server **
+
+```bash
+FLASK_APP=pysagax.pysagax_gnd_api PYTHONPATH=$PWD flask run --host 0.0.0.0
+```
+
 # sigmfdisp 
 
 ![SigMFDisp](screenshot_sigmfdisp.png)
