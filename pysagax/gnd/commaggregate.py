@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import logging
+import socket
 import threading
 import time
+from contextlib import closing
 from queue import Queue
 from typing import Any, Callable, Optional
 
@@ -19,6 +21,13 @@ from pysagax.message.data_types import DataType
 from pysagax.util.get_ip import get_ip
 
 
+def find_free_port():
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.bind(("", 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return s.getsockname()[1]
+
+
 class UAVConnection(threading.Thread):
     def __init__(
         self,
@@ -33,7 +42,11 @@ class UAVConnection(threading.Thread):
             ],
             None,
         ],
+        level: Any,
     ) -> None:
+        super().__init__()
+        self._logger = logging.getLogger(self.__class__.__name__)
+        self._logger.setLevel(level)
         self.daemon = True
         self.running = True
         self.uav_db_id = uav_entity.uav_id
@@ -44,8 +57,7 @@ class UAVConnection(threading.Thread):
         self.uav_address = uav_entity.uav_address
         self.uav_command_port = 5556
         self.own_address = get_ip(self.uav_address)
-        self.own_stream_udp_port = 1000
-        return super().__init__()
+        self.own_stream_udp_port = find_free_port()
 
     def send_command(
         self, cmd: proto_cmd.Command, address: str, port: int
@@ -73,7 +85,22 @@ class UAVConnection(threading.Thread):
         # TODO: think about ideal timeout values, move to config
         cmd_stream_start.target.heartbeat_timeout = 1
         cmd_stream_start.target.telemetry_timeout = 1
-        self.send_command(cmd_stream_start, self.uav_address, self.uav_command_port)
+        resp = self.send_command(
+            cmd_stream_start, self.uav_address, self.uav_command_port
+        )
+        if resp:
+            if resp.HasField("error"):
+                self._logger.error(
+                    f"Stream start error {resp.error} on {self.uav_address}:{self.uav_command_port}"
+                )
+            else:
+                self._logger.info(
+                    f"Stream start successful on {self.uav_address}:{self.uav_command_port}"
+                )
+        else:
+            self._logger.error(
+                f"Stream start timed out on {self.uav_address}:{self.uav_command_port}"
+            )
 
     def stream_stop(self) -> None:
         cmd_stream_start = proto_cmd.Command()
@@ -81,13 +108,31 @@ class UAVConnection(threading.Thread):
         cmd_stream_start.target.id = self.target_id
         cmd_stream_start.target.address = self.own_address
         cmd_stream_start.target.port = self.own_stream_udp_port
-        self.send_command(cmd_stream_start, self.uav_address, self.uav_command_port)
+        resp = self.send_command(
+            cmd_stream_start, self.uav_address, self.uav_command_port
+        )
+        if resp:
+            if resp.HasField("error"):
+                self._logger.error(
+                    f"Stream stop error {resp.error} on {self.uav_address}:{self.uav_command_port}"
+                )
+            else:
+                self._logger.info(
+                    f"Stream stop successful on {self.uav_address}:{self.uav_command_port}"
+                )
+        else:
+            self._logger.error(
+                f"Stream stop timed out on {self.uav_address}:{self.uav_command_port}"
+            )
 
     def run(self) -> None:
         self.stream_start()
         client = RX(self.own_stream_udp_port)
         all_groups = [group.value for group in DataType]
         client.connect(group=all_groups)
+        self._logger.info(
+            f"UDP port {self.own_stream_udp_port} is open for {self.uav_label} ({self.uav_address}) "
+        )
         while self.running:
             data, data_type = client.recv(timeout=1000) or (b"*", "*")
             if data_type in ["*", None]:
@@ -95,8 +140,7 @@ class UAVConnection(threading.Thread):
             data_type_object = DataType(data_type)
             stream_packet = DataType.to_message(data_type_object)
             stream_packet.ParseFromString(data)
-            if isinstance(stream_packet, proto_data.Measurement):
-                self.packet_callback(self.uav_db_id, stream_packet)
+            self.packet_callback(self.uav_db_id, stream_packet)
         self.stream_stop()
 
 
@@ -111,7 +155,7 @@ class CommAggregate(Loop):
     ) -> None:
         self._db: ComIntDatabase = db
         self._app: Optional[Any] = None
-        self._uavs : dict[int, UAVConnection] = {}
+        self._uavs: dict[int, UAVConnection] = {}
         Loop.__init__(self, *args, **kwargs)
 
     def __call__(
@@ -124,6 +168,32 @@ class CommAggregate(Loop):
 
     def _recv_thread(self) -> None:
         pass
+
+    def _receive_telemetry(
+        self, uav_entity: UAVEntity, packet: proto_data.Telemetry
+    ) -> None:
+        self._logger.info(
+            f"Got a Telemetry from {uav_entity.uav_label}! Hostname is {packet.hardware.hostname}"
+        )
+
+    def _receive_measurement(
+        self, uav_entity: UAVEntity, packet: proto_data.Measurement
+    ) -> None:
+        self._logger.info(
+            f"Got a Measurement from {uav_entity.uav_label}! Detection count is {len(packet.detection)}"
+        )
+
+    def _receive_event(self, uav_entity: UAVEntity, packet: proto_data.Event) -> None:
+        self._logger.info(
+            f"Got a Event from {uav_entity.uav_label}! Event id is {packet.event_id}"
+        )
+
+    def _receive_operror(
+        self, uav_entity: UAVEntity, packet: proto_data.OperationalError
+    ) -> None:
+        self._logger.error(
+            f"Got an OperationalError from {uav_entity.uav_label}! Error description: {packet.description}"
+        )
 
     def _receive_packet(
         self,
@@ -141,7 +211,12 @@ class CommAggregate(Loop):
             if uav_entity is None:
                 self._logger.error(f"UAVEntity {uav_id} not found in DB!")
                 return
-            # TODO
+            {
+                proto_data.Telemetry: self._receive_telemetry,
+                proto_data.Measurement: self._receive_measurement,
+                proto_data.Event: self._receive_event,
+                proto_data.OperationalError: self._receive_operror,
+            }[type(packet)](uav_entity, packet)
             uav_entity.last_seen = sqlalchemy.func.now()
             self._db.commit()
         pass
@@ -160,22 +235,32 @@ class CommAggregate(Loop):
             to_be_deactivated = connected_uavs - db_active_uavs
             for uav_id in to_be_deactivated:
                 uav_conn = self._uavs[uav_id]
-                self._logger.info(f"Deactivating #{uav_id} {uav_conn.uav_label} ({uav_conn.uav_address})")
+                self._logger.info(
+                    f"Deactivating #{uav_id} {uav_conn.uav_label} ({uav_conn.uav_address})"
+                )
                 uav_conn.running = False
                 uav_conn.join()
                 del self._uavs[uav_id]
-                self._logger.info(f"Deactivated #{uav_id} {uav_conn.uav_label} ({uav_conn.uav_address})")
+                self._logger.info(
+                    f"Deactivated #{uav_id} {uav_conn.uav_label} ({uav_conn.uav_address})"
+                )
 
-            to_be_activated_entities = [uav for uav in all_uavs if uav.uav_id in to_be_activated]
+            to_be_activated_entities = [
+                uav for uav in all_uavs if uav.uav_id in to_be_activated
+            ]
 
             for uav_entity in to_be_activated_entities:
-                self._logger.info(f"Activating #{uav_entity.uav_id} {uav_entity.uav_label} ({uav_entity.uav_address})")
-                uav_conn = UAVConnection(uav_entity, self._receive_packet)
+                self._logger.info(
+                    f"Activating #{uav_entity.uav_id} {uav_entity.uav_label} ({uav_entity.uav_address})"
+                )
+                uav_conn = UAVConnection(
+                    uav_entity, self._receive_packet, level=self._logger.level
+                )
                 self._uavs[uav_entity.uav_id] = uav_conn
                 uav_conn.start()
-                self._logger.info(f"Activated #{uav_conn.uav_db_id} {uav_conn.uav_label} ({uav_conn.uav_address})")
-
-
+                self._logger.info(
+                    f"Activated #{uav_conn.uav_db_id} {uav_conn.uav_label} ({uav_conn.uav_address})"
+                )
 
         time.sleep(1)
         pass
