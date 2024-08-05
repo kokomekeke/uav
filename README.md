@@ -269,6 +269,19 @@ pysagax-gnd
 FLASK_APP=pysagax.pysagax_gnd_api PYTHONPATH=$PWD flask run --host 0.0.0.0
 ```
 
+List REST API routes with:
+
+```bash
+FLASK_APP=pysagax.pysagax_gnd_api PYTHONPATH=$PWD flask routes
+```
+
+Default Swagger UI can be accessed on the dev machine:
+
+```
+http://127.0.0.1:5000/v1/docs/swagger_ui
+```
+
+
 # sigmfdisp 
 
 ![SigMFDisp](screenshot_sigmfdisp.png)
