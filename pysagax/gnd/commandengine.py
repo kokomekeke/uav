@@ -10,7 +10,7 @@ from pysagax.common.loop import Loop
 
 
 class CommandEngine(Loop):
-    """Background process for connecting to the CoreService stream interface and receiving binary data from there"""
+    """Background process for handling operator commands"""
 
     def __init__(
         self,

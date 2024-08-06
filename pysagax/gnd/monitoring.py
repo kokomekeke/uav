@@ -10,7 +10,7 @@ from pysagax.common.loop import Loop
 
 
 class Monitoring(Loop):
-    """Background process for connecting to the CoreService stream interface and receiving binary data from there"""
+    """Background process for monitoring UAV status and self check"""
 
     def __init__(
         self,

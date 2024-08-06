@@ -10,7 +10,7 @@ from pysagax.common.loop import Loop
 
 
 class PPGeoLoc(Loop):
-    """Background process for connecting to the CoreService stream interface and receiving binary data from there"""
+    """Background process for calculation the geolocation data for the ComInt events"""
 
     def __init__(
         self,

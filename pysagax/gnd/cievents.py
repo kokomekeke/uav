@@ -10,7 +10,7 @@ from pysagax.common.loop import Loop
 
 
 class CIEvents(Loop):
-    """Background process for connecting to the CoreService stream interface and receiving binary data from there"""
+    """Background process for processing the ComInt events"""
 
     def __init__(
         self,

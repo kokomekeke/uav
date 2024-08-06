@@ -145,7 +145,7 @@ class UAVConnection(threading.Thread):
 
 
 class CommAggregate(Loop):
-    """Background process for connecting to the CoreService stream interface and receiving binary data from there"""
+    """Background process for managing the connections and communications to the UAVs"""
 
     def __init__(
         self,

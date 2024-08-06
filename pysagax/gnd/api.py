@@ -161,14 +161,12 @@ def uav_update(id):
     return uav_schema.jsonify(uav)
 
 
-# endpoint to delete user
 @open_api.delete(UAVSchema)
 @api.route("/uav/<int:id>", methods=["DELETE"])
-def user_delete(id):
+def uav_delete(id):
     uav = UAVEntity.query.get(id)
     if uav is None:
         return not_found_error(f"UAV {id} not found.")
     db.session.delete(uav)
     db.session.commit()
-
     return jsonify({})
