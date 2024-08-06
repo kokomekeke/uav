@@ -16,7 +16,7 @@ from pysagax.common.loop import Loop
 from pysagax.communication.broadcast import RX
 from pysagax.communication.pub_sub import SUB
 from pysagax.communication.req_rep_tcp import REQ
-from pysagax.gnd.database import ComIntDatabase, UAVEntity
+from pysagax.gnd.database import ComIntDatabase, ComIntDetectionEntity, UAVEntity
 from pysagax.message.data_types import DataType
 from pysagax.util.get_ip import get_ip
 
@@ -182,6 +182,16 @@ class CommAggregate(Loop):
         self._logger.info(
             f"Got a Measurement from {uav_entity.uav_label}! Detection count is {len(packet.detection)}"
         )
+        new_meas_entity = ComIntDetectionEntity()
+        new_meas_entity.uav_id = uav_entity.uav_id
+        new_meas_entity.frequency = 144000000
+        new_meas_entity.bandwidth = 2000000
+        new_meas_entity.snr = 20.4
+        new_meas_entity.lob_azim_deg = 181.3
+        new_meas_entity.lob_elev_deg = 0.52
+        new_meas_entity.precision = 0.98
+        new_meas_entity.signal_strength = 0.5
+        self._db.add_and_commit(new_meas_entity)
 
     def _receive_event(self, uav_entity: UAVEntity, packet: proto_data.Event) -> None:
         self._logger.info(

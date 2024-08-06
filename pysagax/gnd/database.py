@@ -1,5 +1,6 @@
 import datetime
 import enum
+from typing import Any
 
 from click.core import F
 from flask import Flask
@@ -120,6 +121,11 @@ class ComIntDatabase:
         app.config["SQLALCHEMY_DATABASE_URI"] = self.url
         db.init_app(app)
         return app
+
+    def add_and_commit(self, entity: Any) -> None:
+        global db
+        db.session.add(entity)
+        db.session.commit()
 
     def commit(self) -> None:
         global db
