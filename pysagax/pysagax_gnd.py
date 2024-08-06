@@ -128,15 +128,6 @@ def set_default_config(ctx, param, conf_path):
     return conf_path
 
 
-def validate_spectrogram_mode_and_path(ctx, param, path):
-    mode = ctx.params.get("spectrogram_mode")
-    if mode in ["record", "playback"] and path is None:
-        raise click.BadParameter(
-            "spectrogram-path is required when mode is 'record' or 'playback'."
-        )
-    return path
-
-
 @click.command()
 @click.version_option(version=__version__, prog_name="PysagaxGND")
 @click.option(
@@ -180,9 +171,6 @@ def main(
         return
     commander.start()
 
-    # while True:
-    #    pass
-
 
 def setup_logging(
     level: str = "INFO",
@@ -201,10 +189,6 @@ def setup_logging(
     install(level=level, fmt=format, style="{")
 
     # TODO: Implement log files
-
-
-def create_app():
-    main()
 
 
 if __name__ == "__main__":
