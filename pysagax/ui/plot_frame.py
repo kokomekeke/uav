@@ -321,11 +321,11 @@ class PlotFrame(tkinter.Frame):
         if bin_count == 0 or iq_rate == 0:
             return
         spectrum_index = None
-        for i, param in enumerate(self.params):
+        for i, param in enumerate(self.params): # finding the graph for the packet
             if (
-                center_frequency == param.center_frequency
+                center_frequency - param.center_frequency < 1e-3 
                 and bin_count == param.bin_count
-                and iq_rate == param.iq_rate
+                and iq_rate - param.iq_rate < 1e-3
             ):
                 spectrum_index = i
 
