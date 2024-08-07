@@ -86,10 +86,7 @@ class ComIntDetectionEntity(db.Model):
     uav_pos_q1 = db.Column(db.Numeric(10, 6))
     uav_pos_q2 = db.Column(db.Numeric(10, 6))
     uav_pos_q3 = db.Column(db.Numeric(10, 6))
-    roi_identifier = db.Column(
-        db.Integer(), nullable=True
-    )
-
+    roi_identifier = db.Column(db.Integer(), nullable=True)
 
 
 class ConfigurationEntity(db.Model):
@@ -106,18 +103,6 @@ class ConfigurationEntity(db.Model):
 
 class AreaOfInterestEntity(db.Model):
     __tablename__ = "areaofinterest"
-
-    foi_id = db.Column(db.Integer(), primary_key=True)
-    conf_id = db.Column(
-        db.Integer(), db.ForeignKey("configuration.conf_id"), nullable=False
-    )
-    start_freq = db.Column(db.BigInteger(), nullable=False)
-    end_freq = db.Column(db.BigInteger(), nullable=False)
-
-
-class FreqOfInterestEntity(db.Model):
-    __tablename__ = "freqofinterest"
-
     aoi_id = db.Column(db.Integer(), primary_key=True)
     conf_id = db.Column(
         db.Integer(), db.ForeignKey("configuration.conf_id"), nullable=True
@@ -125,6 +110,16 @@ class FreqOfInterestEntity(db.Model):
     lat = db.Column(db.Numeric(10, 6))
     lon = db.Column(db.Numeric(10, 6))
     radius = db.Column(db.Numeric(10, 1))
+
+
+class FreqOfInterestEntity(db.Model):
+    __tablename__ = "freqofinterest"
+    foi_id = db.Column(db.Integer(), primary_key=True)
+    conf_id = db.Column(
+        db.Integer(), db.ForeignKey("configuration.conf_id"), nullable=False
+    )
+    start_freq = db.Column(db.BigInteger(), nullable=False)
+    end_freq = db.Column(db.BigInteger(), nullable=False)
 
 
 class ComIntDatabase:
