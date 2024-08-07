@@ -66,7 +66,7 @@ class ComIntEventEntity(db.Model):
 class ComIntDetectionEntity(db.Model):
     __tablename__ = "comintdetection"
 
-    detection_id = db.Column(db.Integer(), primary_key=True)
+    detection_id = db.Column(db.BigInteger(), primary_key=True)
     uav_id = db.Column(db.Integer(), db.ForeignKey("uav.uav_id"), nullable=False)
     uav_event_id = db.Column(
         db.Integer(), db.ForeignKey("uav_event.uav_event_id"), nullable=True
@@ -86,6 +86,10 @@ class ComIntDetectionEntity(db.Model):
     uav_pos_q1 = db.Column(db.Numeric(10, 6))
     uav_pos_q2 = db.Column(db.Numeric(10, 6))
     uav_pos_q3 = db.Column(db.Numeric(10, 6))
+    roi_identifier = db.Column(
+        db.Integer(), nullable=True
+    )
+
 
 
 class ConfigurationEntity(db.Model):

@@ -250,6 +250,7 @@ class CommAggregate(Loop):
             new_meas_entity.precision = 1 - (det.deviation / (math.pi * 2))
             new_meas_entity.signal_strength = det.strength
             new_meas_entity.timestamp = packet.time.ToDatetime()
+            new_meas_entity.roi_identifier = det.roi_id
             new_meas_entity.uav_pos_lat = packet.heading_data.gps_lat
             new_meas_entity.uav_pos_lon = packet.heading_data.gps_lon
             new_meas_entity.uav_pos_altitude = packet.heading_data.altitude

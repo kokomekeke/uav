@@ -133,6 +133,7 @@ def geojson_feature_from_detection(
             "uav_pos_yaw": yaw,
             "uav_pos_pitch": pitch,
             "uav_pos_roll": roll,
+            "roi_id": det.roi_identifier,
         },
         "geometry": {
             "type": "Point",
