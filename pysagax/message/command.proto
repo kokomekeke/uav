@@ -108,6 +108,12 @@ enum Instruction {
     CS_COMPENSATE_WITH_PHASEDIFFS_STOP = 34;
 
     CS_READ_PHASEDIFFS_FROM_FILE = 36;
+
+    // ScanEngine control commands
+    AUTO_CALIBRATION_ENABLE = 41;
+    AUTO_CALIBRATION_DISABLE = 42;
+    AUTO_CALIBRATION_TRIGGER = 43;
+
 }
 
 message ROIMask {

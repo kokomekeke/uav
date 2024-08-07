@@ -178,6 +178,9 @@ class Interpreter(Loop):
                 | proto_cmd.CS_SCAN_START
                 | proto_cmd.CS_COMPENSATE_WITH_PHASEDIFFS_STOP
                 | proto_cmd.CS_READ_PHASEDIFFS_FROM_FILE
+                | proto_cmd.AUTO_CALIBRATION_ENABLE
+                | proto_cmd.AUTO_CALIBRATION_DISABLE
+                | proto_cmd.AUTO_CALIBRATION_TRIGGER
             ):
                 response.CopyFrom(self._se_control(command))
 

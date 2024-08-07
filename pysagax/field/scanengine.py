@@ -1,9 +1,12 @@
 import enum
+import json
 import logging
 import math
+import os.path
 import pickle
 import queue
 import time
+import typing
 from multiprocessing.managers import DictProxy
 from queue import Queue
 from typing import Any, Generator, Optional, overload
@@ -292,6 +295,7 @@ class ScanEngine(Loop):
         timeout_instruction_ms: int = 1000,
         calibration_interval_seconds: float = 300.0,
         calibration_resolution_bw: float = 0.5e6,
+        cache_file: str = "se_cache.json",
         source_device_type: str = "",
         source_device_path: str = "",
         auto_config: str = "",
@@ -362,10 +366,40 @@ class ScanEngine(Loop):
                 )
         self._reset_on_error = reset_on_error
         self._last_calibration_timestamp: float = 0.0
-        self._calibration_interval_seconds: float = calibration_interval_seconds
+        self._calibration_interval_seconds: float = 0.0  # calibration_interval_seconds
+        self._calibration_interval_seconds_default: float = calibration_interval_seconds
         self._calibration_freq_list = proto_cmd.FreqList()
         self._calibration_resolution_bw = calibration_resolution_bw
         self._calibration_identifier: str = "default"
+        self._cache_file: str = cache_file
+        self._cache = {"calibrated": {"0": 0}}
+        if os.path.isfile(self._cache_file):
+            with open(self._cache_file, "r") as cache_fp:
+                self._cache = json.load(cache_fp)
+
+    def _flush_cache(self) -> None:
+        with open(self._cache_file, "w") as cache_fp:
+            json.dump(self._cache, cache_fp)
+
+    def _is_freq_calibrated(self, freq: int) -> bool:
+        if "calibrated" in self._cache:
+            if str(freq) in self._cache["calibrated"]:
+                last_calibrated = self._cache["calibrated"][str(freq)]
+                return (
+                    time.time() - self._calibration_interval_seconds <= last_calibrated
+                )
+        return False
+
+    def _set_freq_calibrated(self, freqs: typing.Iterable[int]) -> None:
+        if "calibrated" not in self._cache:
+            self._cache["calibrated"] = {"0": 0}
+        for freq in freqs:
+            self._cache["calibrated"][str(freq)] = int(time.time())
+        self._flush_cache()
+
+    def _clear_calibrated_list(self) -> None:
+        self._cache["calibrated"] = {"0": 0}
+        self._flush_cache()
 
     def to_calibration_resolution_bw_raster(
         self, start: float, stop: float
@@ -386,12 +420,16 @@ class ScanEngine(Loop):
         """
         This is used as a condition to tell if the FSM should go to a calibration state or not
         """
-        if self._calibration_interval_seconds <= 0:
+        if self._calibration_interval_seconds <= 0.0:
             return False
-        return (
-            self._last_calibration_timestamp + self._calibration_interval_seconds
-            <= time.time()
+        return any(
+            not self._is_freq_calibrated(int(fq))
+            for fq in self._calibration_freq_list.center_freqs
         )
+        # return (
+        #     self._last_calibration_timestamp + self._calibration_interval_seconds
+        #     <= time.time()
+        # )
 
     def trigger_calibration(self, *args, **kwargs) -> bool:
         self._last_calibration_timestamp = 0
@@ -656,6 +694,17 @@ class ScanEngine(Loop):
         assert self._cs_commands_q is not None
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CS_CALIBRATE_START
+        # filtered_calibration_freq_list = proto_cmd.FreqList()
+        # filtered_centers = list(
+        #     filter(
+        #         lambda fq: not self._is_freq_calibrated(int(fq)),
+        #         self._calibration_freq_list.center_freqs,
+        #     )
+        # )
+        # filtered_calibration_freq_list.iq_rate = self._calibration_freq_list.iq_rate
+        # filtered_calibration_freq_list.center_freqs.extend(filtered_centers)
+        # command.calib_command.calibration_freqs.CopyFrom(filtered_calibration_freq_list)
+        # TODO when CoreService supports that
         command.calib_command.calibration_freqs.CopyFrom(self._calibration_freq_list)
         command.calib_command.identifier = self._calibration_identifier
         self._latest_cs_command = command
@@ -788,6 +837,25 @@ class ScanEngine(Loop):
             response.success = True
             return response
         elif command.instruction in [
+            proto_cmd.AUTO_CALIBRATION_ENABLE,
+            proto_cmd.AUTO_CALIBRATION_DISABLE,
+        ]:
+            self._calibration_interval_seconds = (
+                0.0
+                if command.instruction == proto_cmd.AUTO_CALIBRATION_DISABLE
+                else self._calibration_interval_seconds_default
+            )
+            response = proto_cmd.Response()
+            response.instruction = command.instruction
+            response.success = True
+            return response
+        elif command.instruction == proto_cmd.AUTO_CALIBRATION_TRIGGER:
+            self._clear_calibrated_list()
+            response = proto_cmd.Response()
+            response.instruction = proto_cmd.AUTO_CALIBRATION_TRIGGER
+            response.success = True
+            return response
+        elif command.instruction in [
             proto_cmd.SOURCE_START,
             proto_cmd.SOURCE_STOP,
             proto_cmd.REC_START,
@@ -853,6 +921,9 @@ class ScanEngine(Loop):
                     proto_data.Telemetry.Source.RUNNING,
                 ]:
                     self._last_calibration_timestamp = time.time()
+                    self._set_freq_calibrated(
+                        int(fq) for fq in self._calibration_freq_list.center_freqs
+                    )
                     self.done()
                 else:
                     self._handle_incoming_instruction(q_timeout)
@@ -877,6 +948,8 @@ class ScanEngine(Loop):
                         # and the last config is proven to be working
                         self.launch_calibration()
                     else:
+                        self._discard_post_proc_output()
+                        self._received_data_count = 0
                         self.launch()
             case ScanEngineState.TRACKING_IDLE:
                 self._discard_post_proc_output()
@@ -898,7 +971,7 @@ class ScanEngine(Loop):
                     self._received_data_count += 1
                     # This config is working, so next time CS crashes, it can be auto-loaded
                     self._auto_config = self._last_config_command
-                    if self._received_data_count == self._expected_data_count:
+                    if self._received_data_count >= self._expected_data_count:
                         self.done()
                         self._logger.info(
                             f"Scan finished, received {self._received_data_count} bursts"
