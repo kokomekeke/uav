@@ -1,14 +1,11 @@
-import textwrap
-
 import flask
 import marshmallow as ma
 from flask import jsonify, make_response
 from flask_marshmallow.sqla import SQLAlchemyAutoSchema
-from flask_marshmallow_openapi import Securities, open_api
+from flask_marshmallow_openapi import open_api
 
 from pysagax.gnd.database import (
     AreaOfInterestEntity,
-    ComIntDatabase,
     ComIntDetectionEntity,
     ComIntEventEntity,
     ConfigurationEntity,
@@ -17,6 +14,7 @@ from pysagax.gnd.database import (
     UAVEventEntity,
     db,
 )
+from pysagax.util.mat import yaw_pitch_roll_from_quaternion
 
 api = flask.Blueprint("api", __name__)
 
@@ -86,11 +84,61 @@ class FreqOfInterestSchema(SQLAlchemyAutoSchema):
         load_instance = True
 
 
+class GeoJSONSchema(ma.Schema):
+    type = ma.fields.String()
+    name = ma.fields.String()
+    crs = ma.fields.String()
+    features = ma.fields.List(ma.fields.Dict())
+
+
 comintdetections_schema = ComIntDetectionSchema(many=True)
 comintdetection_schema = ComIntDetectionSchema()
 
 uavs_schema = UAVSchema(many=True)
 uav_schema = UAVSchema()
+
+
+def geojson_feature_from_detection(
+    det: ComIntDetectionEntity,
+) -> dict[str, str | dict[str, int | float | str | list[float]]]:
+    if all(
+        q is not None
+        for q in [det.uav_pos_q0, det.uav_pos_q1, det.uav_pos_q2, det.uav_pos_q3]
+    ):
+        yaw, pitch, roll = yaw_pitch_roll_from_quaternion(
+            [
+                float(det.uav_pos_q0),
+                float(det.uav_pos_q1),
+                float(det.uav_pos_q2),
+                float(det.uav_pos_q3),
+            ]
+        )
+    else:
+        yaw, pitch, roll = 0.0, 0.0, 0.0
+    return {
+        "type": "Feature",
+        "properties": {
+            "bandwidth": float(det.bandwidth),
+            "detection_id": det.detection_id,
+            "frequency": int(det.frequency),
+            "lob_azim_deg": float(det.lob_azim_deg),
+            "lob_elev_deg": float(det.lob_elev_deg),
+            "precision": float(det.precision),
+            "signal_strength": float(det.signal_strength),
+            "snr": float(det.snr),
+            "timestamp": str(det.timestamp.isoformat("T")),
+            "uav_event_id": det.uav_event_id,
+            "uav_id": det.uav_id,
+            "uav_pos_altitude": float(det.uav_pos_altitude),
+            "uav_pos_yaw": yaw,
+            "uav_pos_pitch": pitch,
+            "uav_pos_roll": roll,
+        },
+        "geometry": {
+            "type": "Point",
+            "coordinates": [float(det.uav_pos_lon), float(det.uav_pos_lat)],
+        },
+    }
 
 
 def not_found_error(message):
@@ -106,6 +154,30 @@ def comintdetection_list(id):
         .all()
     )
     return jsonify(comintdetections_schema.dump(all_detections))
+
+
+@open_api.get(
+    response_schema=GeoJSONSchema,
+    has_id_in_path=True,
+)
+@api.route("/comintdetection/geojson/list_from/<int:id>", methods=["GET"])
+def comintdetection_geojson_list(id):
+    all_detections = (
+        ComIntDetectionEntity.query.order_by(ComIntDetectionEntity.detection_id.asc())
+        .filter(ComIntDetectionEntity.detection_id >= id)
+        .all()
+    )
+    return jsonify(
+        {
+            "type": "FeatureCollection",
+            "name": "ComIntDetection",
+            "crs": {
+                "type": "name",
+                "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"},
+            },
+            "features": [geojson_feature_from_detection(det) for det in all_detections],
+        }
+    )
 
 
 @open_api.get_detail(ComIntDetectionSchema)
