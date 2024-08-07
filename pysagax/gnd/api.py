@@ -180,6 +180,30 @@ def comintdetection_geojson_list(id):
     )
 
 
+@open_api.get(
+    response_schema=GeoJSONSchema,
+    has_id_in_path=True,
+)
+@api.route("/comintdetection/geojson/list_last/<int:id>", methods=["GET"])
+def comintdetection_geojson_list_last(id):
+    all_detections = (
+        ComIntDetectionEntity.query.order_by(ComIntDetectionEntity.detection_id.desc())
+        .limit(id)
+        .all()
+    )
+    return jsonify(
+        {
+            "type": "FeatureCollection",
+            "name": "ComIntDetection",
+            "crs": {
+                "type": "name",
+                "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"},
+            },
+            "features": [geojson_feature_from_detection(det) for det in all_detections],
+        }
+    )
+
+
 @open_api.get_detail(ComIntDetectionSchema)
 @api.route("/comintdetection/<int:id>", methods=["GET"])
 def comintdetection_detail(id):
