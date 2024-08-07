@@ -8,6 +8,7 @@ detection and event generation.
 * Displays the output of PysagaxUAV
 """
 
+from datetime import datetime
 import os
 import sys
 import subprocess
@@ -23,6 +24,7 @@ from pysagax.communication.broadcast import RX
 from pysagax.communication.pub_sub import SUB
 from pysagax.communication.req_rep_tcp import REQ
 from pysagax.message.data_types import DataType
+from pysagax.message.proto_stream_to_file import FileStreamer
 
 from colorclass import Color
 import terminaltables
@@ -90,7 +92,7 @@ def command(address: str = "127.0.0.1",
     
 
 
-def stream():
+def stream(recording_file_path:str):
 
     all_groups = [group.value for group in DataType]
     # client: RX | SUB = SUB(address, port) if address else RX(port)
@@ -100,6 +102,12 @@ def stream():
     global first_measurement_ts
     global first_measurement_actual
 
+    if recording_file_path:
+        start_time_string = datetime.now().strftime("%Y%m%d_%H%M%S")
+        name, extension = os.path.splitext(recording_file_path)#"/media/rp/data/spotclient_recordings/spotrecording.detectrec")
+        new_path = f"{name}_{start_time_string}{extension}"
+        file_streamer = FileStreamer(new_path, mode="record")
+
     while True:
         data, data_type = client.recv() or (b"*", "*")
         if data_type == "*":
@@ -107,6 +115,8 @@ def stream():
         data_type_object = DataType(data_type)
         stream_packet = DataType.to_message(data_type_object)
         stream_packet.ParseFromString(data)
+        if recording_file_path:
+            record_packet(file_streamer, stream_packet)
         if isinstance(stream_packet, proto_data.Measurement):
             if first_measurement_ts is None:
                 first_measurement_ts = stream_packet.time.ToNanoseconds() / 1e9
@@ -157,6 +167,18 @@ def print_measurement(m: proto_data.Measurement):
     e_table.inner_heading_row_border = False
     print(e_table.table)
 
+def record_packet(file_streamer: FileStreamer, packet):
+    try:
+        if isinstance(packet, proto_data.Measurement):
+            packet_copy = proto_data.Measurement()
+            packet_copy.CopyFrom(packet)
+            packet = packet_copy
+            del packet.data[:] # Remove spectrums. We're not making spectrograms here, we mainly want to record the detections.
+        file_streamer.put(packet)
+    except Exception as e:
+        print("EXCEPTION in recording:", e)
+        print(packet)
+
 def print_time_info(m):
     global max_drift
     global min_drift
@@ -206,7 +228,13 @@ def angle_str(angle):
     required = False,is_flag=True, show_default=False, default=False,
     help="Do not plot the spectrograms",
 )
-def main(spectrogram_id: int = None, bc_16k: bool = False, file_path: str = None, verbose: bool = False, no_plot:bool=False):
+@click.option(
+    "-r", "--recording_file_path",
+    type=str,
+    required = False,
+    help="Location of detection recording. (.detectrec file)",
+)
+def main(spectrogram_id: int = None, bc_16k: bool = False, file_path: str = None, verbose: bool = False, no_plot:bool=False, recording_file_path:str = ""):
     global redraw_console
     redraw_console = not verbose
 
@@ -223,7 +251,7 @@ def main(spectrogram_id: int = None, bc_16k: bool = False, file_path: str = None
         spectrogram_file = file_path
     print(spectrogram_file)
     
-    match spectrogram_id:
+    match spectrogram_id: # list of [center_f, span, threshold] triplets
         case 0:
             roi_cst = [
                 # [],
@@ -248,12 +276,23 @@ def main(spectrogram_id: int = None, bc_16k: bool = False, file_path: str = None
                 # [],
                 # [],
             ]
-        case 4:
+        case 5: #Toulouse/Cesalles flight on 240717 @ 14:30
             roi_cst = [
-                # [],
-                # [],
-                # [],
-            ]
+                        (145.0e6, 5e4, -62),
+                        (433.2e6, 1e5, -81),
+                        (433.6e6, 1e5, -59),
+                        (144.6e6, 2e5, -60),
+                        (460.6e6, 2e5, -60),
+                      ]
+        case 6: #Toulouse/Cesalles flight on 240717 @ 15:11
+            roi_cst = [(433.6e6, 1e5, -65),
+                      (437.5e6, 1e5, -60),
+                      (428.0e6, 1e5, -75)]
+        case 7: #Toulouse/Cesalles flight on 240717 @ 14:30 LOW THRESHOLD 433.2MHz, NARROW ROI SPAN
+            roi_cst = [
+                        (433.2e6, 11e3, -100),
+                      ]
+            
     roi_centers = [roi[0] for roi in roi_cst]
     roi_spans = [roi[1] for roi in roi_cst]
     roi_thresholds = [roi[2] for roi in roi_cst]
@@ -276,7 +315,7 @@ def main(spectrogram_id: int = None, bc_16k: bool = False, file_path: str = None
     command_thread = Thread(target=command, kwargs = roi_dict)
     command_thread.start()
     
-    stream_thread = Thread(target=stream)
+    stream_thread = Thread(target=stream, args=[recording_file_path])
     stream_thread.start()
 
 
