@@ -87,7 +87,7 @@ class FreqOfInterestSchema(SQLAlchemyAutoSchema):
 class GeoJSONSchema(ma.Schema):
     type = ma.fields.String()
     name = ma.fields.String()
-    crs = ma.fields.String()
+    crs = ma.fields.Dict()
     features = ma.fields.List(ma.fields.Dict())
 
 
