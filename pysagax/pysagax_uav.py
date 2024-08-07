@@ -57,6 +57,7 @@ class Commander:
         cs_command_instruction_timeout: int,
         calibration_interval_seconds: float,
         calibration_resolution_bw: float,
+        scanengine_cache_path: str,
         heading_host: str,
         heading_control_port: int,
         heading_stream_port: int,
@@ -122,6 +123,7 @@ class Commander:
             cs_command_instruction_timeout,
             calibration_interval_seconds,
             calibration_resolution_bw,
+            scanengine_cache_path,
             source_device_type,
             source_device_path,
             auto_config,
@@ -377,6 +379,12 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     show_default=True,
 )
 @click.option(
+    "--scanengine-cache-path",
+    help="Path of ScanEngine cache file",
+    default="/tmp/se_cache.json",
+    show_default=True,
+)
+@click.option(
     "--heading-host",
     help="Hostname of Heading module (PySAGAX-Heading)",
     default="127.0.0.1",
@@ -479,6 +487,7 @@ def main(
     cs_command_instruction_timeout: int,
     calibration_interval_seconds: float,
     calibration_resolution_bw: float,
+    scanengine_cache_path: str,
     cs_stream_port: int,
     heading_host: str,
     heading_control_port: int,
@@ -519,6 +528,7 @@ def main(
         cs_command_instruction_timeout,
         calibration_interval_seconds,
         calibration_resolution_bw,
+        scanengine_cache_path,
         heading_host,
         heading_control_port,
         heading_stream_port,

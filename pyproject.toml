@@ -1,6 +1,6 @@
 [project]
 name = "pysagax"
-version = "0.4.10"
+version = "0.4.11"
 authors = [
   { name="Peter Rigo", email="peter.rigo@sagaxcommunications.com" },
   { name="Aron Szabo", email="aron.szabo@sagaxcommunications.com" },
@@ -35,6 +35,14 @@ dependencies = [
     "sigmf",
     "transitions",
     "pymavlink",
+    "sqlalchemy",
+    "flask",
+    "marshmallow",
+    "flask-marshmallow",
+    "flask-sqlalchemy",
+    "flask-marshmallow-openapi",
+    "marshmallow-sqlalchemy",
+    "psycopg2",
 ]
 
 [project.optional-dependencies]
