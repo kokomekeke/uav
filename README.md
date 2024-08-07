@@ -247,6 +247,49 @@ pysagax-uav --spectrogram-mode record --spectrogram-path spectrogram.protorec # 
 pysagax-uav --spectrogram-mode playback --spectrogram-path spectrogram.protorec # play back spectrogram recordings
 ```
 
+# pysagax-gnd
+
+ComInt Operation extension modules. The following three processes should be started in parallel:
+
+** PostgreSQL Database using Docker **
+
+```bash
+docker-compose up
+```
+
+If the docker PostgreSQL database is used, the default setting for the database URI will work. (db-url and DATABASE_URI options can be omitted)
+
+** Ground server main component **
+
+```bash
+pysagax-gnd --db-url "postgresql+psycopg2://db_user:db_pass@host/db_name"
+```
+
+** REST API server **
+
+```bash
+FLASK_APP=pysagax.pysagax_gnd_api PYTHONPATH=$PWD flask run --host 0.0.0.0
+```
+
+To initialize database structure before the first run:
+
+```bash
+pysagax-gnd --initialize-db
+```
+
+List REST API routes with:
+
+```bash
+FLASK_APP=pysagax.pysagax_gnd_api DATABASE_URI="postgresql+psycopg2://db_user:db_pass@host/db_name" PYTHONPATH=$PWD flask routes
+```
+
+Default Swagger UI can be accessed on the dev machine:
+
+```
+http://127.0.0.1:5000/v1/docs/swagger_ui
+```
+
+
 # sigmfdisp 
 
 ![SigMFDisp](screenshot_sigmfdisp.png)
