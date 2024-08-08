@@ -34,6 +34,7 @@ dependencies = [
     "click",
     "sigmf",
     "transitions",
+    "pymavlink",
     "sqlalchemy",
     "flask",
     "marshmallow",
