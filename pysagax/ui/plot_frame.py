@@ -21,6 +21,7 @@ from pysagax.source.source_manager import CoreServiceStatus
 from pysagax.spot.calculate_df_corrected import calculate_df_corrected
 import pysagax.message.data_pb2 as proto_data
 import pysagax.message.command_pb2 as proto_cmd
+import pysagax.message.heading_pb2 as proto_heading
 
 # from pysagax.spotclient import Client, conf, calculate_df_corrected
 from pysagax.ui.custom_widgets import EntryWithLabel, ToggleButton
@@ -31,6 +32,7 @@ from pysagax.ui.lena_matplotlib_graphs import (
     MagnitudeSpectrumGraph,
     WaterfallMagnitudeGraph,
 )
+from pysagax.util.mat import yaw_pitch_roll_from_quaternion
 from pysagax.util.read_from_conf import read_from_conf
 from pysagax.util.protobuf_spectrum_utils import protobuf_spectrum_to_numpy
 
@@ -285,19 +287,24 @@ class PlotFrame(tkinter.Frame):
     def update_sensors_and_graphs(self) -> None:
         assert self.df_graph is not None  ##TODO: assert for all or no compass graphs?
 
-        ##TODO: graph df_value_std (and latest df_value??)
-        self.df_current_graph.add_point(
-            self.master.aggregated_roi_results["df_value_latest"]
-        )
+        detection: proto_data.Detection | None = self.master.detection_to_plot
+        heading: proto_heading.HeadingData | None = self.master.heading_to_plot
+        self.df_current_graph.add_point(detection.azimuth if detection else None)
         self.df_graph.add_point(
-            self.master.aggregated_roi_results["df_value_mean"],
-            self.master.aggregated_roi_results["df_value_std"],
+            detection.mean_azimuth if detection else None,
+            detection.deviation if detection else None,
         )
-        self.compass_graph.add_point(self.master.compass_heading)
+
+        yaw = None
+        if heading is not None:
+            if len(heading.quaternion) == 4:
+                yaw, _, _ = yaw_pitch_roll_from_quaternion(heading.quaternion)
+
+        self.compass_graph.add_point(yaw)
 
         df_corrected = calculate_df_corrected(
-            df_value=self.master.aggregated_roi_results["df_value_mean"],
-            compass_heading=self.master.compass_heading,
+            df_value=detection.mean_azimuth,
+            compass_heading=yaw,
         )
 
         self.compass_df_graph.add_point(df_corrected)
@@ -321,9 +328,9 @@ class PlotFrame(tkinter.Frame):
         if bin_count == 0 or iq_rate == 0:
             return
         spectrum_index = None
-        for i, param in enumerate(self.params): # finding the graph for the packet
+        for i, param in enumerate(self.params):  # finding the graph for the packet
             if (
-                center_frequency - param.center_frequency < 1e-3 
+                center_frequency - param.center_frequency < 1e-3
                 and bin_count == param.bin_count
                 and iq_rate - param.iq_rate < 1e-3
             ):

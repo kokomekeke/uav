@@ -10,6 +10,7 @@ import numpy as np
 from pysagax.util.mat import normalize_angle
 
 import pysagax.message.heading_pb2 as proto_heading
+import pysagax.message.data_pb2 as proto_data
 from scipy.spatial.transform import Rotation
 
 
@@ -206,8 +207,7 @@ class StatFrame(tkinter.Frame):
 
     def update_stats(
         self,
-        aggregated_roi_results: dict[str, Any],
-        snr=float("-inf"),
+        detection: proto_data.Detection | None = None,
         heading: proto_heading.HeadingData | None = None,
     ) -> None:
         rad_to_deg = lambda x: (
@@ -217,26 +217,24 @@ class StatFrame(tkinter.Frame):
         )
 
         self.df_value_string.set(
-            f"{rad_to_deg(aggregated_roi_results['df_value_latest']):.2f}°"
+            f"{rad_to_deg(detection.azimuth):.2f}°" if detection else None
         )
         self.df_value_mean_string.set(
-            f"{rad_to_deg(aggregated_roi_results['df_value_mean']):.2f}°"
+            f"{rad_to_deg(detection.mean_azimuth):.2f}°" if detection else None
         )
         self.df_value_deviation_string.set(
-            f"{rad_to_deg(aggregated_roi_results['df_value_std']):.2f}°"
+            f"{rad_to_deg(detection.deviation):.2f}°" if detection else None
         )
 
         self.df_elev_string.set(
-            f"{rad_to_deg(aggregated_roi_results['df_elevation_latest']):.2f}°"
+            f"{rad_to_deg(detection.elevation):.2f}°" if detection else None
         )
         self.df_elev_mean_string.set(
-            f"{rad_to_deg(aggregated_roi_results['df_elevation_mean']):.2f}°"
+            f"{rad_to_deg(detection.mean_elevation):.2f}°" if detection else None
         )
-        self.df_elev_deviation_string.set(
-            f"{rad_to_deg(aggregated_roi_results['df_elevation_std']):.2f}°"
-        )
+        self.df_elev_deviation_string.set(f"TBD")
 
-        self.snr_string.set(f"{snr:.2f}")
+        self.snr_string.set(f"{detection.snr:.2f}") if detection else None
 
         if heading is not None:
             self.lat_string.set(f"{heading.gps_lat:.2f}°")
