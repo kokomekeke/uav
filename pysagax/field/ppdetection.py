@@ -183,7 +183,7 @@ class PPDetection(Loop):
                 )
             except IndexError as e:
                 # The intersection of the ROI and the spectrum contains no bins
-                self._logger.info(e)
+                self._logger.debug(f"{e}")
                 continue
             new_detections = self._detect_roi(
                 roi_spectrum, noise_bins, roi, azimuth_spectrum, elevation_spectrum
