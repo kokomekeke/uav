@@ -28,7 +28,12 @@ class UAVEntity(db.Model):
     last_seen = db.Column(db.DateTime(), default=datetime.datetime.now)
     last_pos_lat = db.Column(db.Numeric(10, 6))
     last_pos_lon = db.Column(db.Numeric(10, 6))
-    health_report = db.Column(db.String(255))
+    last_pos_altitude = db.Column(db.Numeric(10, 3))
+    last_pos_q0 = db.Column(db.Numeric(10, 6))
+    last_pos_q1 = db.Column(db.Numeric(10, 6))
+    last_pos_q2 = db.Column(db.Numeric(10, 6))
+    last_pos_q3 = db.Column(db.Numeric(10, 6))
+    health_report = db.Column(db.String(8191))
 
 
 class UAVEventEntity(db.Model):
@@ -61,7 +66,7 @@ class ComIntEventEntity(db.Model):
 class ComIntDetectionEntity(db.Model):
     __tablename__ = "comintdetection"
 
-    detection_id = db.Column(db.Integer(), primary_key=True)
+    detection_id = db.Column(db.BigInteger(), primary_key=True)
     uav_id = db.Column(db.Integer(), db.ForeignKey("uav.uav_id"), nullable=False)
     uav_event_id = db.Column(
         db.Integer(), db.ForeignKey("uav_event.uav_event_id"), nullable=True
@@ -74,6 +79,14 @@ class ComIntDetectionEntity(db.Model):
     lob_elev_deg = db.Column(db.Numeric(6, 3), nullable=False)
     precision = db.Column(db.Numeric(4, 3), nullable=False)
     timestamp = db.Column(db.DateTime(), default=datetime.datetime.now, nullable=False)
+    uav_pos_lat = db.Column(db.Numeric(10, 6))
+    uav_pos_lon = db.Column(db.Numeric(10, 6))
+    uav_pos_altitude = db.Column(db.Numeric(10, 3))
+    uav_pos_q0 = db.Column(db.Numeric(10, 6))
+    uav_pos_q1 = db.Column(db.Numeric(10, 6))
+    uav_pos_q2 = db.Column(db.Numeric(10, 6))
+    uav_pos_q3 = db.Column(db.Numeric(10, 6))
+    roi_identifier = db.Column(db.Integer(), nullable=True)
 
 
 class ConfigurationEntity(db.Model):
@@ -90,18 +103,6 @@ class ConfigurationEntity(db.Model):
 
 class AreaOfInterestEntity(db.Model):
     __tablename__ = "areaofinterest"
-
-    foi_id = db.Column(db.Integer(), primary_key=True)
-    conf_id = db.Column(
-        db.Integer(), db.ForeignKey("configuration.conf_id"), nullable=False
-    )
-    start_freq = db.Column(db.BigInteger(), nullable=False)
-    end_freq = db.Column(db.BigInteger(), nullable=False)
-
-
-class FreqOfInterestEntity(db.Model):
-    __tablename__ = "freqofinterest"
-
     aoi_id = db.Column(db.Integer(), primary_key=True)
     conf_id = db.Column(
         db.Integer(), db.ForeignKey("configuration.conf_id"), nullable=True
@@ -109,6 +110,16 @@ class FreqOfInterestEntity(db.Model):
     lat = db.Column(db.Numeric(10, 6))
     lon = db.Column(db.Numeric(10, 6))
     radius = db.Column(db.Numeric(10, 1))
+
+
+class FreqOfInterestEntity(db.Model):
+    __tablename__ = "freqofinterest"
+    foi_id = db.Column(db.Integer(), primary_key=True)
+    conf_id = db.Column(
+        db.Integer(), db.ForeignKey("configuration.conf_id"), nullable=False
+    )
+    start_freq = db.Column(db.BigInteger(), nullable=False)
+    end_freq = db.Column(db.BigInteger(), nullable=False)
 
 
 class ComIntDatabase:
@@ -121,6 +132,10 @@ class ComIntDatabase:
         app.config["SQLALCHEMY_DATABASE_URI"] = self.url
         db.init_app(app)
         return app
+
+    def add(self, entity: Any) -> None:
+        global db
+        db.session.add(entity)
 
     def add_and_commit(self, entity: Any) -> None:
         global db
