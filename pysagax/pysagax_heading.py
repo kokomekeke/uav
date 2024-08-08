@@ -46,7 +46,7 @@ class HeadingRunner:
             "Encoder": HeadingEncoder,
             "Static": HeadingStatic,
             "FlightInfo": HeadingFlightInfo,
-            "Mavlink": HeadingMavlink,
+            "Mavlink (WIP)": HeadingMavlink,
         }
         self._heading_sources_labels = dict()
         for key, value in self._heading_sources.items():

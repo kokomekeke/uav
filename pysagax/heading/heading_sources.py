@@ -490,6 +490,7 @@ class HeadingFlightInfo(HeadingSource):
 class HeadingMavlink(HeadingSource):
     """
     Mavlink source
+    WORK IN PROGRESS: this HeadingSource has not yet been tested properly!
     """
 
     def __init__(self, *args) -> None:

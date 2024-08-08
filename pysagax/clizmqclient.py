@@ -29,6 +29,7 @@ def stream_start(address: str, port: int, own_port: int) -> None:
     cmd_stream_start.target.telemetry_timeout = 1
     print(cmd_stream_start)
     print(cmd_zmq.send(cmd_stream_start.SerializeToString(), timeout=2000))
+    cmd_zmq.disconnect()
 
 
 @click.command()
