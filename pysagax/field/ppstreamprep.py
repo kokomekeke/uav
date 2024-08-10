@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 import pysagax.message.data_pb2 as proto_data
 import pysagax.message.heading_pb2 as proto_heading
+from pysagax.message.proto_stream_to_file import FileStreamer
 
 import numpy as np
 
@@ -25,12 +26,14 @@ class PPStreamPreparation(Loop):
     """
     Background process for preparing packets for the streamer.
     Conversions, compressions, and data pruning happens here.
+    Optionally saves the Measurement packets without the spectrum data to files.
     """
 
     def __init__(
         self,
         data_type=proto_data.Spectrum.DataType.FLOAT16,
         udp_max_size: int = pysagax_broadcast.MESSAGE_LIMIT,
+        detection_recording_path: str | None = None,
         *args,
         **kwargs,
     ) -> None:
@@ -39,6 +42,9 @@ class PPStreamPreparation(Loop):
         self._queue_out: Optional[Queue] = None
         self._data_type: proto_data.Spectrum.DataType.ValueType = data_type
         self._udp_max_size = udp_max_size
+
+        self._detection_recording_path: str | None = detection_recording_path
+        self._file_streamer: FileStreamer | None = None  # for recording detections
 
     def __call__(
         self,
@@ -112,6 +118,38 @@ class PPStreamPreparation(Loop):
             )
         return meas
 
+    def _file_streamer_setup(self):
+        """
+        TODO: creates a new FileStreamer if needed:
+            - at startup
+            - in scanning mode if the scan plan changed
+            - after entering tracking mode
+        """
+        if self._file_streamer is None and self._detection_recording_path is not None:
+            try:
+                self._file_streamer = FileStreamer(
+                    self._detection_recording_path, "record"
+                )
+            except Exception as e:
+                self._logger.error("Couldn't create detection recorder: ", e)
+        #TODO: new FileStreamer at scan plan change and tracking mode
+        #TODO: closing old FileStreamer before creating a new one
+
+    def _record_packet(self, packet: proto_data.Measurement):
+        """
+        Records the detections if they need to be (recording path is set)
+        Modifies packets in place (deletes spectrum data) so this function should be called last in _loop()
+        """
+        self._file_streamer_setup()
+        if self._file_streamer is None:
+            return
+
+        try:
+            del packet.data[:]  # Remove spectrums. We're not making spectrograms here
+            self._file_streamer.put(packet)
+        except Exception as e:
+            self._logger.error("Detection recording:", e)
+
     def _loop(self) -> None:
         assert self._queue_in is not None
         assert self._queue_out is not None
@@ -128,6 +166,9 @@ class PPStreamPreparation(Loop):
                 f"PostProcessing/Stream preparation finished on packet {packet.packet_id}"
             )
             self._queue_out.put(packet)
+
+            # saving post processing results to file
+            self._record_packet(packet)
 
         except queue.Empty:
             pass
