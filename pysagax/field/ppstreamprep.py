@@ -27,6 +27,8 @@ class PPStreamPreparation(Loop):
     Background process for preparing packets for the streamer.
     Conversions, compressions, and data pruning happens here.
     Optionally saves the Measurement packets without the spectrum data to files.
+    Decimates the number of outgoing packets by the specified factor.
+    Also downsamples the spectrum data in outgoing packets to fit the UDP packet size limit.
     """
 
     def __init__(
@@ -34,6 +36,7 @@ class PPStreamPreparation(Loop):
         data_type=proto_data.Spectrum.DataType.FLOAT16,
         udp_max_size: int = pysagax_broadcast.MESSAGE_LIMIT,
         detection_recording_path: str | None = None,
+        decimation_factor: int | None = None,
         *args,
         **kwargs,
     ) -> None:
@@ -45,6 +48,11 @@ class PPStreamPreparation(Loop):
 
         self._detection_recording_path: str | None = detection_recording_path
         self._file_streamer: FileStreamer | None = None  # for recording detections
+
+        if not isinstance(decimation_factor, int | None):
+            raise ValueError("Only integer decimation factors are supported")
+        self._decimation_factor = decimation_factor
+        self._dropped_packet_counter: int = 0
 
     def __call__(
         self,
@@ -95,7 +103,7 @@ class PPStreamPreparation(Loop):
     def _shrink_measurement_packet(
         self, meas: proto_data.Measurement, downsample_factor: int
     ) -> proto_data.Measurement:
-        """downsample all spectrums in the packet using maximum value"""
+        """Downsample all spectrums in the packet using maximum value"""
         if downsample_factor <= 1:
             return meas
         for i in range(len(meas.data)):
@@ -153,6 +161,23 @@ class PPStreamPreparation(Loop):
         except Exception as e:
             self._logger.error("Detection recording:", e)
 
+    def _stream_packet(self, packet):
+        """
+        Decides if the packet needs to be streamed based on decimation factor.
+        If so, it prepares the packet and puts it in the queue to Streamer.
+        """
+        if self._decimation_factor is not None:
+            if self._dropped_packet_counter < self._decimation_factor - 1:
+                self._dropped_packet_counter += 1
+                return
+
+        packet = self._convert_spectrums(packet)
+        packet = self._shrink_measurement_packet(
+            packet, self._calculate_downsample_factor(packet)
+        )
+        self._queue_out.put(packet)
+        self._dropped_packet_counter = 0
+
     def _loop(self) -> None:
         assert self._queue_in is not None
         assert self._queue_out is not None
@@ -161,14 +186,11 @@ class PPStreamPreparation(Loop):
             packet = self._queue_in.get(block=True, timeout=1)
             assert isinstance(packet, proto_data.Measurement)
 
-            packet = self._convert_spectrums(packet)
-            packet = self._shrink_measurement_packet(
-                packet, self._calculate_downsample_factor(packet)
-            )
+            self._stream_packet(packet)
+
             self._logger.debug(
                 f"PostProcessing/Stream preparation finished on packet {packet.packet_id}"
             )
-            self._queue_out.put(packet)
 
             # saving post processing results to file
             self._record_packet(packet)
