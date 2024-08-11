@@ -118,7 +118,7 @@ class PPStreamPreparation(Loop):
             )
         return meas
 
-    def _file_streamer_setup(self):
+    def _file_streamer_setup(self) -> None:
         """
         TODO: creates a new FileStreamer if needed:
             - at startup
@@ -130,12 +130,15 @@ class PPStreamPreparation(Loop):
                 self._file_streamer = FileStreamer(
                     self._detection_recording_path, "record"
                 )
+                self._logger.info(
+                    f"Detection recording will be saved to '{self._detection_recording_path}'"
+                )
             except Exception as e:
                 self._logger.error("Couldn't create detection recorder: ", e)
-        #TODO: new FileStreamer at scan plan change and tracking mode
-        #TODO: closing old FileStreamer before creating a new one
+        # TODO: new FileStreamer at scan plan change and tracking mode
+        # TODO: closing old FileStreamer before creating a new one
 
-    def _record_packet(self, packet: proto_data.Measurement):
+    def _record_packet(self, packet: proto_data.Measurement) -> None:
         """
         Records the detections if they need to be (recording path is set)
         Modifies packets in place (deletes spectrum data) so this function should be called last in _loop()
@@ -145,7 +148,7 @@ class PPStreamPreparation(Loop):
             return
 
         try:
-            del packet.data[:]  # Remove spectrums. We're not making spectrograms here
+            del packet.data[:]  # Remove spectrums. We're not making spectrograms here.
             self._file_streamer.put(packet)
         except Exception as e:
             self._logger.error("Detection recording:", e)
