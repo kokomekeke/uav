@@ -11,6 +11,7 @@ from pysagax.util.mat import normalize_angle
 
 import pysagax.message.heading_pb2 as proto_heading
 import pysagax.message.data_pb2 as proto_data
+from google.protobuf.timestamp_pb2 import Timestamp
 from scipy.spatial.transform import Rotation
 
 
@@ -36,6 +37,7 @@ class StatFrame(tkinter.Frame):
         self.yaw_string = tkinter.StringVar(value="NaN")
         self.pitch_string = tkinter.StringVar(value="NaN")
         self.roll_string = tkinter.StringVar(value="NaN")
+        self.packet_time_string = tkinter.StringVar(value="")
 
         self.columnconfigure(0, weight=1, minsize=50)
         self.columnconfigure(1, weight=1, minsize=60)
@@ -157,6 +159,12 @@ class StatFrame(tkinter.Frame):
         pitch_disp.grid(column=2, row=8, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
         roll_disp = ttk.Label(self, textvariable=self.roll_string, **display_kwargs)
         roll_disp.grid(column=3, row=8, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
+        
+
+        time_label = ttk.Label(self, text="Packet time:")
+        time_label.grid(column=0, row=9, sticky=tkinter.W, padx=5, pady=5)
+        time_disp = ttk.Label(self, textvariable=self.packet_time_string, **display_kwargs)
+        time_disp.grid(column=1, row=9, columnspan=2, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
 
         self.peak_chart = tkinter.Canvas(
             self,
@@ -231,6 +239,7 @@ class StatFrame(tkinter.Frame):
         self,
         detection: proto_data.Detection | None = None,
         heading: proto_heading.HeadingData | None = None,
+        packet_time: Timestamp | None = None,
     ) -> None:
         rad_to_deg = lambda x: (
             normalize_angle(x * 180 / np.pi, high=360.0, low=0.0)
@@ -270,17 +279,23 @@ class StatFrame(tkinter.Frame):
         )
 
         if heading is not None:
-            self.lat_string.set(f"{heading.gps_lat:.2f}°")
-            self.lon_string.set(f"{heading.gps_lon:.2f}°")
+            self.lat_string.set(f"{heading.gps_lat:.5f}°")
+            self.lon_string.set(f"{heading.gps_lon:.5f}°")
             self.altitude_string.set(f"{heading.altitude:.2f} m ")
             if len(heading.quaternion) == 4:
                 # Scipy's Rotation uses [x, y, z, w] order for quaternions
                 # pyquaternion's yaw_pitch_roll() seems to be wrong so I used Scipy
-                attitude = Rotation.from_quat(
-                    heading.quaternion[1:] + heading.quaternion[:1]
-                )
-                yaw, pitch, roll = attitude.as_euler("ZYX", degrees=True)
+                try:
+                    attitude = Rotation.from_quat(
+                        heading.quaternion[1:] + heading.quaternion[:1]
+                    )
+                    yaw, pitch, roll = attitude.as_euler("ZYX", degrees=True)
+                except:
+                    yaw, pitch, roll = "", "", ""
+                    pass # eg. 0-norm quaternion
 
                 self.yaw_string.set(f"{yaw:.2f}°")
                 self.pitch_string.set(f"{pitch:.2f}°")
-                self.roll_string.set(f"{roll:.2f}°")
+                self.roll_string.set(f"{roll:.2f}°")     
+        if packet_time is not None:
+            self.packet_time_string.set(packet_time.ToDatetime())
