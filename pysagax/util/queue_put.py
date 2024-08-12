@@ -11,4 +11,4 @@ def queue_put(q: Queue[Any], data, timeout: float = 1, logger=None, message: str
         q.put(data, timeout=timeout)
     except queue.Full:
         if logger is not None:
-            logger.warning(" ".join("Output queue is full, data is dropped."))
+            logger.warning(" ".join([message, "Output queue is full, data is dropped."]))
