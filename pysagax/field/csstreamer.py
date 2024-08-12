@@ -12,6 +12,8 @@ from pysagax.common.loop import Loop
 from pysagax.message.data_pb2 import Telemetry, Measurement, Event, OperationalError
 from pysagax.message.data_types import DataType
 
+from pysagax.util.queue_put import queue_put
+
 class CSStreamer(Loop):
     """Background process for connecting to the CoreService stream interface and receiving binary data from there"""
 
@@ -55,10 +57,10 @@ class CSStreamer(Loop):
         stream_packet = DataType.to_message(data_type_object)
         stream_packet.ParseFromString(data)
         if isinstance(stream_packet, Measurement):
-            self._stream_queue_out.put(stream_packet)
+            queue_put(self._stream_queue_out, stream_packet, 0.1, self._logger)
         elif isinstance(stream_packet, Telemetry):
             self._protobuf_to_log(stream_packet, "CS TEL {}", logging.DEBUG)
-            self._telemetry_queue_out.put(stream_packet)
+            queue_put(self._telemetry_queue_out, stream_packet, 0.1, self._logger)
         else:
             self._protobuf_to_log(stream_packet, "CS Dropped {}", logging.WARNING)
 

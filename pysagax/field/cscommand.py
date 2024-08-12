@@ -112,4 +112,4 @@ class CSCommand(Loop):
         else:
             response.ParseFromString(response_raw)
             self._protobuf_to_log(response, "CS RSP {}")
-        out_queue.put(response)
+        out_queue.put(response) # should use util.queue_put?

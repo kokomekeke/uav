@@ -12,6 +12,7 @@ import pysagax.message.data_pb2 as proto_data
 import pysagax.message.heading_pb2 as proto_heading
 from pysagax.message.proto_stream_to_file import FileStreamer
 from pysagax.util.protobuf_spectrum_utils import cast_all_spectrums_in_measurement
+from pysagax.util.queue_put import queue_put
 
 from pysagax.common.loop import Loop
 from enum import Enum
@@ -138,7 +139,7 @@ class PPSpectrogramRecorder(Loop):
         return packet
 
     def _put_packet(self, packet):
-        self._queue_out.put(packet)
+        queue_put(self._queue_out, packet, timeout=0.1, logger=self._logger)
 
         # pushing measurement packet
         if self.mode == Mode.RECORD:

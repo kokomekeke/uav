@@ -18,6 +18,7 @@ import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.heading_pb2 as proto_heading
 
 from pysagax.common.loop import Loop
+from pysagax.util.queue_put import queue_put
 
 
 class Telemetry(Loop):
@@ -91,7 +92,7 @@ class Telemetry(Loop):
             self._latest_packets_proxy["SystemInfo"] = pickle.dumps(
                 self._sysinfo_packet
             )
-        self._comm_queue_out.put(self._sysinfo_packet)
+        queue_put(self._comm_queue_out, self._sysinfo_packet, 0.1, logger=self._logger)
 
     def _measure_hardware_stats(self) -> None:
 
@@ -147,7 +148,7 @@ class Telemetry(Loop):
                 self._telemetry_packet
             )
 
-        self._comm_queue_out.put(self._telemetry_packet)
+        queue_put(self._comm_queue_out, self._telemetry_packet, 0.1, self._logger)
         self._telemetry_packet = proto_data.Telemetry()
 
     def _pre_loop(self) -> None:

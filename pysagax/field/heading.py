@@ -10,6 +10,8 @@ from pysagax.common.loop import Loop
 from pysagax.communication.pub_sub import SUB
 from pysagax.communication.req_rep_tcp import REQ
 
+from pysagax.util.queue_put import queue_put
+
 
 class Heading(Loop):
     """Background process for communicating with the PySAGAX-Heading service"""
@@ -88,7 +90,7 @@ class Heading(Loop):
                 response.ParseFromString(response_raw)
                 # self._logger.info(MessageToJson(response))
                 self._last_status_update_time = time.time()
-                self._queue_status.put(response)
+                queue_put(self._queue_status, response, 0.1, logger=self._logger)
             except queue.Empty:
                 break
         heading_packet_raw = self._conn_stream.receive()
@@ -96,6 +98,6 @@ class Heading(Loop):
             heading_packet = proto_heading.HeadingData()
             heading_packet.ParseFromString(heading_packet_raw)
             self._protobuf_to_log(heading_packet, level=logging.DEBUG)
-            self._queue_out.put(heading_packet)
+            queue_put(self._queue_out, heading_packet, 0.1, logger=self._logger)
         else:
             self._logger.debug("No heading packet received")

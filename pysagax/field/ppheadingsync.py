@@ -10,6 +10,8 @@ from typing import Any, Optional
 import pysagax.message.data_pb2 as proto_data
 import pysagax.message.heading_pb2 as proto_heading
 
+from pysagax.util.queue_put import queue_put
+
 from pysagax.common.loop import Loop
 
 
@@ -143,7 +145,7 @@ class PPHeadingSync(Loop):
             self._logger.debug(
                 f"Heading and measurement packets merged with a time difference of {delta_t/1e6:.0f}ms. Packet id: {meas_packet.packet_id}"
             )
-            self._queue_out.put(meas_packet)
+            queue_put(self._queue_out, meas_packet, 0.1, logger=self._logger)
 
         except queue.Empty:
             pass

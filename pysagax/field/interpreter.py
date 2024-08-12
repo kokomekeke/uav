@@ -117,7 +117,7 @@ class Interpreter(Loop):
                 f"CS is occupied by command {cs_occ.running_command}"
             )
         # Send response to Communicator
-        self._comm_queue_out.put(response)
+        self._comm_queue_out.put(response)  # should use util.queue_put?
 
     def _process(self, command: Any) -> proto_cmd.Response:
         """Interpret, route and execute incoming commands"""
@@ -186,7 +186,7 @@ class Interpreter(Loop):
 
             case proto_cmd.STREAM_START | proto_cmd.STREAM_STOP:
                 assert self._stream_conf_queue_out is not None
-                self._stream_conf_queue_out.put(command)
+                self._stream_conf_queue_out.put(command)  # should use util.queue_put?
 
             case proto_cmd.CONFIG_STATUS:
                 if self._config_status_message is None:
@@ -220,11 +220,11 @@ class Interpreter(Loop):
         response.success = True
         if command.config.HasField("heading"):  # Heading part is set
             assert self._heading_conf_queue_out is not None
-            self._heading_conf_queue_out.put(command.config.heading)
+            self._heading_conf_queue_out.put(command.config.heading) # should use util.queue_put?
 
         if command.config.HasField("cs") or command.config.HasField("se"):
             assert self._se_queue_in is not None and self._se_queue_out is not None
-            self._se_queue_out.put(command)
+            self._se_queue_out.put(command) # should use util.queue_put?
             se_response = self._se_queue_in.get()
             if se_response.HasField("error"):
                 response.error.CopyFrom(se_response.error)
@@ -250,7 +250,7 @@ class Interpreter(Loop):
     def _postproc_configure(self, command: Any) -> Any:
         assert self._postproc_conf_queue_out is not None
         assert self._postproc_conf_queue_resp_in is not None
-        self._postproc_conf_queue_out.put(command)
+        self._postproc_conf_queue_out.put(command)  # should use util.queue_put?
         try:
             return self._postproc_conf_queue_resp_in.get(timeout=5)
         except queue.Empty:
@@ -313,5 +313,5 @@ class Interpreter(Loop):
 
     def _se_control(self, command: proto_cmd.Command) -> proto_cmd.Response:
         assert self._se_queue_in is not None and self._se_queue_out is not None
-        self._se_queue_out.put(command)
+        self._se_queue_out.put(command)  # should use util.queue_put?
         return self._se_queue_in.get()
