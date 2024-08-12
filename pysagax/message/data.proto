@@ -13,6 +13,7 @@ message CsCalibrationTelemetry {
     uint32 refChannelId = 4;
     uint32 selfChannelId = 5;
 
+    uint64 calibration_counter = 6;
     float refMagnitude = 8;
     float selfMagnitude = 9;
 
