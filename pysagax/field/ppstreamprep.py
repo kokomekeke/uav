@@ -19,6 +19,7 @@ from pysagax.util.protobuf_spectrum_utils import (
     protobuf_spectrum_to_numpy,
     cast_all_spectrums_in_measurement,
 )
+from pysagax.util.queue_put import queue_put
 import pysagax.communication.broadcast as pysagax_broadcast
 
 
@@ -176,7 +177,7 @@ class PPStreamPreparation(Loop):
         packet = self._shrink_measurement_packet(
             packet, self._calculate_downsample_factor(packet)
         )
-        self._queue_out.put(packet)
+        queue_put(self._queue_out, packet, 0.1, logger=self._logger)
         self._dropped_packet_counter = 0
 
     def _loop(self) -> None:

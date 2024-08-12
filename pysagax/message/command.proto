@@ -109,6 +109,8 @@ enum Instruction {
 
     CS_READ_PHASEDIFFS_FROM_FILE = 36;
 
+    CS_CALIBRATION_TELEMETRY_QUERY = 37;
+
     // ScanEngine control commands
     AUTO_CALIBRATION_ENABLE = 41;
     AUTO_CALIBRATION_DISABLE = 42;

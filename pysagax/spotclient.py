@@ -278,7 +278,9 @@ class ClientWindow(tkinter.Frame):
 
         self.stat_frame.update_peak_plot(packet.peaks)
 
-        self.stat_frame.update_stats(self.detection_to_plot, self.heading_to_plot)
+        self.stat_frame.update_stats(
+            self.detection_to_plot, self.heading_to_plot, packet.time
+        )
 
     def telemetry_packet_handler(self, packet: proto_data.Telemetry):
         # Processes telemetry packets that arrived through stream or command connection

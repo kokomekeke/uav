@@ -60,7 +60,7 @@ class Communicator(Loop):
             self._quit()
             return
         # Send command to Interpreter
-        self._queue_out.put(command)
+        self._queue_out.put(command) # should use util.queue_put?
 
         # Wait for response from Interpreter
         self._protobuf_to_log(command, "PYSAGAX-UAV CMD {}", logging.INFO)
