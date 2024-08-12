@@ -20,6 +20,7 @@ from pysagax.util.protobuf_spectrum_utils import Spectrum
 
 from pysagax.util.queue_put import queue_put
 
+
 class DetectionAggregator:
     """
     Class for keeping track of past detections of the same signal and aggregation over time
@@ -304,7 +305,7 @@ class PPDetection(Loop):
             self._protobuf_to_log(conf_request)
             self._current_config = conf_request.config.pp
             response = proto_cmd.Response(config=conf_request.config)
-            self._conf_queue_out.put(response) # should use util.queue_put?
+            self._conf_queue_out.put(response)  # should use util.queue_put?
         except queue.Empty:
             pass
 
@@ -323,7 +324,15 @@ class PPDetection(Loop):
             self._logger.debug(
                 f"PostProcessing/Detection finished on packet {packet.packet_id}"
             )
-            queue_put(self._queue_out, packet, 0.1, logger=self._logger)
-            queue_put(self._se_queue_out, packet, 0.1, logger=self._logger)
+            queue_put(
+                self._queue_out, packet, 0.1, logger=self._logger, message="Queue out"
+            )
+            queue_put(
+                self._se_queue_out,
+                packet,
+                0.1,
+                logger=self._logger,
+                message="SE queue out",
+            )
         except queue.Empty:
             pass

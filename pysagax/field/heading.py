@@ -50,9 +50,13 @@ class Heading(Loop):
         self._queue_in.put(proto_heading.HeadingConfig())
         self._queue_out = queue_out
         self._queue_status = queue_status
-        self._logger.info(f"ZMQ REQ connecting to ZMQ REP on {self._address}:{self._port_control}")
+        self._logger.info(
+            f"ZMQ REQ connecting to ZMQ REP on {self._address}:{self._port_control}"
+        )
         self._conn_control = REQ(self._address, self._port_control)
-        self._logger.info(f"ZMQ SUB connecting to ZMQ PUB on {self._address}:{self._port_stream}")
+        self._logger.info(
+            f"ZMQ SUB connecting to ZMQ PUB on {self._address}:{self._port_stream}"
+        )
         self._conn_stream = SUB(self._address, self._port_stream)
 
         return super()._call(*args, **kwargs)
@@ -90,7 +94,13 @@ class Heading(Loop):
                 response.ParseFromString(response_raw)
                 # self._logger.info(MessageToJson(response))
                 self._last_status_update_time = time.time()
-                queue_put(self._queue_status, response, 0.1, logger=self._logger)
+                queue_put(
+                    self._queue_status,
+                    response,
+                    0.1,
+                    logger=self._logger,
+                    message="Status queue",
+                )
             except queue.Empty:
                 break
         heading_packet_raw = self._conn_stream.receive()
@@ -98,6 +108,12 @@ class Heading(Loop):
             heading_packet = proto_heading.HeadingData()
             heading_packet.ParseFromString(heading_packet_raw)
             self._protobuf_to_log(heading_packet, level=logging.DEBUG)
-            queue_put(self._queue_out, heading_packet, 0.1, logger=self._logger)
+            queue_put(
+                self._queue_out,
+                heading_packet,
+                0.1,
+                logger=self._logger,
+                message="Data queue",
+            )
         else:
             self._logger.debug("No heading packet received")
