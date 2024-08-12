@@ -67,6 +67,7 @@ class PPStreamPreparation(Loop):
         self._logger.info(
             f"Spectrum data type is {proto_data.Spectrum.DataType.Name(self._data_type)}, byte order {sys.byteorder}"
         )
+        self._logger.info(f"Decimation factor is {self._decimation_factor}")
 
         return super()._call(*args, **kwargs)
 

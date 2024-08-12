@@ -488,7 +488,7 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     show_default=True,
 )
 @click.option(
-    "--stream_decimation_factor",
+    "--stream-decimation-factor",
     help="Decimates the measurement packets to be streamed to ground by this factor",
     type=int,
 )
