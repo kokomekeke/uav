@@ -24,7 +24,7 @@ from pysagax.util.protobuf_spectrum_utils import (
         [[4000, 4000, 4000], proto_data.Spectrum.DataType.INT8],
     ],
 )
-def test_calculate_decim_factor(spectrum_data_count, spectrum_data_type):
+def test_calculate_downsample_factor(spectrum_data_count, spectrum_data_type):
     packet = proto_data.Measurement()
     for one_count in spectrum_data_count:
         packet_spectrum = packet.data.add()
@@ -36,7 +36,7 @@ def test_calculate_decim_factor(spectrum_data_count, spectrum_data_type):
         packet.detection.append(proto_data.Detection(event_id=i))
     pp_streamprep = PPStreamPreparation()
     pp_streamprep._udp_max_size = 8000
-    decim = pp_streamprep._calculate_decim_factor(packet)
+    downsample = pp_streamprep._calculate_downsample_factor(packet)
     packet_test = proto_data.Measurement()
     for i in range(400):
         packet_test.detection.append(proto_data.Detection(event_id=i))
@@ -44,7 +44,7 @@ def test_calculate_decim_factor(spectrum_data_count, spectrum_data_type):
         packet_spectrum = packet_test.data.add()
         packet_spectrum.data_type = spectrum_data_type
         packet_spectrum.data = convert_iterable_to_spectrum_data(
-            np.ones(one_count // decim), packet_spectrum.data_type
+            np.ones(one_count // downsample), packet_spectrum.data_type
         )
     packet_test_size = len(packet_test.SerializeToString())
     print(packet_test_size)
@@ -53,7 +53,7 @@ def test_calculate_decim_factor(spectrum_data_count, spectrum_data_type):
 
 
 @pytest.mark.parametrize(
-    ["original", "decim_factor", "expected"],
+    ["original", "downsample_factor", "expected"],
     [
         [[1, 2, 3, 4], 1, [1, 2, 3, 4]],
         [[1, 2, 3, 4, 5, 6, 7, 8, 9], 3, [3, 6, 9]],
@@ -62,7 +62,7 @@ def test_calculate_decim_factor(spectrum_data_count, spectrum_data_type):
         [[10, 20, 30, 10, 50, 60, 70, 10, 90], 4, [30, 70]],
     ],
 )
-def test_shrink_measurement_packet(original, decim_factor, expected):
+def test_shrink_measurement_packet(original, downsample_factor, expected):
     packet = proto_data.Measurement()
     packet_spectrum = packet.data.add()
     packet_spectrum.data_type = proto_data.Spectrum.DataType.INT16
@@ -70,7 +70,7 @@ def test_shrink_measurement_packet(original, decim_factor, expected):
         original, packet_spectrum.data_type
     )
     pp_streamprep = PPStreamPreparation()
-    packet = pp_streamprep._shrink_measurement_packet(packet, decim_factor)
+    packet = pp_streamprep._shrink_measurement_packet(packet, downsample_factor)
 
     result = protobuf_spectrum_to_numpy(packet_spectrum)
     assert len(result) == len(expected)
@@ -108,8 +108,8 @@ def test_shrink_measurement_packet2():
 
     pp_streamprep = PPStreamPreparation()
     pp_streamprep._udp_max_size = 11
-    decim_factor = pp_streamprep._calculate_decim_factor(packet)
-    shrunk = pp_streamprep._shrink_measurement_packet(packet, decim_factor)
+    downsample_factor = pp_streamprep._calculate_downsample_factor(packet)
+    shrunk = pp_streamprep._shrink_measurement_packet(packet, downsample_factor)
 
     print(shrunk)
     print(protobuf_spectrum_to_numpy(shrunk.data[0]))
@@ -145,8 +145,8 @@ def test_shrink_measurement_packet2b():
     pp_streamprep = PPStreamPreparation()
     # pp_streamprep._udp_max_size=21
     pp_streamprep._udp_max_size = 33
-    decim_factor = pp_streamprep._calculate_decim_factor(packet)
-    shrunk = pp_streamprep._shrink_measurement_packet(packet, decim_factor)
+    downsample_factor = pp_streamprep._calculate_downsample_factor(packet)
+    shrunk = pp_streamprep._shrink_measurement_packet(packet, downsample_factor)
 
     print(shrunk)
     print(protobuf_spectrum_to_numpy(shrunk.data[0]))
@@ -186,8 +186,8 @@ def test_shrink_measurement_packet3():
 
     pp_streamprep = PPStreamPreparation()
     pp_streamprep._udp_max_size = 17
-    decim_factor = pp_streamprep._calculate_decim_factor(packet)
-    shrunk = pp_streamprep._shrink_measurement_packet(packet, decim_factor)
+    downsample_factor = pp_streamprep._calculate_downsample_factor(packet)
+    shrunk = pp_streamprep._shrink_measurement_packet(packet, downsample_factor)
 
     print(shrunk)
     print(protobuf_spectrum_to_numpy(shrunk.data[0]))

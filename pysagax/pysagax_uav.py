@@ -72,7 +72,9 @@ class Commander:
         spectrogram_mode: str,
         spectrogram_path: str,
         spectrogram_recording_dtype: str,
+        detection_recording_path: str,
         measurement_udp_max_size: int,
+        stream_decimation_factor: int,
     ) -> None:
 
         self._logger = getLogger("Commander")
@@ -142,7 +144,10 @@ class Commander:
         self._pp_detection = PPDetection(level=level)
         self._pp_events = PPEvents(level=level)
         self._pp_streamprep = PPStreamPreparation(
-            level=level, udp_max_size=measurement_udp_max_size
+            level=level,
+            udp_max_size=measurement_udp_max_size,
+            detection_recording_path=detection_recording_path,
+            decimation_factor=stream_decimation_factor,
         )
         self._cs_streamer = CSStreamer(
             level=level, address=cs_host, port=cs_stream_port
@@ -472,10 +477,20 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     help="Data type to be used for making spectrogram recordings.",
 )
 @click.option(
+    "--detection-recording-path",
+    type=click.Path(),
+    help="File path for detection recording.",
+)
+@click.option(
     "--measurement-udp-max-size",
     help="Max size for measurement UDP packets [bytes]",
     default=pysagax_broadcast.MESSAGE_LIMIT,
     show_default=True,
+)
+@click.option(
+    "--stream-decimation-factor",
+    help="Decimates the measurement packets to be streamed to ground by this factor",
+    type=int,
 )
 def main(
     level: str,
@@ -503,7 +518,9 @@ def main(
     spectrogram_mode: str,
     spectrogram_path: str,
     spectrogram_recording_dtype: str,
+    detection_recording_path: str,
     measurement_udp_max_size: int,
+    stream_decimation_factor: int,
 ) -> None:
     """Root command of CLI"""
 
@@ -543,7 +560,9 @@ def main(
         spectrogram_mode,
         spectrogram_path,
         spectrogram_recording_dtype,
+        detection_recording_path,
         measurement_udp_max_size,
+        stream_decimation_factor,
     )
     commander.start()
 
