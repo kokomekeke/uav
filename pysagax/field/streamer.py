@@ -72,6 +72,8 @@ class Streamer(Loop):
 
     def add_stream_client(self, target: proto_cmd.StreamTarget) -> None:
         try:
+            if f"{target.address}:{target.port}" in self._servers:
+                self.remove_stream_client(target)
             self._servers[f"{target.address}:{target.port}"] = StreamerServer(
                 TX(target.address, port=target.port),
                 int(target.level),

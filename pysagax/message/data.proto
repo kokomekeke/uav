@@ -4,6 +4,27 @@ package pysagax.message;
 import "google/protobuf/timestamp.proto";
 import "pysagax/message/heading.proto";
 
+message CsCalibrationTelemetry {
+
+
+    google.protobuf.Timestamp time = 1;
+
+    uint64 frequency = 2;
+    uint32 refChannelId = 4;
+    uint32 selfChannelId = 5;
+
+    float refMagnitude = 8;
+    float selfMagnitude = 9;
+
+    int32 calibrationRe = 6;
+    int32 calibrationIm = 7;
+
+    string label = 13;
+
+    repeated int32 validationMeasRe = 14;
+    repeated int32 validationMeasIm = 15;
+}
+
 message Telemetry {
     // Non-critical information changing regularly
 
@@ -56,6 +77,7 @@ message Telemetry {
     Recording recording = 10;
     HeadingStatus heading = 11;
     string scanengine_state = 12;
+    repeated CsCalibrationTelemetry cs_calib_telemetry = 13;
 }
 
 message Detection {
@@ -116,7 +138,7 @@ message Measurement {
 
     // ID of configuration at time of measurement
     uint32 config_id = 3;
-
+    google.protobuf.Timestamp source_time = 4;
     // Metadata
     uint64 packet_id = 5;
     uint64 position = 6;
@@ -125,7 +147,7 @@ message Measurement {
     bool overflow = 9;
     repeated int32 peaks = 10;
     HeadingData heading_data = 11;
-
+    uint64 sampleIndex = 12;
     // Spectrum data
     repeated Spectrum data = 13;
 
