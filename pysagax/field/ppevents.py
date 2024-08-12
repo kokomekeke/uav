@@ -10,6 +10,7 @@ import pysagax.message.heading_pb2 as proto_heading
 
 from pysagax.common.loop import Loop
 
+from pysagax.util.queue_put import queue_put
 
 class PPEvents(Loop):
     """
@@ -44,7 +45,7 @@ class PPEvents(Loop):
             #TODO
 
             self._logger.debug(f"PostProcessing/Events finished on packet {packet.packet_id}")
-            self._queue_out.put(packet)
+            queue_put(self._queue_out, packet, timeout=0.1, logger=self._logger)
 
         except queue.Empty:
             pass

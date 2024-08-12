@@ -18,6 +18,7 @@ import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.heading_pb2 as proto_heading
 
 from pysagax.common.loop import Loop
+from pysagax.util.queue_put import queue_put
 
 
 class Telemetry(Loop):
@@ -95,7 +96,7 @@ class Telemetry(Loop):
     def _comm_queue_out_put(self, packet: Any) -> None:
         assert self._comm_queue_out is not None
         try:
-            self._comm_queue_out.put(packet, block=True, timeout=2.0)
+            queue_put(self._comm_queue_out, packet, 0.1, logger=self._logger)
         except:
             self._logger.critical("Output stream queue is stuck")
             raise Exception("Output stream queue is stuck")
