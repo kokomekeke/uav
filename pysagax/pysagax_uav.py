@@ -81,7 +81,7 @@ class Commander:
 
         self._commands_q = self._manager.Queue(maxsize=1)
         self._responses_q = self._manager.Queue(maxsize=1)
-        self._stream_packets_q = self._manager.Queue(maxsize=1)
+        self._stream_packets_q = self._manager.Queue(maxsize=2)
         self._cs_commands_q = self._manager.Queue()
         self._cs_responses_q = self._manager.Queue()
         self._se_commands_q = self._manager.Queue()

@@ -78,7 +78,6 @@ class Telemetry(Loop):
         )
 
     def _construct_sysinfo_packet(self) -> None:
-        assert self._comm_queue_out is not None
         self._sysinfo_packet.Clear()
         total, used, free = shutil.disk_usage(self._data_partition_path)
         self._sysinfo_packet.hardware.hostname = self._hostname
@@ -91,7 +90,15 @@ class Telemetry(Loop):
             self._latest_packets_proxy["SystemInfo"] = pickle.dumps(
                 self._sysinfo_packet
             )
-        self._comm_queue_out.put(self._sysinfo_packet)
+        self._comm_queue_out_put(self._sysinfo_packet)
+
+    def _comm_queue_out_put(self, packet: Any) -> None:
+        assert self._comm_queue_out is not None
+        try:
+            self._comm_queue_out.put(packet, block=True, timeout=2.0)
+        except:
+            self._logger.critical("Output stream queue is stuck")
+            raise Exception("Output stream queue is stuck")
 
     def _measure_hardware_stats(self) -> None:
 
@@ -126,7 +133,6 @@ class Telemetry(Loop):
                 break
 
     def _push_finished_packet(self) -> None:
-        assert self._comm_queue_out is not None
         self._telemetry_packet.heading.status = (
             "Running"
             if time.time() < self._latest_heading_status_time + 6
@@ -147,23 +153,13 @@ class Telemetry(Loop):
                 self._telemetry_packet
             )
 
-        self._comm_queue_out.put(self._telemetry_packet)
+        self._comm_queue_out_put(self._telemetry_packet)
         self._telemetry_packet = proto_data.Telemetry()
 
     def _pre_loop(self) -> None:
         self._construct_sysinfo_packet()
 
     def _loop(self) -> None:
-        assert self._comm_queue_out is not None
-
-        # try:
-        #     cs_stream_packet = self._cs_queue_in.get(block=False)
-        #     if isinstance(cs_stream_packet, CoreServiceDebugPacket):
-        #         if cs_stream_packet.title == "t":  # timestamp is the last packet
-
-        #             self._push_finished_packet()
-        # except queue.Empty:
-        #     pass
         self._get_heading_module_info()
         self._measure_hardware_stats()
         self._get_from_cs()
