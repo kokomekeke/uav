@@ -10,6 +10,8 @@ import numpy as np
 from pysagax.util.mat import normalize_angle
 
 import pysagax.message.heading_pb2 as proto_heading
+import pysagax.message.data_pb2 as proto_data
+from google.protobuf.timestamp_pb2 import Timestamp
 from scipy.spatial.transform import Rotation
 
 
@@ -27,12 +29,15 @@ class StatFrame(tkinter.Frame):
 
         self.quality_value_string = tkinter.StringVar(value="NaN")
         self.snr_string = tkinter.StringVar(value="NaN")
+        self.frequency_string = tkinter.StringVar(value="NaN")
+        self.bandwidth_string = tkinter.StringVar(value="NaN")
         self.lat_string = tkinter.StringVar(value="NaN")
         self.lon_string = tkinter.StringVar(value="NaN")
         self.altitude_string = tkinter.StringVar(value="NaN")
         self.yaw_string = tkinter.StringVar(value="NaN")
         self.pitch_string = tkinter.StringVar(value="NaN")
         self.roll_string = tkinter.StringVar(value="NaN")
+        self.packet_time_string = tkinter.StringVar(value="")
 
         self.columnconfigure(0, weight=1, minsize=50)
         self.columnconfigure(1, weight=1, minsize=60)
@@ -109,31 +114,57 @@ class StatFrame(tkinter.Frame):
         snr_disp = ttk.Label(self, textvariable=self.snr_string, **display_kwargs)
         snr_disp.grid(column=3, row=3, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
 
+        # Frequency
+        frequency_label = ttk.Label(self, text="Frequency:")
+        frequency_label.grid(column=0, row=4, sticky=tkinter.W, padx=5, pady=5)
+        frequency_disp = ttk.Label(
+            self, textvariable=self.frequency_string, **display_kwargs
+        )
+        frequency_disp.grid(
+            column=1, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=3
+        )
+
+        # Bandwidth
+        bandwidth_label = ttk.Label(self, text="Bandwidth:")
+        bandwidth_label.grid(column=2, row=4, sticky=tkinter.W, padx=5, pady=5)
+        bandwidth_disp = ttk.Label(
+            self, textvariable=self.bandwidth_string, **display_kwargs
+        )
+        bandwidth_disp.grid(
+            column=3, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=3
+        )
+
         # # HEADING DATA
         lat_lon_label = ttk.Label(self, text="Lat, Lon:")
-        lat_lon_label.grid(column=0, row=5, sticky=tkinter.W, padx=5, pady=5)
+        lat_lon_label.grid(column=0, row=6, sticky=tkinter.W, padx=5, pady=5)
         lat_disp = ttk.Label(self, textvariable=self.lat_string, **display_kwargs)
-        lat_disp.grid(column=1, row=5, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
+        lat_disp.grid(column=1, row=6, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
         lon_disp = ttk.Label(self, textvariable=self.lon_string, **display_kwargs)
-        lon_disp.grid(column=2, row=5, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
+        lon_disp.grid(column=2, row=6, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
 
         altitude_label = ttk.Label(self, text="Altitude (m):")
-        altitude_label.grid(column=0, row=6, sticky=tkinter.W, padx=5, pady=5)
+        altitude_label.grid(column=0, row=7, sticky=tkinter.W, padx=5, pady=5)
         altitude_disp = ttk.Label(
             self, textvariable=self.altitude_string, **display_kwargs
         )
         altitude_disp.grid(
-            column=1, row=6, sticky=tkinter.E + tkinter.W, padx=5, pady=3
+            column=1, row=7, sticky=tkinter.E + tkinter.W, padx=5, pady=3
         )
 
         attitude_label = ttk.Label(self, text="Attitude (YPR, deg):")
-        attitude_label.grid(column=0, row=7, sticky=tkinter.W, padx=5, pady=5)
+        attitude_label.grid(column=0, row=8, sticky=tkinter.W, padx=5, pady=5)
         yaw_disp = ttk.Label(self, textvariable=self.yaw_string, **display_kwargs)
-        yaw_disp.grid(column=1, row=7, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
+        yaw_disp.grid(column=1, row=8, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
         pitch_disp = ttk.Label(self, textvariable=self.pitch_string, **display_kwargs)
-        pitch_disp.grid(column=2, row=7, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
+        pitch_disp.grid(column=2, row=8, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
         roll_disp = ttk.Label(self, textvariable=self.roll_string, **display_kwargs)
-        roll_disp.grid(column=3, row=7, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
+        roll_disp.grid(column=3, row=8, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
+        
+
+        time_label = ttk.Label(self, text="Packet time:")
+        time_label.grid(column=0, row=9, sticky=tkinter.W, padx=5, pady=5)
+        time_disp = ttk.Label(self, textvariable=self.packet_time_string, **display_kwargs)
+        time_disp.grid(column=1, row=9, columnspan=2, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
 
         self.peak_chart = tkinter.Canvas(
             self,
@@ -144,7 +175,7 @@ class StatFrame(tkinter.Frame):
             height=59,
         )
         self.peak_chart.grid(
-            column=0, row=4, columnspan=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+            column=0, row=5, columnspan=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5
         )
         self.peak_bars = [
             self.peak_chart.create_rectangle(2, 2, 100, 14, fill="yellow"),
@@ -206,9 +237,9 @@ class StatFrame(tkinter.Frame):
 
     def update_stats(
         self,
-        aggregated_roi_results: dict[str, Any],
-        snr=float("-inf"),
+        detection: proto_data.Detection | None = None,
         heading: proto_heading.HeadingData | None = None,
+        packet_time: Timestamp | None = None,
     ) -> None:
         rad_to_deg = lambda x: (
             normalize_angle(x * 180 / np.pi, high=360.0, low=0.0)
@@ -217,39 +248,54 @@ class StatFrame(tkinter.Frame):
         )
 
         self.df_value_string.set(
-            f"{rad_to_deg(aggregated_roi_results['df_value_latest']):.2f}°"
+            f"{rad_to_deg(detection.azimuth):.2f}°" if detection else None
         )
         self.df_value_mean_string.set(
-            f"{rad_to_deg(aggregated_roi_results['df_value_mean']):.2f}°"
+            f"{rad_to_deg(detection.mean_azimuth):.2f}°" if detection else None
         )
         self.df_value_deviation_string.set(
-            f"{rad_to_deg(aggregated_roi_results['df_value_std']):.2f}°"
+            f"{rad_to_deg(detection.deviation):.2f}°" if detection else None
         )
 
         self.df_elev_string.set(
-            f"{rad_to_deg(aggregated_roi_results['df_elevation_latest']):.2f}°"
+            f"{rad_to_deg(detection.elevation):.2f}°" if detection else None
         )
         self.df_elev_mean_string.set(
-            f"{rad_to_deg(aggregated_roi_results['df_elevation_mean']):.2f}°"
+            f"{rad_to_deg(detection.mean_elevation):.2f}°" if detection else None
         )
-        self.df_elev_deviation_string.set(
-            f"{rad_to_deg(aggregated_roi_results['df_elevation_std']):.2f}°"
-        )
+        self.df_elev_deviation_string.set(f"TBD")
 
-        self.snr_string.set(f"{snr:.2f}")
+        self.snr_string.set(f"{detection.snr:.2f}") if detection else None
+
+        (
+            self.frequency_string.set(f"{detection.frequency / 1e6:.4f}M")
+            if detection
+            else None
+        )
+        (
+            self.bandwidth_string.set(f"{detection.bandwidth / 1e6:.4f}M")
+            if detection
+            else None
+        )
 
         if heading is not None:
-            self.lat_string.set(f"{heading.gps_lat:.2f}°")
-            self.lon_string.set(f"{heading.gps_lon:.2f}°")
+            self.lat_string.set(f"{heading.gps_lat:.5f}°")
+            self.lon_string.set(f"{heading.gps_lon:.5f}°")
             self.altitude_string.set(f"{heading.altitude:.2f} m ")
             if len(heading.quaternion) == 4:
                 # Scipy's Rotation uses [x, y, z, w] order for quaternions
                 # pyquaternion's yaw_pitch_roll() seems to be wrong so I used Scipy
-                attitude = Rotation.from_quat(
-                    heading.quaternion[1:] + heading.quaternion[:1]
-                )
-                yaw, pitch, roll = attitude.as_euler("ZYX", degrees=True)
+                try:
+                    attitude = Rotation.from_quat(
+                        heading.quaternion[1:] + heading.quaternion[:1]
+                    )
+                    yaw, pitch, roll = attitude.as_euler("ZYX", degrees=True)
+                except:
+                    yaw, pitch, roll = "", "", ""
+                    pass # eg. 0-norm quaternion
 
                 self.yaw_string.set(f"{yaw:.2f}°")
                 self.pitch_string.set(f"{pitch:.2f}°")
-                self.roll_string.set(f"{roll:.2f}°")
+                self.roll_string.set(f"{roll:.2f}°")     
+        if packet_time is not None:
+            self.packet_time_string.set(packet_time.ToDatetime())
