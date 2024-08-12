@@ -67,6 +67,8 @@ class Commander:
         scanning_target_resolution_bandwidth: int,
         source_device_type: str,
         source_device_path: str,
+        source_burst_stride: int,
+        source_bin_count: int,
         auto_config: str,
         cs_reset_on_fail: bool,
         spectrogram_mode: str,
@@ -128,6 +130,8 @@ class Commander:
             scanengine_cache_path,
             source_device_type,
             source_device_path,
+            source_burst_stride,
+            source_bin_count,
             auto_config,
             cs_reset_on_fail,
             level=level,
@@ -450,6 +454,18 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     help="Default device path configured by ScanEngine",
 )
 @click.option(
+    "--source-burst-stride",
+    help="Default burst stride configured by ScanEngine",
+    default=25000,
+    show_default=True,
+)
+@click.option(
+    "--source-bin-count",
+    help="Default bin count configured by ScanEngine",
+    default=1024,
+    show_default=True,
+)
+@click.option(
     "--auto-config",
     default='{"se": {"mode": "TRACKING", "tracking": {"signals": [{"frequency": 446000000.0, "bandwidth": 62500.0}]}}}',
     show_default=True,
@@ -513,6 +529,8 @@ def main(
     scanning_target_resolution_bandwidth: int,
     source_device_type: str,
     source_device_path: str,
+    source_burst_stride: int,
+    source_bin_count: int,
     auto_config: str,
     cs_reset_on_fail: bool,
     spectrogram_mode: str,
@@ -555,6 +573,8 @@ def main(
         scanning_target_resolution_bandwidth,
         source_device_type,
         source_device_path,
+        source_burst_stride,
+        source_bin_count,
         auto_config,
         cs_reset_on_fail,
         spectrogram_mode,

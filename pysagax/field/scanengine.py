@@ -298,6 +298,8 @@ class ScanEngine(Loop):
         cache_file: str = "se_cache.json",
         source_device_type: str = "",
         source_device_path: str = "",
+        source_burst_stride: int = 50000,
+        source_bin_count: int = 1024,
         auto_config: str = "",
         reset_on_error: bool = False,
         *args,
@@ -350,6 +352,8 @@ class ScanEngine(Loop):
         self._instruction_cs_timeout = timeout_instruction_ms
         self._source_device_type = source_device_type
         self._source_device_path = source_device_path
+        self._source_burst_stride = source_burst_stride
+        self._source_bin_count = source_bin_count
         self._auto_config: Optional[proto_cmd.Command] = None
         self._last_config_command: Optional[proto_cmd.Command] = None
         if auto_config:
@@ -586,6 +590,13 @@ class ScanEngine(Loop):
         )
         command.config.cs.source_type = self._source_device_type
         command.config.cs.source_path = self._source_device_path
+        command.config.cs.burst_stride = self._source_burst_stride
+        command.config.cs.bin_count = self._source_bin_count
+        if se_cmd.config.HasField("cs"):
+            if se_cmd.config.cs.bin_count:
+                command.config.cs.bin_count = se_cmd.config.cs.bin_count
+            if se_cmd.config.cs.burst_stride:
+                command.config.cs.burst_stride = se_cmd.config.cs.burst_stride
         self._last_config_command = se_cmd
         self._latest_cs_command = command
         self._cs_commands_q.put((command, self._config_cs_timeout)) # should use util.queue_put?
@@ -600,6 +611,14 @@ class ScanEngine(Loop):
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CONFIG
         command.kind = proto_cmd.Command.WRITE
+
+        command.config.cs.burst_stride = self._source_burst_stride
+        command.config.cs.bin_count = self._source_bin_count
+        if se_cmd.config.HasField("cs"):
+            if se_cmd.config.cs.bin_count:
+                command.config.cs.bin_count = se_cmd.config.cs.bin_count
+            if se_cmd.config.cs.burst_stride:
+                command.config.cs.burst_stride = se_cmd.config.cs.burst_stride
 
         calib_range = FreqRangeInternal()
         if len(se_cmd.config.se.tracking.signals) == 1:
