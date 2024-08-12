@@ -1,6 +1,6 @@
 [project]
 name = "pysagax"
-version = "0.4.15"
+version = "0.4.16"
 authors = [
   { name="Peter Rigo", email="peter.rigo@sagaxcommunications.com" },
   { name="Aron Szabo", email="aron.szabo@sagaxcommunications.com" },
@@ -70,6 +70,7 @@ spotclient = "pysagax.spotclient:main"
 sigmfdisp = "pysagax.sigmfdisp:main"
 sigmfspectrum = "pysagax.sigmfspectrum:main"
 pysagax-uav = "pysagax.pysagax_uav:main"
+pysagax-gnd = "pysagax.pysagax_gnd:main"
 pysagax-heading = "pysagax.pysagax_heading:main"
 zmqtestclient = "pysagax.zmqtestclient:main"
 clizmqclient = "pysagax.clizmqclient:main"
