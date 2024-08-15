@@ -43,7 +43,7 @@ dependencies = [
     "flask-marshmallow-openapi",
     "marshmallow-sqlalchemy",
     "psycopg2",
-    "geographiclib
+    "geographiclib"
 ]
 
 [project.optional-dependencies]
