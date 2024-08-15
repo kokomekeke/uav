@@ -9,7 +9,7 @@ from scipy.spatial.transform import Rotation
 from pysagax.util.mat import normalize_angle
 from geographiclib.geodesic import Geodesic
 
-from analyzing_tools import plot_results, protorec_to_csv
+from pysagax.analyzing_tools import plot_results, protorec_to_csv
 from multiprocessing import Process
 import sys
 from time import sleep
