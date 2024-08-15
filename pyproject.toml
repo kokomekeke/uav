@@ -43,6 +43,7 @@ dependencies = [
     "flask-marshmallow-openapi",
     "marshmallow-sqlalchemy",
     "psycopg2",
+    "geographiclib
 ]
 
 [project.optional-dependencies]
@@ -63,6 +64,9 @@ tag_prefix = "v"
 [build-system]
 requires = ["setuptools", "wheel", "versioneer"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = []
 
 [project.scripts]
 dfclient = "pysagax.dfclient:main"
