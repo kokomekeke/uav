@@ -44,12 +44,14 @@ def add_roi_id_0(path):
 
     df = pd.read_csv(path)
     if "detection0.frequency" not in df.keys():
-        print("The file doesn't contain any signal detections")
+        print(bold(red("The file doesn't contain any signal detections")))
+        return
 
     # find columns like: detectionX.roiId (X is an integer)
     roi_id_cols = [k for k in df.keys() if k.endswith("roiId")]
     if len(roi_id_cols) == 0:
-        df["detection0.roiId"] = np.nan
+        idx = df.columns.get_loc("detection0.frequency")
+        df.insert(idx, "detection0.roiId", np.nan)
         roi_id_cols = ["detection0.roiId"]
     detection_freq_cols = [
         ".".join(k.split(".")[:-1] + ["frequency"]) for k in roi_id_cols
@@ -65,9 +67,10 @@ def add_roi_id_0(path):
 
     bandwidth_cols = [".".join(k.split(".")[:-1] + ["bandwidth"]) for k in roi_id_cols]
     # bandwidth calculation not yet implemented, so make sure the columns exist
-    for bc in bandwidth_cols:
+    for bc, fc in zip(bandwidth_cols, detection_freq_cols):
         if bc not in df.keys():
-            df[bc] = None
+            idx = df.columns.get_loc(fc)
+            df.insert(idx + 1, bc, None)
 
     df.to_csv(path, index=False)
 
@@ -292,7 +295,7 @@ def run_error_calc_with_stationary_tx(paths, transmitters: list[Transmitter]):
                 )
             )
         )
-        return
+        return {}
     for i, args in enumerate(calculation_arguments):
         print(
             bold(
@@ -359,7 +362,7 @@ def make_qgis_csv(paths):
 
 
 def call_plotting(paths, plot_mode):
-    if plot_mode == "off":
+    if plot_mode == "off" or len(paths) == 0:
         return
     print(bold("\nPLOTTING RESULTS") + " (this might take a while)")
 
