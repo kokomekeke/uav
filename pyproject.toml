@@ -43,7 +43,8 @@ dependencies = [
     "flask-marshmallow-openapi",
     "marshmallow-sqlalchemy",
     "psycopg2",
-    "geographiclib"
+    "geographiclib",
+    "tqdm"
 ]
 
 [project.optional-dependencies]
@@ -65,6 +66,9 @@ tag_prefix = "v"
 requires = ["setuptools", "wheel", "versioneer"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools]
+py-modules = ["pysagax", "analyzing_tools"]
+
 [project.scripts]
 dfclient = "pysagax.dfclient:main"
 spotclient = "pysagax.spotclient:main"
@@ -76,6 +80,6 @@ pysagax-heading = "pysagax.pysagax_heading:main"
 zmqtestclient = "pysagax.zmqtestclient:main"
 clizmqclient = "pysagax.clizmqclient:main"
 clizmqcommander = "pysagax.clizmqcommander:main"
-detectrec-to-csv = "pysagax.analyzing_tools.detectrec_to_csv:main"
-protorec-to-csv = "pysagax.analyzing_tools.protorec_to_csv:main"
-plot-results = "pysagax.analyzing_tools.plot_results:main"
+detectrec-to-csv = "analyzing_tools.detectrec_to_csv:main"
+protorec-to-csv = "analyzing_tools.protorec_to_csv:main"
+plot-results = "analyzing_tools.plot_results:main"
