@@ -2,7 +2,6 @@ import csv
 import pandas as pd
 import click
 from tqdm import tqdm
-from google.protobuf.json_format import MessageToDict
 import numpy as np
 from collections import defaultdict
 from dateutil.parser import isoparse
@@ -10,7 +9,7 @@ from scipy.spatial.transform import Rotation
 from pysagax.util.mat import normalize_angle
 from geographiclib.geodesic import Geodesic
 
-from analyzing_tools import protorec_to_csv, plot
+from analyzing_tools import plot_results, protorec_to_csv
 from multiprocessing import Process
 import sys
 from time import sleep
@@ -367,7 +366,7 @@ def call_plotting(paths, plot_mode):
     def silent_plot(*args, **kwargs):
         sys.stderr = open("/dev/null", "w")
         sys.stdout = open("/dev/null", "w")  # Shouldn't suppress pandas's warnings
-        plot.main(*args, **kwargs)
+        plot_results.main(*args, **kwargs)
 
     to_run_list = [["--save-png", "--path", str(input)] for input in paths.values()]
     if plot_mode != "show":
