@@ -17,7 +17,7 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from pysagax.common.loop import Loop
 
 from pysagax.util.protobuf_spectrum_utils import Spectrum
-
+from pysagax.util.roi_mask_from_json import roi_mask_from_json
 from pysagax.util.queue_put import queue_put
 
 
@@ -100,7 +100,7 @@ class PPDetection(Loop):
     Background process for ROI detection and data aggregation on measurement packets.
     """
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, default_roi_mask: str, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._queue_in: Optional[Queue] = None
         self._queue_out: Optional[Queue] = None
@@ -115,6 +115,11 @@ class PPDetection(Loop):
 
         # storing past detection values with event_ids as keys
         self._aggregators: dict[int, DetectionAggregator] = {}
+
+        self._default_roi_mask: str = default_roi_mask  # path of json roi mask
+        if self._default_roi_mask:
+            self._current_config.roi.extend(roi_mask_from_json(self._default_roi_mask))
+            self._logger.info(f"Initialized with {self._current_config}")
 
     def __call__(
         self,
@@ -304,6 +309,14 @@ class PPDetection(Loop):
             conf_request = self._conf_queue_in.get(timeout=0, block=False)
             self._protobuf_to_log(conf_request)
             self._current_config = conf_request.config.pp
+            if len(self._current_config.roi) == 0 and self._default_roi_mask:
+                # use defaults if incoming instruction didn't have roi mask defined
+                self._current_config.roi.extend(
+                    roi_mask_from_json(self._default_roi_mask)
+                )
+                self._logger.info(
+                    f"No ROImask defined in Config message. Returning to default ROImask."
+                )
             response = proto_cmd.Response(config=conf_request.config)
             self._conf_queue_out.put(response)  # should use util.queue_put?
         except queue.Empty:

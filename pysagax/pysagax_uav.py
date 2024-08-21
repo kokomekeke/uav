@@ -70,6 +70,7 @@ class Commander:
         source_burst_stride: int,
         source_bin_count: int,
         auto_config: str,
+        default_roi_mask: str,
         cs_reset_on_fail: bool,
         spectrogram_mode: str,
         spectrogram_path: str,
@@ -145,7 +146,7 @@ class Commander:
             path=spectrogram_path,
             recording_dtype=spectrogram_recording_dtype,
         )
-        self._pp_detection = PPDetection(level=level)
+        self._pp_detection = PPDetection(level=level, default_roi_mask=default_roi_mask)
         self._pp_events = PPEvents(level=level)
         self._pp_streamprep = PPStreamPreparation(
             level=level,
@@ -472,6 +473,12 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     help="JSON-encoded protobuf configuration command",
 )
 @click.option(
+    "--default-roi-mask",
+    type=click.Path(),
+    default="",
+    help="JSON file containing a ROI mask definition for PostProcessing/Detection to initialize from.",
+)
+@click.option(
     "--cs-reset-on-fail", is_flag=True, help="Reset CS source on command fail"
 )
 @click.option(
@@ -532,6 +539,7 @@ def main(
     source_burst_stride: int,
     source_bin_count: int,
     auto_config: str,
+    default_roi_mask: str,
     cs_reset_on_fail: bool,
     spectrogram_mode: str,
     spectrogram_path: str,
@@ -576,6 +584,7 @@ def main(
         source_burst_stride,
         source_bin_count,
         auto_config,
+        default_roi_mask,
         cs_reset_on_fail,
         spectrogram_mode,
         spectrogram_path,
