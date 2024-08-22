@@ -100,7 +100,7 @@ class PPDetection(Loop):
     Background process for ROI detection and data aggregation on measurement packets.
     """
 
-    def __init__(self, default_roi_mask: str, *args, **kwargs) -> None:
+    def __init__(self, default_roi_mask: str = "", *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._queue_in: Optional[Queue] = None
         self._queue_out: Optional[Queue] = None
