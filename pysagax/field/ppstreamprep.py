@@ -1,7 +1,11 @@
 from __future__ import annotations
-from multiprocessing.managers import ValueProxy
+from multiprocessing.managers import DictProxy
+import pickle
+from time import time, sleep
 from queue import Queue
 import queue
+from datetime import datetime
+import os
 import sys
 
 from typing import Any, Optional
@@ -50,6 +54,13 @@ class PPStreamPreparation(Loop):
         self._detection_recording_path: str | None = detection_recording_path
         self._file_streamer: FileStreamer | None = None  # for recording detections
 
+        self._latest_telemetry_proxy: Optional[DictProxy] = None
+        self._latest_se_state: Optional[str] = None  # obtained from latest telemetry
+        self._recording_start_time: float = 0
+        self._max_recording_length: float = (
+            60  # timeout for starting a new recording file
+        )
+
         if not isinstance(decimation_factor, int | None):
             raise ValueError("Only integer decimation factors are supported")
         self._decimation_factor = decimation_factor
@@ -59,6 +70,7 @@ class PPStreamPreparation(Loop):
         self,
         queue_in: Queue[Any],
         queue_out: Queue[Any],
+        latest_telemetry_proxy: Optional[DictProxy] = None,
         *args,
         **kwargs,
     ) -> None:
@@ -70,6 +82,8 @@ class PPStreamPreparation(Loop):
         )
         self._logger.info(f"Decimation factor is {self._decimation_factor}")
 
+        self._latest_telemetry_proxy = latest_telemetry_proxy
+        sleep(2)  # wait for the Telemetry module to initialize
         return super()._call(*args, **kwargs)
 
     def _convert_spectrums(
@@ -128,25 +142,53 @@ class PPStreamPreparation(Loop):
             )
         return meas
 
+    def _get_current_se_state(self):
+        """Read and parse the latest telemetry packet to extract ScanEngine state"""
+        if (
+            self._latest_telemetry_proxy is None
+            or "Telemetry" not in self._latest_telemetry_proxy
+        ):
+            return "UNKNOWN"
+        current_telemetry = proto_data.Telemetry()
+        current_telemetry = pickle.loads(self._latest_telemetry_proxy["Telemetry"])
+        return current_telemetry.scanengine_state
+
     def _file_streamer_setup(self) -> None:
         """
-        TODO: creates a new FileStreamer if needed:
+        Creates a new FileStreamer if needed:
             - at startup
-            - in scanning mode if the scan plan changed
-            - after entering tracking mode
+            - after ScanEngine mode has changed
         """
-        if self._file_streamer is None and self._detection_recording_path is not None:
-            try:
-                self._file_streamer = FileStreamer(
-                    self._detection_recording_path, "record"
-                )
-                self._logger.info(
-                    f"Detection recording will be saved to '{self._detection_recording_path}'"
-                )
-            except Exception as e:
-                self._logger.error("Couldn't create detection recorder: ", e)
-        # TODO: new FileStreamer at scan plan change and tracking mode
-        # TODO: closing old FileStreamer before creating a new one
+        if self._detection_recording_path is None:
+            return  # we don't want to record detections
+
+        current_se_state = self._get_current_se_state()
+
+        if (
+            time() - self._recording_start_time < self._max_recording_length
+            and self._latest_se_state == current_se_state
+        ):
+            # starting new file not needed
+            return
+
+        if self._file_streamer is not None:
+            # close old file streamer
+            self._file_streamer.close()
+            self._file_streamer = None
+
+        # Create new FileStreamer
+        try:
+            self._recording_start_time = time()
+            self._latest_se_state = current_se_state
+            start_time_string = datetime.now().strftime("%Y%m%d_%H%M%S")
+            name, extension = os.path.splitext(self._detection_recording_path)
+            new_path = f"{name}_{start_time_string}_{self._latest_se_state}{extension}"  # Appending a timestamp and scan engine state to file name
+
+            self._file_streamer = FileStreamer(new_path, "record")
+            self._logger.info(f"Detection recording will be saved to '{new_path}'")
+        except Exception as e:
+            self._logger.error("Couldn't create detection recorder: ", e)
+        # TODO: new FileStreamer at scan plan change
 
     def _record_packet(self, packet: proto_data.Measurement) -> None:
         """

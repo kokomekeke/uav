@@ -233,7 +233,10 @@ class Commander:
             self._pp_streamprep_input_q,
         )
         pp_streamprep_future = self._pool.submit(
-            self._pp_streamprep, self._pp_streamprep_input_q, self._stream_packets_q
+            self._pp_streamprep,
+            self._pp_streamprep_input_q,
+            self._stream_packets_q,
+            self._latest_telemetry_proxy,
         )
         cs_streamer_future = self._pool.submit(
             self._cs_streamer, self._pp_heading_sync_input_q, self._telemetry_in_q
