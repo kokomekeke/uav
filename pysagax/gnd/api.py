@@ -98,6 +98,47 @@ uavs_schema = UAVSchema(many=True)
 uav_schema = UAVSchema()
 
 
+def geojson_feature_from_uav(
+    uav: UAVEntity,
+) -> dict[str, str | dict[str, int | float | str | list[float]]]:
+    if all(
+        q is not None
+        for q in [uav.last_pos_q0, uav.last_pos_q1, uav.last_pos_q2, uav.last_pos_q3]
+    ):
+        try:
+            yaw, pitch, roll = yaw_pitch_roll_from_quaternion(
+                [
+                    float(uav.last_pos_q0),
+                    float(uav.last_pos_q1),
+                    float(uav.last_pos_q2),
+                    float(uav.last_pos_q3),
+                ]
+            )
+        except:
+            yaw, pitch, roll = 0.0, 0.0, 0.0
+    else:
+        yaw, pitch, roll = 0.0, 0.0, 0.0
+    return {
+        "type": "Feature",
+        "properties": {
+            "uav_id": uav.uav_id,
+            "uav_label": uav.uav_label,
+            "active": bool(uav.active),
+            "conf_id": uav.conf_id,
+            "last_seen": str(uav.last_seen.isoformat("T")),
+            "last_pos_altitude": float(uav.last_pos_altitude),
+            "last_pos_yaw": yaw,
+            "last_pos_pitch": pitch,
+            "last_pos_roll": roll,
+            "health_report": uav.health_report,
+        },
+        "geometry": {
+            "type": "Point",
+            "coordinates": [float(uav.last_pos_lon), float(uav.last_pos_lat)],
+        },
+    }
+
+
 def geojson_feature_from_detection(
     det: ComIntDetectionEntity,
 ) -> dict[str, str | dict[str, int | float | str | list[float]]]:
@@ -105,14 +146,17 @@ def geojson_feature_from_detection(
         q is not None
         for q in [det.uav_pos_q0, det.uav_pos_q1, det.uav_pos_q2, det.uav_pos_q3]
     ):
-        yaw, pitch, roll = yaw_pitch_roll_from_quaternion(
-            [
-                float(det.uav_pos_q0),
-                float(det.uav_pos_q1),
-                float(det.uav_pos_q2),
-                float(det.uav_pos_q3),
-            ]
-        )
+        try:
+            yaw, pitch, roll = yaw_pitch_roll_from_quaternion(
+                [
+                    float(det.uav_pos_q0),
+                    float(det.uav_pos_q1),
+                    float(det.uav_pos_q2),
+                    float(det.uav_pos_q3),
+                ]
+            )
+        except:
+            yaw, pitch, roll = 0.0, 0.0, 0.0
     else:
         yaw, pitch, roll = 0.0, 0.0, 0.0
     return {
@@ -217,6 +261,26 @@ def comintdetection_detail(id):
 def uav_list():
     all_uavs = UAVEntity.query.order_by(UAVEntity.uav_id.asc()).all()
     return jsonify(uavs_schema.dump(all_uavs))
+
+
+@open_api.get(
+    response_schema=GeoJSONSchema,
+    has_id_in_path=False,
+)
+@api.route("/uav/geojson", methods=["GET"])
+def uav_geojson_list():
+    all_uavs = UAVEntity.query.order_by(UAVEntity.uav_id.asc()).all()
+    return jsonify(
+        {
+            "type": "FeatureCollection",
+            "name": "UAV",
+            "crs": {
+                "type": "name",
+                "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"},
+            },
+            "features": [geojson_feature_from_uav(uav) for uav in all_uavs],
+        }
+    )
 
 
 @open_api.get_detail(UAVSchema)
