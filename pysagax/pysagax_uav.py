@@ -213,10 +213,11 @@ class Commander:
             self._heading_data_q,
             self._latest_config_id_value,
         )
-        pp_file_stream_future = self._pool.submit(
+        pp_spectrogram_recorder_future = self._pool.submit(
             self._pp_spectrogram_recorder,
             self._pp_spectrogram_recorder_input_q,
             self._pp_detection_input_q,
+            self._latest_telemetry_proxy,
         )
         pp_detection_future = self._pool.submit(
             self._pp_detection,
@@ -264,7 +265,7 @@ class Commander:
                     cs_command_future,
                     streamer_future,
                     pp_heading_sync_future,
-                    pp_file_stream_future,
+                    pp_spectrogram_recorder_future,
                     pp_detection_future,
                     pp_events_future,
                     pp_streamprep_future,
