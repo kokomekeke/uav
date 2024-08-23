@@ -13,11 +13,13 @@ message CsCalibrationTelemetry {
     uint32 refChannelId = 4;
     uint32 selfChannelId = 5;
 
+    uint64 calibration_counter = 6;
+    string calibration_status = 7;
     float refMagnitude = 8;
     float selfMagnitude = 9;
 
-    int32 calibrationRe = 6;
-    int32 calibrationIm = 7;
+    int32 calibrationRe = 10;
+    int32 calibrationIm = 11;
 
     string label = 13;
 
