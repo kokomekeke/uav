@@ -183,14 +183,14 @@ After starting the program, you will need to send a STREAM START command to PySA
   "target": {
     "level": "SPECTRUM",
     "address": "10.1.1.139",
-    "port": 5050
+    "port": 4240
   }
 }
 ```
 
 ```bash
-clizmqclient -p 5050  # Listens on UDP port 5050 for PySAGAX-UAV
-clizmqclient -p 5050 -c 10.1.1.113:5556  # Does the same, but starts stream automatically (we have to specify the command host for that)
+clizmqclient -p 4240  # Listens on UDP port 4240 for PySAGAX-UAV
+clizmqclient -p 4240 -c 10.1.1.113:5556  # Does the same, but starts stream automatically (we have to specify the command host for that)
 clizmqclient -p 12937 10.1.1.113  # Connects to CoreService ZMQ TCP stream port
 ```
 
