@@ -85,7 +85,7 @@ def plot_spectrogram(meta, spectrogram, timestamps, radians=False, ax_to_share=N
     # ax_slider = plt.axes([0.1, 0.1, 0.8, 0.03])
     # slider = Slider(ax_slider, 'Threshold', -100, 0, valinit=-79,)# orientation="vertical")
     # slider.on_changed(lambda val:update(val, spectrogram, slider, image, fig))
-    # ax.format_coord = format_coord
+    ax.format_coord = lambda x, y: format_coord(x, y, timestamps=timestamps)
     return ax
 
 def update(val, spectrogram, slider, im, fig):
@@ -94,9 +94,21 @@ def update(val, spectrogram, slider, im, fig):
     im.set_data(masked_data)
     fig.canvas.draw_idle()
 
-def format_coord(x, y):
-    "Custom formatting: x: triple grouped digits rounded to Hz"
-    return f'x={f"{x:,.0f}".replace(",", " ")} Hz, y={y:.2f} s'
+def format_coord(x, y, timestamps):
+    """Custom formatting: 
+        x: triple grouped digits rounded to Hz
+        y: secoonds elapsed from start AND timestamp of recorded packet
+    """
+    from datetime import datetime
+    #TODO: make timestamp display more efficient
+    try:
+        t_span = timestamps[-1] - timestamps[0] 
+        index = int( y / t_span * len(timestamps))
+        ts = datetime.fromtimestamp(timestamps[index])
+        ts = str(ts)[:-4] #truncate fractional seconds to 2 decimals
+    except:
+        ts = ""
+    return f'x={f"{x:,.0f}".replace(",", " ")} Hz; y={y:.2f} s [{ts}]'
 
 
 
