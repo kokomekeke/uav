@@ -359,13 +359,13 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
 @click.option(
     "--cs-command-port",
     help="CoreService command (ZMQ REP) port",
-    default=12938,
+    default=12936,
     show_default=True,
 )
 @click.option(
     "--cs-stream-port",
     help="CoreService stream (ZMQ PUB) port",
-    default=12939,
+    default=12937,
     show_default=True,
 )
 @click.option(
