@@ -70,6 +70,7 @@ class Commander:
         source_burst_stride: int,
         source_bin_count: int,
         auto_config: str,
+        default_roi_mask: str,
         cs_reset_on_fail: bool,
         spectrogram_mode: str,
         spectrogram_path: str,
@@ -145,7 +146,7 @@ class Commander:
             path=spectrogram_path,
             recording_dtype=spectrogram_recording_dtype,
         )
-        self._pp_detection = PPDetection(level=level)
+        self._pp_detection = PPDetection(level=level, default_roi_mask=default_roi_mask)
         self._pp_events = PPEvents(level=level)
         self._pp_streamprep = PPStreamPreparation(
             level=level,
@@ -212,10 +213,11 @@ class Commander:
             self._heading_data_q,
             self._latest_config_id_value,
         )
-        pp_file_stream_future = self._pool.submit(
+        pp_spectrogram_recorder_future = self._pool.submit(
             self._pp_spectrogram_recorder,
             self._pp_spectrogram_recorder_input_q,
             self._pp_detection_input_q,
+            self._latest_telemetry_proxy,
         )
         pp_detection_future = self._pool.submit(
             self._pp_detection,
@@ -231,7 +233,10 @@ class Commander:
             self._pp_streamprep_input_q,
         )
         pp_streamprep_future = self._pool.submit(
-            self._pp_streamprep, self._pp_streamprep_input_q, self._stream_packets_q
+            self._pp_streamprep,
+            self._pp_streamprep_input_q,
+            self._stream_packets_q,
+            self._latest_telemetry_proxy,
         )
         cs_streamer_future = self._pool.submit(
             self._cs_streamer, self._pp_heading_sync_input_q, self._telemetry_in_q
@@ -263,7 +268,7 @@ class Commander:
                     cs_command_future,
                     streamer_future,
                     pp_heading_sync_future,
-                    pp_file_stream_future,
+                    pp_spectrogram_recorder_future,
                     pp_detection_future,
                     pp_events_future,
                     pp_streamprep_future,
@@ -472,6 +477,12 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     help="JSON-encoded protobuf configuration command",
 )
 @click.option(
+    "--default-roi-mask",
+    type=click.Path(),
+    default="",
+    help="JSON file containing a ROI mask definition for PostProcessing/Detection to initialize from.",
+)
+@click.option(
     "--cs-reset-on-fail", is_flag=True, help="Reset CS source on command fail"
 )
 @click.option(
@@ -532,6 +543,7 @@ def main(
     source_burst_stride: int,
     source_bin_count: int,
     auto_config: str,
+    default_roi_mask: str,
     cs_reset_on_fail: bool,
     spectrogram_mode: str,
     spectrogram_path: str,
@@ -576,6 +588,7 @@ def main(
         source_burst_stride,
         source_bin_count,
         auto_config,
+        default_roi_mask,
         cs_reset_on_fail,
         spectrogram_mode,
         spectrogram_path,
