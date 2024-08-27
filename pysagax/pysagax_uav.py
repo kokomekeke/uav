@@ -55,6 +55,7 @@ class Commander:
         cs_stream_port: int,
         cs_command_config_timeout: int,
         cs_command_instruction_timeout: int,
+        scanning_measurement_timeout: int,
         calibration_interval_seconds: float,
         calibration_resolution_bw: float,
         scanengine_cache_path: str,
@@ -126,6 +127,7 @@ class Commander:
             scanning_target_resolution_bandwidth,
             cs_command_config_timeout,
             cs_command_instruction_timeout,
+            scanning_measurement_timeout,
             calibration_interval_seconds,
             calibration_resolution_bw,
             scanengine_cache_path,
@@ -381,6 +383,12 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     show_default=True,
 )
 @click.option(
+    "--scanning-measurement-timeout",
+    help="Timeout for measurement packets to arrive in SCANNING mode",
+    default=10000,
+    show_default=True,
+)
+@click.option(
     "--calibration-interval-seconds",
     help="Automatic radio interface calibration interval [s]",
     default=300.0,
@@ -527,6 +535,7 @@ def main(
     cs_command_port: int,
     cs_command_config_timeout: int,
     cs_command_instruction_timeout: int,
+    scanning_measurement_timeout: int,
     calibration_interval_seconds: float,
     calibration_resolution_bw: float,
     scanengine_cache_path: str,
@@ -573,6 +582,7 @@ def main(
         cs_stream_port,
         cs_command_config_timeout,
         cs_command_instruction_timeout,
+        scanning_measurement_timeout,
         calibration_interval_seconds,
         calibration_resolution_bw,
         scanengine_cache_path,
