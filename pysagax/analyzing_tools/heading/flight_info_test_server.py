@@ -44,7 +44,7 @@ def main(port, constant_ypr):
 
         packet = flight_info.UAVFlightInfo(position=position, attitude=attitude)
 
-        pub.publish(packet.SerializeToString())
+        pub.publ(packet.SerializeToString())
         # pub.publ(b'fi')
         if not i % 10:
             os.system("clear")
