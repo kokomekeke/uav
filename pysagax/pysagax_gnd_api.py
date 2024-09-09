@@ -9,6 +9,7 @@ from flask import Blueprint, Flask, jsonify, url_for
 from flask_marshmallow import Marshmallow
 from flask_marshmallow_openapi import OpenAPI, OpenAPISettings, open_api
 from flask_sqlalchemy import SQLAlchemy as FlaskSQLAlchemy
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from pysagax.common.loop import Loop
 from pysagax.gnd.api import api
@@ -38,3 +39,7 @@ conf.swagger_json_template_loader = lambda: {
 
 docs = OpenAPI(config=conf)
 docs.init_app(app)
+if "PYSAGAX_GND_PROXY_FIX" in os.environ:
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1
+    )

@@ -42,6 +42,7 @@ dependencies = [
     "flask-sqlalchemy",
     "flask-marshmallow-openapi",
     "marshmallow-sqlalchemy",
+    "Werkzeug",
     "psycopg2",
     "geographiclib",
     "tqdm"
