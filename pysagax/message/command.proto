@@ -96,6 +96,8 @@ enum Instruction {
     STREAM_STOP = 26;
 
 
+    SELF_TEST = 28;
+
     // Message only for CoreService, it is required to upload a scan plan
     // before using this command.
     //   response: success [bool]
