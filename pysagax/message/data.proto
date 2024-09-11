@@ -27,11 +27,20 @@ message CsCalibrationTelemetry {
     repeated int32 validationMeasIm = 15;
 }
 
+message Version {
+    uint32 major = 1;
+    uint32 minor = 2;
+    uint32 patch = 3;
+    string prerelase = 4;
+    string buildmetadata = 5;
+}
+
 message Telemetry {
     // Non-critical information changing regularly
 
     google.protobuf.Timestamp time = 1;
     fixed32 stream_id = 2;
+    Version cs_version = 3;
 
     // Hardware info
     message Hardware {

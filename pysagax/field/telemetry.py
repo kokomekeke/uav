@@ -42,6 +42,7 @@ class Telemetry(Loop):
         self._interval = interval
         self._hostname = socket.gethostname()
         self._latest_heading_status_time = 0.0
+        self._cs_version = proto_data.Version()
 
     def __call__(
         self,
@@ -73,6 +74,7 @@ class Telemetry(Loop):
             self._latest_cs_telemetry_packet = proto_data.Telemetry()
         else:
             self._latest_cs_telemetry_packet = latest_cs_telemetry_packet
+        self._cs_version.MergeFrom(latest_cs_telemetry_packet.cs_version)
         self._telemetry_packet.source.CopyFrom(self._latest_cs_telemetry_packet.source)
         self._telemetry_packet.recording.CopyFrom(
             self._latest_cs_telemetry_packet.recording
@@ -84,8 +86,13 @@ class Telemetry(Loop):
         self._sysinfo_packet.hardware.hostname = self._hostname
         self._sysinfo_packet.hardware.disk = total // (2**20)  # MiB
         self._sysinfo_packet.software.pysagax_version = pysagax.__version__  # type: ignore
+        cs_version_string = f"{self._cs_version.major}.{self._cs_version.minor}.{self._cs_version.patch}"
+        if self._cs_version.prerelase:
+            cs_version_string += f"-{self._cs_version.prerelase}"
+        if self._cs_version.buildmetadata:
+            cs_version_string += f"+{self._cs_version.buildmetadata}"
+        self._sysinfo_packet.software.cs_version = cs_version_string
         self._sysinfo_packet.heading.MergeFrom(self._heading_status_packet)
-        # TODO CoreService version
         self._logger.debug("SystemInfo packet ready")
         if self._latest_packets_proxy is not None:
             self._latest_packets_proxy["SystemInfo"] = pickle.dumps(
@@ -164,7 +171,7 @@ class Telemetry(Loop):
         self._get_heading_module_info()
         self._measure_hardware_stats()
         self._get_from_cs()
-        if self._sysinfo_packet.software.cs_version == "N/A":
+        if not self._sysinfo_packet.software.cs_version:
             self._construct_sysinfo_packet()
         self._push_finished_packet()
         time.sleep(self._interval)
