@@ -11,6 +11,7 @@ from typing import Any, Callable, Optional
 
 import sqlalchemy
 from google.protobuf import json_format
+from pysagax.gnd.uav_report import UAVReport
 
 import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.data_pb2 as proto_data
@@ -18,8 +19,7 @@ from pysagax.common.loop import Loop
 from pysagax.communication.broadcast import RX
 from pysagax.communication.pub_sub import SUB
 from pysagax.communication.req_rep_tcp import REQ
-from pysagax.gnd.database import (ComIntDatabase, ComIntDetectionEntity,
-                                  UAVEntity)
+from pysagax.gnd.database import ComIntDatabase, ComIntDetectionEntity, UAVEntity
 from pysagax.message.data_types import DataType
 from pysagax.util.get_ip import get_ip
 
@@ -198,14 +198,17 @@ class CommAggregate(Loop):
         self._db: ComIntDatabase = db
         self._app: Optional[Any] = None
         self._uavs: dict[int, UAVConnection] = {}
+        self._telemetry_to_monitoring: Optional[Queue] = None
         Loop.__init__(self, *args, **kwargs)
 
     def __call__(
         self,
+        telemetry_to_monitoring: Queue[Any],
         *args,
         **kwargs,
     ) -> None:
         self._app = self._db.get_app_instance()
+        self._telemetry_to_monitoring = telemetry_to_monitoring
         return super()._call(*args, **kwargs)
 
     def _recv_thread(self) -> None:
@@ -232,6 +235,13 @@ class CommAggregate(Loop):
             f"Heading module {telem.heading.status} [{telem.heading.selected_source_type}]\n"
             f"ScanEngine {telem.scanengine_state}"
         )
+        report = UAVReport(
+            uav_entity.uav_id, uav_entity.uav_label, uav_entity.uav_address
+        )
+        report.update_from_sysinfo(sysinfo)
+        report.update_from_telemetry(telem)
+        assert self._telemetry_to_monitoring is not None
+        self._telemetry_to_monitoring.put(report)
 
     def _receive_measurement(
         self, uav_entity: UAVEntity, packet: proto_data.Measurement
