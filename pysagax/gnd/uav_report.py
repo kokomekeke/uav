@@ -33,17 +33,17 @@ class UAVReport:
             r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
         )
         timediff_secs = (
-            self.telemetry_timestamp - self.telemetry.time.ToDatetime()
+            self.telemetry.time.ToDatetime() - self.telemetry_timestamp
         ).total_seconds()
         check(
             abs(timediff_secs) > 2,
             1,
-            f"system clock differs by {timediff_secs} seconds",
+            f"uav system clock is {'behind' if timediff_secs < 0 else 'ahead'} by {abs(timediff_secs)} seconds",
         )
         check(
             pysagax.__version__ != self.sysinfo.software.pysagax_version,
             2,
-            f"pysagax version mismatch: local={pysagax.__version__} uav={self.sysinfo.software.pysagax_version}",
+            f"pysagax version mismatch: gnd={pysagax.__version__} uav={self.sysinfo.software.pysagax_version}",
         )
         check(
             not bool(re.match(re_semver, self.sysinfo.software.cs_version)),
