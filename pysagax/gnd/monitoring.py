@@ -19,7 +19,20 @@ class Monitoring(Loop):
         **kwargs,
     ) -> None:
         self._telemetry_to_monitoring: Optional[Queue] = None
+        self.active_uavs: dict[int, float] = dict()
+        """
+        active_uavs: uav_id => last telemetry timestamp
+        """
         self.active_warns: set[tuple[int, int]] = set()
+        """
+        set of (uav_id, warn type) tuples
+        """
+
+        self._active_uav_timeout_secs: float = 2.0
+        """
+        After this duration without telemetry the UAV counts as missing
+        """
+
         Loop.__init__(self, *args, **kwargs)
 
     def __call__(
@@ -58,6 +71,7 @@ class Monitoring(Loop):
             while True:
                 report = self._telemetry_to_monitoring.get(block=False)
                 assert isinstance(report, UAVReport)
+                self.active_uavs[report.uav_id] = time.time()
                 report.evaluate(
                     lambda cond, cid, wstr: self._check(
                         report.uav_id,
@@ -69,3 +83,8 @@ class Monitoring(Loop):
                 )
         except queue.Empty:
             pass
+        finally:
+            for uav_id in self.active_uavs.keys():
+                if self.active_uavs[uav_id] < time.time() - self._active_uav_timeout_secs:
+                    self._logger.warn(f"UAV {uav_id} seems missing.")
+                    del self.active_uavs[uav_id]
