@@ -46,7 +46,7 @@ class UAVReport:
             f"pysagax version mismatch: local={pysagax.__version__} uav={self.sysinfo.software.pysagax_version}",
         )
         check(
-            bool(re.match(re_semver, self.sysinfo.software.cs_version)),
+            not bool(re.match(re_semver, self.sysinfo.software.cs_version)),
             3,
             f'cs version "{self.sysinfo.software.cs_version}" is invalid',
         )

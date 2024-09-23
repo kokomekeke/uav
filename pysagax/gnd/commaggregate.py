@@ -217,7 +217,7 @@ class CommAggregate(Loop):
     def _receive_telemetry(
         self, uav_entity: UAVEntity, packet: proto_data.Telemetry
     ) -> None:
-        self._logger.info(
+        self._logger.debug(
             f"Got a Telemetry from {uav_entity.uav_label}! Hostname is {packet.hardware.hostname}"
         )
         telem = packet
@@ -246,7 +246,7 @@ class CommAggregate(Loop):
     def _receive_measurement(
         self, uav_entity: UAVEntity, packet: proto_data.Measurement
     ) -> None:
-        self._logger.info(
+        self._logger.debug(
             f"Got a Measurement from {uav_entity.uav_label}! Detection count is {len(packet.detection)}"
         )
         for det in packet.detection:

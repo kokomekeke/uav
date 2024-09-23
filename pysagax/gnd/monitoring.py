@@ -62,7 +62,8 @@ class Monitoring(Loop):
                 pass
         else:
             # problem solved
-            self.active_warns.remove(check_tuple)
+            if check_tuple in self.active_warns:
+                self.active_warns.remove(check_tuple)
 
     def _loop(self) -> None:
         assert self._telemetry_to_monitoring is not None
@@ -84,7 +85,8 @@ class Monitoring(Loop):
         except queue.Empty:
             pass
         finally:
-            for uav_id in self.active_uavs.keys():
+            uav_ids = list(self.active_uavs.keys())
+            for uav_id in uav_ids:
                 if self.active_uavs[uav_id] < time.time() - self._active_uav_timeout_secs:
                     self._logger.warn(f"UAV {uav_id} seems missing.")
                     del self.active_uavs[uav_id]
