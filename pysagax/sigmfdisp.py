@@ -134,6 +134,8 @@ def main():
     else:
         fig, (ax0) = plt.subplots(ncols=1, num=title)
         ax1 = None
+    fig.set_constrained_layout(True)
+    
     # X axis parameter:
     xaxis = np.array([2, 8])
 
