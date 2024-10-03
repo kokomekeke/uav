@@ -51,7 +51,8 @@ import pysagax.message.heading_pb2 as proto_heading
 from pysagax.message.data_types import DataType
 from pysagax.ui.plot_frame import PlotFrame, PlotSettingsFrame
 from pysagax.util.get_ip import get_ip
-from pysagax.util.mat import yaw_pitch_roll_from_quaternion
+from pysagax.util.mat import yaw_pitch_roll_from_quaternion, has_close_elements
+from pysagax.util.run_once import run_once
 from pysagax.util.multiqueue import MultiQueue
 from pysagax.util.read_from_conf import read_from_conf
 
@@ -68,16 +69,6 @@ class ClientWindow(tkinter.Frame):
         # aggregated and current roi results, coming from StreaAndCompassProcess
         self.detection_to_plot: proto_data.Detection | None = None
         self.heading_to_plot: proto_heading.HeadingData | None = None
-        # self.aggregated_roi_results = {
-        #     "df_value_latest": None,
-        #     "df_value_mean": None,
-        #     "df_value_std": None,
-        #     "df_elevation_latest": None,
-        #     "df_elevation_mean": None,
-        #     "df_elevation_std": None,
-        # }
-        # self.compass_angle = None
-        # self.compass_heading = None  # compass angle corrected with offset
 
         tkinter.Frame.__init__(self, root)
         self.pack(side="top", fill=tkinter.BOTH, expand=True)
@@ -270,17 +261,29 @@ class ClientWindow(tkinter.Frame):
             signal_db, noise_db = 0, 0
 
         if len(packet.data):
-            self.plot_frame.plot_spectrum_packet(
-                packet.data[0],
-                signal_db,
-                noise_db,
-            )
+            self.plot_frame.plot_spectrum_packet(packet.data[0], signal_db, noise_db)
+            self._check_signal_close_to_center_freq(packet)
 
         self.stat_frame.update_peak_plot(packet.peaks)
 
         self.stat_frame.update_stats(
             self.detection_to_plot, self.heading_to_plot, packet.time
         )
+
+    @run_once(timeout=10)
+    def _check_signal_close_to_center_freq(self, packet):
+        """notify user if a detection was made less than 10kHz away from a center frequency (excecutes once every 10 seconds)"""
+        # TODO: maybe move this to PysagaxUAV
+        if len(packet.detection):
+            center_freqs = [
+                s.center_frequency
+                for s in packet.data
+                if s.spectrum_type == proto_data.Spectrum.SpectrumType.MAGNITUDE
+            ]
+            if has_close_elements(
+                center_freqs, [d.frequency for d in packet.detection], 1e4
+            ):
+                print("WARNING: center frequency is close to a detected signal!")
 
     def telemetry_packet_handler(self, packet: proto_data.Telemetry):
         # Processes telemetry packets that arrived through stream or command connection
@@ -740,9 +743,7 @@ class Client:
         self.send_commands(cmd)
 
     def update_system_info(self, sysinfo: proto_cmd.SystemInfo) -> None:
-        print(f"Got Info {sysinfo}")
         self.heading_manager.update_from_heading_status(sysinfo.heading)
-        pass
 
     def update_roi_settings(self, roi_mask: list[proto_cmd.ROIMask]):
         """

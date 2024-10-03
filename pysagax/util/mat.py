@@ -4,7 +4,6 @@ import pyquaternion
 from math import atan2, asin
 
 
-
 def rotation_matrix_from_vectors(
     vec1: npt.NDArray[np.float64], vec2: npt.NDArray[np.float64]
 ) -> npt.NDArray[np.float64]:
@@ -65,14 +64,38 @@ def normalize_angle(angle: float, high: float = np.pi, low: float = -np.pi) -> f
         angle = angle + span
     return angle
 
+
 def yaw_pitch_roll_from_quaternion(quaternion: list[float]) -> list[float]:
     """
     Only tested for yaw!
     """
 
     qw, qx, qy, qz = quaternion
-    yaw = atan2(2.0*(qy*qz + qw*qx), qw*qw - qx*qx - qy*qy + qz*qz)
-    pitch = asin(-2.0*(qx*qz - qw*qy))
-    roll = atan2(2.0*(qx*qy + qw*qz), qw*qw + qx*qx - qy*qy - qz*qz)
-    return roll, pitch, yaw # results are in wrong order!
+    yaw = atan2(2.0 * (qy * qz + qw * qx), qw * qw - qx * qx - qy * qy + qz * qz)
+    pitch = asin(-2.0 * (qx * qz - qw * qy))
+    roll = atan2(2.0 * (qx * qy + qw * qz), qw * qw + qx * qx - qy * qy - qz * qz)
+    return roll, pitch, yaw  # results are in wrong order!
     return yaw, pitch, roll
+
+
+def has_close_elements(list1, list2, threshold):
+    """
+    Determines if two lists have any pair of elements with a
+    difference of less than the given threshold.
+
+    TODO: add tests
+    """
+    list1.sort()
+    list2.sort()
+
+    i, j = 0, 0
+    while i < len(list1) and j < len(list2):
+        diff = abs(list1[i] - list2[j])
+        if diff < threshold:
+            return True
+        elif list1[i] < list2[j]:
+            i += 1
+        else:
+            j += 1
+
+    return False
