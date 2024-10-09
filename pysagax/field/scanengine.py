@@ -907,6 +907,8 @@ class ScanEngine(Loop):
             proto_cmd.POSITION,
             proto_cmd.CS_CALIBRATE_ABORT,
             proto_cmd.CS_READ_PHASEDIFFS_FROM_FILE,
+            proto_cmd.CS_CALIBRATION_VALUES_QUERY,
+            proto_cmd.CS_CALIBRATION_PHASE_CHECK,
             proto_cmd.CS_COMPENSATE_WITH_PHASEDIFFS_STOP,
         ]:
             self.manual_command(command)
@@ -916,7 +918,7 @@ class ScanEngine(Loop):
             return response
         else:
             response = proto_cmd.Response()
-            response.error.description = "Unsupported {str(command.instruction)}"
+            response.error.description = f"Unsupported {str(command.instruction)}"
             return response
 
     def _discard_post_proc_output(self) -> None:
