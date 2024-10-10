@@ -42,6 +42,7 @@ class PPStreamPreparation(Loop):
         udp_max_size: int = pysagax_broadcast.MESSAGE_LIMIT,
         detection_recording_path: str | None = None,
         decimation_factor: int | None = None,
+        max_recording_length: float = 0,
         *args,
         **kwargs,
     ) -> None:
@@ -57,9 +58,10 @@ class PPStreamPreparation(Loop):
         self._latest_telemetry_proxy: Optional[DictProxy] = None
         self._latest_se_state: Optional[str] = None  # obtained from latest telemetry
         self._recording_start_time: float = 0
-        self._max_recording_length: float = (
-            60  # timeout for starting a new recording file
-        )
+
+        # timeout for starting a new recording file
+        # if non-positive -> the program will not split the recording files
+        self._max_recording_length: float = max_recording_length
 
         if not isinstance(decimation_factor, int | None):
             raise ValueError("Only integer decimation factors are supported")
@@ -166,8 +168,8 @@ class PPStreamPreparation(Loop):
 
         if (
             time() - self._recording_start_time < self._max_recording_length
-            and self._latest_se_state == current_se_state
-        ):
+            or self._max_recording_length <= 0
+        ) and self._latest_se_state == current_se_state:
             # starting new file not needed
             return
 

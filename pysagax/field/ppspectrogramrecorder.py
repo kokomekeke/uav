@@ -48,6 +48,7 @@ class PPSpectrogramRecorder(Loop):
         recording_dtype: Optional[
             Literal["ORIGINAL", "INT8", "INT16", "FLOAT16", "FLOAT32"]
         ] = None,
+        max_recording_length: float = 0,
         *args,
         **kwargs,
     ) -> None:
@@ -73,7 +74,10 @@ class PPSpectrogramRecorder(Loop):
         )
         self._latest_se_state: Optional[str] = None  # obtained from latest telemetry
         self._recording_start_time = time()
-        self._max_recording_length = 600  # timeout for starting a new recording file
+
+        # timeout for starting a new recording file
+        # if non-positive -> the program will not split the recording files
+        self._max_recording_length: float = max_recording_length
 
     def __call__(
         self,
@@ -115,7 +119,10 @@ class PPSpectrogramRecorder(Loop):
         current_se_state = self._get_current_se_state()
         if (
             self._latest_se_state == current_se_state
-            and time() - self._recording_start_time < self._max_recording_length
+            and (
+                time() - self._recording_start_time < self._max_recording_length
+                or self._max_recording_length <= 0
+            )
             and new_mode == self.mode
             and self.path == new_path
         ):

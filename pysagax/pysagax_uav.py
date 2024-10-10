@@ -76,7 +76,9 @@ class Commander:
         spectrogram_mode: str,
         spectrogram_path: str,
         spectrogram_recording_dtype: str,
+        spectrogram_recording_max_length: float,
         detection_recording_path: str,
+        detection_recording_max_length: float,
         measurement_udp_max_size: int,
         stream_decimation_factor: int,
     ) -> None:
@@ -147,6 +149,7 @@ class Commander:
             mode=spectrogram_mode,
             path=spectrogram_path,
             recording_dtype=spectrogram_recording_dtype,
+            max_recording_length=spectrogram_recording_max_length,
         )
         self._pp_detection = PPDetection(level=level, default_roi_mask=default_roi_mask)
         self._pp_events = PPEvents(level=level)
@@ -155,6 +158,7 @@ class Commander:
             udp_max_size=measurement_udp_max_size,
             detection_recording_path=detection_recording_path,
             decimation_factor=stream_decimation_factor,
+            max_recording_length=detection_recording_max_length,
         )
         self._cs_streamer = CSStreamer(
             level=level, address=cs_host, port=cs_stream_port
@@ -512,9 +516,23 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     help="Data type to be used for making spectrogram recordings.",
 )
 @click.option(
+    "--spectrogram-recording-max-length",
+    type=float,
+    default=600,
+    help="Split spectrogram recordings longer than this value (in seconds). If zero -> don't split files.",
+    show_default=True,
+)
+@click.option(
     "--detection-recording-path",
     type=click.Path(),
     help="File path for detection recording.",
+)
+@click.option(
+    "--detection-recording-max-length",
+    type=float,
+    default=600,
+    help="Split detection recordings longer than this value (in seconds). If zero -> don't split files.",
+    show_default=True,
 )
 @click.option(
     "--measurement-udp-max-size",
@@ -557,7 +575,9 @@ def main(
     spectrogram_mode: str,
     spectrogram_path: str,
     spectrogram_recording_dtype: str,
+    spectrogram_recording_max_length: float,
     detection_recording_path: str,
+    detection_recording_max_length: float,
     measurement_udp_max_size: int,
     stream_decimation_factor: int,
 ) -> None:
@@ -603,7 +623,9 @@ def main(
         spectrogram_mode,
         spectrogram_path,
         spectrogram_recording_dtype,
+        spectrogram_recording_max_length,
         detection_recording_path,
+        detection_recording_max_length,
         measurement_udp_max_size,
         stream_decimation_factor,
     )
