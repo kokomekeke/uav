@@ -140,13 +140,14 @@ class PPSpectrogramRecorder(Loop):
         # Entering new state:
         self.mode = new_mode
         self.path = new_path
+
+        self._latest_se_state = self._get_current_se_state()
         match new_mode:
             case Mode.PASS:
                 pass
             case Mode.RECORD:
                 # Inserting a timestamp before the file extension
                 self._recording_start_time = time()
-                self._latest_se_state = self._get_current_se_state()
                 start_time_string = datetime.now().strftime("%Y%m%d_%H%M%S")
                 name, extension = os.path.splitext(new_path)
                 new_path = f"{name}_{start_time_string}_{self._latest_se_state}{extension}"  # Appending a timestamp and scan engine state to file name
