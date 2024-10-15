@@ -188,12 +188,14 @@ class PPDetection(Loop):
                 roi_spectrum, noise_bins = magnitude_spectrum.apply_roi(
                     roi, return_noise_bins=True
                 )
+                roi_azimuth_spectrum = azimuth_spectrum.apply_roi(roi)
+                roi_elevation_spectrum = elevation_spectrum.apply_roi(roi)
             except IndexError as e:
                 # The intersection of the ROI and the spectrum contains no bins
                 self._logger.debug(f"{e}")
                 continue
             new_detections = self._detect_roi(
-                roi_spectrum, noise_bins, roi, azimuth_spectrum, elevation_spectrum
+                roi_spectrum, noise_bins, roi, roi_azimuth_spectrum, roi_elevation_spectrum
             )
             new_detections = self._calculate_snr(
                 roi_spectrum, noise_bins, new_detections
@@ -207,8 +209,8 @@ class PPDetection(Loop):
         signal_bins: Spectrum,
         noise_bins: np.ndarray[float | int],
         roi: proto_cmd.ROIMask,
-        azimuth_spectrum: Optional[Spectrum],
-        elevation_spectrum: Optional[Spectrum],
+        signal_azimuth_bins: Optional[Spectrum],
+        signal_elevation_bins: Optional[Spectrum],
     ) -> dict[int, proto_data.Detection]:
         """
         Detecting signals that are more powerful than the ROI threshold.
@@ -230,23 +232,24 @@ class PPDetection(Loop):
         d.bandwidth  # TODO
         d.strength = peak_amplitude
 
-        # TODO: alternatively we could aggregate multiple azimuth bins within the bandwidth of the signal
-        if azimuth_spectrum is not None:
-            try:
-                d.azimuth = azimuth_spectrum[peak_freq]
+        # TODO: calculate azimuth and elevation using average weighted with bin amplitude
+        if signal_azimuth_bins is not None:
+            try: 
+                azimuth_detections = np.array(signal_azimuth_bins)[np.array(signal_bins) >= roi.threshold] #TODO move filter to a variable
+                d.azimuth = scipy.stats.circmean(azimuth_detections, high=np.pi, low=-np.pi )
             except:
                 self._logger.critical("Can't detect azimuth")
         else:
             self._logger.debug("Azimuth spectrum not provided by CoreService")
 
-        if elevation_spectrum is not None:
-            try:
-                d.elevation = elevation_spectrum[peak_freq]
+        if signal_elevation_bins is not None:
+            try: 
+                elevation_detections = np.array(signal_elevation_bins)[np.array(signal_bins) >= roi.threshold] #TODO move filter to a variable
+                d.elevation = scipy.stats.circmean(elevation_detections, high=np.pi, low=-np.pi )
             except:
                 self._logger.critical("Can't detect elevation")
         else:
             self._logger.debug("Elevation spectrum not provided by CoreService")
-
         return {roi.roi_id: d}
 
     def _calculate_snr(
