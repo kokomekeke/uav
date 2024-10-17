@@ -85,7 +85,7 @@ class ClientWindow(tkinter.Frame):
         )
         self.status_frame.pack(fill=tkinter.BOTH, side=tkinter.BOTTOM, expand=False)
 
-        self.plot_frame = PlotFrame(self, conf, root)
+        self.plot_frame = PlotFrame(self, conf, root, self.client.handle_roi_click)
 
         self.bottom_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
         self.bottom_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.BOTTOM)
@@ -115,6 +115,7 @@ class ClientWindow(tkinter.Frame):
             master=self.left_notebook,
             conf=conf,
             do_configuration_function=self.client.do_configuration,
+            pp_configuration_function=self.client.config_pp_settings,
             source_manager=self.client.source_manager,
             relief=tkinter.RAISED,
             borderwidth=1,
@@ -222,7 +223,7 @@ class ClientWindow(tkinter.Frame):
     def _is_packet_late(self, packet: proto_cmd):
         # keeps track of arrived packets
         # returns True if packet's timestamp is not fresher than all earlier arrived packets'
-        # if the packet is more than 60s late, then we consider it as fresh
+        # if the packet is more than 60s late, then we consider it as fresh (probably delayed system clock?)
         if type(packet) not in self.packet_type_stats.keys():
             self.packet_type_stats[type(packet)] = {
                 "latest_ts": 0,
@@ -728,14 +729,16 @@ class Client:
         """ self.command_thread.join()
         self.stream_thread.join() """
 
-    def config_roi_settings(self, roi_mask: list[proto_cmd.ROIMask]) -> None:
-        # Constructs and sends a config message only containing a ROI window
+    def config_pp_settings(self, pp_config: proto_cmd.PostProcessingConfig) -> None:
+        # Constructs and sends a config message only containing PostProcessing info
+        # Also calls PlotFrames's update roi plot function
         cmd = proto_cmd.Command()
         cmd.instruction = proto_cmd.CONFIG
-        cmd.config.pp.roi.extend(roi_mask)
-        cmd.config.pp.mean_window = 1
+        cmd.config.pp.CopyFrom(pp_config)
+
         self.send_commands(cmd)
-        self.update_roi_settings(roi_mask)
+
+        self.client_window.plot_frame.update_roi_graph(pp_config)
 
     def query_system_info(self):
         cmd = proto_cmd.Command()
@@ -745,21 +748,22 @@ class Client:
     def update_system_info(self, sysinfo: proto_cmd.SystemInfo) -> None:
         self.heading_manager.update_from_heading_status(sysinfo.heading)
 
-    def update_roi_settings(self, roi_mask: list[proto_cmd.ROIMask]):
-        """
-        This method handles the calls the methods related to ROI
-        Any update to the ROI mask should be handled here
-        """
-        if len(roi_mask) == 0:
-            return  # the response for CONFIG command didn't contain ROI information
-        if len(roi_mask) != 1:
-            print(
-                "WARNING: SPOTclient can only handle single-element ROI masks currently."
-            )
-            return
+    def handle_roi_click(self, center_freq, threshold) -> None:
+        """update roi settings on gui with sending config commands"""
+        self.client_window.control_frame.detection_control_frame.handle_roi_click(
+            center_freq, threshold
+        )
 
-        self.client_window.plot_frame.update_roi_graph(roi_mask)
-        self.client_window.control_frame.update_roi_entries(roi_mask[0])
+    def update_pp_settings(self, pp_config) -> None:
+        """
+        Update roi settings on gui WITHOUT sending config command
+        Used when a config command gets answered by PysagaxUAV
+        """
+        self.client_window.control_frame.detection_control_frame.update_pp_settings(
+            pp_config
+        )
+
+        self.client_window.plot_frame.update_roi_graph(pp_config)
 
     def start_recording(self) -> None:
         self.start_local_recording()

@@ -23,7 +23,7 @@ class StatusQueryThread(threading.Thread):
 
     def source_config_handler(self, resp) -> None:
         self.source_manager.source_config_handler(resp)
-        self.client.update_roi_settings(resp.config.pp.roi)
+        self.client.update_pp_settings(resp.config.pp)
         self.ct_tab.config_update()
         self.status_frame.config_update()
 

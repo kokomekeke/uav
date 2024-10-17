@@ -38,13 +38,15 @@ from pysagax.util.protobuf_spectrum_utils import protobuf_spectrum_to_numpy
 
 
 class PlotFrame(tkinter.Frame):
-    def __init__(self, master, conf, root, *args, **kwargs):
+    def __init__(self, master, conf, root, roi_click_handler_function, *args, **kwargs):
         tkinter.Frame.__init__(self, master, *args, **kwargs)
 
         from pysagax.spotclient import Client
 
         self.conf = conf
         self.client: Client = self.master.client
+
+        self.roi_click_handler_function = roi_click_handler_function
 
         self.root: Any = root
 
@@ -250,35 +252,30 @@ class PlotFrame(tkinter.Frame):
             == CoreServiceStatus.DISCONNECTED
         ):
             return
-        control_frame_ref = self.master.control_frame  ##Could be better?
-        ##TODO: set roi span from graph
-        ##TODO: show roi on spectrum graph even if it was set or modified in control frame
-        ##TODO: don't excecute this code when not connected to CS
         if self.magnitude_spectrum_graph is None:
             return
         for magnitude_graph in self.magnitude_spectrum_graph:
             if event.inaxes == magnitude_graph.plot:
-                roi = proto_cmd.ROIMask()
-                roi.span = pysagax.si_to_float(control_frame_ref.roi_span_entry.get())
-                roi.center_frequency = magnitude_graph.coord_to_freq(event.xdata)
-                roi.threshold = event.ydata
-                self.client.config_roi_settings([roi])
+                center_frequency = magnitude_graph.coord_to_freq(event.xdata)
+                threshold = event.ydata
+                self.roi_click_handler_function(center_frequency, threshold)
 
-    def update_roi_graph(self, roi_mask: list[proto_cmd.ROIMask]):
-        if len(roi_mask) != 1:
+    def update_roi_graph(self, pp_config: proto_cmd.PostProcessingConfig):
+        if len(pp_config.roi) != 1:
             print(
                 "WARNING: the spectrum graph can only display a single-element ROI mask currently."
             )
             return
         self._draw_roi_window(
-            roi_mask[0].center_frequency, roi_mask[0].span, roi_mask[0].threshold
+            pp_config.roi[0].center_frequency, 
+            pp_config.roi[0].span, 
+            pp_config.roi[0].threshold
         )
 
     def _draw_roi_window(
         self, roi_center: float, roi_width: float, roi_threshold: float
     ) -> None:
-        # TODO for scanning spectrum
-        pass
+        # TODO multi-part roi mask
         for graph, param in zip(self.magnitude_spectrum_graph, self.params):
             graph.roi_center = graph.freq_to_coord(roi_center)
             graph.roi_width = int(roi_width * (param.bin_count / param.iq_rate))
