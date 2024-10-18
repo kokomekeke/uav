@@ -198,15 +198,7 @@ class SourceManager:
             return None, None
 
     def get_config_commands(
-        self,
-        freq,
-        bw,
-        gain,
-        bin_count,
-        burst_stride,
-        roi_center,
-        roi_span,
-        roi_threshold,
+        self, freq, bw, gain, bin_count, burst_stride
     ) -> list[proto_cmd.Command]:
         if self.current_source is Sources.NOT_SET:
             raise Exception(f"Source is not intilialized for CoreService")
@@ -220,11 +212,6 @@ class SourceManager:
         cmd.config.cs.bin_count = int(bin_count)
         cmd.config.cs.burst_stride = int(burst_stride)
         cmd.config.cs.channel_gain[:] = 4 * [int(gain)]
-        cmd.config.pp.roi.append(
-            self.get_single_roi_mask(roi_center, roi_span, roi_threshold)
-        )
-        # TODO: heading?
-        cmd.config.pp.mean_window = 1
         # TODO: cmd.config.cs.type = LIVE/RECORDED #why is it needed???
         return [cmd]
 

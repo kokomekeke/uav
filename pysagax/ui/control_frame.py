@@ -135,8 +135,8 @@ class DetectionControlFrame(tkinter.Frame):
         current_tab_name = self.tabControl.select()
         current_tab = self.tabControl.nametowidget(current_tab_name)
 
-        current_tab.roi_center_entry.set(center_freq)
-        current_tab.roi_threshold_entry.set(threshold)
+        current_tab.roi_center_entry.set(f"{center_freq/1e6:.3f}M")
+        current_tab.roi_threshold_entry.set(f"{threshold:.1f}")
 
         self.configure_commands()
 
@@ -203,7 +203,7 @@ class ControlFrame(tkinter.Frame):
             self,
             "Frequency:",
             0,
-            1,
+            0,
             read_from_conf(conf, ["defaults", "center_freq"], "446M"),
         )
 
@@ -211,18 +211,18 @@ class ControlFrame(tkinter.Frame):
             self,
             "Bandwidth:",
             0,
-            2,
+            1,
             read_from_conf(conf, ["defaults", "bandwith"], "1M"),
         )
 
         self.gain_entry = EntryWithLabel(
-            self, "USRP Gain:", 0, 3, read_from_conf(conf, ["defaults", "gain"], "50")
+            self, "USRP Gain:", 0, 2, read_from_conf(conf, ["defaults", "gain"], "50")
         )
 
         bin_count_entry_label = ttk.Label(
             self, text="Bin count:"
         )  # TODO:separate bin count and burst stride setting?
-        bin_count_entry_label.grid(column=0, row=4, sticky=tkinter.W, padx=5, pady=5)
+        bin_count_entry_label.grid(column=2, row=0, sticky=tkinter.W, padx=5, pady=5)
 
         bin_count_combo = ttk.Combobox(
             self, textvariable=self.bin_count_string, width=11
@@ -252,45 +252,21 @@ class ControlFrame(tkinter.Frame):
             0x80000,
         ]
         bin_count_combo.grid(
-            column=1, row=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5
-        )
-
-        self.roi_center_entry = EntryWithLabel(
-            self,
-            "ROI center freq:",
-            2,
-            1,
-            read_from_conf(conf, ["defaults", "roi_center"], "446.065M"),
-        )
-
-        self.roi_span_entry = EntryWithLabel(
-            self,
-            "ROI span:",
-            2,
-            2,
-            read_from_conf(conf, ["defaults", "roi_span"], "50k"),
-        )
-
-        self.roi_threshold_entry = EntryWithLabel(
-            self,
-            "ROI threshold:",
-            2,
-            3,
-            read_from_conf(conf, ["defaults", "roi_threshold"], "-40"),
+            column=3, row=0, sticky=tkinter.E + tkinter.W, padx=5, pady=5
         )
 
         self.burst_stride_entry = EntryWithLabel(
             self,
             "Burst stride:",
-            2,
-            4,
-            read_from_conf(conf, ["defaults", "burst_stride"], "50000"),
+            column=2,
+            row=1,
+            default_value=read_from_conf(conf, ["defaults", "burst_stride"], "50000"),
         )
         self.configure_button = tkinter.Button(
-            self, text="Configure", command=self.configure_commands
+            self, text="Configure radio", command=self.configure_commands
         )
         self.configure_button.grid(
-            column=3, row=5, padx=10, pady=5, sticky=tkinter.E + tkinter.W
+            column=0, row=4, padx=100, pady=5, sticky="ew", columnspan=4
         )
         self.configure_button.configure(state="disabled")
         self.do_configuration_function = do_configuration_function
@@ -334,16 +310,5 @@ class ControlFrame(tkinter.Frame):
             "gain": self.gain_entry.get(),
             "bin_count": self.bin_count_string.get(),
             "burst_stride": self.burst_stride_entry.get(),
-            "roi_center": si_to_float(self.roi_center_entry.get()),
-            "roi_span": si_to_float(self.roi_span_entry.get()),
-            "roi_threshold": self.roi_threshold_entry.get(),
         }
         self.do_configuration_function(**kwargs)
-
-    def update_roi_entries(self, roi: proto_cmd.ROIMask) -> None:
-        # Updates the values of ROI-related entry fields
-        # TODO: maybe create a tab for editing complex ROI masks on the GUI
-
-        self.roi_center_entry.set(f"{roi.center_frequency/1e6:.3f}M")
-        self.roi_span_entry.set(f"{roi.span/1e3:.2f}k")
-        self.roi_threshold_entry.set(f"{roi.threshold:.0f}")

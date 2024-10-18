@@ -687,26 +687,9 @@ class Client:
         cmd = self.source_manager.get_set_source_command(source, params)
         self.command_thread.enqueue_commands(cmd)
 
-    def do_configuration(
-        self,
-        freq,
-        bw,
-        gain,
-        bin_count,
-        burst_stride,
-        roi_center,
-        roi_span,
-        roi_threshold,
-    ) -> None:
+    def do_configuration(self, freq, bw, gain, bin_count, burst_stride) -> None:
         cmd_list = self.source_manager.get_config_commands(
-            freq,
-            bw,
-            gain,
-            bin_count,
-            burst_stride,
-            roi_center,
-            roi_span,
-            roi_threshold,
+            freq, bw, gain, bin_count, burst_stride
         )
         self.send_commands(cmd_list)
 
