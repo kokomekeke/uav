@@ -244,29 +244,62 @@ def comintdetection_geojson_list_last(limit):
     """
     stride = flask.request.args.get("stride", 1, type=int)
     uavs = flask.request.args.getlist("uav", type=int)
+    roi_ids = flask.request.args.getlist("roi_id", type=int)
+    event_ids = flask.request.args.getlist("e_id", type=int)
+    # freqs = flask.request.args.getlist("freq", type=int)
 
+
+    # sql = """
+    # WITH ranked AS (
+    #     SELECT *, 
+    #         ROW_NUMBER() OVER (ORDER BY detection_id DESC) AS rn
+    #     FROM comintdetection
+    #     {where_clause}
+    # )
+    # SELECT *
+    # FROM ranked
+    # WHERE (rn - 1) % :stride = 0
+    # ORDER BY detection_id DESC
+    # LIMIT :limit
+    # """
     sql = """
     WITH ranked AS (
-        SELECT *, 
-            ROW_NUMBER() OVER (ORDER BY detection_id DESC) AS rn
+        SELECT *
         FROM comintdetection
         {where_clause}
     )
     SELECT *
     FROM ranked
-    WHERE (rn - 1) % :stride = 0
+    WHERE detection_id % :stride = 0 
     ORDER BY detection_id DESC
     LIMIT :limit
     """
 
-    where_clause = "WHERE uav_id IN :uavs" if uavs else ""  # filter if uav_id is given
+    # where_clause = "WHERE uav_id IN :uavs" if uavs else ""  # filter if uav_id is given
+
+    # where_clause = f"WHERE uav_id IN {':uavs' if uavs else '*'} AND roi_identifier IN {':roi_ids' if roi_ids else '*'} AND event_id IN {':event_id' if event_ids else '*'}"
+
+    # uavs = uavs if uavs else "*"
+    # roi_ids = roi_ids if roi_ids else "*"
+    # event_ids = event_ids if event_ids else "*"
+    # where_clause = f"WHERE uav_id IN :uavs AND roi_identifier IN :roi_ids AND event_id IN :event_ids"
+
+    where_clause_parts = []
+    where_clause_parts.append("uav_id IN :uavs" if uavs else "")
+    where_clause_parts.append("roi_identifier IN :roi_ids" if roi_ids else "")
+    where_clause_parts.append("event_id IN :event_id" if event_ids else "")
+
+    where_clause = " AND ".join(filter(None, where_clause_parts))
+    where_clause = "WHERE " + where_clause if where_clause else ""
+
 
     sql = sql.format(where_clause=where_clause)
     query = db.session.query(ComIntDetectionEntity).from_statement(text(sql))
 
     params = {"stride": stride, "limit": limit}
-    if uavs:
-        params["uavs"] = tuple(uavs)
+    if uavs: params["uavs"] = tuple(uavs)
+    if roi_ids: params["roi_ids"] = tuple(roi_ids)
+    if event_ids: params["event_ids"] = tuple(event_ids)
 
     detections = query.params(**params).all()
 

@@ -153,7 +153,7 @@ class DebugTab(ttk.Frame):
         cmd_stream_stop.target.id = 1
         cmd_stream_stop.target.level = STREAM_LEVEL[self.stream_level_str.get()]
         cmd_stream_stop.target.address = get_ip(host_address)
-        cmd_stream_stop.target.port = 4242
+        cmd_stream_stop.target.port = 4242 # TODO
         cmd_stream_stop.target.heartbeat_timeout = int(self.heartbeat_to_entry.get())
         cmd_stream_stop.target.telemetry_timeout = int(self.telemetry_to_entry.get())
 
@@ -161,7 +161,7 @@ class DebugTab(ttk.Frame):
         cmd_stream_start.target.id = 1
         cmd_stream_start.target.level = STREAM_LEVEL[self.stream_level_str.get()]
         cmd_stream_start.target.address = get_ip(host_address)
-        cmd_stream_start.target.port = 4242
+        cmd_stream_start.target.port = 4242 # TODO
         cmd_stream_start.target.heartbeat_timeout = int(self.heartbeat_to_entry.get())
         cmd_stream_start.target.telemetry_timeout = int(self.telemetry_to_entry.get())
 

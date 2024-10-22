@@ -340,13 +340,17 @@ class ClientWindow(tkinter.Frame):
         except:
             pass  ##TODO: when exiting, this gets called after the window no longer exists
 
-    def connect_commands(self, host_address: str) -> None:
-        host_address = self.connect_frame.host_address.get()
+    def connect_commands(self, host_address: str, 
+        host_cmd_port: int = 5556,
+        client_stream_port: int = 4242,) -> None:
+        # host_address = self.connect_frame.host_address.get()
         self.client.connect_commands(
             self.connect_action,
             self.connected_action,
             self.disconnect_action,
             host_address,
+            host_cmd_port=host_cmd_port,
+            client_stream_port=client_stream_port,
         )
 
     def disconnect_commands(self) -> None:
@@ -592,13 +596,15 @@ class Client:
         connected_action: Optional[Callable[[], None]],
         disconnect_action: Optional[Callable[[], None]],
         host_address: str,
+        host_cmd_port: int = 5556,
+        client_stream_port: int = 4242,
     ) -> None:
         """
         Action of the "Connect" button
         """
 
         self.command_connection = REQ(
-            address_server=host_address
+            address_server=host_address, port_server=host_cmd_port
         )  # , address_client=None, port_client=5556, port_server=5555)
 
         self.command_thread = CommandThread(
@@ -623,11 +629,9 @@ class Client:
 
         self.disconnect_value.value = False
 
-        # TODO: port and groups to config
-        stream_connection_port = 4242
         all_groups = [group.value for group in DataType]
         self.stream_process = StreamProcess(
-            stream_connection_port,
+            client_stream_port,
             all_groups,
             self.stream_process_multiqueue,
             self.disconnect_value,
@@ -644,7 +648,7 @@ class Client:
         cmd_stream_start.target.id = 1
         cmd_stream_start.target.level = proto_cmd.StreamTarget.StreamLevel.SPECTRUM
         cmd_stream_start.target.address = get_ip(host_address)
-        cmd_stream_start.target.port = 4242
+        cmd_stream_start.target.port = client_stream_port
 
         # TODO: think about ideal timeout values, move to config
         cmd_stream_start.target.heartbeat_timeout = 1

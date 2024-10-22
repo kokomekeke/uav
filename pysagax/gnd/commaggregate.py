@@ -22,6 +22,7 @@ from pysagax.communication.req_rep_tcp import REQ
 from pysagax.gnd.database import ComIntDatabase, ComIntDetectionEntity, UAVEntity
 from pysagax.message.data_types import DataType
 from pysagax.util.get_ip import get_ip
+from pysagax.util.queue_put import queue_put
 
 
 def find_free_port():
@@ -241,7 +242,7 @@ class CommAggregate(Loop):
         report.update_from_sysinfo(sysinfo)
         report.update_from_telemetry(telem)
         assert self._telemetry_to_monitoring is not None
-        self._telemetry_to_monitoring.put(report)
+        queue_put(self._telemetry_to_monitoring, report, 1, self._logger, "Telemetry to monitoring")
 
     def _receive_measurement(
         self, uav_entity: UAVEntity, packet: proto_data.Measurement
@@ -320,7 +321,7 @@ class CommAggregate(Loop):
             }[type(packet)](uav_entity, packet)
             uav_entity.last_seen = sqlalchemy.func.now()
             self._db.commit()
-        pass
+        self._logger.debug("Received packet processed!")
 
     def _loop(self) -> None:
         assert self._app
@@ -364,4 +365,3 @@ class CommAggregate(Loop):
                 )
 
         time.sleep(1)
-        pass
