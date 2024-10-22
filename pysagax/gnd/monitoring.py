@@ -41,6 +41,8 @@ class Monitoring(Loop):
         *args,
         **kwargs,
     ) -> None:
+        
+        self._logger.debug("Monitoring called")
         self._telemetry_to_monitoring = telemetry_to_monitoring
         return super()._call(*args, **kwargs)
 
@@ -67,7 +69,6 @@ class Monitoring(Loop):
 
     def _loop(self) -> None:
         assert self._telemetry_to_monitoring is not None
-        time.sleep(1000)
         try:
             while True:
                 report = self._telemetry_to_monitoring.get(block=False)
@@ -83,10 +84,10 @@ class Monitoring(Loop):
                     )
                 )
         except queue.Empty:
-            pass
+            time.sleep(0.5)
         finally:
             uav_ids = list(self.active_uavs.keys())
             for uav_id in uav_ids:
                 if self.active_uavs[uav_id] < time.time() - self._active_uav_timeout_secs:
-                    self._logger.warn(f"UAV {uav_id} seems missing.")
+                    self._logger.warning(f"UAV {uav_id} seems missing.")
                     del self.active_uavs[uav_id]
