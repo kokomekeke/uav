@@ -36,6 +36,7 @@ class ManualTab(tkinter.Frame):
     
     def configure_commands(self):
         cmd = proto_cmd.Command(instruction=proto_cmd.Instruction.CONFIG)
+        cmd.kind = proto_cmd.Command.WRITE
         cmd.config.se.mode = proto_cmd.ScanEngineConfig.Mode.MANUAL
         self.send_command_function(cmd)
 
@@ -72,6 +73,7 @@ class ScanningTab(tkinter.Frame):
     
     def configure_commands(self):
         cmd = proto_cmd.Command(instruction=proto_cmd.Instruction.CONFIG)
+        cmd.kind = proto_cmd.Command.WRITE
         cmd.config.se.mode = proto_cmd.ScanEngineConfig.Mode.SCANNING
         freq_ranges = self.range_settings_frame.get_values()
         for range in freq_ranges:
@@ -112,6 +114,7 @@ class TrackingTab(tkinter.Frame):
     
     def configure_commands(self):
         cmd = proto_cmd.Command(instruction=proto_cmd.Instruction.CONFIG)
+        cmd.kind = proto_cmd.Command.WRITE
         cmd.config.se.mode = proto_cmd.ScanEngineConfig.Mode.TRACKING
         signals = self.signals_settings_frame.get_values()
         for signal in signals:
@@ -147,43 +150,6 @@ class ScanEngineSettingsFrame(tkinter.Frame):
 
         self.tracking_tab = TrackingTab(self.mode_tabs, self.send_command_function)
         self.mode_tabs.add(self.tracking_tab, text="Tracking")
-
-
-    # def configure_commands(self):
-    #     """sends config commands to uav"""
-
-    #     cmd = proto_cmd.Command(
-    #         instruction=proto_cmd.Instruction.CS_CALIBRATE_START,
-    #         calib_command=self.generate_calib_command()
-    #     )
-
-    #     self.send_command_function(cmd)
-    
-    # def generate_calib_command(self):
-    #     msg = proto_cmd.CalibrationCommand()
-    #     msg.identifier = self.indentifier_entry.get()
-    #     msg.calibration_freqs.iq_rate = int(si_to_float(self.iq_rate_entry.get()))
-    #     for i, tab_name in enumerate(self.tabControl.tabs()):
-    #         tab = self.tabControl.nametowidget(tab_name)
-    #         msg.calibration_freqs.center_freqs.append(
-    #             si_to_float(tab.center_freq_entry.get())
-    #         )
-    #     return msg
-
-    # def repeated_field_minus(self):
-    #     i = self.tabControl.index(tkinter.END)
-    #     if i >= 1:
-    #         self.tabControl.forget(self.tabControl.tabs()[-1])
-
-    # def repeated_field_plus(self):
-    #     i = self.tabControl.index(tkinter.END)
-    #     tab = self.build_center_freq_tab()
-    #     self.tabControl.add(tab, text=f"[{i}]")
-
-    # def build_center_freq_tab(self, center_freq="446.000M"):
-    #     tab = SingleCenterFrequencyEntry(self.tabControl, center_freq)
-    #     tab.pack()
-    #     return tab
 
 
 
