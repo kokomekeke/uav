@@ -19,6 +19,7 @@ import pysagax
 from pysagax.df.lena_core_service import CoreServiceSpectrumPacket
 from pysagax.source.source_manager import CoreServiceStatus
 from pysagax.spot.calculate_df_corrected import calculate_df_corrected
+from pysagax.field.scanengine import ScanEngineState
 import pysagax.message.data_pb2 as proto_data
 import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.heading_pb2 as proto_heading
@@ -267,9 +268,9 @@ class PlotFrame(tkinter.Frame):
             )
             return
         self._draw_roi_window(
-            pp_config.roi[0].center_frequency, 
-            pp_config.roi[0].span, 
-            pp_config.roi[0].threshold
+            pp_config.roi[0].center_frequency,
+            pp_config.roi[0].span,
+            pp_config.roi[0].threshold,
         )
 
     def _draw_roi_window(
@@ -324,6 +325,62 @@ class PlotFrame(tkinter.Frame):
 
         if bin_count == 0 or iq_rate == 0:
             return
+
+        is_scanning = (
+            self.master.client.source_manager.latest_telemetry is not None
+            and self.master.client.source_manager.latest_telemetry.scanengine_state
+            == str(ScanEngineState.SCANNING_IN_PROGRESS).split(".")[-1]
+        )  # TODO: protobuf telemetry shouldn't send SE state in enum instead of string
+
+        spectrum_index = self._check_existing_spectrum_plots(
+            bin_count, center_frequency, iq_rate, is_scanning
+        )
+
+        if self.redraw_canvas or spectrum_index is None:
+            # Animation can be created, because at this point we know bin count and other properties
+            # Also restart when bin count or any other parameter has changed
+
+            spectrum_index = self._update_spectrum_plot_list(
+                bin_count, center_frequency, iq_rate, is_scanning, spectrum_index
+            )
+
+        assert self.magnitude_waterfall_graph is not None
+        assert self.magnitude_spectrum_graph is not None
+        self.magnitude_waterfall_graph[spectrum_index].add_data(spectrum_data)
+        self.magnitude_spectrum_graph[spectrum_index].add_data(spectrum_data)
+        self.magnitude_spectrum_graph[spectrum_index].signal_lvl = signal_db
+        self.magnitude_spectrum_graph[spectrum_index].noise_lvl = noise_db
+
+    def _update_spectrum_plot_list(
+        self, bin_count, center_frequency, iq_rate, is_scanning, spectrum_index
+    ):
+        """Update self.params and call self.create_anim() as needed"""
+        new_graph = GraphParameters()
+        new_graph.bin_count = bin_count
+        new_graph.iq_rate = iq_rate
+        new_graph.center_frequency = center_frequency
+        new_graph.waterfall_size = read_from_conf(
+            self.conf, ["display", "waterfall_size"], 200
+        )
+        if is_scanning:
+            self.params.append(new_graph)
+        else:
+            self.params = [new_graph]
+
+        spectrum_index = len(self.params) - 1
+        self.create_anim()
+        self.redraw_canvas = False
+        return spectrum_index
+
+    def _check_existing_spectrum_plots(
+        self, bin_count, center_frequency, iq_rate, is_scanning
+    ):
+        """
+        Returns the index of the spectrum plot, if one already exists with the given parameters.
+        Also sets self.redraw_canvas if needed.
+
+        Returns None if no existing plot matches the parameters.
+        """
         spectrum_index = None
         for i, param in enumerate(self.params):  # finding the graph for the packet
             if (
@@ -333,31 +390,10 @@ class PlotFrame(tkinter.Frame):
             ):
                 spectrum_index = i
 
-        # TODO: tracking mode: limit to 1 graph when scanning is false
-
-        if self.redraw_canvas or spectrum_index is None:
-            # Animation can be created, because at this point we know bin count and other properties
-            # Also restart when bin count or any other parameter has changed
-
-            new_graph = GraphParameters()
-            new_graph.bin_count = bin_count
-            new_graph.iq_rate = iq_rate
-            new_graph.center_frequency = center_frequency
-            new_graph.waterfall_size = read_from_conf(
-                self.conf, ["display", "waterfall_size"], 200
-            )
-            self.params.append(new_graph)
-
-            spectrum_index = len(self.params) - 1
-            self.create_anim()
-            self.redraw_canvas = False
-
-        assert self.magnitude_waterfall_graph is not None
-        assert self.magnitude_spectrum_graph is not None
-        self.magnitude_waterfall_graph[spectrum_index].add_data(spectrum_data)
-        self.magnitude_spectrum_graph[spectrum_index].add_data(spectrum_data)
-        self.magnitude_spectrum_graph[spectrum_index].signal_lvl = signal_db
-        self.magnitude_spectrum_graph[spectrum_index].noise_lvl = noise_db
+        if len(self.params) > 1 and not is_scanning:
+            # After exiting scanning mode, redraw even if spectrum plot is found
+            self.redraw_canvas = True
+        return spectrum_index
 
     def destroy_plot(self) -> None:
         if self.fig is not None:
