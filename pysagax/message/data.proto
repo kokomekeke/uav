@@ -61,6 +61,17 @@ message Telemetry {
         }
         Status status = 3;
 
+        enum Mode {
+            MANUAL = 0;
+            UNDER_CONFIG = 1;
+            CALIBRATION = 2;
+            SCANNING = 3;
+            UNDEFINED = 4;
+        }
+        Mode mode = 7;
+
+        // current status progress in precentage
+        float progress = 14;
         // Current position in selected source
         uint64 position = 5;
 

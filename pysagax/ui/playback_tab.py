@@ -2,7 +2,7 @@ import tkinter
 import tkinter.font
 from tkinter import ttk
 from typing import Any, Callable, Optional
-from pysagax.source.source_manager import CoreServiceStatus, SourceStatus, SourceManager
+from pysagax.source.source_manager import CoreServiceStatus, SourceStatus, SourceManager, SourceMode
 
 from pysagax.ui.ui_helpers import en_if
 import pysagax.message.command_pb2 as proto_cmd
@@ -27,7 +27,8 @@ class PlaybackTab(ttk.Frame):
             f"PySAGAX {sysinfo.software.pysagax_version}, CS {sysinfo.software.cs_version}\n"
             f"Disk usage: {'{:,}'.format(telem.hardware.disk_usage).replace(',', ' ')} MB / "
             f"{'{:,}'.format(sysinfo.hardware.disk).replace(',', ' ')} MB\n"
-            f"Source module {proto_data.Telemetry.Source.Status.Name(telem.source.status)} "
+            f"Source module Status: {proto_data.Telemetry.Source.Status.Name(telem.source.status)} \n"
+            f"Source module Mode: {proto_data.Telemetry.Source.Mode.Name(telem.source.mode)} \n"
             f"{'{:,}'.format(telem.source.position).replace(',', ' ')} / "
             f"{'{:,}'.format(telem.source.length).replace(',', ' ')} \n"
             f"Recording module {proto_data.Telemetry.Recording.Status.Name(telem.recording.status)} "
@@ -76,7 +77,8 @@ class PlaybackTab(ttk.Frame):
             state=en_if(
                 self.source_manager.cs_status
                 in [CoreServiceStatus.CONNECTED, CoreServiceStatus.WORKING]
-                and self.source_manager.source_status is SourceStatus.ENABLED
+                and self.source_manager.source_status is SourceStatus.ENABLED 
+                and self.source_manager.source_mode is SourceMode.MANUAL
             )
         )
 
@@ -239,7 +241,6 @@ class PlaybackTab(ttk.Frame):
     def start_commands(self) -> None:
         cmd_source_start = proto_cmd.Command()
         cmd_source_start.instruction = proto_cmd.SOURCE_START
-
         self.send_commands_function([cmd_source_start])
 
     def rec_commands(self) -> None:

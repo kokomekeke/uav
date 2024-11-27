@@ -48,6 +48,21 @@ class SourceStatus(Enum):
     UNKNOWN = 0
 
 
+class SourceMode(Enum):
+    """
+    Enum for source statuses.
+    Each member's value is based on the possible CS responses for SOURCE:Mode!
+    """
+
+    MANUAL = proto_data.Telemetry.Source.Mode.MANUAL
+    CALIBRATION = proto_data.Telemetry.Source.Mode.CALIBRATION
+    SCANNING = proto_data.Telemetry.Source.Mode.SCANNING
+    UNDER_CONFIG = proto_data.Telemetry.Source.Mode.UNDER_CONFIG
+    UNDEFINED = proto_data.Telemetry.Source.Mode.UNDEFINED
+    UNKNOWN = 10
+
+
+
 class CoreServiceStatus(Enum):
     DISCONNECTED = 0
     CONNECTED = 1  # connected and not working
@@ -135,6 +150,7 @@ class SourceManager:
 
         self.recording_status: RecordingStatus = RecordingStatus.UNKNOWN
         self.source_status: SourceStatus = SourceStatus.UNKNOWN
+        self.source_mode: SourceManager = SourceMode.UNKNOWN
         self.cs_status: CoreServiceStatus = CoreServiceStatus.DISCONNECTED
 
         self.latest_telemetry: Optional[proto_data.Telemetry] = None
@@ -167,6 +183,7 @@ class SourceManager:
     def source_telemetry_handler(self, packet: proto_data.Telemetry) -> None:
         # updates the source status based on the response from CoreService
         self.source_status = SourceStatus(packet.source.status)
+        self.source_mode = SourceMode(packet.source.mode)
         self.recording_status = RecordingStatus(packet.recording.status)
         self.latest_telemetry = packet
 
