@@ -71,6 +71,7 @@ class CalibrationSettingsFrame(tkinter.Frame):
             instruction=proto_cmd.Instruction.CS_CALIBRATE_START,
             calib_command=self.generate_calib_command()
         )
+        cmd.kind = proto_cmd.Command.WRITE
 
         self.send_command_function(cmd)
     
