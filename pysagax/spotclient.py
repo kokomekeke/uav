@@ -26,6 +26,8 @@ from pysagax.ui.connect_frame import ConnectFrame
 from pysagax.ui.control_frame import ControlFrame
 from pysagax.ui.debug_tab import DebugTab
 from pysagax.ui.heading_source_settings import HeadingSourceFrame
+from pysagax.ui.calibration_settings import CalibrationSettingsFrame
+from pysagax.ui.scan_engine_settings import ScanEngineSettingsFrame
 from pysagax.ui.playback_tab import PlaybackTab
 from pysagax.ui.source_select_frame import SourceSelectFrame
 from pysagax.ui.stat_frame import StatFrame
@@ -133,6 +135,14 @@ class ClientWindow(tkinter.Frame):
         self.heading_source_frame = HeadingSourceFrame(
             self.left_notebook, self.client.heading_manager, conf
         )
+        self.calibration_settings_frame = CalibrationSettingsFrame(
+            self.left_notebook, self.client.send_commands, conf
+        )
+        self.left_notebook.add(self.calibration_settings_frame, text="Calibration")
+        self.scan_engine_settings_frame = ScanEngineSettingsFrame(
+            self.left_notebook, self.client.send_commands, conf
+        )
+        self.left_notebook.add(self.scan_engine_settings_frame, text="Scan Engine")
         self.left_notebook.add(self.heading_source_frame, text="Heading&GPS")
         self.left_notebook.pack(fill=tkinter.BOTH, expand=False, side=tkinter.LEFT)
         self.center_notebook = ttk.Notebook(self.bottom_frame)
