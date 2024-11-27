@@ -353,7 +353,6 @@ class ClientWindow(tkinter.Frame):
     def connect_commands(self, host_address: str, 
         host_cmd_port: int = 5556,
         client_stream_port: int = 4242,) -> None:
-        # host_address = self.connect_frame.host_address.get()
         self.client.connect_commands(
             self.connect_action,
             self.connected_action,
@@ -371,7 +370,7 @@ class ClientWindow(tkinter.Frame):
             path_list = b""
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.connect(
-                    (self.connect_frame.host_address.get(), 12939)
+                    (self.connect_frame.host_entry.get(), 12939)
                 )  ##TODO port no. to args
                 s.sendall(b"nc")
                 while True:
