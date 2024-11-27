@@ -6,7 +6,6 @@ import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.data_pb2 as proto_data
 
 
-
 class RecordingStatus(Enum):
     """
     Enum for recording statuses.
