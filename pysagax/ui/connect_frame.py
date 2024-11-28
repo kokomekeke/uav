@@ -30,38 +30,18 @@ class ConnectFrame(tkinter.Frame):
         self.columnconfigure(3, weight=1)
         self.columnconfigure(3, weight=1)
 
-        # self.host_address = tkinter.StringVar(
-        #     value=read_from_conf(conf, ["defaults", "host"], "")
-        # )
-
-        # host_label = tkinter.Label(self, text="Host:")
-        # host_label.pack(
-        #     side=tkinter.LEFT, fill=tkinter.NONE, padx=(10, 5), pady=10, expand=False
-        # )
-        # host_label.pack(
-        #     side=tkinter.LEFT, fill=tkinter.NONE, padx=(10, 5), pady=10, expand=False
-        # )
-
-        # self.host_entry = tkinter.Entry(self, textvariable=self.host_address, width=15)
-        # self.host_entry.pack(side=tkinter.LEFT, padx=5, expand=False)
-        # self.host_entry.pack(side=tkinter.LEFT, padx=5, expand=False)
-
         self.host_entry= EntryWithLabel(self, "Host:", 0, 0, default_value=read_from_conf(conf, ["defaults", "host"], ""))
 
         self.icon_frame = tkinter.Frame(self, width=32, height=32)
         self.icon_frame.place(anchor="center", relx=0.5, rely=0.5)
-        # self.icon_frame.pack_propagate(False)
-        # self.icon_frame.pack(side=tkinter.RIGHT)
         self.icon_frame.grid(row=0, column=4)
         if logo_image is not None:
             self.icon_label = tkinter.Label(self.icon_frame, image=logo_image)
-            # self.icon_label.pack()
             self.icon_label.pack()
 
         self.disconnect_button = tkinter.Button(
             self, text="Disconnect", command=disconnect_commands_function
         )
-        # self.disconnect_button.pack(side=tkinter.RIGHT, padx=5, pady=5)
         self.disconnect_button.grid(column=3, row=0)
         self.disconnect_button.configure(state="disabled")
 
@@ -69,7 +49,6 @@ class ConnectFrame(tkinter.Frame):
         self.connect_button = tkinter.Button(
             self, text="Connect", command=self.connect_commands
         )
-        # self.connect_button.pack(side=tkinter.RIGHT)
         self.connect_button.grid(column=2, row=0)
 
         self.host_command_port_entry= EntryWithLabel(self, "Host command port:", 1, 1, 5556, tkinter.IntVar)
