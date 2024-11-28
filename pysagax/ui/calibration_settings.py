@@ -1,14 +1,55 @@
 import tkinter
 from tkinter import ttk
+import tkinter.scrolledtext
 from tktooltip import ToolTip
 from typing import Any, Callable, Optional
 from pysagax.source.source_manager import SourceManager
 
-from pysagax.ui.custom_widgets import ComboboxWithLabel, EntryWithLabel, RepeatedEntry, SIPrefixDoubleVar
+from pysagax.ui.custom_widgets import (
+    ComboboxWithLabel,
+    EntryWithLabel,
+    RepeatedEntry,
+    SIPrefixDoubleVar,
+)
 from pysagax.util.read_from_conf import read_from_conf
 from pysagax.util.mat import si_to_float
 from pysagax.ui.ui_helpers import en_if
 import pysagax.message.command_pb2 as proto_cmd
+
+from google.protobuf import json_format
+
+
+class LatestCalibrationResponseWindow(tkinter.Toplevel):
+    def __init__(self, master, response_str, on_close_callback, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+        # self.geometry("500x500")
+        self.title("Latest Calibration Values")
+        self.response_str = response_str
+
+        response_label = tkinter.Label(
+            self,
+            textvariable=self.response_str,
+            background="white",
+            font="TkFixedFont",
+            justify="left",
+            anchor="nw",
+        )
+
+        response_label.pack(padx=10, pady=10, expand=True, fill="both")
+
+        self.close_button = tkinter.Button(self, text="Close", command=self.on_closing)
+        self.close_button.pack(side="bottom", pady=10)
+
+        self._on_close_callback = on_close_callback
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def on_closing(self):
+        self.destroy()
+        self._on_close_callback()
+
+    def bring_to_front(self):
+        """Bring this window to front"""
+        self.lift()
 
 
 class CalibrationSettingsFrame(tkinter.Frame):
@@ -25,12 +66,13 @@ class CalibrationSettingsFrame(tkinter.Frame):
 
         # self.source_manager: SourceManager = source_manager
         self.send_command_function = send_command_function
+        self.latest_calibration_query_respone = tkinter.StringVar(value="")
+        self.latest_calibration_window: Optional[LatestCalibrationResponseWindow] = None
 
         self.columnconfigure(0)
         self.columnconfigure(1)
         self.columnconfigure(2)
         self.columnconfigure(3)
-
 
         self.iq_rate_entry = EntryWithLabel(
             self,
@@ -44,7 +86,8 @@ class CalibrationSettingsFrame(tkinter.Frame):
         self.center_freq_settings_frame = RepeatedEntry(
             self,
             entries_config={"Center freq": SIPrefixDoubleVar},
-            default_new_tab_values={"Center freq": "432M"})
+            default_new_tab_values={"Center freq": "432M"},
+        )
 
         self.center_freq_settings_frame.grid(row=1, column=0, columnspan=4, sticky="nw")
 
@@ -63,18 +106,63 @@ class CalibrationSettingsFrame(tkinter.Frame):
             column=2, row=3, padx=10, pady=5, sticky="ew", columnspan=2
         )
 
+        self.calibrate_abort_button = tkinter.Button(
+            self, text="Abort Calibration", command=self.calibrate_abort_commands
+        )
+        self.calibrate_abort_button.grid(
+            column=2, row=4, padx=10, pady=5, sticky="ew", columnspan=2
+        )
+
+        self.calib_file_identifier_entry = EntryWithLabel(
+            self,
+            "File Identifier",
+            column=0,
+            row=5,
+            variable_type=tkinter.StringVar,
+        )
+        self.read_from_file_button = tkinter.Button(
+            self, text="Load From File", command=self.read_from_file_commands
+        )
+        self.read_from_file_button.grid(
+            column=2, row=5, padx=10, pady=5, sticky="ew", columnspan=2
+        )
+
+        self.query_calib_values_button = tkinter.Button(
+            self,
+            text="Query Calibration Values",
+            command=self.query_calib_values_commands,
+        )
+        self.query_calib_values_button.grid(
+            column=2, row=6, padx=10, pady=5, sticky="ew", columnspan=2
+        )
+
+        self.phase_check_button = tkinter.Button(
+            self, text="Calibration Phase Check", command=self.phase_check_commands
+        )
+        self.phase_check_button.grid(
+            column=2, row=7, padx=10, pady=5, sticky="ew", columnspan=2
+        )
+
+        self.compensate_with_pahesdiffs_stop_button = tkinter.Button(
+            self,
+            text="compensate_with_pahesdiffs_stop",
+            command=self.compensate_with_pahesdiffs_stop_commands,
+        )
+        self.compensate_with_pahesdiffs_stop_button.grid(
+            column=2, row=8, padx=10, pady=5, sticky="ew", columnspan=2
+        )
 
     def configure_commands(self):
         """sends config commands to uav"""
 
         cmd = proto_cmd.Command(
             instruction=proto_cmd.Instruction.CS_CALIBRATE_START,
-            calib_command=self.generate_calib_command()
+            calib_command=self.generate_calib_command(),
         )
         cmd.kind = proto_cmd.Command.WRITE
 
         self.send_command_function(cmd)
-    
+
     def generate_calib_command(self):
         msg = proto_cmd.CalibrationCommand()
         msg.identifier = self.indentifier_entry.get()
@@ -82,3 +170,58 @@ class CalibrationSettingsFrame(tkinter.Frame):
         for value in self.center_freq_settings_frame.get_values():
             msg.calibration_freqs.center_freqs.append(int(value["Center freq"]))
         return msg
+
+    def calibrate_abort_commands(self):
+        cmd = proto_cmd.Command(
+            kind=proto_cmd.Command.WRITE,
+            instruction=proto_cmd.Instruction.CS_CALIBRATE_ABORT,
+        )
+        self.send_command_function(cmd)
+
+    def read_from_file_commands(self):
+        cmd = proto_cmd.Command(
+            kind=proto_cmd.Command.WRITE,
+            instruction=proto_cmd.Instruction.CS_READ_PHASEDIFFS_FROM_FILE,
+        )
+        cmd.calib_command.identifier = self.calib_file_identifier_entry.get()
+        self.send_command_function(cmd)
+
+    def query_calib_values_commands(self):
+        cmd = proto_cmd.Command(
+            kind=proto_cmd.Command.WRITE,
+            instruction=proto_cmd.Instruction.CS_CALIBRATION_VALUES_QUERY,
+        )
+        self.send_command_function(cmd)
+
+    def phase_check_commands(self):
+        cmd = proto_cmd.Command(
+            kind=proto_cmd.Command.WRITE,
+            instruction=proto_cmd.Instruction.CS_CALIBRATION_PHASE_CHECK,
+        )
+        self.send_command_function(cmd)
+
+    def compensate_with_pahesdiffs_stop_commands(self):
+        cmd = proto_cmd.Command(
+            kind=proto_cmd.Command.WRITE,
+            instruction=proto_cmd.Instruction.CS_COMPENSATE_WITH_PHASEDIFFS_STOP,
+        )
+        self.send_command_function(cmd)
+
+    def qurey_calib_values_response_handler(self, response: proto_cmd.Response):
+        """Handler callback for CS_CALIBRATION_VALUES_QUERY command responses"""
+        self.latest_calibration_query_respone.set(str(response))
+        # self.latest_calibration_query_respone.set(str(json_format.MessageToJson(response)))
+        self.open_latest_calib_window()
+
+    def open_latest_calib_window(self):
+        if self.latest_calibration_window is not None:
+            self.latest_calibration_window.bring_to_front()
+            return
+        self.latest_calibration_window = LatestCalibrationResponseWindow(
+            self,
+            self.latest_calibration_query_respone,
+            self.on_latest_calib_window_closed,
+        )
+
+    def on_latest_calib_window_closed(self):
+        self.latest_calibration_window = None
