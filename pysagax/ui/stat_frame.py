@@ -15,6 +15,101 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from scipy.spatial.transform import Rotation
 
 
+class PeakChart(tkinter.Canvas):
+    def __init__(self, master, *args, **kwargs):
+        super().__init__(
+            master,
+            bg="white",
+            bd=0,
+            highlightthickness=2,
+            highlightbackground="black",
+            height=59,
+            *args,
+            **kwargs,
+        )
+        self.config(height=14)
+
+        # colors are repeated if more channels are plotted
+        self.channel_color_list = ["yellow", "dodger blue", "green", "red"]
+        self.grid(
+            column=0, row=5, columnspan=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+        )
+
+        self.peak_bars = []
+        self.peak_texts = []
+
+        # 3 of the 4 coordinates needed to draw rectangles only change and need to be calculated
+        # if _reconfigure_canvas is called. This 2D list stores those.
+        self.peak_bar_fix_coords = []
+
+    def _reconfigure_canvas(self, no_channels: int):
+        """Reconfigure the canvas and the bar plots if the number of channels changes"""
+        self.config(height=no_channels * 15 -1)  # canvas height depends on no_channels
+        
+        for bar, peak_text in zip(self.peak_bars, self.peak_texts):
+            self.delete(bar)
+            self.delete(peak_text)
+        self.peak_bar_fix_coords = []
+        self.peak_bars = []
+        self.peak_texts = []
+        
+        for i in range(no_channels):
+            fix_coords = [2, 2 + i * 15, 14 + i * 15]
+            bar = self.create_rectangle(
+                fix_coords[0],
+                fix_coords[1],
+                100,
+                fix_coords[2],
+                fill=self.channel_color_list[i % len(self.channel_color_list)],
+            )
+            text = self.create_text(
+                30, 8 + i * 15, fill="black", font=("Helvetica 7 bold")
+            )
+
+            self.peak_bar_fix_coords.append(fix_coords)
+            self.peak_bars.append(bar)
+            self.peak_texts.append(text)
+
+    def update(self, peaks: list[Any]) -> None:
+        """
+        Updates the bar plots for peak values.
+        """
+        if len(peaks) == 0:
+            return
+        if len(self.peak_bars) != len(peaks):
+            self._reconfigure_canvas(len(peaks))
+        max_width = self.winfo_width()
+        adc_resolution = 2**15 - 1
+
+        peaks = [int(peak) for peak in peaks]
+        peaks_dbfs = [
+            20 * math.log10(peak / adc_resolution) if peak > 0 else float("-inf")
+            for peak in peaks
+        ]
+        min_dbfs_level = 20 * math.log10(
+            400 / adc_resolution
+        )  # min value of the scale (aprox. noise level)
+        bar_widths = [
+            (
+                2 + (1 - peak / min_dbfs_level) * (max_width - 4)
+                if peak != float("-inf")
+                else 0
+            )
+            for peak in peaks_dbfs
+        ]  # logarithmic scaling
+        
+        for bar, fix_coords, bar_width in zip(
+            self.peak_bars, self.peak_bar_fix_coords, bar_widths
+        ):
+            self.coords(bar, fix_coords[0], fix_coords[1], bar_width, fix_coords[2])
+
+        for peak_text, dbfs_value in zip(self.peak_texts, peaks_dbfs):
+            new_string = re.sub(
+                r"^-(0\.?0*)$", r"\1", f"{dbfs_value:.0f}"
+            )  # formatting numbers rounded to -0 to +0
+            self.itemconfig(peak_text, text=new_string)
+
+
 class StatFrame(tkinter.Frame):
     def __init__(self, master: tkinter.Misc, *args: Any, **kwargs: Any):
         tkinter.Frame.__init__(self, master, *args, **kwargs)
@@ -159,81 +254,23 @@ class StatFrame(tkinter.Frame):
         pitch_disp.grid(column=2, row=8, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
         roll_disp = ttk.Label(self, textvariable=self.roll_string, **display_kwargs)
         roll_disp.grid(column=3, row=8, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
-        
 
         time_label = ttk.Label(self, text="Packet time:")
         time_label.grid(column=0, row=9, sticky=tkinter.W, padx=5, pady=5)
-        time_disp = ttk.Label(self, textvariable=self.packet_time_string, **display_kwargs)
-        time_disp.grid(column=1, row=9, columnspan=2, sticky=tkinter.E + tkinter.W, padx=5, pady=3)
+        time_disp = ttk.Label(
+            self, textvariable=self.packet_time_string, **display_kwargs
+        )
+        time_disp.grid(
+            column=1, row=9, columnspan=2, sticky=tkinter.E + tkinter.W, padx=5, pady=3
+        )
 
-        self.peak_chart = tkinter.Canvas(
-            self,
-            bg="white",
-            bd=0,
-            highlightthickness=2,
-            highlightbackground="black",
-            height=59,
-        )
-        self.peak_chart.grid(
-            column=0, row=5, columnspan=4, sticky=tkinter.E + tkinter.W, padx=5, pady=5
-        )
-        self.peak_bars = [
-            self.peak_chart.create_rectangle(2, 2, 100, 14, fill="yellow"),
-            self.peak_chart.create_rectangle(2, 17, 100, 29, fill="dodger blue"),
-            self.peak_chart.create_rectangle(2, 32, 100, 44, fill="green"),
-            self.peak_chart.create_rectangle(2, 47, 100, 59, fill="red"),
-        ]
-        self.peak_texts = [
-            self.peak_chart.create_text(
-                30, 8, text="32555", fill="black", font=("Helvetica 7 bold")
-            ),
-            self.peak_chart.create_text(
-                30, 23, text="32555", fill="black", font=("Helvetica 7 bold")
-            ),
-            self.peak_chart.create_text(
-                30, 38, text="32555", fill="black", font=("Helvetica 7 bold")
-            ),
-            self.peak_chart.create_text(
-                30, 53, text="32555", fill="black", font=("Helvetica 7 bold")
-            ),
-        ]
+        self.peak_chart = PeakChart(self)
 
     def update_peak_plot(self, peaks: list[Any]) -> None:
         """
         Updates the bar plots for peak values.
         """
-        if len(peaks) != 4:
-            return
-        max_width = self.peak_chart.winfo_width()
-        adc_resolution = 2**15 - 1
-
-        peaks = [int(peak) for peak in peaks]
-        peaks_dbfs = [
-            20 * math.log10(peak / adc_resolution) if peak > 0 else float("-inf")
-            for peak in peaks
-        ]
-        min_dbfs_level = 20 * math.log10(
-            400 / adc_resolution
-        )  # min value of the scale (aprox. noise level)
-        bar_widths = [
-            (
-                2 + (1 - peak / min_dbfs_level) * (max_width - 4)
-                if peak != float("-inf")
-                else 0
-            )
-            for peak in peaks_dbfs
-        ]  # logarithmic scaling
-
-        self.peak_chart.coords(self.peak_bars[0], 2, 2, bar_widths[0], 14)
-        self.peak_chart.coords(self.peak_bars[1], 2, 17, bar_widths[1], 29)
-        self.peak_chart.coords(self.peak_bars[2], 2, 32, bar_widths[2], 44)
-        self.peak_chart.coords(self.peak_bars[3], 2, 47, bar_widths[3], 59)
-
-        for i in range(4):
-            text = re.sub(
-                r"^-(0\.?0*)$", r"\1", f"{peaks_dbfs[i]:.0f}"
-            )  # formatting numbers rounded to -0 to +0
-            self.peak_chart.itemconfig(self.peak_texts[i], text=text)
+        self.peak_chart.update(peaks)
 
     def update_stats(
         self,
@@ -292,10 +329,10 @@ class StatFrame(tkinter.Frame):
                     yaw, pitch, roll = attitude.as_euler("ZYX", degrees=True)
                 except:
                     yaw, pitch, roll = "", "", ""
-                    pass # eg. 0-norm quaternion
+                    pass  # eg. 0-norm quaternion
 
                 self.yaw_string.set(f"{yaw:.2f}°")
                 self.pitch_string.set(f"{pitch:.2f}°")
-                self.roll_string.set(f"{roll:.2f}°")     
+                self.roll_string.set(f"{roll:.2f}°")
         if packet_time is not None:
             self.packet_time_string.set(packet_time.ToDatetime())
