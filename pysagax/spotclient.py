@@ -635,6 +635,10 @@ class Client:
             proto_cmd.Instruction.CS_PING,
             self.client_window.debug_tab.cs_ping_response_handler,
         )
+        self.command_thread.set_response_handler(
+            proto_cmd.Instruction.CS_CALIBRATION_VALUES_QUERY,
+            self.client_window.calibration_settings_frame.qurey_calib_values_response_handler,
+        )
 
         self.disconnect_value.value = False
 
