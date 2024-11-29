@@ -909,7 +909,8 @@ class ScanEngine(Loop):
             proto_cmd.CS_READ_PHASEDIFFS_FROM_FILE,
             proto_cmd.CS_CALIBRATION_VALUES_QUERY,
             proto_cmd.CS_CALIBRATION_PHASE_CHECK,
-            proto_cmd.CS_COMPENSATE_WITH_PHASEDIFFS_STOP,
+            proto_cmd.CS_TURN_OFF_COMPENSATION,
+            proto_cmd.CS_TURN_ON_COMPENSATION,
         ]:
             self.manual_command(command)
             self.check_cs_response()

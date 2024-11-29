@@ -145,11 +145,20 @@ class CalibrationSettingsFrame(tkinter.Frame):
 
         self.compensate_with_pahesdiffs_stop_button = tkinter.Button(
             self,
-            text="compensate_with_pahesdiffs_stop",
-            command=self.compensate_with_pahesdiffs_stop_commands,
+            text="Compensation ON",
+            command=self.turn_compenstaion_on_commands,
         )
         self.compensate_with_pahesdiffs_stop_button.grid(
-            column=2, row=8, padx=10, pady=5, sticky="ew", columnspan=2
+            column=2, row=8, padx=10, pady=5, sticky="ew", columnspan=1
+        )
+
+        self.compensate_with_pahesdiffs_stop_button = tkinter.Button(
+            self,
+            text="Compensation OFF",
+            command=self.turn_compenstaion_off_commands,
+        )
+        self.compensate_with_pahesdiffs_stop_button.grid(
+            column=3, row=8, padx=10, pady=5, sticky="ew", columnspan=1
         )
 
     def configure_commands(self):
@@ -200,10 +209,17 @@ class CalibrationSettingsFrame(tkinter.Frame):
         )
         self.send_command_function(cmd)
 
-    def compensate_with_pahesdiffs_stop_commands(self):
+    def turn_compenstaion_on_commands(self):
         cmd = proto_cmd.Command(
             kind=proto_cmd.Command.WRITE,
-            instruction=proto_cmd.Instruction.CS_COMPENSATE_WITH_PHASEDIFFS_STOP,
+            instruction=proto_cmd.Instruction.CS_TURN_ON_COMPENSATION,
+        )
+        self.send_command_function(cmd)
+
+    def turn_compenstaion_off_commands(self):
+        cmd = proto_cmd.Command(
+            kind=proto_cmd.Command.WRITE,
+            instruction=proto_cmd.Instruction.CS_TURN_OFF_COMPENSATION,
         )
         self.send_command_function(cmd)
 

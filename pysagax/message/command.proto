@@ -103,11 +103,18 @@ enum Instruction {
     //   response: success [bool]
     CS_SCAN_START = 30;
 
+
+    // Start calibration of radios.
+    //   parameter: CalibrationCommand
+    //   response:  success [bool]
     CS_CALIBRATE_START = 31;
 
     CS_CALIBRATE_ABORT = 32;
 
-    CS_COMPENSATE_WITH_PHASEDIFFS_STOP = 34;
+    // Turn phase compensation on/off.
+    //   response:  success [bool]
+    CS_TURN_OFF_COMPENSATION = 34;
+    CS_TURN_ON_COMPENSATION = 35;;
 
     CS_READ_PHASEDIFFS_FROM_FILE = 36;
 
