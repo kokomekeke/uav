@@ -251,3 +251,90 @@ class RepeatedEntry(tkinter.Frame):
         i = self._tabControl.index(tkinter.END)
         tab = self._build_new_tab(self._default_new_tab_values)
         self._tabControl.add(tab, text=f"[{i}]")
+
+class ScrollableText(tkinter.Frame):
+    """A tkinter widget that can display text from a stringvar and scrollable."""
+
+    def __init__(
+        self,
+        master,
+        textvariable,
+        font="TkFixedFont",
+        background="white",
+        *args,
+        **kwargs,
+    ):
+        super().__init__(master, *args, **kwargs)
+
+        scrollbar = tkinter.Scrollbar(self, orient="vertical")
+        scrollbar.pack(side="right", fill="y")
+
+        text = tkinter.Text(
+            self,
+            wrap="word",  # Wrap text by words, not characters
+            font=font,
+            background=background,
+            state="disabled",  # Make it read-only
+        )
+        text.pack(side="left", expand=True, fill="both")
+
+        # Attach scrollbar to Text widget
+        scrollbar.config(command=text.yview)
+        text.config(yscrollcommand=scrollbar.set)
+
+        def update_text_widget():
+            """updating textvariable triggers this function"""
+            text.config(state="normal")
+            text.delete(1.0, "end")
+            text.insert("end", textvariable.get())
+            text.config(state="disabled")
+
+        # Attach stringvar trace to update Text
+        textvariable.trace_add("write", update_text_widget)
+
+        # Set initial text
+        update_text_widget()
+
+
+class PopupWindow(tkinter.Toplevel):
+    """Popup Window base class that displays the content of the textvariable given and a close button."""
+
+    def __init__(
+        self,
+        master,
+        textvariable,
+        title="Popup Window",
+        on_close_callback=None,
+        default_geometry="500x500",
+        background="white",
+        font="TkFixedFont",
+        *args,
+        **kwargs,
+    ):
+        super().__init__(master, *args, **kwargs)
+        self.geometry(default_geometry)
+        self.title(title)
+        self.textvariable = textvariable
+
+        text = ScrollableText(
+            self,
+            textvariable=self.textvariable,
+            background=background,
+            font=font,
+        )
+        self.close_button = tkinter.Button(self, text="Close", command=self.on_closing)
+        self.close_button.pack(side="bottom", pady=10)
+
+        text.pack(padx=10, pady=10, expand=True, fill="both")
+
+        self._on_close_callback = on_close_callback
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def on_closing(self):
+        self.destroy()
+        if self._on_close_callback is not None:
+            self._on_close_callback()
+
+    def bring_to_front(self):
+        """Bring this window to front"""
+        self.lift()

@@ -8,6 +8,7 @@ from pysagax.source.source_manager import SourceManager
 from pysagax.ui.custom_widgets import (
     ComboboxWithLabel,
     EntryWithLabel,
+    PopupWindow,
     RepeatedEntry,
     SIPrefixDoubleVar,
 )
@@ -19,37 +20,18 @@ import pysagax.message.command_pb2 as proto_cmd
 from google.protobuf import json_format
 
 
-class LatestCalibrationResponseWindow(tkinter.Toplevel):
-    def __init__(self, master, response_str, on_close_callback, *args, **kwargs):
-        super().__init__(master, *args, **kwargs)
-        # self.geometry("500x500")
-        self.title("Latest Calibration Values")
-        self.response_str = response_str
-
-        response_label = tkinter.Label(
-            self,
-            textvariable=self.response_str,
+class LatestCalibrationResponseWindow(PopupWindow):
+    def __init__(self, master, response_str, on_close_callback=None, *args, **kwargs):
+        super().__init__(
+            master=master,
+            textvariable=response_str,
+            title="Latest Calibration Values",
+            on_close_callback=on_close_callback,
             background="white",
             font="TkFixedFont",
-            justify="left",
-            anchor="nw",
+            *args,
+            **kwargs,
         )
-
-        response_label.pack(padx=10, pady=10, expand=True, fill="both")
-
-        self.close_button = tkinter.Button(self, text="Close", command=self.on_closing)
-        self.close_button.pack(side="bottom", pady=10)
-
-        self._on_close_callback = on_close_callback
-        self.protocol("WM_DELETE_WINDOW", self.on_closing)
-
-    def on_closing(self):
-        self.destroy()
-        self._on_close_callback()
-
-    def bring_to_front(self):
-        """Bring this window to front"""
-        self.lift()
 
 
 class CalibrationSettingsFrame(tkinter.Frame):
@@ -100,7 +82,7 @@ class CalibrationSettingsFrame(tkinter.Frame):
         )
 
         self.configure_button = tkinter.Button(
-            self, text="Configure", command=self.configure_commands
+            self, text="Calibrate", command=self.configure_commands
         )
         self.configure_button.grid(
             column=2, row=3, padx=10, pady=5, sticky="ew", columnspan=2
