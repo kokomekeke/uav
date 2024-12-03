@@ -98,7 +98,7 @@ class ClientWindow(tkinter.Frame):
             master=self.left_notebook,
             conf=conf,
             connect_commands_function=self.connect_commands,
-            disconnect_commands_function=self.disconnect_commands,
+            disconnect_commands_function=self.intentional_disconnect_commands,
             logo_image=icon_image,
             relief=tkinter.RAISED,
             borderwidth=1,
@@ -350,9 +350,12 @@ class ClientWindow(tkinter.Frame):
         except:
             pass  ##TODO: when exiting, this gets called after the window no longer exists
 
-    def connect_commands(self, host_address: str, 
+    def connect_commands(
+        self,
+        host_address: str,
         host_cmd_port: int = 5556,
-        client_stream_port: int = 4242,) -> None:
+        client_stream_port: int = 4242,
+    ) -> None:
         self.client.connect_commands(
             self.connect_action,
             self.connected_action,
@@ -361,6 +364,34 @@ class ClientWindow(tkinter.Frame):
             host_cmd_port=host_cmd_port,
             client_stream_port=client_stream_port,
         )
+
+    def intentional_disconnect_commands(
+        self,
+        host_address: str,
+        host_cmd_port: int = 5556,
+        client_stream_port: int = 4242,
+    ):
+        """When the user intentionally disconnects with the button, stop the stream
+        before doing the same steps as when the client gets unintentionally disconnected
+        """
+        cmd = proto_cmd.Command(
+            instruction=proto_cmd.STREAM_STOP, kind=proto_cmd.Command.WRITE
+        )
+        cmd.target.address = get_ip()
+        cmd.target.port = client_stream_port
+        self.client.send_commands(cmd)
+        # If the connection is still working:
+        # command_thread.do_disconnect should be called by the STREAM_STOP response handler
+
+        def forced_disconnect():
+            # If the STREAM_STOP response doesn't arrive within 1 sec
+            # In this case we can't be sure if pysagaxUAV stopped the UDP stream to the client.
+            sleep(1)
+            if not self.client.command_thread.do_disconnect:
+                print("WARNING: Forced disconnect")
+                self.client.command_thread.do_disconnect = True
+
+        threading.Thread(target=forced_disconnect, name="forced_disconnect").start()
 
     def disconnect_commands(self) -> None:
         self.client.disconnect_commands()
@@ -394,9 +425,7 @@ class ClientWindow(tkinter.Frame):
         """
         Events triggered by successful connection
         """
-        self.connect_frame.connect_button.configure(state="disabled")
-        self.connect_frame.host_entry.configure(state="disabled")
-        self.connect_frame.disconnect_button.configure(state="normal")
+        self.connect_frame.connect_action()
         self.plot_settings_frame.channel_spectrum_combo.configure(state="normal")
 
         self.source_select_frame.configure_button.configure(state="normal")
@@ -408,9 +437,7 @@ class ClientWindow(tkinter.Frame):
         Events triggered by client disconnect
         """
         try:
-            self.connect_frame.disconnect_button.configure(state="disabled")
-            self.connect_frame.host_entry.configure(state="normal")
-            self.connect_frame.connect_button.configure(state="normal")
+            self.connect_frame.disconnect_action()
             self.plot_settings_frame.channel_spectrum_combo.configure(state="disabled")
 
             self.source_select_frame.configure_button.configure(state="disabled")
@@ -639,6 +666,10 @@ class Client:
             proto_cmd.Instruction.CS_CALIBRATION_VALUES_QUERY,
             self.client_window.calibration_settings_frame.qurey_calib_values_response_handler,
         )
+        self.command_thread.set_response_handler(
+            proto_cmd.Instruction.STREAM_STOP,
+            lambda response: setattr(self.command_thread, "do_disconnect", True),
+        )  # set command_thread.do_disconnect to True (setattr() needed to do this in a lambda)
 
         self.disconnect_value.value = False
 
