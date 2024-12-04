@@ -258,7 +258,7 @@ class ScrollableText(tkinter.Frame):
     def __init__(
         self,
         master,
-        textvariable,
+        textvariable: tkinter.Variable,
         font="TkFixedFont",
         background="white",
         *args,
@@ -266,34 +266,47 @@ class ScrollableText(tkinter.Frame):
     ):
         super().__init__(master, *args, **kwargs)
 
+        self.textvariable = textvariable
+
         scrollbar = tkinter.Scrollbar(self, orient="vertical")
         scrollbar.pack(side="right", fill="y")
 
-        text = tkinter.Text(
+        self.text = tkinter.Text(
             self,
             wrap="word",  # Wrap text by words, not characters
             font=font,
             background=background,
             state="disabled",  # Make it read-only
         )
-        text.pack(side="left", expand=True, fill="both")
+        self.text.pack(side="left", expand=True, fill="both")
 
         # Attach scrollbar to Text widget
-        scrollbar.config(command=text.yview)
-        text.config(yscrollcommand=scrollbar.set)
+        scrollbar.config(command=self.text.yview)
+        self.text.config(yscrollcommand=scrollbar.set)
 
-        def update_text_widget():
+        def update_text_widget(*args, **kwargs):
             """updating textvariable triggers this function"""
-            text.config(state="normal")
-            text.delete(1.0, "end")
-            text.insert("end", textvariable.get())
-            text.config(state="disabled")
+            scroll_start, scroll_end = self.text.yview() # store scrollbar position
+            self.text.config(state="normal")
+            self.text.delete(1.0, "end")
+            self.text.insert("end", textvariable.get())
+            self.text.config(state="disabled")
+            if scroll_start > 1e-3 and scroll_end > 1 - 1e-3:
+                # Keep text scrolled to the bottom
+                self.text.yview_moveto(1)
+            else:
+                # Or stay in position
+                self.text.yview_moveto(scroll_start)
 
         # Attach stringvar trace to update Text
-        textvariable.trace_add("write", update_text_widget)
+        self.textvariable_callback = self.textvariable.trace_add("write", update_text_widget)
 
         # Set initial text
         update_text_widget()
+
+    def destroy(self):
+        self.textvariable.trace_remove("write", self.textvariable_callback)
+        return super().destroy()
 
 
 class PopupWindow(tkinter.Toplevel):
@@ -316,7 +329,7 @@ class PopupWindow(tkinter.Toplevel):
         self.title(title)
         self.textvariable = textvariable
 
-        text = ScrollableText(
+        self.text = ScrollableText(
             self,
             textvariable=self.textvariable,
             background=background,
@@ -325,7 +338,7 @@ class PopupWindow(tkinter.Toplevel):
         self.close_button = tkinter.Button(self, text="Close", command=self.on_closing)
         self.close_button.pack(side="bottom", pady=10)
 
-        text.pack(padx=10, pady=10, expand=True, fill="both")
+        self.text.pack(padx=10, pady=10, expand=True, fill="both")
 
         self._on_close_callback = on_close_callback
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
