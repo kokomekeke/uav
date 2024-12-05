@@ -10,6 +10,7 @@ import re
 import socket
 import threading
 import tkinter
+import logging
 from multiprocessing.managers import ValueProxy
 
 from pysagax.communication.broadcast import RX
@@ -32,6 +33,7 @@ from pysagax.ui.playback_tab import PlaybackTab
 from pysagax.ui.source_select_frame import SourceSelectFrame
 from pysagax.ui.stat_frame import StatFrame
 from pysagax.ui.status_frame import StatusFrame
+from pysagax.ui.logging import setup_logging, LoggerWindow
 
 try:
     import tomllib
@@ -80,6 +82,7 @@ class ClientWindow(tkinter.Frame):
         self.status_frame = StatusFrame(
             master=self,
             source_manager=self.client.source_manager,
+            open_logger_window_fn=self.client.logger_window.show_log_window,
             map_server_start_callable=self.client.start_dfg_map_server,
             map_server_stop_callable=self.client.stop_dfg_map_server,
             relief=tkinter.RAISED,
@@ -465,8 +468,10 @@ class ClientWindow(tkinter.Frame):
 
 # Owner class for the client
 class Client:
-    def __init__(self, root: Any) -> None:
+    def __init__(self, root: Any, logger_window: LoggerWindow) -> None:
         self.manager = multiprocessing.get_context("spawn").Manager()
+        self._logger = logging.getLogger("Client")
+        self.logger_window = logger_window
 
         self.source_manager = SourceManager()
         self.stream_to_gui_queue: queue.Queue[Any] = self.manager.Queue(maxsize=1)
@@ -894,6 +899,17 @@ def main() -> None:
     )
     args = parser.parse_args()
     conf = {}
+
+    level = "INFO"
+    open_log_window_level = "WARNING"
+    setup_logging(level=level)
+    logger = logging.getLogger()
+
+    logger_window = LoggerWindow(
+        root, log_level=level, open_window_level=open_log_window_level
+    )
+    logger.addHandler(logger_window)
+
     if os.path.isfile(args.config):
         print("Config file found")
         with open(args.config, "rb") as f:
@@ -906,7 +922,7 @@ def main() -> None:
     root.geometry("1200x850")
     root.wm_title(f"SPOTClient {pysagax.__version__}")
     root.protocol("WM_DELETE_WINDOW", on_close)
-    ex = Client(root)
+    ex = Client(root, logger_window)
     root.deiconify()
     splash.destroy()
     root.mainloop()
