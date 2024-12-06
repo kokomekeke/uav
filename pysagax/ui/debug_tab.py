@@ -4,6 +4,7 @@ from tkinter import ttk
 from typing import Any, Callable, Optional
 from pysagax.source.source_manager import CoreServiceStatus, SourceStatus, SourceManager
 from pysagax.ui.custom_widgets import EntryWithLabel
+import logging
 
 from pysagax.ui.ui_helpers import en_if
 import pysagax.message.command_pb2 as proto_cmd
@@ -28,6 +29,8 @@ class DebugTab(ttk.Frame):
         client,
     ) -> None:
         super().__init__(master)
+
+        self._logger = logging.getLogger(self.__class__.__name__)
         self.source_manager: SourceManager = source_manager
         self.send_commands_function = send_commands_function
         self.abort_commands_function = abort_commands_function
@@ -131,10 +134,10 @@ class DebugTab(ttk.Frame):
         self.send_commands_function(cmd)
 
     def ping_response_handler(self, resp: proto_cmd.Response) -> None:
-        print(f"PING response: ", resp.ping_data)
+        self._logger.warn(f"PING response: {resp.ping_data}")
 
     def cs_ping_response_handler(self, resp: proto_cmd.Response) -> None:
-        print(f"CS PING response: ", resp.ping_data)
+        self._logger.warn(f"CS PING response: {resp.ping_data}")
 
     def update_stream_packet_stats(self, stats) -> None:
         stat_string = (

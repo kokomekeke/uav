@@ -5,7 +5,7 @@ from typing import Any, Callable, Optional, Type
 from time import sleep
 import pysagax.message.heading_pb2 as proto_heading
 import pysagax.message.command_pb2 as proto_cmd
-
+import logging
 
 class HeadingPbClient:
     def __init__(
@@ -13,6 +13,8 @@ class HeadingPbClient:
         send_commands_function: Callable[[proto_cmd.Command], None],
         update_ui_callback: Callable[[], None],
     ) -> None:
+        
+        self._logger = logging.getLogger(self.__class__.__name__)
         self._send_commands_function = send_commands_function
         self._update_ui_callback = update_ui_callback
         self._heading_status = proto_heading.HeadingStatus()
@@ -55,14 +57,14 @@ class HeadingPbClient:
             self._heading_status.selected_source_type
         )
         # cmd.config.heading.parameters.update(key, value)
-        print(f"key {key} value {value} to {cmd.config.heading.parameters}")
+        self._logger.info(f"key {key} value {value} to {cmd.config.heading.parameters}")
         cmd.config.heading.parameters[key] = str(value)
         self._send_commands_function(cmd)
 
     def create(self, heading_source: str) -> None:
         cmd = proto_cmd.Command()
         cmd.instruction = proto_cmd.CONFIG
-        print(heading_source)
+        self._logger.info(f"Heading source '{heading_source}' created")
         cmd.config.heading.selected_source_type = heading_source
         self._send_commands_function(cmd)
 

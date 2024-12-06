@@ -57,7 +57,7 @@ class Monitoring(Loop):
         check_tuple = (uav_id, check_id)
         if condition:
             if check_tuple not in self.active_warns:
-                self._logger.error(f"{uav_identifier_str}: {warn_message}")
+                self._logger.warning(f"{uav_identifier_str}: {warn_message}")
                 self.active_warns.add(check_tuple)
             else:
                 # this error has been going on for a while...

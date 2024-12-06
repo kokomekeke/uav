@@ -70,6 +70,8 @@ class ClientWindow(tkinter.Frame):
     def __init__(self, client: Client, root) -> None:
         self.do_stop = False
 
+        self._logger = logging.getLogger(self.__class__.__name__)
+
         # aggregated and current roi results, coming from StreaAndCompassProcess
         self.detection_to_plot: proto_data.Detection | None = None
         self.heading_to_plot: proto_heading.HeadingData | None = None
@@ -211,6 +213,7 @@ class ClientWindow(tkinter.Frame):
         self.packet_handler_thread.start()
 
     def gui_packet_handler(self) -> None:
+        _logger = logging.getLogger("GuiPacketHandler")
         while not self.do_stop:
             try:
                 packet = self.client.stream_to_gui_queue.get(timeout=0.2)
@@ -222,15 +225,14 @@ class ClientWindow(tkinter.Frame):
                 elif isinstance(packet, proto_data.Telemetry):
                     self.telemetry_packet_handler(packet)
                 else:
-                    print(
+                    _logger.warning(
                         f"Handling stream packet type {type(packet)} is not implemented"
                     )
 
             except queue.Empty:
                 pass
             except Exception as e:
-                print("[GUI packet handler]", e)
-                traceback.print_tb(e.__traceback__)
+                _logger.critical(f"{e}\n{e.__traceback__}")
                 return
 
     def _is_packet_late(self, packet: proto_cmd):
@@ -297,7 +299,7 @@ class ClientWindow(tkinter.Frame):
             if has_close_elements(
                 center_freqs, [d.frequency for d in packet.detection], 1e4
             ):
-                print("WARNING: center frequency is close to a detected signal!")
+                self._logger.warning("Center frequency is close to a detected signal!")
 
     def telemetry_packet_handler(self, packet: proto_data.Telemetry):
         # Processes telemetry packets that arrived through stream or command connection
@@ -391,7 +393,7 @@ class ClientWindow(tkinter.Frame):
             # In this case we can't be sure if pysagaxUAV stopped the UDP stream to the client.
             sleep(1)
             if not self.client.command_thread.do_disconnect:
-                print("WARNING: Forced disconnect")
+                self._logger.warning("Forced disconnect")
                 self.client.command_thread.do_disconnect = True
 
         threading.Thread(target=forced_disconnect, name="forced_disconnect").start()
@@ -400,6 +402,7 @@ class ClientWindow(tkinter.Frame):
         self.client.disconnect_commands()
 
     def get_recording_paths(self) -> None:
+        _logger = logging.getLogger("GetRecordingPaths")
         try:
             path_list = b""
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -416,7 +419,9 @@ class ClientWindow(tkinter.Frame):
             path_list_stripped = sorted([path.strip() for path in path_list_split])
             self.client.source_manager.update_recording_paths(path_list_stripped)
         except Exception as e:
-            print("[Updating recording paths]", e)
+            _logger.error(
+                f"Trying to retrieve the recording paths from the server throwed the following error:\n{e}"
+            )
 
     def connected_action(self) -> None:
         get_recording_paths_thread = threading.Thread(
@@ -463,7 +468,7 @@ class ClientWindow(tkinter.Frame):
             self.status_info_lb.insert(tkinter.END, line)
             self.status_info_lb.delete(0, self.stream_packets_lb.size() - 1000)
             self.status_info_lb.see(tkinter.END)
-            print(datetime.now().strftime("%m.%d. %H:%M:%S"), line)
+            self._logger.info(f"{datetime.now().strftime('%m.%d. %H:%M:%S')} {line}")
 
 
 # Owner class for the client
@@ -601,7 +606,7 @@ class Client:
         Send the command from the command entry box to the client. Called on pressing the Return key in the autocomplete box.
         """
         if self.command_thread is None:
-            print(f"Unable to send command ({str(cmd)})")
+            self._logger.critical(f"Unable to send command ({str(cmd)})")
             return
         if (
             self.command_connection is None
@@ -911,12 +916,12 @@ def main() -> None:
     logger.addHandler(logger_window)
 
     if os.path.isfile(args.config):
-        print("Config file found")
+        logger.warn("Config file found")
         with open(args.config, "rb") as f:
             conf = tomllib.load(f)
-        print(f"Config file loaded: {repr(conf)}")
+        logger.warn(f"Config file loaded: {repr(conf)}")
     else:
-        print("Config file not found")
+        logger.warning("Config file not found")
     multiprocessing.set_start_method("spawn")
     root.iconphoto(False, icon_image)
     root.geometry("1200x850")

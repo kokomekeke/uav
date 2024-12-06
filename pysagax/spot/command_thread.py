@@ -10,6 +10,8 @@ from typing import Callable, Iterable, Optional, Any
 import multiprocessing
 import queue
 
+import logging
+
 
 class CommandThread(threading.Thread):
     def __init__(
@@ -19,6 +21,8 @@ class CommandThread(threading.Thread):
         connection_status_queue: queue.Queue[str] | multiprocessing.Queue[str] | None,
     ) -> None:
         super().__init__(daemon=True, name="CommandThread")
+        self._logger = logging.getLogger(self.__class__.__name__)
+
         self._connection = connection
         self._thread_status_queue = thread_status_queue
         self._connection_status_queue = connection_status_queue
@@ -108,7 +112,7 @@ class CommandThread(threading.Thread):
             if command is None:
                 time.sleep(0.1)
                 continue
-            # print("COMMAND:\n", command)  ####
+            self._logger.debug(f"COMMAND SENT:\n{command}")
             timeout_ms = 2000
             if (
                 command.kind == proto_cmd.Command.WRITE
@@ -125,20 +129,19 @@ class CommandThread(threading.Thread):
             response = proto_cmd.Response()
             response.ParseFromString(raw_response)
             if response.error.description:  # TODO: rethink error handling
-                print(
-                    f"\n#############\nERROR IN '{proto_cmd.Instruction.Name(command.instruction)}' COMMAND RESPONSE: {response.error.description}"
-                    f"\n#############\n"
+                self._logger.warning(
+                    f"ERROR IN '{proto_cmd.Instruction.Name(command.instruction)}' COMMAND RESPONSE:\n{response.error.description}"
                 )
+
                 # TODO: dont run response handlers if error in response,
                 #      OR make response handlers that check the error field
                 continue  # skipping response handler
-
-            # print("RESPONSE:\n", response, "\n================\n")  ####
+            self._logger.debug(f"RESPONSE ARRIVED:\n{response}")
             try:
                 self._response_handler(response)
             except Exception as e:
-                print(
-                    f"ERROR in command response handler: \n COMMAND: {command} \n RESPONSE: {response}"
+                self._logger.critical(
+                    f"ERROR in command response handler: \n COMMAND: {command} \n RESPONSE: {response} \n ERROR: {e}"
                 )
                 raise e
         self._display_thread_status_callback(False, "")

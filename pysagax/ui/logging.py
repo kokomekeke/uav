@@ -28,6 +28,9 @@ def setup_logging(
         format = "[{processName}] " + format
     install(level=level, fmt=format, style="{")
 
+    logging.getLogger("matplotlib").setLevel(logging.WARNING)
+    logging.getLogger("PIL").setLevel(logging.WARNING)
+
     # TODO: Implement log files
     # TODO: this is the same function thats used in pysagaxUAV
 
