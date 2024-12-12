@@ -3,6 +3,7 @@ import tkinter
 from tkinter import ttk
 from typing import Any
 import numpy as np
+import logging
 
 from numpy._typing import _16Bit
 
@@ -15,6 +16,7 @@ from pysagax.util.read_from_conf import read_from_conf
 class HeadingSourceFrame(tkinter.Frame):
     def __init__(self, master: Any, heading_manager: HeadingPbClient, conf):
         super().__init__(master)
+        self._logger = logging.getLogger(self.__class__.__name__)
         self.heading_manager = heading_manager
 
         self.conf = conf
@@ -103,7 +105,7 @@ class HeadingSourceFrame(tkinter.Frame):
         )  # this needed to be added
         new_frame.grid_columnconfigure(0, weight=1)  # as did this
         new_frame.grid_columnconfigure(1, weight=1)  # as did this
-        print(f"e: {self.heading_manager.get_parameters()}")
+        self._logger.info(f"Constructing Heading Source Settings Frame with parameters: {self.heading_manager.get_parameters()}")
         for setting_key, [
             setting_type,
             default_value,

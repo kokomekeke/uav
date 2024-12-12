@@ -4,6 +4,7 @@ import matplotlib.gridspec
 import numpy as np
 from tkinter import ttk
 from typing import Any, Callable, Optional
+import logging
 
 import matplotlib
 from matplotlib import pyplot
@@ -23,6 +24,7 @@ from pysagax.field.scanengine import ScanEngineState
 import pysagax.message.data_pb2 as proto_data
 import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.heading_pb2 as proto_heading
+from pysagax.util.run_once import run_once
 
 # from pysagax.spotclient import Client, conf, calculate_df_corrected
 from pysagax.ui.custom_widgets import EntryWithLabel, ToggleButton
@@ -41,6 +43,7 @@ from pysagax.util.protobuf_spectrum_utils import protobuf_spectrum_to_numpy
 class PlotFrame(tkinter.Frame):
     def __init__(self, master, conf, root, roi_click_handler_function, *args, **kwargs):
         tkinter.Frame.__init__(self, master, *args, **kwargs)
+        self._logger = logging.getLogger(self.__class__.__name__)
 
         from pysagax.spotclient import Client
 
@@ -263,15 +266,20 @@ class PlotFrame(tkinter.Frame):
 
     def update_roi_graph(self, pp_config: proto_cmd.PostProcessingConfig):
         if len(pp_config.roi) != 1:
-            print(
-                "WARNING: the spectrum graph can only display a single-element ROI mask currently."
-            )
+            self.warn_about_ROI_mask_display()
             return
         self._draw_roi_window(
             pp_config.roi[0].center_frequency,
             pp_config.roi[0].span,
             pp_config.roi[0].threshold,
         )
+
+    @run_once(timeout=60)
+    def warn_about_ROI_mask_display(self):
+        self._logger.warning(
+            "The spectrum graph can only display a single-element ROI mask currently."
+        )
+
 
     def _draw_roi_window(
         self, roi_center: float, roi_width: float, roi_threshold: float
