@@ -46,11 +46,13 @@ class DetectionControlFrame(tkinter.Frame):
         self,
         master: tkinter.Misc,
         pp_configuration_function: Callable,
+        highlight_selected_roi_function: Optional[Callable] = None,
         *args: Any,
         **kwargs: Any,
     ):
         tkinter.Frame.__init__(self, master, *args, **kwargs)
         self.pp_configuration_function = pp_configuration_function
+        self.highlight_selected_roi_function = highlight_selected_roi_function
 
         self.columnconfigure(0)
         self.columnconfigure(1)
@@ -87,6 +89,7 @@ class DetectionControlFrame(tkinter.Frame):
 
         self.tabControl = ttk.Notebook(roi_settings_frame)
         self.tabControl.grid(row=0, column=1)
+        self.tabControl.bind("<<NotebookTabChanged>>", self.on_roi_tab_change)
 
         roi_settings_frame.grid(row=0, column=0, columnspan=4, sticky="nw")
 
@@ -128,6 +131,14 @@ class DetectionControlFrame(tkinter.Frame):
             msg.roi.append(roi)
         return msg
 
+    def get_active_roi_tab_id(self):
+        """Returns the index of the currently selected tab
+        (which will become the roi_id of the constructed roi mask in the config command)
+        """
+        current_tab_name = self.tabControl.select()
+        current_tab_index = self.tabControl.index(current_tab_name)
+        return current_tab_index
+
     def handle_roi_click(self, center_freq, threshold) -> None:
         "Changes values in currently visible ROI tab then sends config command with the updated values"
         if len(self.tabControl.tabs()) < 1:
@@ -139,6 +150,13 @@ class DetectionControlFrame(tkinter.Frame):
         current_tab.roi_threshold_entry.set(f"{threshold:.1f}")
 
         self.configure_commands()
+
+    def on_roi_tab_change(self, event):
+        """Calls a function that highlight one of the ROI rectangles on the spectrum
+        plot based on the currently selected ROI tab.
+        This ROI section will be updated if the user clicks in the plot"""
+        if self.highlight_selected_roi_function is not None:
+            self.highlight_selected_roi_function(self.get_active_roi_tab_id())
 
     def update_pp_settings(self, pp_config: proto_cmd.PostProcessingConfig):
         """Store the latest pp config so it can be displayed on the gui if wanted"""
@@ -183,6 +201,7 @@ class ControlFrame(tkinter.Frame):
         do_configuration_function: Callable[[dict[str, Any]], None],
         pp_configuration_function: Callable,
         source_manager: SourceManager,
+        highlight_selected_roi_function: Optional[Callable] = None,
         *args: Any,
         **kwargs: Any,
     ):
@@ -272,7 +291,9 @@ class ControlFrame(tkinter.Frame):
         self.do_configuration_function = do_configuration_function
 
         self.detection_control_frame = DetectionControlFrame(
-            self, pp_configuration_function
+            self,
+            pp_configuration_function,
+            highlight_selected_roi_function=highlight_selected_roi_function,
         )
         self.detection_control_frame.grid(column=0, columnspan=4, row=6, sticky="wens")
 

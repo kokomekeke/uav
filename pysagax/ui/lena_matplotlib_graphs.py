@@ -16,6 +16,8 @@ from matplotlib.backends.backend_tkagg import (  # type: ignore
 )
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection  # type: ignore
 
+import pysagax.message.command_pb2 as proto_cmd
+
 
 class GraphParameters:
     def __init__(self) -> None:
@@ -357,7 +359,6 @@ class MagnitudeSpectrumGraph(GraphImage):
         """
         self.vmin: float = -120
         self.vmax: float = 0
-        self.rect: Any = None
         self.roi_center = 0
         self.roi_width = 0
         self.roi_threshold = 0
@@ -369,8 +370,8 @@ class MagnitudeSpectrumGraph(GraphImage):
             self.params.iq_rate / self.params.bin_count
         ) + self.params.center_frequency
 
-    def freq_to_coord(self, freq: float) -> float: 
-        return (freq  - self.params.center_frequency) / (
+    def freq_to_coord(self, freq: float) -> float:
+        return (freq - self.params.center_frequency) / (
             self.params.iq_rate / self.params.bin_count
         ) + self.params.bin_count / 2
 
@@ -393,23 +394,22 @@ class MagnitudeSpectrumGraph(GraphImage):
         self.image = self.plot.plot(  # type: ignore
             self.spectrum, lw=1, color=self.color, animated=True
         )[0]
-        # Create a Rectangle patch
-        self.rect = matplotlib.patches.Rectangle(
-            (0, self.vmin),
-            0,
-            self.vmax - self.vmin,
-            linewidth=1,
-            edgecolor="r",
-            facecolor="none",
-        )  # type:ignore
 
         # self.signal_lvl_line = matplotlib.pyplot.axhline(-22)
-        self.signal_lvl_line = matplotlib.lines.Line2D(self.plot.get_xlim(), [self.signal_lvl, self.signal_lvl],
-                                                        lw = 1, color ='green',)
-        self.noise_lvl_line = matplotlib.lines.Line2D(self.plot.get_xlim(), [self.noise_lvl, self.noise_lvl],
-                                                        lw = 1, color ='orange',animated=True)
+        self.signal_lvl_line = matplotlib.lines.Line2D(
+            self.plot.get_xlim(),
+            [self.signal_lvl, self.signal_lvl],
+            lw=1,
+            color="green",
+        )
+        self.noise_lvl_line = matplotlib.lines.Line2D(
+            self.plot.get_xlim(),
+            [self.noise_lvl, self.noise_lvl],
+            lw=1,
+            color="orange",
+            animated=True,
+        )
         # Add the patch to the Axes
-        self.plot.add_patch(self.rect)  # type:ignore
         self.plot.add_line(self.signal_lvl_line)
         self.plot.add_line(self.noise_lvl_line)
         self.marker_image = self.plot.plot(0, 0, "or", animated=True)[0]  # type: ignore
@@ -442,15 +442,15 @@ class MagnitudeSpectrumGraph(GraphImage):
     def update(self) -> None:
         super().update()
         self.image.set_ydata(self.spectrum)  # type: ignore
-        self.rect.set_x(self.roi_center - self.roi_width // 2)
-        self.rect.set_y(self.roi_threshold)
-        self.rect.set_width(self.roi_width)
-        # self.rect.set_height( -self.roi_threshold)
         self.marker_image.set_xdata([self.marker_bin])  # type: ignore
         self.marker_image.set_ydata([self.marker_value])  # type: ignore
 
-        self.signal_lvl_line.set_data(self.plot.get_xlim(), [self.signal_lvl, self.signal_lvl])
-        self.noise_lvl_line.set_data(self.plot.get_xlim(), [self.noise_lvl, self.noise_lvl])
+        self.signal_lvl_line.set_data(
+            self.plot.get_xlim(), [self.signal_lvl, self.signal_lvl]
+        )
+        self.noise_lvl_line.set_data(
+            self.plot.get_xlim(), [self.noise_lvl, self.noise_lvl]
+        )
 
     def add_data(self, data: npt.NDArray[np.float64]) -> None:
         super().add_data(data)
@@ -461,7 +461,63 @@ class MagnitudeSpectrumGraph(GraphImage):
 
     def collect_images(self) -> list[matplotlib.artist.Artist]:
         assert self.image is not None
-        return [self.image, self.rect, self.signal_lvl_line, self.noise_lvl_line]
+        return [self.image, self.signal_lvl_line, self.noise_lvl_line]
+
+
+class MagnitudeSpectrumGraphWithRoiMask(MagnitudeSpectrumGraph):
+    def __init__(self, plot, params):
+        super().__init__(plot, params)
+
+        self.roi_mask = None
+
+        self.roi_patches = []
+
+    def update_roi(self, roi_mask: list[proto_cmd.ROIMask], active_roi: int = -1):
+        """
+        Update the displayed rectangles based on the roi_mask
+        If active_roi is supplied, the rectangle with the same index will be drawn orange.
+        """
+        if self.roi_mask is None or self.roi_mask != roi_mask:
+            # removing existing roi rectangles
+            for img in self.roi_patches:
+                img.remove()
+            self.roi_patches = []
+
+            # adding new roi rectangles
+            for i, roi in enumerate(roi_mask):
+                # converting frequencies to image coordinates
+                roi_center = self.freq_to_coord(roi.center_frequency)
+                roi_width = int(
+                    roi.span * (self.params.bin_count / self.params.iq_rate)
+                )
+
+                patch = matplotlib.patches.Rectangle(
+                    xy=(roi_center - roi_width // 2, roi.threshold),
+                    width=roi_width,
+                    height=self.vmax - self.vmin,
+                    linewidth=1,
+                    edgecolor="orange" if active_roi == i else "r",
+                    facecolor="none",
+                )  # type:ignore
+
+                self.roi_patches.append(patch)
+                self.plot.add_patch(patch)
+            self.roi_mask = roi_mask  # save the current roi mask
+        self.update()
+
+    def collect_images(self) -> list[matplotlib.artist.Artist]:
+        return super().collect_images() + self.roi_patches
+
+    def highlight_selected_roi(self, roi_id):
+        """
+        Changes the color of the selected roi rectangle to orange
+        Used by the configuration tab's ROI settings.
+        """
+        for i, patch in enumerate(self.roi_patches):
+            if i == roi_id:
+                patch.set_edgecolor("orange")
+            else:
+                patch.set_edgecolor("red")
 
 
 class WaterfallAngleGraph(GraphImage):
@@ -781,56 +837,57 @@ class CompassGraph(GraphImage):
 
 
 class CompassGraphWithDeviation(CompassGraph):
-        def __init__(
-                self, plot: matplotlib.axes.SubplotBase, params: GraphParameters
-        ) -> None:
-                super().__init__(plot, params)
-                self.deviation: float = 0
+    def __init__(
+        self, plot: matplotlib.axes.SubplotBase, params: GraphParameters
+    ) -> None:
+        super().__init__(plot, params)
+        self.deviation: float = 0
 
-        def init_image(self) -> None:
-                super().init_image()
-                assert self.plot is not None
-                self.image = self.plot.plot(  # type: ignore
-                        [0, self.angle],
-                        [0, self.radius],
-                        color=self.color,
-                        animated=True,
-                )[0]
-                
-                self.marker_image = self.plot.fill_between(  # type: ignore
-                        np.linspace(self.angle-self.deviation, self.angle+self.deviation, 5),
-                        0,
-                        self.radius,
-                        color=self.color,
-                        alpha=0.2,
-                        animated=True,
-                        label=f"{self.label} deviation",
-                )
-        def update(self) -> None:
-                super().update()        #plot the angle
-                if self.deviation is not None and self.angle is not None:
-                        start = self.angle-self.deviation
-                        stop = self.angle+self.deviation
-                        count = int((stop - start) / 0.16) + 2 # 1 point every ~10°
-                        self.marker_image = self.plot.fill_between(  # type: ignore
-                                np.linspace(start, stop, count),
-                                0,
-                                self.radius,
-                                color=self.color,
-                                alpha=0.2,
-                                animated=True,
-                                label=f"{self.label} deviation",
-                        ) #plot the deviation
+    def init_image(self) -> None:
+        super().init_image()
+        assert self.plot is not None
+        self.image = self.plot.plot(  # type: ignore
+            [0, self.angle],
+            [0, self.radius],
+            color=self.color,
+            animated=True,
+        )[0]
 
-        def add_point(self, value: Optional[float], deviation: Optional[float]) -> None:
-                if value is None or deviation is None:
-                        self.image.set_visible(False)  # type: ignore
-                        self.marker_image.set_visible(False)  # type: ignore
-                else:
-                        self.image.set_visible(True)  # type: ignore
-                        self.marker_image.set_visible(True)  # type: ignore
-                self.angle = value
-                self.deviation = deviation
+        self.marker_image = self.plot.fill_between(  # type: ignore
+            np.linspace(self.angle - self.deviation, self.angle + self.deviation, 5),
+            0,
+            self.radius,
+            color=self.color,
+            alpha=0.2,
+            animated=True,
+            label=f"{self.label} deviation",
+        )
+
+    def update(self) -> None:
+        super().update()  # plot the angle
+        if self.deviation is not None and self.angle is not None:
+            start = self.angle - self.deviation
+            stop = self.angle + self.deviation
+            count = int((stop - start) / 0.16) + 2  # 1 point every ~10°
+            self.marker_image = self.plot.fill_between(  # type: ignore
+                np.linspace(start, stop, count),
+                0,
+                self.radius,
+                color=self.color,
+                alpha=0.2,
+                animated=True,
+                label=f"{self.label} deviation",
+            )  # plot the deviation
+
+    def add_point(self, value: Optional[float], deviation: Optional[float]) -> None:
+        if value is None or deviation is None:
+            self.image.set_visible(False)  # type: ignore
+            self.marker_image.set_visible(False)  # type: ignore
+        else:
+            self.image.set_visible(True)  # type: ignore
+            self.marker_image.set_visible(True)  # type: ignore
+        self.angle = value
+        self.deviation = deviation
 
 
 class ThreeDimensionObject(GraphImage):

@@ -33,6 +33,7 @@ from pysagax.ui.lena_matplotlib_graphs import (
     CompassGraphWithDeviation,
     GraphParameters,
     MagnitudeSpectrumGraph,
+    MagnitudeSpectrumGraphWithRoiMask,
     WaterfallMagnitudeGraph,
 )
 from pysagax.util.mat import yaw_pitch_roll_from_quaternion
@@ -180,7 +181,9 @@ class PlotFrame(tkinter.Frame):
                 )
             )
             self.magnitude_spectrum_graph.append(
-                MagnitudeSpectrumGraph(self.magnitude_spectrum_plot[i], self.params[i])
+                MagnitudeSpectrumGraphWithRoiMask(
+                    self.magnitude_spectrum_plot[i], self.params[i]
+                )
             )
             self.magnitude_spectrum_graph[i].vmin = self.spectrum_graph_min_db
             self.magnitude_spectrum_graph[i].initialize(color="blue").make_plot()
@@ -264,22 +267,22 @@ class PlotFrame(tkinter.Frame):
                 threshold = event.ydata
                 self.roi_click_handler_function(center_frequency, threshold)
 
-    def update_roi_graph(self, pp_config: proto_cmd.PostProcessingConfig):
-        if len(pp_config.roi) != 1:
-            self.warn_about_ROI_mask_display()
-            return
-        self._draw_roi_window(
-            pp_config.roi[0].center_frequency,
-            pp_config.roi[0].span,
-            pp_config.roi[0].threshold,
-        )
+    def update_roi_graph(
+        self, pp_config: proto_cmd.PostProcessingConfig, active_roi: int = -1
+    ):
+        self._logger.debug(f"Updating ROI graph using:\n{pp_config}")
+        for graph in self.magnitude_spectrum_graph:
+            graph.update_roi(pp_config.roi, active_roi)
+
+    def highlight_selected_roi(self, active_roi):
+        for graph in self.magnitude_spectrum_graph:
+            graph.highlight_selected_roi(active_roi)
 
     @run_once(timeout=60)
     def warn_about_ROI_mask_display(self):
         self._logger.warning(
             "The spectrum graph can only display a single-element ROI mask currently."
         )
-
 
     def _draw_roi_window(
         self, roi_center: float, roi_width: float, roi_threshold: float

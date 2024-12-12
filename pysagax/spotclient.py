@@ -124,6 +124,7 @@ class ClientWindow(tkinter.Frame):
             do_configuration_function=self.client.do_configuration,
             pp_configuration_function=self.client.config_pp_settings,
             source_manager=self.client.source_manager,
+            highlight_selected_roi_function=self.plot_frame.highlight_selected_roi,
             relief=tkinter.RAISED,
             borderwidth=1,
         )
@@ -779,7 +780,10 @@ class Client:
 
         self.send_commands(cmd)
 
-        self.client_window.plot_frame.update_roi_graph(pp_config)
+        active_roi = (
+            self.client_window.control_frame.detection_control_frame.get_active_roi_tab_id()
+        )
+        self.client_window.plot_frame.update_roi_graph(pp_config, active_roi)
 
     def query_system_info(self):
         cmd = proto_cmd.Command()
@@ -803,8 +807,10 @@ class Client:
         self.client_window.control_frame.detection_control_frame.update_pp_settings(
             pp_config
         )
-
-        self.client_window.plot_frame.update_roi_graph(pp_config)
+        active_roi = (
+            self.client_window.control_frame.detection_control_frame.get_active_roi_tab_id()
+        )
+        self.client_window.plot_frame.update_roi_graph(pp_config, active_roi)
 
     def start_recording(self) -> None:
         self.start_local_recording()
