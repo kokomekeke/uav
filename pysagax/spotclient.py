@@ -383,7 +383,7 @@ class ClientWindow(tkinter.Frame):
         cmd = proto_cmd.Command(
             instruction=proto_cmd.STREAM_STOP, kind=proto_cmd.Command.WRITE
         )
-        cmd.target.address = get_ip()
+        cmd.target.address = get_ip(host_address)
         cmd.target.port = client_stream_port
         self.client.send_commands(cmd)
         # If the connection is still working:
