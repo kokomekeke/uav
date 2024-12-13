@@ -56,6 +56,7 @@ class Commander:
         if initialize_db:
             self._db.initialize_db(self._db.get_app_instance())
             return
+        self._telemetry_for_monitoring_q = self._manager.Queue(maxsize=8)
         self._cievents = CIEvents(level=level)
         self._commaggregate = CommAggregate(level=level, db=self._db)
         self._commandengine = CommandEngine(level=level)
@@ -68,9 +69,13 @@ class Commander:
         self._logger.debug("Starting Commander")
 
         cievents_future = self._pool.submit(self._cievents)
-        commaggregate_future = self._pool.submit(self._commaggregate)
+        commaggregate_future = self._pool.submit(
+            self._commaggregate, self._telemetry_for_monitoring_q
+        )
         commandengine_future = self._pool.submit(self._commandengine)
-        monitoring_future = self._pool.submit(self._monitoring)
+        monitoring_future = self._pool.submit(
+            self._monitoring, self._telemetry_for_monitoring_q
+        )
         ppgeoloc_future = self._pool.submit(self._ppgeoloc)
         # Periodically checking errors in threads
 

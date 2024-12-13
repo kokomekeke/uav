@@ -86,9 +86,12 @@ class Streamer(Loop):
             self._logger.error(f"ZMQError {zmqe.errno}: {str(zmqe)}")
 
     def remove_stream_client(self, target: proto_cmd.StreamTarget) -> None:
-        self._servers[f"{target.address}:{target.port}"].server.disconnect()
-        del self._servers[f"{target.address}:{target.port}"]
-        self._logger.info(f"Stream client {target.address}:{target.port} removed ")
+        try:
+            self._servers[f"{target.address}:{target.port}"].server.disconnect() #TODO: handle key errorr
+            del self._servers[f"{target.address}:{target.port}"]
+            self._logger.info(f"Stream client {target.address}:{target.port} removed ")
+        except KeyError:
+            self._logger.critical(f"Trying to remove non-existent stream client '{target.address}:{target.port}' from stream client list [{self._servers.keys()}]")
 
     def _loop(self) -> None:
         # Wait for response from Interpreter

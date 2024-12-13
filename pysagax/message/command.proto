@@ -96,20 +96,31 @@ enum Instruction {
     STREAM_STOP = 26;
 
 
+    SELF_TEST = 28;
+
     // Message only for CoreService, it is required to upload a scan plan
     // before using this command.
     //   response: success [bool]
     CS_SCAN_START = 30;
 
+
+    // Start calibration of radios.
+    //   parameter: CalibrationCommand
+    //   response:  success [bool]
     CS_CALIBRATE_START = 31;
 
     CS_CALIBRATE_ABORT = 32;
 
-    CS_COMPENSATE_WITH_PHASEDIFFS_STOP = 34;
+    // Turn phase compensation on/off.
+    //   response:  success [bool]
+    CS_TURN_OFF_COMPENSATION = 34;
+    CS_TURN_ON_COMPENSATION = 35;;
 
     CS_READ_PHASEDIFFS_FROM_FILE = 36;
 
-    CS_CALIBRATION_TELEMETRY_QUERY = 37;
+    CS_CALIBRATION_VALUES_QUERY = 37;
+
+    CS_CALIBRATION_PHASE_CHECK = 38;
 
     // ScanEngine control commands
     AUTO_CALIBRATION_ENABLE = 41;
@@ -182,6 +193,18 @@ message Config {
     // Heading source selection
     HeadingConfig heading = 25;
 
+}
+
+message PhaseValues{
+    repeated float phaseDiffs = 1;
+    uint64 frequency = 2;
+    repeated bool isValid = 3;
+    google.protobuf.Timestamp validationDate = 5;
+}
+
+message CalibrationStatus {
+    double phaseDiffValidTreshold = 1;
+    repeated PhaseValues phaseValues = 2;
 }
 
 message ScanEngineConfig {
@@ -380,5 +403,7 @@ message Response {
 
         // Config Status
         ConfigStatus config_status = 11;
+        // For Value query
+        CalibrationStatus calib_values = 12;
     }
 }

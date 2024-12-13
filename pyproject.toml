@@ -1,8 +1,9 @@
 [project]
 name = "pysagax"
-version = "0.4.18"
+version = "0.5.1"
 authors = [
   { name="Peter Rigo", email="peter.rigo@sagaxcommunications.com" },
+  { name="Gergely Deak", email="gergely.deak@sagaxcommunications.com" },
   { name="Aron Szabo", email="aron.szabo@sagaxcommunications.com" },
   { name="Benedek Szakali", email="benedek.szakali@sagaxcommunications.com" },
 ]
@@ -42,9 +43,11 @@ dependencies = [
     "flask-sqlalchemy",
     "flask-marshmallow-openapi",
     "marshmallow-sqlalchemy",
+    "Werkzeug",
     "psycopg2",
     "geographiclib",
-    "tqdm"
+    "tqdm",
+    "tkinter-tooltip"
 ]
 
 [project.optional-dependencies]
@@ -73,6 +76,7 @@ sigmfdisp = "pysagax.sigmfdisp:main"
 sigmfspectrum = "pysagax.sigmfspectrum:main"
 pysagax-uav = "pysagax.pysagax_uav:main"
 pysagax-gnd = "pysagax.pysagax_gnd:main"
+pysagax-gnd-api = "pysagax.pysagax_gnd_api:main"
 pysagax-heading = "pysagax.pysagax_heading:main"
 zmqtestclient = "pysagax.zmqtestclient:main"
 clizmqclient = "pysagax.clizmqclient:main"
@@ -80,3 +84,5 @@ clizmqcommander = "pysagax.clizmqcommander:main"
 detectrec-to-csv = "pysagax.analyzing_tools.detectrec_to_csv:main"
 protorec-to-csv = "pysagax.analyzing_tools.protorec_to_csv:main"
 plot-results = "pysagax.analyzing_tools.plot_results:main"
+spectrogram-viewer = "pysagax.analyzing_tools.spectrogram_viewer:main"
+flight-info-test-server = "pysagax.analyzing_tools.heading.flight_info_test_server:main"

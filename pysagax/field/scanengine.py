@@ -293,6 +293,7 @@ class ScanEngine(Loop):
         scanning_target_resolution_bandwidth: int,
         timeout_config_ms: int = -1,
         timeout_instruction_ms: int = 1000,
+        timeout_scanning_measurement_ms: int = 10000,
         calibration_interval_seconds: float = 300.0,
         calibration_resolution_bw: float = 0.5e6,
         cache_file: str = "se_cache.json",
@@ -350,6 +351,9 @@ class ScanEngine(Loop):
         self._received_data_count: int = 0
         self._config_cs_timeout = timeout_config_ms
         self._instruction_cs_timeout = timeout_instruction_ms
+        self._scanning_measurement_timeout_secs: float = (
+            float(timeout_scanning_measurement_ms) / 1000
+        )
         self._source_device_type = source_device_type
         self._source_device_path = source_device_path
         self._source_burst_stride = source_burst_stride
@@ -552,7 +556,9 @@ class ScanEngine(Loop):
         command.instruction = proto_cmd.CONFIG
         command.kind = proto_cmd.Command.READ
         self._latest_cs_command = command
-        self._cs_commands_q.put((command, self._instruction_cs_timeout)) # should use util.queue_put?
+        self._cs_commands_q.put(
+            (command, self._instruction_cs_timeout)
+        )  # should use util.queue_put?
 
     def initialize_source(self) -> None:
         """
@@ -566,14 +572,18 @@ class ScanEngine(Loop):
         command.kind = proto_cmd.Command.WRITE
         command.config.cs.source_type = "NULL"
         self._latest_cs_command = command
-        self._cs_commands_q.put((command, self._instruction_cs_timeout)) # should use util.queue_put?
+        self._cs_commands_q.put(
+            (command, self._instruction_cs_timeout)
+        )  # should use util.queue_put?
         response: proto_cmd.Response = self._cs_responses_q.get()
         if response.HasField("error"):
             self._logger.error("Could not set CS Source to NULL")
         command.config.cs.source_type = self._source_device_type
         command.config.cs.source_path = self._source_device_path
         self._latest_cs_command = command
-        self._cs_commands_q.put((command, self._config_cs_timeout)) # should use util.queue_put?
+        self._cs_commands_q.put(
+            (command, self._config_cs_timeout)
+        )  # should use util.queue_put?
 
     def configure_scanning(self, se_cmd: proto_cmd.Command) -> None:
         """
@@ -599,7 +609,9 @@ class ScanEngine(Loop):
                 command.config.cs.burst_stride = se_cmd.config.cs.burst_stride
         self._last_config_command = se_cmd
         self._latest_cs_command = command
-        self._cs_commands_q.put((command, self._config_cs_timeout)) # should use util.queue_put?
+        self._cs_commands_q.put(
+            (command, self._config_cs_timeout)
+        )  # should use util.queue_put?
 
     def configure_tracking(self, se_cmd: proto_cmd.Command) -> None:
         """
@@ -675,7 +687,9 @@ class ScanEngine(Loop):
 
         self._last_config_command = se_cmd
         self._latest_cs_command = command
-        self._cs_commands_q.put((command, self._config_cs_timeout)) # should use util.queue_put?
+        self._cs_commands_q.put(
+            (command, self._config_cs_timeout)
+        )  # should use util.queue_put?
 
     def configure_manual(self, se_cmd: proto_cmd.Command) -> None:
         """
@@ -693,7 +707,9 @@ class ScanEngine(Loop):
             cs_command.config.cs.CopyFrom(se_cmd.config.cs)
         self._last_config_command = se_cmd
         self._latest_cs_command = cs_command
-        self._cs_commands_q.put((cs_command, self._config_cs_timeout)) # should use util.queue_put?
+        self._cs_commands_q.put(
+            (cs_command, self._config_cs_timeout)
+        )  # should use util.queue_put?
 
     def manual_command(self, cs_command: proto_cmd.Command) -> None:
         """
@@ -703,7 +719,9 @@ class ScanEngine(Loop):
         """
         assert self._cs_commands_q is not None
         self._latest_cs_command = cs_command
-        self._cs_commands_q.put((cs_command, self._instruction_cs_timeout)) # should use util.queue_put?
+        self._cs_commands_q.put(
+            (cs_command, self._instruction_cs_timeout)
+        )  # should use util.queue_put?
 
     def command_calibration(self):
         """
@@ -727,7 +745,9 @@ class ScanEngine(Loop):
         command.calib_command.calibration_freqs.CopyFrom(self._calibration_freq_list)
         command.calib_command.identifier = self._calibration_identifier
         self._latest_cs_command = command
-        self._cs_commands_q.put((command, self._instruction_cs_timeout)) # should use util.queue_put?
+        self._cs_commands_q.put(
+            (command, self._instruction_cs_timeout)
+        )  # should use util.queue_put?
         time.sleep(0.3)
 
     def command_scanning(self):
@@ -739,7 +759,9 @@ class ScanEngine(Loop):
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CS_SCAN_START
         self._latest_cs_command = command
-        self._cs_commands_q.put((command, self._instruction_cs_timeout)) # should use util.queue_put?
+        self._cs_commands_q.put(
+            (command, self._instruction_cs_timeout)
+        )  # should use util.queue_put?
 
     def command_tracking(self):
         """
@@ -754,7 +776,9 @@ class ScanEngine(Loop):
         else:
             command.instruction = proto_cmd.SOURCE_START
         self._latest_cs_command = command
-        self._cs_commands_q.put((command, self._instruction_cs_timeout)) # should use util.queue_put?
+        self._cs_commands_q.put(
+            (command, self._instruction_cs_timeout)
+        )  # should use util.queue_put?
 
     def construct_config_report(self) -> proto_cmd.ScanEngineConfig:
         """
@@ -802,7 +826,7 @@ class ScanEngine(Loop):
             response = proto_cmd.Response()
             response.error.description = "ScanEngine null response"
         self._protobuf_to_log(response, "ScanEngine finished {}")
-        self._se_responses_q.put(response) # should use util.queue_put?
+        self._se_responses_q.put(response)  # should use util.queue_put?
         return True
 
     def _handle_instruction(
@@ -883,7 +907,10 @@ class ScanEngine(Loop):
             proto_cmd.POSITION,
             proto_cmd.CS_CALIBRATE_ABORT,
             proto_cmd.CS_READ_PHASEDIFFS_FROM_FILE,
-            proto_cmd.CS_COMPENSATE_WITH_PHASEDIFFS_STOP,
+            proto_cmd.CS_CALIBRATION_VALUES_QUERY,
+            proto_cmd.CS_CALIBRATION_PHASE_CHECK,
+            proto_cmd.CS_TURN_OFF_COMPENSATION,
+            proto_cmd.CS_TURN_ON_COMPENSATION,
         ]:
             self.manual_command(command)
             self.check_cs_response()
@@ -892,7 +919,7 @@ class ScanEngine(Loop):
             return response
         else:
             response = proto_cmd.Response()
-            response.error.description = "Unsupported {str(command.instruction)}"
+            response.error.description = f"Unsupported {str(command.instruction)}"
             return response
 
     def _discard_post_proc_output(self) -> None:
@@ -985,7 +1012,9 @@ class ScanEngine(Loop):
                     # Scanning in progress: no commands allowed, the FSM is waiting
                     # for all the Measurement packets to arrive.
                     post_proc_data: proto_data.Measurement = (
-                        self._post_proc_to_scan_engine_q.get(timeout=q_timeout)
+                        self._post_proc_to_scan_engine_q.get(
+                            timeout=self._scanning_measurement_timeout_secs
+                        )
                     )
                     self._received_data_count += 1
                     # This config is working, so next time CS crashes, it can be auto-loaded

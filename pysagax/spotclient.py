@@ -10,6 +10,7 @@ import re
 import socket
 import threading
 import tkinter
+import logging
 from multiprocessing.managers import ValueProxy
 
 from pysagax.communication.broadcast import RX
@@ -26,10 +27,13 @@ from pysagax.ui.connect_frame import ConnectFrame
 from pysagax.ui.control_frame import ControlFrame
 from pysagax.ui.debug_tab import DebugTab
 from pysagax.ui.heading_source_settings import HeadingSourceFrame
+from pysagax.ui.calibration_settings import CalibrationSettingsFrame
+from pysagax.ui.scan_engine_settings import ScanEngineSettingsFrame
 from pysagax.ui.playback_tab import PlaybackTab
 from pysagax.ui.source_select_frame import SourceSelectFrame
 from pysagax.ui.stat_frame import StatFrame
 from pysagax.ui.status_frame import StatusFrame
+from pysagax.ui.logging import setup_logging, LoggerWindow
 
 try:
     import tomllib
@@ -51,7 +55,8 @@ import pysagax.message.heading_pb2 as proto_heading
 from pysagax.message.data_types import DataType
 from pysagax.ui.plot_frame import PlotFrame, PlotSettingsFrame
 from pysagax.util.get_ip import get_ip
-from pysagax.util.mat import yaw_pitch_roll_from_quaternion
+from pysagax.util.mat import yaw_pitch_roll_from_quaternion, has_close_elements
+from pysagax.util.run_once import run_once
 from pysagax.util.multiqueue import MultiQueue
 from pysagax.util.read_from_conf import read_from_conf
 
@@ -65,19 +70,11 @@ class ClientWindow(tkinter.Frame):
     def __init__(self, client: Client, root) -> None:
         self.do_stop = False
 
+        self._logger = logging.getLogger(self.__class__.__name__)
+
         # aggregated and current roi results, coming from StreaAndCompassProcess
         self.detection_to_plot: proto_data.Detection | None = None
         self.heading_to_plot: proto_heading.HeadingData | None = None
-        # self.aggregated_roi_results = {
-        #     "df_value_latest": None,
-        #     "df_value_mean": None,
-        #     "df_value_std": None,
-        #     "df_elevation_latest": None,
-        #     "df_elevation_mean": None,
-        #     "df_elevation_std": None,
-        # }
-        # self.compass_angle = None
-        # self.compass_heading = None  # compass angle corrected with offset
 
         tkinter.Frame.__init__(self, root)
         self.pack(side="top", fill=tkinter.BOTH, expand=True)
@@ -87,6 +84,7 @@ class ClientWindow(tkinter.Frame):
         self.status_frame = StatusFrame(
             master=self,
             source_manager=self.client.source_manager,
+            open_logger_window_fn=self.client.logger_window.show_log_window,
             map_server_start_callable=self.client.start_dfg_map_server,
             map_server_stop_callable=self.client.stop_dfg_map_server,
             relief=tkinter.RAISED,
@@ -94,7 +92,7 @@ class ClientWindow(tkinter.Frame):
         )
         self.status_frame.pack(fill=tkinter.BOTH, side=tkinter.BOTTOM, expand=False)
 
-        self.plot_frame = PlotFrame(self, conf, root)
+        self.plot_frame = PlotFrame(self, conf, root, self.client.handle_roi_click)
 
         self.bottom_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
         self.bottom_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.BOTTOM)
@@ -105,7 +103,7 @@ class ClientWindow(tkinter.Frame):
             master=self.left_notebook,
             conf=conf,
             connect_commands_function=self.connect_commands,
-            disconnect_commands_function=self.disconnect_commands,
+            disconnect_commands_function=self.intentional_disconnect_commands,
             logo_image=icon_image,
             relief=tkinter.RAISED,
             borderwidth=1,
@@ -124,7 +122,9 @@ class ClientWindow(tkinter.Frame):
             master=self.left_notebook,
             conf=conf,
             do_configuration_function=self.client.do_configuration,
+            pp_configuration_function=self.client.config_pp_settings,
             source_manager=self.client.source_manager,
+            highlight_selected_roi_function=self.plot_frame.highlight_selected_roi,
             relief=tkinter.RAISED,
             borderwidth=1,
         )
@@ -141,6 +141,14 @@ class ClientWindow(tkinter.Frame):
         self.heading_source_frame = HeadingSourceFrame(
             self.left_notebook, self.client.heading_manager, conf
         )
+        self.calibration_settings_frame = CalibrationSettingsFrame(
+            self.left_notebook, self.client.send_commands, conf
+        )
+        self.left_notebook.add(self.calibration_settings_frame, text="Calibration")
+        self.scan_engine_settings_frame = ScanEngineSettingsFrame(
+            self.left_notebook, self.client.send_commands, conf
+        )
+        self.left_notebook.add(self.scan_engine_settings_frame, text="Scan Engine")
         self.left_notebook.add(self.heading_source_frame, text="Heading&GPS")
         self.left_notebook.pack(fill=tkinter.BOTH, expand=False, side=tkinter.LEFT)
         self.center_notebook = ttk.Notebook(self.bottom_frame)
@@ -206,6 +214,7 @@ class ClientWindow(tkinter.Frame):
         self.packet_handler_thread.start()
 
     def gui_packet_handler(self) -> None:
+        _logger = logging.getLogger("GuiPacketHandler")
         while not self.do_stop:
             try:
                 packet = self.client.stream_to_gui_queue.get(timeout=0.2)
@@ -217,21 +226,20 @@ class ClientWindow(tkinter.Frame):
                 elif isinstance(packet, proto_data.Telemetry):
                     self.telemetry_packet_handler(packet)
                 else:
-                    print(
+                    _logger.warning(
                         f"Handling stream packet type {type(packet)} is not implemented"
                     )
 
             except queue.Empty:
                 pass
             except Exception as e:
-                print("[GUI packet handler]", e)
-                traceback.print_tb(e.__traceback__)
+                _logger.critical(f"{e}\n{e.__traceback__}")
                 return
 
     def _is_packet_late(self, packet: proto_cmd):
         # keeps track of arrived packets
         # returns True if packet's timestamp is not fresher than all earlier arrived packets'
-        # if the packet is more than 60s late, then we consider it as fresh
+        # if the packet is more than 60s late, then we consider it as fresh (probably delayed system clock?)
         if type(packet) not in self.packet_type_stats.keys():
             self.packet_type_stats[type(packet)] = {
                 "latest_ts": 0,
@@ -270,17 +278,29 @@ class ClientWindow(tkinter.Frame):
             signal_db, noise_db = 0, 0
 
         if len(packet.data):
-            self.plot_frame.plot_spectrum_packet(
-                packet.data[0],
-                signal_db,
-                noise_db,
-            )
+            self.plot_frame.plot_spectrum_packet(packet.data[0], signal_db, noise_db)
+            self._check_signal_close_to_center_freq(packet)
 
         self.stat_frame.update_peak_plot(packet.peaks)
 
         self.stat_frame.update_stats(
             self.detection_to_plot, self.heading_to_plot, packet.time
         )
+
+    @run_once(timeout=10)
+    def _check_signal_close_to_center_freq(self, packet):
+        """notify user if a detection was made less than 10kHz away from a center frequency (excecutes once every 10 seconds)"""
+        # TODO: maybe move this to PysagaxUAV
+        if len(packet.detection):
+            center_freqs = [
+                s.center_frequency
+                for s in packet.data
+                if s.spectrum_type == proto_data.Spectrum.SpectrumType.MAGNITUDE
+            ]
+            if has_close_elements(
+                center_freqs, [d.frequency for d in packet.detection], 1e4
+            ):
+                self._logger.warning("Center frequency is close to a detected signal!")
 
     def telemetry_packet_handler(self, packet: proto_data.Telemetry):
         # Processes telemetry packets that arrived through stream or command connection
@@ -336,24 +356,59 @@ class ClientWindow(tkinter.Frame):
         except:
             pass  ##TODO: when exiting, this gets called after the window no longer exists
 
-    def connect_commands(self, host_address: str) -> None:
-        host_address = self.connect_frame.host_address.get()
+    def connect_commands(
+        self,
+        host_address: str,
+        host_cmd_port: int = 5556,
+        client_stream_port: int = 4242,
+    ) -> None:
         self.client.connect_commands(
             self.connect_action,
             self.connected_action,
             self.disconnect_action,
             host_address,
+            host_cmd_port=host_cmd_port,
+            client_stream_port=client_stream_port,
         )
+
+    def intentional_disconnect_commands(
+        self,
+        host_address: str,
+        host_cmd_port: int = 5556,
+        client_stream_port: int = 4242,
+    ):
+        """When the user intentionally disconnects with the button, stop the stream
+        before doing the same steps as when the client gets unintentionally disconnected
+        """
+        cmd = proto_cmd.Command(
+            instruction=proto_cmd.STREAM_STOP, kind=proto_cmd.Command.WRITE
+        )
+        cmd.target.address = get_ip(host_address)
+        cmd.target.port = client_stream_port
+        self.client.send_commands(cmd)
+        # If the connection is still working:
+        # command_thread.do_disconnect should be called by the STREAM_STOP response handler
+
+        def forced_disconnect():
+            # If the STREAM_STOP response doesn't arrive within 1 sec
+            # In this case we can't be sure if pysagaxUAV stopped the UDP stream to the client.
+            sleep(1)
+            if not self.client.command_thread.do_disconnect:
+                self._logger.warning("Forced disconnect")
+                self.client.command_thread.do_disconnect = True
+
+        threading.Thread(target=forced_disconnect, name="forced_disconnect").start()
 
     def disconnect_commands(self) -> None:
         self.client.disconnect_commands()
 
     def get_recording_paths(self) -> None:
+        _logger = logging.getLogger("GetRecordingPaths")
         try:
             path_list = b""
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.connect(
-                    (self.connect_frame.host_address.get(), 12939)
+                    (self.connect_frame.host_entry.get(), 12939)
                 )  ##TODO port no. to args
                 s.sendall(b"nc")
                 while True:
@@ -365,7 +420,9 @@ class ClientWindow(tkinter.Frame):
             path_list_stripped = sorted([path.strip() for path in path_list_split])
             self.client.source_manager.update_recording_paths(path_list_stripped)
         except Exception as e:
-            print("[Updating recording paths]", e)
+            _logger.error(
+                f"Trying to retrieve the recording paths from the server throwed the following error:\n{e}"
+            )
 
     def connected_action(self) -> None:
         get_recording_paths_thread = threading.Thread(
@@ -377,9 +434,7 @@ class ClientWindow(tkinter.Frame):
         """
         Events triggered by successful connection
         """
-        self.connect_frame.connect_button.configure(state="disabled")
-        self.connect_frame.host_entry.configure(state="disabled")
-        self.connect_frame.disconnect_button.configure(state="normal")
+        self.connect_frame.connect_action()
         self.plot_settings_frame.channel_spectrum_combo.configure(state="normal")
 
         self.source_select_frame.configure_button.configure(state="normal")
@@ -391,9 +446,7 @@ class ClientWindow(tkinter.Frame):
         Events triggered by client disconnect
         """
         try:
-            self.connect_frame.disconnect_button.configure(state="disabled")
-            self.connect_frame.host_entry.configure(state="normal")
-            self.connect_frame.connect_button.configure(state="normal")
+            self.connect_frame.disconnect_action()
             self.plot_settings_frame.channel_spectrum_combo.configure(state="disabled")
 
             self.source_select_frame.configure_button.configure(state="disabled")
@@ -416,13 +469,15 @@ class ClientWindow(tkinter.Frame):
             self.status_info_lb.insert(tkinter.END, line)
             self.status_info_lb.delete(0, self.stream_packets_lb.size() - 1000)
             self.status_info_lb.see(tkinter.END)
-            print(datetime.now().strftime("%m.%d. %H:%M:%S"), line)
+            self._logger.info(f"{datetime.now().strftime('%m.%d. %H:%M:%S')} {line}")
 
 
 # Owner class for the client
 class Client:
-    def __init__(self, root: Any) -> None:
+    def __init__(self, root: Any, logger_window: LoggerWindow) -> None:
         self.manager = multiprocessing.get_context("spawn").Manager()
+        self._logger = logging.getLogger("Client")
+        self.logger_window = logger_window
 
         self.source_manager = SourceManager()
         self.stream_to_gui_queue: queue.Queue[Any] = self.manager.Queue(maxsize=1)
@@ -552,7 +607,7 @@ class Client:
         Send the command from the command entry box to the client. Called on pressing the Return key in the autocomplete box.
         """
         if self.command_thread is None:
-            print(f"Unable to send command ({str(cmd)})")
+            self._logger.critical(f"Unable to send command ({str(cmd)})")
             return
         if (
             self.command_connection is None
@@ -588,13 +643,15 @@ class Client:
         connected_action: Optional[Callable[[], None]],
         disconnect_action: Optional[Callable[[], None]],
         host_address: str,
+        host_cmd_port: int = 5556,
+        client_stream_port: int = 4242,
     ) -> None:
         """
         Action of the "Connect" button
         """
 
         self.command_connection = REQ(
-            address_server=host_address
+            address_server=host_address, port_server=host_cmd_port
         )  # , address_client=None, port_client=5556, port_server=5555)
 
         self.command_thread = CommandThread(
@@ -616,14 +673,20 @@ class Client:
             proto_cmd.Instruction.CS_PING,
             self.client_window.debug_tab.cs_ping_response_handler,
         )
+        self.command_thread.set_response_handler(
+            proto_cmd.Instruction.CS_CALIBRATION_VALUES_QUERY,
+            self.client_window.calibration_settings_frame.qurey_calib_values_response_handler,
+        )
+        self.command_thread.set_response_handler(
+            proto_cmd.Instruction.STREAM_STOP,
+            lambda response: setattr(self.command_thread, "do_disconnect", True),
+        )  # set command_thread.do_disconnect to True (setattr() needed to do this in a lambda)
 
         self.disconnect_value.value = False
 
-        # TODO: port and groups to config
-        stream_connection_port = 4242
         all_groups = [group.value for group in DataType]
         self.stream_process = StreamProcess(
-            stream_connection_port,
+            client_stream_port,
             all_groups,
             self.stream_process_multiqueue,
             self.disconnect_value,
@@ -640,7 +703,7 @@ class Client:
         cmd_stream_start.target.id = 1
         cmd_stream_start.target.level = proto_cmd.StreamTarget.StreamLevel.SPECTRUM
         cmd_stream_start.target.address = get_ip(host_address)
-        cmd_stream_start.target.port = 4242
+        cmd_stream_start.target.port = client_stream_port
 
         # TODO: think about ideal timeout values, move to config
         cmd_stream_start.target.heartbeat_timeout = 1
@@ -683,26 +746,9 @@ class Client:
         cmd = self.source_manager.get_set_source_command(source, params)
         self.command_thread.enqueue_commands(cmd)
 
-    def do_configuration(
-        self,
-        freq,
-        bw,
-        gain,
-        bin_count,
-        burst_stride,
-        roi_center,
-        roi_span,
-        roi_threshold,
-    ) -> None:
+    def do_configuration(self, freq, bw, gain, bin_count, burst_stride) -> None:
         cmd_list = self.source_manager.get_config_commands(
-            freq,
-            bw,
-            gain,
-            bin_count,
-            burst_stride,
-            roi_center,
-            roi_span,
-            roi_threshold,
+            freq, bw, gain, bin_count, burst_stride
         )
         self.send_commands(cmd_list)
 
@@ -725,14 +771,19 @@ class Client:
         """ self.command_thread.join()
         self.stream_thread.join() """
 
-    def config_roi_settings(self, roi_mask: list[proto_cmd.ROIMask]) -> None:
-        # Constructs and sends a config message only containing a ROI window
+    def config_pp_settings(self, pp_config: proto_cmd.PostProcessingConfig) -> None:
+        # Constructs and sends a config message only containing PostProcessing info
+        # Also calls PlotFrames's update roi plot function
         cmd = proto_cmd.Command()
         cmd.instruction = proto_cmd.CONFIG
-        cmd.config.pp.roi.extend(roi_mask)
-        cmd.config.pp.mean_window = 1
+        cmd.config.pp.CopyFrom(pp_config)
+
         self.send_commands(cmd)
-        self.update_roi_settings(roi_mask)
+
+        active_roi = (
+            self.client_window.control_frame.detection_control_frame.get_active_roi_tab_id()
+        )
+        self.client_window.plot_frame.update_roi_graph(pp_config, active_roi)
 
     def query_system_info(self):
         cmd = proto_cmd.Command()
@@ -740,25 +791,26 @@ class Client:
         self.send_commands(cmd)
 
     def update_system_info(self, sysinfo: proto_cmd.SystemInfo) -> None:
-        print(f"Got Info {sysinfo}")
         self.heading_manager.update_from_heading_status(sysinfo.heading)
-        pass
 
-    def update_roi_settings(self, roi_mask: list[proto_cmd.ROIMask]):
-        """
-        This method handles the calls the methods related to ROI
-        Any update to the ROI mask should be handled here
-        """
-        if len(roi_mask) == 0:
-            return  # the response for CONFIG command didn't contain ROI information
-        if len(roi_mask) != 1:
-            print(
-                "WARNING: SPOTclient can only handle single-element ROI masks currently."
-            )
-            return
+    def handle_roi_click(self, center_freq, threshold) -> None:
+        """update roi settings on gui with sending config commands"""
+        self.client_window.control_frame.detection_control_frame.handle_roi_click(
+            center_freq, threshold
+        )
 
-        self.client_window.plot_frame.update_roi_graph(roi_mask)
-        self.client_window.control_frame.update_roi_entries(roi_mask[0])
+    def update_pp_settings(self, pp_config) -> None:
+        """
+        Update roi settings on gui WITHOUT sending config command
+        Used when a config command gets answered by PysagaxUAV
+        """
+        self.client_window.control_frame.detection_control_frame.update_pp_settings(
+            pp_config
+        )
+        active_roi = (
+            self.client_window.control_frame.detection_control_frame.get_active_roi_tab_id()
+        )
+        self.client_window.plot_frame.update_roi_graph(pp_config, active_roi)
 
     def start_recording(self) -> None:
         self.start_local_recording()
@@ -858,19 +910,30 @@ def main() -> None:
     )
     args = parser.parse_args()
     conf = {}
+
+    level = "INFO"
+    open_log_window_level = "WARNING"
+    setup_logging(level=level)
+    logger = logging.getLogger()
+
+    logger_window = LoggerWindow(
+        root, log_level=level, open_window_level=open_log_window_level
+    )
+    logger.addHandler(logger_window)
+
     if os.path.isfile(args.config):
-        print("Config file found")
+        logger.warn("Config file found")
         with open(args.config, "rb") as f:
             conf = tomllib.load(f)
-        print(f"Config file loaded: {repr(conf)}")
+        logger.warn(f"Config file loaded: {repr(conf)}")
     else:
-        print("Config file not found")
+        logger.warning("Config file not found")
     multiprocessing.set_start_method("spawn")
     root.iconphoto(False, icon_image)
     root.geometry("1200x850")
     root.wm_title(f"SPOTClient {pysagax.__version__}")
     root.protocol("WM_DELETE_WINDOW", on_close)
-    ex = Client(root)
+    ex = Client(root, logger_window)
     root.deiconify()
     splash.destroy()
     root.mainloop()

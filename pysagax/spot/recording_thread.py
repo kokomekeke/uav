@@ -54,6 +54,7 @@ class RecordingThread(threading.Thread):
         }
 
     def run(self) -> None:
+        return # Currently we don't make recordings in the client 
         self.status_queue.put("Recording started")
         start_time_string = datetime.now().strftime("%Y%m%d_%H%M%S")
         while not self.do_stop:

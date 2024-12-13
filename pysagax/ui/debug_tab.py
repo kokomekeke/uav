@@ -4,6 +4,7 @@ from tkinter import ttk
 from typing import Any, Callable, Optional
 from pysagax.source.source_manager import CoreServiceStatus, SourceStatus, SourceManager
 from pysagax.ui.custom_widgets import EntryWithLabel
+import logging
 
 from pysagax.ui.ui_helpers import en_if
 import pysagax.message.command_pb2 as proto_cmd
@@ -28,6 +29,8 @@ class DebugTab(ttk.Frame):
         client,
     ) -> None:
         super().__init__(master)
+
+        self._logger = logging.getLogger(self.__class__.__name__)
         self.source_manager: SourceManager = source_manager
         self.send_commands_function = send_commands_function
         self.abort_commands_function = abort_commands_function
@@ -131,10 +134,10 @@ class DebugTab(ttk.Frame):
         self.send_commands_function(cmd)
 
     def ping_response_handler(self, resp: proto_cmd.Response) -> None:
-        print(f"PING response: ", resp.ping_data)
+        self._logger.warn(f"PING response: {resp.ping_data}")
 
     def cs_ping_response_handler(self, resp: proto_cmd.Response) -> None:
-        print(f"CS PING response: ", resp.ping_data)
+        self._logger.warn(f"CS PING response: {resp.ping_data}")
 
     def update_stream_packet_stats(self, stats) -> None:
         stat_string = (
@@ -147,13 +150,16 @@ class DebugTab(ttk.Frame):
         pass
 
     def configure_stream_commands(self) -> None:
-        host_address = self.client.client_window.connect_frame.host_address.get()
+        host_address = self.client.client_window.connect_frame.host_entry.get()
+        client_stream_port = (
+            self.client.client_window.connect_frame.client_stream_port_entry.get()
+        )
 
         cmd_stream_stop = proto_cmd.Command(instruction=proto_cmd.STREAM_STOP)
         cmd_stream_stop.target.id = 1
         cmd_stream_stop.target.level = STREAM_LEVEL[self.stream_level_str.get()]
         cmd_stream_stop.target.address = get_ip(host_address)
-        cmd_stream_stop.target.port = 4242
+        cmd_stream_stop.target.port = client_stream_port
         cmd_stream_stop.target.heartbeat_timeout = int(self.heartbeat_to_entry.get())
         cmd_stream_stop.target.telemetry_timeout = int(self.telemetry_to_entry.get())
 
@@ -161,7 +167,7 @@ class DebugTab(ttk.Frame):
         cmd_stream_start.target.id = 1
         cmd_stream_start.target.level = STREAM_LEVEL[self.stream_level_str.get()]
         cmd_stream_start.target.address = get_ip(host_address)
-        cmd_stream_start.target.port = 4242
+        cmd_stream_start.target.port = client_stream_port
         cmd_stream_start.target.heartbeat_timeout = int(self.heartbeat_to_entry.get())
         cmd_stream_start.target.telemetry_timeout = int(self.telemetry_to_entry.get())
 

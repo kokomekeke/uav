@@ -17,7 +17,7 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from pysagax.common.loop import Loop
 
 from pysagax.util.protobuf_spectrum_utils import Spectrum
-
+from pysagax.util.roi_mask_from_json import roi_mask_from_json
 from pysagax.util.queue_put import queue_put
 
 
@@ -100,7 +100,7 @@ class PPDetection(Loop):
     Background process for ROI detection and data aggregation on measurement packets.
     """
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, default_roi_mask: str = "", *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._queue_in: Optional[Queue] = None
         self._queue_out: Optional[Queue] = None
@@ -115,6 +115,11 @@ class PPDetection(Loop):
 
         # storing past detection values with event_ids as keys
         self._aggregators: dict[int, DetectionAggregator] = {}
+
+        self._default_roi_mask: str = default_roi_mask  # path of json roi mask
+        if self._default_roi_mask:
+            self._current_config.roi.extend(roi_mask_from_json(self._default_roi_mask))
+            self._logger.info(f"Initialized with {self._current_config}")
 
     def __call__(
         self,
@@ -183,12 +188,14 @@ class PPDetection(Loop):
                 roi_spectrum, noise_bins = magnitude_spectrum.apply_roi(
                     roi, return_noise_bins=True
                 )
+                roi_azimuth_spectrum = azimuth_spectrum.apply_roi(roi)
+                roi_elevation_spectrum = elevation_spectrum.apply_roi(roi)
             except IndexError as e:
                 # The intersection of the ROI and the spectrum contains no bins
                 self._logger.debug(f"{e}")
                 continue
             new_detections = self._detect_roi(
-                roi_spectrum, noise_bins, roi, azimuth_spectrum, elevation_spectrum
+                roi_spectrum, noise_bins, roi, roi_azimuth_spectrum, roi_elevation_spectrum
             )
             new_detections = self._calculate_snr(
                 roi_spectrum, noise_bins, new_detections
@@ -202,8 +209,8 @@ class PPDetection(Loop):
         signal_bins: Spectrum,
         noise_bins: np.ndarray[float | int],
         roi: proto_cmd.ROIMask,
-        azimuth_spectrum: Optional[Spectrum],
-        elevation_spectrum: Optional[Spectrum],
+        signal_azimuth_bins: Optional[Spectrum],
+        signal_elevation_bins: Optional[Spectrum],
     ) -> dict[int, proto_data.Detection]:
         """
         Detecting signals that are more powerful than the ROI threshold.
@@ -225,23 +232,24 @@ class PPDetection(Loop):
         d.bandwidth  # TODO
         d.strength = peak_amplitude
 
-        # TODO: alternatively we could aggregate multiple azimuth bins within the bandwidth of the signal
-        if azimuth_spectrum is not None:
-            try:
-                d.azimuth = azimuth_spectrum[peak_freq]
+        # TODO: calculate azimuth and elevation using average weighted with bin amplitude
+        if signal_azimuth_bins is not None:
+            try: 
+                azimuth_detections = np.array(signal_azimuth_bins)[np.array(signal_bins) >= roi.threshold] #TODO move filter to a variable
+                d.azimuth = scipy.stats.circmean(azimuth_detections, high=np.pi, low=-np.pi )
             except:
                 self._logger.critical("Can't detect azimuth")
         else:
             self._logger.debug("Azimuth spectrum not provided by CoreService")
 
-        if elevation_spectrum is not None:
-            try:
-                d.elevation = elevation_spectrum[peak_freq]
+        if signal_elevation_bins is not None:
+            try: 
+                elevation_detections = np.array(signal_elevation_bins)[np.array(signal_bins) >= roi.threshold] #TODO move filter to a variable
+                d.elevation = scipy.stats.circmean(elevation_detections, high=np.pi, low=-np.pi )
             except:
                 self._logger.critical("Can't detect elevation")
         else:
             self._logger.debug("Elevation spectrum not provided by CoreService")
-
         return {roi.roi_id: d}
 
     def _calculate_snr(
@@ -304,6 +312,14 @@ class PPDetection(Loop):
             conf_request = self._conf_queue_in.get(timeout=0, block=False)
             self._protobuf_to_log(conf_request)
             self._current_config = conf_request.config.pp
+            if len(self._current_config.roi) == 0 and self._default_roi_mask:
+                # use defaults if incoming instruction didn't have roi mask defined
+                self._current_config.roi.extend(
+                    roi_mask_from_json(self._default_roi_mask)
+                )
+                self._logger.info(
+                    f"No ROImask defined in Config message. Returning to default ROImask."
+                )
             response = proto_cmd.Response(config=conf_request.config)
             self._conf_queue_out.put(response)  # should use util.queue_put?
         except queue.Empty:

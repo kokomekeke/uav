@@ -162,9 +162,22 @@ class FileStreamer:
         size = self._read_varint()
         buf = self.file_io.read(size)
 
-        # decoding the message based on the msg_type byte
-        msg = DataType.to_message(DataType(msg_type))
-        msg.ParseFromString(buf)
+        try:
+            # decoding the message based on the msg_type byte
+            msg = DataType.to_message(DataType(msg_type))
+            msg.ParseFromString(buf)
+        except Exception as e:
+            current_pos = self.file_io.tell()
+            self.file_io.seek(0, 2) 
+            file_length = self.file_io.tell()
+            print(f"Message parsing has thrown an error. Probably because of an unsupported packet type or an abrupt EOF. Reading protorec terminates now. \nPacket data:"
+                  f"\n\trecording time={timestamp:2.7f};"
+                  f"\n\tmessage type={msg_type};" 
+                  f"\n\trecorded packet size={size}, file IO read buffer size={len(buf)} (these should be equal);"
+                  f"\n\tfile pointer position={f'{current_pos:,.0f}'.replace(',','.')}, file length= {f'{file_length:,.0f}'.replace(',','.')}"
+                  f"\n ERROR MESSAGE: {e}"
+                )
+            return None, None  # reached EOF
         return timestamp, msg
 
     def _write(self, msg: Message) -> None:

@@ -176,8 +176,11 @@ class Interpreter(Loop):
                 | proto_cmd.CS_CALIBRATE_START
                 | proto_cmd.CS_CALIBRATE_ABORT
                 | proto_cmd.CS_SCAN_START
-                | proto_cmd.CS_COMPENSATE_WITH_PHASEDIFFS_STOP
+                | proto_cmd.CS_TURN_OFF_COMPENSATION
+                | proto_cmd.CS_TURN_ON_COMPENSATION
                 | proto_cmd.CS_READ_PHASEDIFFS_FROM_FILE
+                | proto_cmd.CS_CALIBRATION_VALUES_QUERY
+                | proto_cmd.CS_CALIBRATION_PHASE_CHECK
                 | proto_cmd.AUTO_CALIBRATION_ENABLE
                 | proto_cmd.AUTO_CALIBRATION_DISABLE
                 | proto_cmd.AUTO_CALIBRATION_TRIGGER

@@ -10,6 +10,7 @@ class StatusFrame(tkinter.Frame):
         self,
         master: tkinter.Misc,
         source_manager: SourceManager,
+        open_logger_window_fn: Callable,
         map_server_start_callable: Optional[Callable[[], None]] = None,
         map_server_stop_callable: Optional[Callable[[], None]] = None,
         *args: Any,
@@ -107,6 +108,12 @@ class StatusFrame(tkinter.Frame):
             self.map_server_start_callable = map_server_start_callable
             self.map_server_stop_callable = map_server_stop_callable
 
+            # TODO: instead of automatically opening log window, change the color of this button if there are new unread messages
+            self.open_logger_window_btn = tkinter.Button(
+                self, text="See logs", command=open_logger_window_fn
+            )
+            self.open_logger_window_btn.pack(side=tkinter.RIGHT)
+
     def map_server_button_commands(self) -> None:
         if self.map_server_button.config("relief")[-1] == "sunken":
             self.map_server_button.config(relief="raised")
@@ -119,8 +126,10 @@ class StatusFrame(tkinter.Frame):
         src_path = self.source_manager.get_current_source_path_str()
         status_path_string = ""
         if src_path is not None:
-            status_path_string = src_path + f" [{self.source_manager.source_status.name}]"
-            
+            status_path_string = (
+                src_path + f" [{self.source_manager.source_status.name}]"
+            )
+
         status_path_string = status_path_string
 
         self.status_path_string.set(status_path_string)

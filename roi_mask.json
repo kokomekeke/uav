@@ -1,0 +1,20 @@
+{
+    "roi_mask":[
+        {
+            "center_frequency": 144.5e6,
+            "span": 50e3,
+            "threshold": -80
+        },
+        {
+            "center_frequency": 432.5e6,
+            "span": 50e3,
+            "threshold": -95
+        },
+        {
+            "center_frequency": 460.3e6,
+            "span": 50e3,
+            "threshold": -90
+        }
+    ]
+
+}

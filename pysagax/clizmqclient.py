@@ -37,7 +37,7 @@ def stream_start(address: str, port: int, own_port: int) -> None:
     "-p",
     "--port",
     type=int,
-    default=5050,
+    default=4240,
     help="TCP port of remote host if PUB/SUB, UDP port of local listen if RADIO/DISH",
 )
 @click.option(
@@ -47,15 +47,15 @@ def stream_start(address: str, port: int, own_port: int) -> None:
     help="PySAGAX command (REQ/REP) port to automatically start stream (for example: localhost:5556)",
 )
 @click.argument("address", default="", required=False)
-def main(port: int = 5050, cmd: str = "", address: str = ""):
+def main(port: int = 4240, cmd: str = "", address: str = ""):
     """
     PySAGAX protbuf stream ZMQ test client.
     This tool will display the received stream packets on stdout.
 
     Two modes of operation:
 
-    clizmqclient -p 5050
-    --- UDP RADIO/DISH, the client will listen as DISH on UDP port 5050,
+    clizmqclient -p 4240
+    --- UDP RADIO/DISH, the client will listen as DISH on UDP port 4240,
     waiting for a packet from a ZMQ-RADIO service.
 
     clizmqclient -p 6060 localhost

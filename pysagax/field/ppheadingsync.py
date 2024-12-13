@@ -145,6 +145,10 @@ class PPHeadingSync(Loop):
             self._logger.debug(
                 f"Heading and measurement packets merged with a time difference of {delta_t/1e6:.0f}ms. Packet id: {meas_packet.packet_id}"
             )
+            if delta_t > 5e9 and delta_t < float("inf"):
+                self._logger.warning(
+                    f"Heading data and measurement packets synced with large time difference: {delta_t/1e9:.2f} seconds"
+                )
             queue_put(self._queue_out, meas_packet, 0.1, logger=self._logger)
 
         except queue.Empty:

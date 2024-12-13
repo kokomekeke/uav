@@ -55,6 +55,7 @@ class Commander:
         cs_stream_port: int,
         cs_command_config_timeout: int,
         cs_command_instruction_timeout: int,
+        scanning_measurement_timeout: int,
         calibration_interval_seconds: float,
         calibration_resolution_bw: float,
         scanengine_cache_path: str,
@@ -70,11 +71,14 @@ class Commander:
         source_burst_stride: int,
         source_bin_count: int,
         auto_config: str,
+        default_roi_mask: str,
         cs_reset_on_fail: bool,
         spectrogram_mode: str,
         spectrogram_path: str,
         spectrogram_recording_dtype: str,
+        spectrogram_recording_max_length: float,
         detection_recording_path: str,
+        detection_recording_max_length: float,
         measurement_udp_max_size: int,
         stream_decimation_factor: int,
     ) -> None:
@@ -125,6 +129,7 @@ class Commander:
             scanning_target_resolution_bandwidth,
             cs_command_config_timeout,
             cs_command_instruction_timeout,
+            scanning_measurement_timeout,
             calibration_interval_seconds,
             calibration_resolution_bw,
             scanengine_cache_path,
@@ -144,14 +149,16 @@ class Commander:
             mode=spectrogram_mode,
             path=spectrogram_path,
             recording_dtype=spectrogram_recording_dtype,
+            max_recording_length=spectrogram_recording_max_length,
         )
-        self._pp_detection = PPDetection(level=level)
+        self._pp_detection = PPDetection(level=level, default_roi_mask=default_roi_mask)
         self._pp_events = PPEvents(level=level)
         self._pp_streamprep = PPStreamPreparation(
             level=level,
             udp_max_size=measurement_udp_max_size,
             detection_recording_path=detection_recording_path,
             decimation_factor=stream_decimation_factor,
+            max_recording_length=detection_recording_max_length,
         )
         self._cs_streamer = CSStreamer(
             level=level, address=cs_host, port=cs_stream_port
@@ -212,10 +219,11 @@ class Commander:
             self._heading_data_q,
             self._latest_config_id_value,
         )
-        pp_file_stream_future = self._pool.submit(
+        pp_spectrogram_recorder_future = self._pool.submit(
             self._pp_spectrogram_recorder,
             self._pp_spectrogram_recorder_input_q,
             self._pp_detection_input_q,
+            self._latest_telemetry_proxy,
         )
         pp_detection_future = self._pool.submit(
             self._pp_detection,
@@ -231,7 +239,10 @@ class Commander:
             self._pp_streamprep_input_q,
         )
         pp_streamprep_future = self._pool.submit(
-            self._pp_streamprep, self._pp_streamprep_input_q, self._stream_packets_q
+            self._pp_streamprep,
+            self._pp_streamprep_input_q,
+            self._stream_packets_q,
+            self._latest_telemetry_proxy,
         )
         cs_streamer_future = self._pool.submit(
             self._cs_streamer, self._pp_heading_sync_input_q, self._telemetry_in_q
@@ -263,7 +274,7 @@ class Commander:
                     cs_command_future,
                     streamer_future,
                     pp_heading_sync_future,
-                    pp_file_stream_future,
+                    pp_spectrogram_recorder_future,
                     pp_detection_future,
                     pp_events_future,
                     pp_streamprep_future,
@@ -376,6 +387,12 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     show_default=True,
 )
 @click.option(
+    "--scanning-measurement-timeout",
+    help="Timeout for measurement packets to arrive in SCANNING mode",
+    default=10000,
+    show_default=True,
+)
+@click.option(
     "--calibration-interval-seconds",
     help="Automatic radio interface calibration interval [s]",
     default=300.0,
@@ -472,6 +489,12 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     help="JSON-encoded protobuf configuration command",
 )
 @click.option(
+    "--default-roi-mask",
+    type=click.Path(),
+    default="",
+    help="JSON file containing a ROI mask definition for PostProcessing/Detection to initialize from.",
+)
+@click.option(
     "--cs-reset-on-fail", is_flag=True, help="Reset CS source on command fail"
 )
 @click.option(
@@ -493,9 +516,23 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     help="Data type to be used for making spectrogram recordings.",
 )
 @click.option(
+    "--spectrogram-recording-max-length",
+    type=float,
+    default=600,
+    help="Split spectrogram recordings longer than this value (in seconds). If zero -> don't split files.",
+    show_default=True,
+)
+@click.option(
     "--detection-recording-path",
     type=click.Path(),
     help="File path for detection recording.",
+)
+@click.option(
+    "--detection-recording-max-length",
+    type=float,
+    default=600,
+    help="Split detection recordings longer than this value (in seconds). If zero -> don't split files.",
+    show_default=True,
 )
 @click.option(
     "--measurement-udp-max-size",
@@ -516,6 +553,7 @@ def main(
     cs_command_port: int,
     cs_command_config_timeout: int,
     cs_command_instruction_timeout: int,
+    scanning_measurement_timeout: int,
     calibration_interval_seconds: float,
     calibration_resolution_bw: float,
     scanengine_cache_path: str,
@@ -532,11 +570,14 @@ def main(
     source_burst_stride: int,
     source_bin_count: int,
     auto_config: str,
+    default_roi_mask: str,
     cs_reset_on_fail: bool,
     spectrogram_mode: str,
     spectrogram_path: str,
     spectrogram_recording_dtype: str,
+    spectrogram_recording_max_length: float,
     detection_recording_path: str,
+    detection_recording_max_length: float,
     measurement_udp_max_size: int,
     stream_decimation_factor: int,
 ) -> None:
@@ -561,6 +602,7 @@ def main(
         cs_stream_port,
         cs_command_config_timeout,
         cs_command_instruction_timeout,
+        scanning_measurement_timeout,
         calibration_interval_seconds,
         calibration_resolution_bw,
         scanengine_cache_path,
@@ -576,11 +618,14 @@ def main(
         source_burst_stride,
         source_bin_count,
         auto_config,
+        default_roi_mask,
         cs_reset_on_fail,
         spectrogram_mode,
         spectrogram_path,
         spectrogram_recording_dtype,
+        spectrogram_recording_max_length,
         detection_recording_path,
+        detection_recording_max_length,
         measurement_udp_max_size,
         stream_decimation_factor,
     )

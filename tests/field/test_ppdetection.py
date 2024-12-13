@@ -1,5 +1,6 @@
 import pytest
 from pytest_mock import mocker
+import scipy.stats
 from pysagax.field.ppdetection import DetectionAggregator, PPDetection
 import pysagax.message.data_pb2 as proto_data
 import pysagax.message.command_pb2 as proto_cmd
@@ -8,6 +9,8 @@ import copy
 from pysagax.util.mat import normalize_angle
 import numpy as np
 from pysagax.util.protobuf_spectrum_utils import Spectrum
+
+import scipy
 
 
 class TestDetectionAggregation:
@@ -261,16 +264,18 @@ class TestDetectRoi:
             [
                 Spectrum([-10, -5, -2, -8, -10], 15, 5),
                 proto_cmd.ROIMask(roi_id=2, threshold=-6),
-                Spectrum([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 15, 10),
-                Spectrum([10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0], 15, 10),
+                Spectrum([3, 4, 5, 6, 7], 15, 5),
+                Spectrum([7, 6, 5, 4, 3], 15, 5),
+                # Spectrum([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 15, 10),
+                # Spectrum([10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0], 15, 10),
                 {
                     2: proto_data.Detection(
                         roi_id=2,
                         frequency=15,
                         # bandwidth #TODO
                         strength=-2,
-                        azimuth=5,
-                        elevation=5,
+                        azimuth=scipy.stats.circmean([4,5,], low=-np.pi, high=np.pi),
+                        elevation=scipy.stats.circmean([6,5,], low=-np.pi, high=np.pi),
                     )
                 },
             ],

@@ -1,8 +1,9 @@
 from __future__ import annotations
-from multiprocessing.managers import ValueProxy
+from multiprocessing.managers import DictProxy
 from queue import Queue
+import pickle
 import queue
-from time import sleep
+from time import time, sleep
 from datetime import datetime
 import os
 
@@ -47,12 +48,14 @@ class PPSpectrogramRecorder(Loop):
         recording_dtype: Optional[
             Literal["ORIGINAL", "INT8", "INT16", "FLOAT16", "FLOAT32"]
         ] = None,
+        max_recording_length: float = 0,
         *args,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._queue_in: Optional[Queue] = None
         self._queue_out: Optional[Queue] = None
+        self._latest_telemetry_proxy: Optional[DictProxy] = None
         self.recording_dtype: Optional[proto_data.Spectrum.DataType.ValueType] = None
         if recording_dtype is not None and recording_dtype.upper() != "ORIGINAL":
             self.recording_dtype = proto_data.Spectrum.DataType.Value(
@@ -69,18 +72,38 @@ class PPSpectrogramRecorder(Loop):
         self._logger.info(
             f"Initialized with mode='{self.mode.name}' and path='{path}'."
         )
+        self._latest_se_state: Optional[str] = None  # obtained from latest telemetry
+        self._recording_start_time = time()
+
+        # timeout for starting a new recording file
+        # if non-positive -> the program will not split the recording files
+        self._max_recording_length: float = max_recording_length
 
     def __call__(
         self,
         queue_in: Queue[Any],
         queue_out: Queue[Any],
+        latest_telemetry_proxy: Optional[DictProxy] = None,
         *args,
         **kwargs,
     ) -> None:
         self._queue_in = queue_in
         self._queue_out = queue_out
+        self._latest_telemetry_proxy = latest_telemetry_proxy
+        sleep(2)  # wait for the Telemetry module to initialize
         self._enter_new_mode(self.path, self.mode)
         return super()._call(*args, **kwargs)
+
+    def _get_current_se_state(self):
+        """Read and parse the latest telemetry packet to extract ScanEngine state"""
+        if (
+            self._latest_telemetry_proxy is None
+            or "Telemetry" not in self._latest_telemetry_proxy
+        ):
+            return "UNKNOWN"
+        current_telemetry = proto_data.Telemetry()
+        current_telemetry = pickle.loads(self._latest_telemetry_proxy["Telemetry"])
+        return current_telemetry.scanengine_state
 
     def _read_commands(self):
         """Gets commands and handles state transitions"""
@@ -93,7 +116,16 @@ class PPSpectrogramRecorder(Loop):
         self._change_mode(new_path, new_mode)
 
     def _change_mode(self, new_path: str, new_mode: Mode):
-        if new_mode == self.mode and self.path == new_path:
+        current_se_state = self._get_current_se_state()
+        if (
+            self._latest_se_state == current_se_state
+            and (
+                time() - self._recording_start_time < self._max_recording_length
+                or self._max_recording_length <= 0
+            )
+            and new_mode == self.mode
+            and self.path == new_path
+        ):
             # no state change
             return
         self._exit_current_mode()
@@ -113,20 +145,23 @@ class PPSpectrogramRecorder(Loop):
 
     def _enter_new_mode(self, new_path, new_mode):
         # Entering new state:
+        self.mode = new_mode
+        self.path = new_path
+
+        self._latest_se_state = self._get_current_se_state()
         match new_mode:
             case Mode.PASS:
                 pass
             case Mode.RECORD:
                 # Inserting a timestamp before the file extension
+                self._recording_start_time = time()
                 start_time_string = datetime.now().strftime("%Y%m%d_%H%M%S")
                 name, extension = os.path.splitext(new_path)
-                new_path = f"{name}_{start_time_string}{extension}"
+                new_path = f"{name}_{start_time_string}_{self._latest_se_state}{extension}"  # Appending a timestamp and scan engine state to file name
 
                 self._file_streamer = FileStreamer(path=new_path, mode="record")
             case Mode.PLAYBACK:
                 self._file_streamer = FileStreamer(path=new_path, mode="playback")
-        self.mode = new_mode
-        self.path = new_path
 
     def _get_packet(self, timeout=1) -> proto_data.Measurement:
         # reading measurement packet
@@ -155,7 +190,7 @@ class PPSpectrogramRecorder(Loop):
         assert self._queue_in is not None
         assert self._queue_out is not None
 
-        self._read_commands()
+        self._read_commands()  # TODO: maybe don't check for commands in every iteration
         try:
             packet = self._get_packet(timeout=1)
 

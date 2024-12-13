@@ -4,6 +4,7 @@ import matplotlib.gridspec
 import numpy as np
 from tkinter import ttk
 from typing import Any, Callable, Optional
+import logging
 
 import matplotlib
 from matplotlib import pyplot
@@ -19,9 +20,11 @@ import pysagax
 from pysagax.df.lena_core_service import CoreServiceSpectrumPacket
 from pysagax.source.source_manager import CoreServiceStatus
 from pysagax.spot.calculate_df_corrected import calculate_df_corrected
+from pysagax.field.scanengine import ScanEngineState
 import pysagax.message.data_pb2 as proto_data
 import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.heading_pb2 as proto_heading
+from pysagax.util.run_once import run_once
 
 # from pysagax.spotclient import Client, conf, calculate_df_corrected
 from pysagax.ui.custom_widgets import EntryWithLabel, ToggleButton
@@ -30,6 +33,7 @@ from pysagax.ui.lena_matplotlib_graphs import (
     CompassGraphWithDeviation,
     GraphParameters,
     MagnitudeSpectrumGraph,
+    MagnitudeSpectrumGraphWithRoiMask,
     WaterfallMagnitudeGraph,
 )
 from pysagax.util.mat import yaw_pitch_roll_from_quaternion
@@ -38,13 +42,16 @@ from pysagax.util.protobuf_spectrum_utils import protobuf_spectrum_to_numpy
 
 
 class PlotFrame(tkinter.Frame):
-    def __init__(self, master, conf, root, *args, **kwargs):
+    def __init__(self, master, conf, root, roi_click_handler_function, *args, **kwargs):
         tkinter.Frame.__init__(self, master, *args, **kwargs)
+        self._logger = logging.getLogger(self.__class__.__name__)
 
         from pysagax.spotclient import Client
 
         self.conf = conf
         self.client: Client = self.master.client
+
+        self.roi_click_handler_function = roi_click_handler_function
 
         self.root: Any = root
 
@@ -174,7 +181,9 @@ class PlotFrame(tkinter.Frame):
                 )
             )
             self.magnitude_spectrum_graph.append(
-                MagnitudeSpectrumGraph(self.magnitude_spectrum_plot[i], self.params[i])
+                MagnitudeSpectrumGraphWithRoiMask(
+                    self.magnitude_spectrum_plot[i], self.params[i]
+                )
             )
             self.magnitude_spectrum_graph[i].vmin = self.spectrum_graph_min_db
             self.magnitude_spectrum_graph[i].initialize(color="blue").make_plot()
@@ -250,35 +259,35 @@ class PlotFrame(tkinter.Frame):
             == CoreServiceStatus.DISCONNECTED
         ):
             return
-        control_frame_ref = self.master.control_frame  ##Could be better?
-        ##TODO: set roi span from graph
-        ##TODO: show roi on spectrum graph even if it was set or modified in control frame
-        ##TODO: don't excecute this code when not connected to CS
         if self.magnitude_spectrum_graph is None:
             return
         for magnitude_graph in self.magnitude_spectrum_graph:
             if event.inaxes == magnitude_graph.plot:
-                roi = proto_cmd.ROIMask()
-                roi.span = pysagax.si_to_float(control_frame_ref.roi_span_entry.get())
-                roi.center_frequency = magnitude_graph.coord_to_freq(event.xdata)
-                roi.threshold = event.ydata
-                self.client.config_roi_settings([roi])
+                center_frequency = magnitude_graph.coord_to_freq(event.xdata)
+                threshold = event.ydata
+                self.roi_click_handler_function(center_frequency, threshold)
 
-    def update_roi_graph(self, roi_mask: list[proto_cmd.ROIMask]):
-        if len(roi_mask) != 1:
-            print(
-                "WARNING: the spectrum graph can only display a single-element ROI mask currently."
-            )
-            return
-        self._draw_roi_window(
-            roi_mask[0].center_frequency, roi_mask[0].span, roi_mask[0].threshold
+    def update_roi_graph(
+        self, pp_config: proto_cmd.PostProcessingConfig, active_roi: int = -1
+    ):
+        self._logger.debug(f"Updating ROI graph using:\n{pp_config}")
+        for graph in self.magnitude_spectrum_graph:
+            graph.update_roi(pp_config.roi, active_roi)
+
+    def highlight_selected_roi(self, active_roi):
+        for graph in self.magnitude_spectrum_graph:
+            graph.highlight_selected_roi(active_roi)
+
+    @run_once(timeout=60)
+    def warn_about_ROI_mask_display(self):
+        self._logger.warning(
+            "The spectrum graph can only display a single-element ROI mask currently."
         )
 
     def _draw_roi_window(
         self, roi_center: float, roi_width: float, roi_threshold: float
     ) -> None:
-        # TODO for scanning spectrum
-        pass
+        # TODO multi-part roi mask
         for graph, param in zip(self.magnitude_spectrum_graph, self.params):
             graph.roi_center = graph.freq_to_coord(roi_center)
             graph.roi_width = int(roi_width * (param.bin_count / param.iq_rate))
@@ -327,6 +336,62 @@ class PlotFrame(tkinter.Frame):
 
         if bin_count == 0 or iq_rate == 0:
             return
+
+        is_scanning = (
+            self.master.client.source_manager.latest_telemetry is not None
+            and self.master.client.source_manager.latest_telemetry.scanengine_state
+            == str(ScanEngineState.SCANNING_IN_PROGRESS).split(".")[-1]
+        )  # TODO: protobuf telemetry shouldn't send SE state in enum instead of string
+
+        spectrum_index = self._check_existing_spectrum_plots(
+            bin_count, center_frequency, iq_rate, is_scanning
+        )
+
+        if self.redraw_canvas or spectrum_index is None:
+            # Animation can be created, because at this point we know bin count and other properties
+            # Also restart when bin count or any other parameter has changed
+
+            spectrum_index = self._update_spectrum_plot_list(
+                bin_count, center_frequency, iq_rate, is_scanning, spectrum_index
+            )
+
+        assert self.magnitude_waterfall_graph is not None
+        assert self.magnitude_spectrum_graph is not None
+        self.magnitude_waterfall_graph[spectrum_index].add_data(spectrum_data)
+        self.magnitude_spectrum_graph[spectrum_index].add_data(spectrum_data)
+        self.magnitude_spectrum_graph[spectrum_index].signal_lvl = signal_db
+        self.magnitude_spectrum_graph[spectrum_index].noise_lvl = noise_db
+
+    def _update_spectrum_plot_list(
+        self, bin_count, center_frequency, iq_rate, is_scanning, spectrum_index
+    ):
+        """Update self.params and call self.create_anim() as needed"""
+        new_graph = GraphParameters()
+        new_graph.bin_count = bin_count
+        new_graph.iq_rate = iq_rate
+        new_graph.center_frequency = center_frequency
+        new_graph.waterfall_size = read_from_conf(
+            self.conf, ["display", "waterfall_size"], 200
+        )
+        if is_scanning:
+            self.params.append(new_graph)
+        else:
+            self.params = [new_graph]
+
+        spectrum_index = len(self.params) - 1
+        self.create_anim()
+        self.redraw_canvas = False
+        return spectrum_index
+
+    def _check_existing_spectrum_plots(
+        self, bin_count, center_frequency, iq_rate, is_scanning
+    ):
+        """
+        Returns the index of the spectrum plot, if one already exists with the given parameters.
+        Also sets self.redraw_canvas if needed.
+
+        Returns None if no existing plot matches the parameters.
+        """
         spectrum_index = None
         for i, param in enumerate(self.params):  # finding the graph for the packet
             if (
@@ -336,31 +401,10 @@ class PlotFrame(tkinter.Frame):
             ):
                 spectrum_index = i
 
-        # TODO: tracking mode: limit to 1 graph when scanning is false
-
-        if self.redraw_canvas or spectrum_index is None:
-            # Animation can be created, because at this point we know bin count and other properties
-            # Also restart when bin count or any other parameter has changed
-
-            new_graph = GraphParameters()
-            new_graph.bin_count = bin_count
-            new_graph.iq_rate = iq_rate
-            new_graph.center_frequency = center_frequency
-            new_graph.waterfall_size = read_from_conf(
-                self.conf, ["display", "waterfall_size"], 200
-            )
-            self.params.append(new_graph)
-
-            spectrum_index = len(self.params) - 1
-            self.create_anim()
-            self.redraw_canvas = False
-
-        assert self.magnitude_waterfall_graph is not None
-        assert self.magnitude_spectrum_graph is not None
-        self.magnitude_waterfall_graph[spectrum_index].add_data(spectrum_data)
-        self.magnitude_spectrum_graph[spectrum_index].add_data(spectrum_data)
-        self.magnitude_spectrum_graph[spectrum_index].signal_lvl = signal_db
-        self.magnitude_spectrum_graph[spectrum_index].noise_lvl = noise_db
+        if len(self.params) > 1 and not is_scanning:
+            # After exiting scanning mode, redraw even if spectrum plot is found
+            self.redraw_canvas = True
+        return spectrum_index
 
     def destroy_plot(self) -> None:
         if self.fig is not None:

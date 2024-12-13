@@ -3,9 +3,13 @@ import tkinter.font
 from tkinter import PhotoImage, ttk
 from typing import Any, Callable, Optional
 
+import threading
+from time import sleep
+
 import numpy as np
 
 from pysagax.util.read_from_conf import read_from_conf
+from pysagax.ui.custom_widgets import EntryWithLabel
 
 
 class ConnectFrame(tkinter.Frame):
@@ -21,37 +25,82 @@ class ConnectFrame(tkinter.Frame):
     ) -> None:
         tkinter.Frame.__init__(self, master, *args, **kwargs)
 
-        self.host_address = tkinter.StringVar(
-            value=read_from_conf(conf, ["defaults", "host"], "")
-        )
+        self.columnconfigure(0, weight=1)
+        self.columnconfigure(1, weight=1)
+        self.columnconfigure(2, weight=1)
+        self.columnconfigure(3, weight=1)
+        self.columnconfigure(3, weight=1)
 
-        host_label = tkinter.Label(self, text="Host:")
-        host_label.pack(
-            side=tkinter.LEFT, fill=tkinter.NONE, padx=(10, 5), pady=10, expand=False
+        self.host_entry = EntryWithLabel(
+            self,
+            "Host:",
+            0,
+            0,
+            default_value=read_from_conf(conf, ["defaults", "host"], ""),
         )
-
-        self.host_entry = tkinter.Entry(self, textvariable=self.host_address, width=15)
-        self.host_entry.pack(side=tkinter.LEFT, padx=5, expand=False)
 
         self.icon_frame = tkinter.Frame(self, width=32, height=32)
         self.icon_frame.place(anchor="center", relx=0.5, rely=0.5)
-        self.icon_frame.pack_propagate(False)
-        self.icon_frame.pack(side=tkinter.RIGHT)
+        self.icon_frame.grid(row=0, column=4)
         if logo_image is not None:
             self.icon_label = tkinter.Label(self.icon_frame, image=logo_image)
             self.icon_label.pack()
 
+        self.disconnect_commands_function = disconnect_commands_function
         self.disconnect_button = tkinter.Button(
-            self, text="Disconnect", command=disconnect_commands_function
+            self, text="Disconnect", command=self.disonnect_commands
         )
-        self.disconnect_button.pack(side=tkinter.RIGHT, padx=5, pady=5)
+        self.disconnect_button.grid(column=3, row=0)
         self.disconnect_button.configure(state="disabled")
 
         self.connect_commands_function = connect_commands_function
         self.connect_button = tkinter.Button(
             self, text="Connect", command=self.connect_commands
         )
-        self.connect_button.pack(side=tkinter.RIGHT)
+        self.connect_button.grid(column=2, row=0)
+
+        self.host_command_port_entry = EntryWithLabel(
+            self, "Host command port:", 1, 1, 5556, tkinter.IntVar
+        )
+        self.client_stream_port_entry = EntryWithLabel(
+            self, "Client stream port:", 1, 2, 4242, tkinter.IntVar
+        )
+
+        # TODO: configure port entries the same way as the ip entry!!!
 
     def connect_commands(self) -> None:
-        self.connect_commands_function(self.host_address.get())
+        """Initiate connecting to host after button press"""
+        self.connect_commands_function(
+            self.host_entry.get(),
+            host_cmd_port=self.host_command_port_entry.get(),
+            client_stream_port=self.client_stream_port_entry.get(),
+        )
+
+    def disonnect_commands(self) -> None:
+        """Initiate disconnecting from host after button press"""
+        self.disconnect_commands_function(
+            self.host_entry.get(),
+            host_cmd_port=self.host_command_port_entry.get(),
+            client_stream_port=self.client_stream_port_entry.get(),
+        )
+
+    def connect_action(self) -> None:
+        """Events triggered by successful connections"""
+        self.connect_button.configure(state="disabled")
+        self.host_entry.configure(state="disabled")
+        self.host_command_port_entry.configure(state="disabled")
+        self.client_stream_port_entry.configure(state="disabled")
+        self.disconnect_button.configure(state="normal")
+
+    def disconnect_action(self) -> None:
+        """Events triggered by successful disconnection"""
+        self.disconnect_button.configure(state="disabled")
+        self.host_entry.configure(state="normal")
+        self.host_command_port_entry.configure(state="normal")
+        self.client_stream_port_entry.configure(state="normal")
+
+        def enable_connect_button_after_wait():
+            sleep(1)  # wait for ClientWindow's forced_disconnect() to finish
+            self.connect_button.configure(state="normal")
+
+        threading.Thread(target=enable_connect_button_after_wait).start()

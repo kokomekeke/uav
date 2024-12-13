@@ -48,6 +48,21 @@ class SourceStatus(Enum):
     UNKNOWN = 0
 
 
+class SourceMode(Enum):
+    """
+    Enum for source statuses.
+    Each member's value is based on the possible CS responses for SOURCE:Mode!
+    """
+
+    MANUAL = proto_data.Telemetry.Source.Mode.MANUAL
+    CALIBRATION = proto_data.Telemetry.Source.Mode.CALIBRATION
+    SCANNING = proto_data.Telemetry.Source.Mode.SCANNING
+    UNDER_CONFIG = proto_data.Telemetry.Source.Mode.UNDER_CONFIG
+    UNDEFINED = proto_data.Telemetry.Source.Mode.UNDEFINED
+    UNKNOWN = 10
+
+
+
 class CoreServiceStatus(Enum):
     DISCONNECTED = 0
     CONNECTED = 1  # connected and not working
@@ -135,6 +150,7 @@ class SourceManager:
 
         self.recording_status: RecordingStatus = RecordingStatus.UNKNOWN
         self.source_status: SourceStatus = SourceStatus.UNKNOWN
+        self.source_mode: SourceManager = SourceMode.UNKNOWN
         self.cs_status: CoreServiceStatus = CoreServiceStatus.DISCONNECTED
 
         self.latest_telemetry: Optional[proto_data.Telemetry] = None
@@ -167,6 +183,7 @@ class SourceManager:
     def source_telemetry_handler(self, packet: proto_data.Telemetry) -> None:
         # updates the source status based on the response from CoreService
         self.source_status = SourceStatus(packet.source.status)
+        self.source_mode = SourceMode(packet.source.mode)
         self.recording_status = RecordingStatus(packet.recording.status)
         self.latest_telemetry = packet
 
@@ -198,15 +215,7 @@ class SourceManager:
             return None, None
 
     def get_config_commands(
-        self,
-        freq,
-        bw,
-        gain,
-        bin_count,
-        burst_stride,
-        roi_center,
-        roi_span,
-        roi_threshold,
+        self, freq, bw, gain, bin_count, burst_stride
     ) -> list[proto_cmd.Command]:
         if self.current_source is Sources.NOT_SET:
             raise Exception(f"Source is not intilialized for CoreService")
@@ -220,11 +229,6 @@ class SourceManager:
         cmd.config.cs.bin_count = int(bin_count)
         cmd.config.cs.burst_stride = int(burst_stride)
         cmd.config.cs.channel_gain[:] = 4 * [int(gain)]
-        cmd.config.pp.roi.append(
-            self.get_single_roi_mask(roi_center, roi_span, roi_threshold)
-        )
-        # TODO: heading?
-        cmd.config.pp.mean_window = 1
         # TODO: cmd.config.cs.type = LIVE/RECORDED #why is it needed???
         return [cmd]
 
