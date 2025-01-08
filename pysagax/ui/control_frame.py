@@ -235,7 +235,7 @@ class ControlFrame(tkinter.Frame):
         )
 
         self.gain_entry = EntryWithLabel(
-            self, "USRP Gain:", 0, 2, read_from_conf(conf, ["defaults", "gain"], "50")
+            self, "Gain:", 0, 2, read_from_conf(conf, ["defaults", "gain"], "50")
         )
 
         bin_count_entry_label = ttk.Label(
@@ -312,13 +312,13 @@ class ControlFrame(tkinter.Frame):
         if bw_tuple is None and isinstance(self.bw_entry, ComboboxWithLabel):
             # redraw as text entry
             self.bw_entry.destroy()
-            self.bw_entry = EntryWithLabel(self, "Bandwidth:", 0, 2)
+            self.bw_entry = EntryWithLabel(self, "Bandwidth:", 0, 1)
         elif bw_tuple is not None:
             if not isinstance(self.bw_entry, ComboboxWithLabel):
                 # redraw as combobox
                 self.bw_entry.destroy()
                 self.bw_entry = ComboboxWithLabel(
-                    self, "Bandwidth:", 0, 2, value_options=bw_tuple
+                    self, "Bandwidth:", 0, 1, value_options=bw_tuple
                 )
             elif self.bw_entry["values"] != bw_tuple:
                 # update the list of bandwith options

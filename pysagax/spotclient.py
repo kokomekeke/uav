@@ -233,7 +233,8 @@ class ClientWindow(tkinter.Frame):
             except queue.Empty:
                 pass
             except Exception as e:
-                _logger.critical(f"{e}\n{e.__traceback__}")
+                _logger.exception("Got a critical exception in GUIPacketHandler")
+                raise
                 return
 
     def _is_packet_late(self, packet: proto_cmd):
