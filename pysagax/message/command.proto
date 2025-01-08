@@ -103,7 +103,6 @@ enum Instruction {
     //   response: success [bool]
     CS_SCAN_START = 30;
 
-
     // Start calibration of radios.
     //   parameter: CalibrationCommand
     //   response:  success [bool]
@@ -114,8 +113,8 @@ enum Instruction {
     // Turn phase compensation on/off.
     //   response:  success [bool]
     CS_TURN_OFF_COMPENSATION = 34;
-    CS_TURN_ON_COMPENSATION = 35;;
-
+    CS_TURN_ON_COMPENSATION = 35;
+    
     CS_READ_PHASEDIFFS_FROM_FILE = 36;
 
     CS_CALIBRATION_VALUES_QUERY = 37;
@@ -126,7 +125,7 @@ enum Instruction {
     AUTO_CALIBRATION_ENABLE = 41;
     AUTO_CALIBRATION_DISABLE = 42;
     AUTO_CALIBRATION_TRIGGER = 43;
-
+    CS_RELOAD_CONFIG = 44;
 }
 
 message ROIMask {
@@ -165,6 +164,8 @@ message CoreServiceConfig {
     string source_path = 17;
     string source_type = 19;
     string source_subdev = 20;
+    uint64 aoa_antenna_id = 22; // indexing start from: 1; write: set the antenna descriptor; read: read the actual antenna descriptor
+    uint32 aoa_antenna_count = 23; // the number of antenna presets; just read
 
     // Type of source
     enum Type {
@@ -205,6 +206,7 @@ message PhaseValues{
 message CalibrationStatus {
     double phaseDiffValidTreshold = 1;
     repeated PhaseValues phaseValues = 2;
+    string identifier = 3;
 }
 
 message ScanEngineConfig {
