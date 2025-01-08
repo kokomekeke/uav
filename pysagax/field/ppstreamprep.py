@@ -116,7 +116,13 @@ class PPStreamPreparation(Loop):
         """
         spec_size = sum(len(data_part.data) for data_part in meas.data)
         fixed_size = len(meas.SerializeToString()) - spec_size
-        return int(spec_size / (self._udp_max_size - fixed_size) + 1)
+        downsample_factor = int(spec_size / (self._udp_max_size - fixed_size) + 1)
+        self._logger.debug(
+            f"Measurement packet downsample_factor={downsample_factor}"
+            f"from fix_size={fixed_size} and spec_size={spec_size}"
+            f"(max_size={self._udp_max_size})"
+        )
+        return downsample_factor
 
     def _shrink_measurement_packet(
         self, meas: proto_data.Measurement, downsample_factor: int
@@ -141,6 +147,10 @@ class PPStreamPreparation(Loop):
             #       the exact same bin
             meas.data[i].data = convert_iterable_to_spectrum_data(
                 downsampled_spec_data, meas.data[i].data_type
+            )
+            self._logger.debug(
+                f"Shrinked spectrum data no. {i} from len={len(original_spec_data)} to "
+                f"{len(downsampled_spec_data)} (factor={downsample_factor}, end_index={end_index}"
             )
         return meas
 

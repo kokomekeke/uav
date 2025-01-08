@@ -341,7 +341,7 @@ class PlotFrame(tkinter.Frame):
             bin_count, center_frequency, iq_rate, is_scanning
         )
         if spectrum_index is None:
-            self._logger.critical(
+            self._logger.warning(
                 f"No spectrum found with cf={center_frequency}, iq_rate={iq_rate}, bin_count={bin_count}"
             )
         else:
@@ -368,7 +368,7 @@ class PlotFrame(tkinter.Frame):
 
     @run_once(timeout=30)
     def _warn_extend(self, extend_count, bin_count, wanted_bc):
-        self._logger.critical(
+        self._logger.warning(
             f"Incoming spectrogram extended with {extend_count} "
             f"zeros from bc={bin_count} so it fits the plots (bc={wanted_bc})"
             f"\nTHE SHOWN SPECTRUM PLOTS MIGHT HAVE MISALIGNED X AXES"
@@ -376,7 +376,7 @@ class PlotFrame(tkinter.Frame):
 
     @run_once(timeout=30)
     def _warn_truncate(self, truncate_count, bin_count, wanted_bc):
-        self._logger.critical(
+        self._logger.warning(
             f"Incoming spectrogram truncated by {truncate_count} "
             f"from bc={bin_count} so it fits the plots (bc={wanted_bc})."
             f"\nTHE SHOWN SPECTRUM PLOTS MIGHT HAVE MISALIGNED X AXES"
