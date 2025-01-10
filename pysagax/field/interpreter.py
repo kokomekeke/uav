@@ -184,6 +184,7 @@ class Interpreter(Loop):
                 | proto_cmd.AUTO_CALIBRATION_ENABLE
                 | proto_cmd.AUTO_CALIBRATION_DISABLE
                 | proto_cmd.AUTO_CALIBRATION_TRIGGER
+                | proto_cmd.CS_RELOAD_CONFIG
             ):
                 response.CopyFrom(self._se_control(command))
 

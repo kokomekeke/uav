@@ -2,7 +2,12 @@ import tkinter
 import tkinter.font
 from tkinter import ttk
 from typing import Any, Callable, Optional
-from pysagax.source.source_manager import CoreServiceStatus, SourceStatus, SourceManager, SourceMode
+from pysagax.source.source_manager import (
+    CoreServiceStatus,
+    SourceStatus,
+    SourceManager,
+    SourceMode,
+)
 
 from pysagax.ui.ui_helpers import en_if
 import pysagax.message.command_pb2 as proto_cmd
@@ -51,7 +56,8 @@ class PlaybackTab(ttk.Frame):
             f"Bin count = {'{:,}'.format(cp.config.cs.bin_count).replace(',', ' ')}, "
             f"Stride = {'{:,}'.format(cp.config.cs.burst_stride).replace(',', ' ')}\n"
             f"Heading {cp.config.heading.selected_source_type} [{heading_conf_str}]\n"
-            f"ScanEngine: [{str(cp.config.se)}]"
+            f"ScanEngine: [{str(cp.config.se)}]\n"
+            f"Antenna configuration: {cp.config.cs.aoa_antenna_id}/{cp.config.cs.aoa_antenna_count}"
         )
 
     def update(
@@ -77,7 +83,7 @@ class PlaybackTab(ttk.Frame):
             state=en_if(
                 self.source_manager.cs_status
                 in [CoreServiceStatus.CONNECTED, CoreServiceStatus.WORKING]
-                and self.source_manager.source_status is SourceStatus.ENABLED 
+                and self.source_manager.source_status is SourceStatus.ENABLED
                 and self.source_manager.source_mode is SourceMode.MANUAL
             )
         )

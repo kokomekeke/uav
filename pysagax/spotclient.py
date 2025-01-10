@@ -747,9 +747,9 @@ class Client:
         cmd = self.source_manager.get_set_source_command(source, params)
         self.command_thread.enqueue_commands(cmd)
 
-    def do_configuration(self, freq, bw, gain, bin_count, burst_stride) -> None:
+    def do_configuration(self, freq, bw, gain, bin_count, burst_stride, antenna_id = None) -> None:
         cmd_list = self.source_manager.get_config_commands(
-            freq, bw, gain, bin_count, burst_stride
+            freq, bw, gain, bin_count, burst_stride, antenna_id
         )
         self.send_commands(cmd_list)
 

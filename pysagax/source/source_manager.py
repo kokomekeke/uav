@@ -215,7 +215,7 @@ class SourceManager:
             return None, None
 
     def get_config_commands(
-        self, freq, bw, gain, bin_count, burst_stride
+        self, freq, bw, gain, bin_count, burst_stride, antenna_id=None,
     ) -> list[proto_cmd.Command]:
         if self.current_source is Sources.NOT_SET:
             raise Exception(f"Source is not intilialized for CoreService")
@@ -229,6 +229,8 @@ class SourceManager:
         cmd.config.cs.bin_count = int(bin_count)
         cmd.config.cs.burst_stride = int(burst_stride)
         cmd.config.cs.channel_gain[:] = 4 * [int(gain)]
+        if antenna_id is not None:
+            cmd.config.cs.aoa_antenna_id = int(antenna_id)
         # TODO: cmd.config.cs.type = LIVE/RECORDED #why is it needed???
         return [cmd]
 
