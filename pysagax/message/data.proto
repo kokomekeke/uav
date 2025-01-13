@@ -45,8 +45,9 @@ message Telemetry {
     // Hardware info
     message Hardware {
         float cpu_usage = 1;
-        int64 disk_usage = 2;
-        float temperature = 3;
+        uint32 disk_usage = 2;
+        float cpu_temperature = 3;
+        repeated float radio_temperature = 4;
         string hostname = 10;
     }
     Hardware hardware = 5;
