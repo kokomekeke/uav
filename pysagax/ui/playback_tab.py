@@ -44,8 +44,10 @@ class PlaybackTab(ttk.Frame):
             f"      {'⚠️' if telem.hardware.cpu_temperature >= 90 else '   '} CPU temp: "
             f"{telem.hardware.cpu_temperature:5.0f}°C"
         )
-        # radio_temp_str =  (f"      {'⚠️' if max(telem.hardware.radio_temperature) >= 90 else '   '} Radio temp: "
-        #                   f"{', '.join([f'{temp:4.0f}°C' for temp in telem.hardware.radio_temperature])}")
+        radio_temp_str = (
+            f"      {'⚠️' if max(telem.hardware.radio_temperature, default=-1) >= 90 else '   '} Radio temp: "
+            f"{', '.join([f'{temp:4.0f}°C' for temp in telem.hardware.radio_temperature])}"
+        )
 
         return (
             f"{telem.hardware.hostname}\n{telem.time.ToDatetime()} UTC\n"
@@ -62,7 +64,7 @@ class PlaybackTab(ttk.Frame):
             f"\n{cpu_temp_str}"
             f"\n{disk_usage_str}"
             f"\n{ram_usage_str}"
-            # f"\n{radio_temp_str}"
+            f"\n{radio_temp_str}"
         )
 
     def config_string_format(self, cp: Optional[proto_cmd.Response]) -> str:
