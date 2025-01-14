@@ -575,26 +575,9 @@ class PlotSettingsFrame(tkinter.Frame):
             self, text="Configure Plot", command=self.configure_plot_commands
         )
         self.configure_plot_button.grid(
-            column=2, row=5, padx=10, pady=5, sticky=tkinter.E + tkinter.W
-        )
-        self.mean_window_width_slider_variable = tkinter.DoubleVar(
-            value=read_from_conf(conf, ["stats", "mean_window_width_seconds"], 0)
-        )
-        self.mean_window_width_slider = tkinter.Scale(
-            self,
-            from_=0,
-            to=10,
-            variable=self.mean_window_width_slider_variable,
-            resolution=0.1,
-            orient=tkinter.HORIZONTAL,
-            command=self.mean_window_width_slider_commands,
-        )
-        self.mean_window_width_slider.grid(
-            column=1, row=6, sticky=tkinter.E + tkinter.W, padx=5, pady=5, columnspan=2
+            column=1, row=5, padx=10, pady=5, sticky=tkinter.E + tkinter.W
         )
 
-        mean_window_width_label = tkinter.Label(self, text="Rolling avg window (s):")
-        mean_window_width_label.grid(column=0, row=6, padx=5, pady=8, sticky=tkinter.S)
 
         spectrum_selector_label = tkinter.Label(self, text="Spectrum channel:")
         spectrum_selector_label.grid(column=0, row=7, padx=5, pady=8, sticky=tkinter.S)
@@ -608,10 +591,6 @@ class PlotSettingsFrame(tkinter.Frame):
             "<<ComboboxSelected>>", self.choose_spectrum_commands
         )
         self.channel_spectrum_combo.configure(state="disabled")
-
-    def mean_window_width_slider_commands(self, event: Any) -> None:
-        window_size = self.mean_window_width_slider_variable.get()
-        self.client.mean_window_width_value.value = window_size
 
     def configure_plot_commands(self) -> None:
         """

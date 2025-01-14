@@ -77,7 +77,6 @@ class ClientWindow(tkinter.Frame):
         self.heading_to_plot: proto_heading.HeadingData | None = None
 
         tkinter.Frame.__init__(self, root)
-        self.pack(side="top", fill=tkinter.BOTH, expand=True)
 
         self.client = client  # The GUI communicates with other components of the client through this reference
 
@@ -95,7 +94,7 @@ class ClientWindow(tkinter.Frame):
         self.plot_frame = PlotFrame(self, conf, root, self.client.handle_roi_click)
 
         self.bottom_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
-        self.bottom_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.BOTTOM)
+        self.bottom_frame.pack(fill=tkinter.X, expand=False, side=tkinter.BOTTOM)
 
         self.plot_frame.pack(fill=tkinter.BOTH, expand=True, side=tkinter.TOP)
         self.left_notebook = ttk.Notebook(self.bottom_frame)
@@ -117,7 +116,7 @@ class ClientWindow(tkinter.Frame):
             relief=tkinter.RAISED,
             borderwidth=1,
         )
-        self.left_notebook.add(self.source_select_frame, text="Source Select")
+        self.left_notebook.add(self.source_select_frame, text="Source")
         self.control_frame = ControlFrame(
             master=self.left_notebook,
             conf=conf,
@@ -129,15 +128,6 @@ class ClientWindow(tkinter.Frame):
             borderwidth=1,
         )
         self.left_notebook.add(self.control_frame, text="Configuration")
-        self.plot_settings_frame = PlotSettingsFrame(
-            self.left_notebook,
-            self.plot_frame,
-            send_commands_function=self.client.send_commands,
-            conf=conf,
-            relief=tkinter.RAISED,
-            borderwidth=1,
-        )
-        self.left_notebook.add(self.plot_settings_frame, text="Plot Settings")
         self.heading_source_frame = HeadingSourceFrame(
             self.left_notebook, self.client.heading_manager, conf
         )
@@ -161,6 +151,14 @@ class ClientWindow(tkinter.Frame):
         self.playback_tab.stop_recording_function = self.client.stop_recording
         self.playback_tab.abort_commands_function = self.client.abort_commands
 
+        self.plot_settings_frame = PlotSettingsFrame(
+            self.center_notebook,
+            self.plot_frame,
+            send_commands_function=self.client.send_commands,
+            conf=conf,
+            relief=tkinter.RAISED,
+            borderwidth=1,
+        )
         self.debug_tab = DebugTab(
             master=self.center_notebook,
             send_commands_function=self.client.send_commands,
@@ -174,6 +172,7 @@ class ClientWindow(tkinter.Frame):
         self.center_notebook.add(self.playback_tab, text="Playback")
         self.center_notebook.add(self.status_info_tab, text="Status info")
         self.center_notebook.add(self.stream_packets_tab, text="Stream packets")
+        self.center_notebook.add(self.plot_settings_frame, text="Plot Settings")
         self.center_notebook.add(self.debug_tab, text="Debug")
         self.center_notebook.pack(
             side=tkinter.LEFT, fill=tkinter.BOTH, padx=6, expand=True
@@ -212,6 +211,7 @@ class ClientWindow(tkinter.Frame):
             target=self.gui_packet_handler, daemon=True
         )
         self.packet_handler_thread.start()
+        self.pack(side="top", fill=tkinter.BOTH, expand=True)
 
     def gui_packet_handler(self) -> None:
         _logger = logging.getLogger("GuiPacketHandler")
@@ -521,11 +521,6 @@ class Client:
         Setting the '1' value of the disconnect_value multiprocessing variable will end the multiprocessing task on the
         next iteration.
         """
-
-        self.mean_window_width_value: ValueProxy[float] = self.manager.Value(
-            "float",
-            read_from_conf(conf, ["stats", "mean_window_width_seconds"], 0),
-        )
 
         self.recording_started = False
 
@@ -931,7 +926,7 @@ def main() -> None:
         logger.warning("Config file not found")
     multiprocessing.set_start_method("spawn")
     root.iconphoto(False, icon_image)
-    root.geometry("1200x850")
+    root.geometry("1300x850")
     root.wm_title(f"SPOTClient {pysagax.__version__}")
     root.protocol("WM_DELETE_WINDOW", on_close)
     ex = Client(root, logger_window)

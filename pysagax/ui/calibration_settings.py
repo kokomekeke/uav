@@ -85,14 +85,14 @@ class CalibrationSettingsFrame(tkinter.Frame):
             self, text="Calibrate", command=self.configure_commands
         )
         self.configure_button.grid(
-            column=2, row=3, padx=10, pady=5, sticky="ew", columnspan=2
+            column=2, row=2, padx=10, pady=3, sticky="ew", columnspan=2
         )
 
         self.calibrate_abort_button = tkinter.Button(
             self, text="Abort Calibration", command=self.calibrate_abort_commands
         )
         self.calibrate_abort_button.grid(
-            column=2, row=4, padx=10, pady=5, sticky="ew", columnspan=2
+            column=2, row=4, padx=10, pady=3, sticky="ew", columnspan=2
         )
 
         self.calib_file_identifier_entry = EntryWithLabel(
@@ -106,7 +106,7 @@ class CalibrationSettingsFrame(tkinter.Frame):
             self, text="Load From File", command=self.read_from_file_commands
         )
         self.read_from_file_button.grid(
-            column=2, row=5, padx=10, pady=5, sticky="ew", columnspan=2
+            column=2, row=5, padx=10, pady=3, sticky="ew", columnspan=2
         )
 
         self.query_calib_values_button = tkinter.Button(
@@ -122,7 +122,7 @@ class CalibrationSettingsFrame(tkinter.Frame):
             self, text="Calibration Phase Check", command=self.phase_check_commands
         )
         self.phase_check_button.grid(
-            column=2, row=7, padx=10, pady=5, sticky="ew", columnspan=2
+            column=0, row=6, padx=10, pady=5, sticky="ew", columnspan=2
         )
 
         self.compensate_with_pahesdiffs_stop_button = tkinter.Button(
@@ -131,7 +131,7 @@ class CalibrationSettingsFrame(tkinter.Frame):
             command=self.turn_compenstaion_on_commands,
         )
         self.compensate_with_pahesdiffs_stop_button.grid(
-            column=2, row=8, padx=10, pady=5, sticky="ew", columnspan=1
+            column=0, row=8, padx=10, pady=5, sticky="ew", columnspan=2
         )
 
         self.compensate_with_pahesdiffs_stop_button = tkinter.Button(
@@ -140,7 +140,7 @@ class CalibrationSettingsFrame(tkinter.Frame):
             command=self.turn_compenstaion_off_commands,
         )
         self.compensate_with_pahesdiffs_stop_button.grid(
-            column=3, row=8, padx=10, pady=5, sticky="ew", columnspan=1
+            column=2, row=8, padx=10, pady=5, sticky="ew", columnspan=2
         )
 
     def configure_commands(self):
