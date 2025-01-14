@@ -78,11 +78,10 @@ class Telemetry(Loop):
             self._latest_cs_telemetry_packet = proto_data.Telemetry()
         else:
             self._latest_cs_telemetry_packet = latest_cs_telemetry_packet
+    
+        self._telemetry_packet.CopyFrom(self._latest_cs_telemetry_packet)
         self._cs_version.MergeFrom(latest_cs_telemetry_packet.cs_version)
-        self._telemetry_packet.source.CopyFrom(self._latest_cs_telemetry_packet.source)
-        self._telemetry_packet.recording.CopyFrom(
-            self._latest_cs_telemetry_packet.recording
-        )
+        self._telemetry_packet.ClearField("cs_version") # Its in sysinfo packets also
 
     def _construct_sysinfo_packet(self) -> None:
         self._sysinfo_packet.Clear()
@@ -183,8 +182,8 @@ class Telemetry(Loop):
 
     def _loop(self) -> None:
         self._get_heading_module_info()
-        self._measure_hardware_stats()
         self._get_from_cs()
+        self._measure_hardware_stats()
         if not self._sysinfo_packet.software.cs_version:
             self._construct_sysinfo_packet()
         self._push_finished_packet()
