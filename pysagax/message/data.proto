@@ -48,6 +48,7 @@ message Telemetry {
         uint32 disk_usage = 2; // Disk usage in megabytes. Total space in Sysinfo message
         float cpu_temperature = 3; // °C
         uint32 ram_usage = 5; // RAM usage in megabytes. Total RAM in Sysinfo message
+        repeated float radio_temperature = 4;
         string hostname = 10;
     }
     Hardware hardware = 5;
