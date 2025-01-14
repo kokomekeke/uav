@@ -244,7 +244,8 @@ message SystemInfo {
 
     // Information about general hardware components
     message Hardware {
-        int64 disk = 1;
+        uint32 disk = 1; // total disk space (megabytes)
+        uint32 ram = 2; // total RAM (megabytes)
         string hostname = 10;
     }
     Hardware hardware = 1;

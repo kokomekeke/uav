@@ -47,7 +47,8 @@ dependencies = [
     "psycopg2",
     "geographiclib",
     "tqdm",
-    "tkinter-tooltip"
+    "tkinter-tooltip",
+    "psutil"
 ]
 
 [project.optional-dependencies]

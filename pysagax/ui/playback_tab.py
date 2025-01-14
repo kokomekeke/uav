@@ -27,35 +27,59 @@ class PlaybackTab(ttk.Frame):
             sysinfo.software.pysagax_version = "?"
         if telem is None:
             return f"PySAGAX {sysinfo.software.pysagax_version}, CS {sysinfo.software.cs_version}\nNo telemetry"
+
+        # Generating strings with warnings (0-division safe) using whitespace indentation
+        disk_usage_str = (
+            f"      {'⚠️' if telem.hardware.disk_usage >= sysinfo.hardware.disk * 0.9 else '   '} Disk: "
+            f"{'{:,}'.format(telem.hardware.disk_usage).replace(',', ' ')} MB / "
+            f"{'{:,}'.format(sysinfo.hardware.disk).replace(',', ' ')} MB"
+        )
+        ram_usage_str = (
+            f"      {'⚠️' if telem.hardware.ram_usage >= sysinfo.hardware.ram * 0.9 else '   '} RAM usage:"
+            f"{'{:,}'.format(telem.hardware.ram_usage).replace(',', ' ')} MB / "
+            f"{'{:,}'.format(sysinfo.hardware.ram).replace(',', ' ')} MB"
+        )
+
+        cpu_temp_str = (
+            f"      {'⚠️' if telem.hardware.cpu_temperature >= 90 else '   '} CPU temp: "
+            f"{telem.hardware.cpu_temperature:5.0f}°C"
+        )
+        # radio_temp_str =  (f"      {'⚠️' if max(telem.hardware.radio_temperature) >= 90 else '   '} Radio temp: "
+        #                   f"{', '.join([f'{temp:4.0f}°C' for temp in telem.hardware.radio_temperature])}")
+
         return (
             f"{telem.hardware.hostname}\n{telem.time.ToDatetime()} UTC\n"
             f"PySAGAX {sysinfo.software.pysagax_version}, CS {sysinfo.software.cs_version}\n"
-            f"Disk usage: {'{:,}'.format(telem.hardware.disk_usage).replace(',', ' ')} MB / "
-            f"{'{:,}'.format(sysinfo.hardware.disk).replace(',', ' ')} MB\n"
             f"Source module Status: {proto_data.Telemetry.Source.Status.Name(telem.source.status)} \n"
             f"Source module Mode: {proto_data.Telemetry.Source.Mode.Name(telem.source.mode)} \n"
-            f"{'{:,}'.format(telem.source.position).replace(',', ' ')} / "
+            f"\tPosition:{'{:,}'.format(telem.source.position).replace(',', ' ')} / "
             f"{'{:,}'.format(telem.source.length).replace(',', ' ')} \n"
             f"Recording module {proto_data.Telemetry.Recording.Status.Name(telem.recording.status)} "
             f"{'{:,}'.format(telem.recording.length).replace(',', ' ')}\n"
             f"Heading module {telem.heading.status} [{telem.heading.selected_source_type}]\n"
-            f"ScanEngine {telem.scanengine_state}"
+            f"ScanEngine {telem.scanengine_state}\n"
+            f"HW:  CPU usage: {telem.hardware.cpu_usage * 100:4.0f}%"
+            f"\n{cpu_temp_str}"
+            f"\n{disk_usage_str}"
+            f"\n{ram_usage_str}"
+            # f"\n{radio_temp_str}"
         )
 
     def config_string_format(self, cp: Optional[proto_cmd.Response]) -> str:
         if cp is None:
             return "CONF unknown"
         heading_conf_str = ", ".join(
-            f"{k}={v}" for k, v in cp.config.heading.parameters.items()
+            f"\n\t{k}={cp.config.heading.parameters[k]}"
+            for k in sorted(cp.config.heading.parameters.keys())
         )
         return (
             f"CONFIG {cp.id}\n"
-            f"CS Source {cp.config.cs.source_type} [{cp.config.cs.source_path}]\n"
+            f"CS Source {cp.config.cs.source_type}\n\t[{cp.config.cs.source_path}]\n"
             f"IQ = {'{:,}'.format(int(cp.config.cs.iq_rate)).replace(',', ' ')} Hz, "
             f"Center = {'{:,}'.format(int(cp.config.cs.center_frequency)).replace(',', ' ')} Hz\n"
             f"Bin count = {'{:,}'.format(cp.config.cs.bin_count).replace(',', ' ')}, "
             f"Stride = {'{:,}'.format(cp.config.cs.burst_stride).replace(',', ' ')}\n"
-            f"Heading {cp.config.heading.selected_source_type} [{heading_conf_str}]\n"
+            f"Heading: {cp.config.heading.selected_source_type} [{heading_conf_str}]\n"
             f"ScanEngine: [{str(cp.config.se)}]\n"
             f"Antenna configuration: {cp.config.cs.aoa_antenna_id}/{cp.config.cs.aoa_antenna_count}"
         )
