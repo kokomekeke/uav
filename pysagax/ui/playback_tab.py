@@ -81,6 +81,7 @@ class PlaybackTab(ttk.Frame):
             f"Center = {'{:,}'.format(int(cp.config.cs.center_frequency)).replace(',', ' ')} Hz\n"
             f"Bin count = {'{:,}'.format(cp.config.cs.bin_count).replace(',', ' ')}, "
             f"Stride = {'{:,}'.format(cp.config.cs.burst_stride).replace(',', ' ')}\n"
+            f"Gain = {', '.join([f'{g:4.1f}' for g in cp.config.cs.channel_gain])}\n"
             f"Heading: {cp.config.heading.selected_source_type} [{heading_conf_str}]\n"
             f"ScanEngine: [{str(cp.config.se)}]\n"
             f"Antenna configuration: {cp.config.cs.aoa_antenna_id}/{cp.config.cs.aoa_antenna_count}"
