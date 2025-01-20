@@ -1,4 +1,4 @@
-import math
+from math import floor, ceil
 import tkinter
 import matplotlib.gridspec
 import numpy as np
@@ -278,12 +278,6 @@ class PlotFrame(tkinter.Frame):
         for graph in self.magnitude_spectrum_graph:
             graph.highlight_selected_roi(active_roi)
 
-    @run_once(timeout=60)
-    def warn_about_ROI_mask_display(self):
-        self._logger.warning(
-            "The spectrum graph can only display a single-element ROI mask currently."
-        )
-
     def _draw_roi_window(
         self, roi_center: float, roi_width: float, roi_threshold: float
     ) -> None:
@@ -346,6 +340,16 @@ class PlotFrame(tkinter.Frame):
         spectrum_index = self._check_existing_spectrum_plots(
             bin_count, center_frequency, iq_rate, is_scanning
         )
+        if spectrum_index is None:
+            self._logger.warning(
+                f"No spectrum found with cf={center_frequency}, iq_rate={iq_rate}, bin_count={bin_count}"
+            )
+        else:
+            if bin_count != self.params[spectrum_index].bin_count:
+                wanted_bc = self.params[spectrum_index].bin_count
+                spectrum_data = self.squeeze_spectrum_to_plot(
+                    spectrum_data, bin_count, wanted_bc
+                )
 
         if self.redraw_canvas or spectrum_index is None:
             # Animation can be created, because at this point we know bin count and other properties
@@ -361,6 +365,44 @@ class PlotFrame(tkinter.Frame):
         self.magnitude_spectrum_graph[spectrum_index].add_data(spectrum_data)
         self.magnitude_spectrum_graph[spectrum_index].signal_lvl = signal_db
         self.magnitude_spectrum_graph[spectrum_index].noise_lvl = noise_db
+
+    @run_once(timeout=30)
+    def _warn_extend(self, extend_count, bin_count, wanted_bc):
+        self._logger.warning(
+            f"Incoming spectrogram extended with {extend_count} "
+            f"zeros from bc={bin_count} so it fits the plots (bc={wanted_bc})"
+            f"\nTHE SHOWN SPECTRUM PLOTS MIGHT HAVE MISALIGNED X AXES"
+        )
+
+    @run_once(timeout=30)
+    def _warn_truncate(self, truncate_count, bin_count, wanted_bc):
+        self._logger.warning(
+            f"Incoming spectrogram truncated by {truncate_count} "
+            f"from bc={bin_count} so it fits the plots (bc={wanted_bc})."
+            f"\nTHE SHOWN SPECTRUM PLOTS MIGHT HAVE MISALIGNED X AXES"
+        )
+
+    def squeeze_spectrum_to_plot(self, spectrum_data, bin_count, wanted_bc):
+        """Either appends or removes a few bins of the spectrum array, so that it matches the length of plot."""
+
+        if bin_count < wanted_bc:
+            extend_count = wanted_bc - bin_count  # extending spectrogram
+            spectrum_data = np.concatenate(
+                [
+                    [0] * floor(extend_count / 2),
+                    spectrum_data,
+                    [0] * ceil(extend_count / 2),
+                ]
+            )
+            self._warn_extend(extend_count, bin_count, wanted_bc)
+        if bin_count > wanted_bc:
+            truncate_count = bin_count - wanted_bc
+            spectrum_data = spectrum_data[
+                floor(truncate_count / 2) : -ceil(truncate_count / 2)
+            ]
+            self._warn_truncate(truncate_count, bin_count, wanted_bc)
+
+        return spectrum_data
 
     def _update_spectrum_plot_list(
         self, bin_count, center_frequency, iq_rate, is_scanning, spectrum_index
@@ -396,7 +438,7 @@ class PlotFrame(tkinter.Frame):
         for i, param in enumerate(self.params):  # finding the graph for the packet
             if (
                 abs(center_frequency - param.center_frequency) < 1e-3
-                and bin_count == param.bin_count
+                and 0.8 < bin_count / param.bin_count <= 1.2
                 and abs(iq_rate - param.iq_rate) < 1e-3
             ):
                 spectrum_index = i
@@ -533,26 +575,9 @@ class PlotSettingsFrame(tkinter.Frame):
             self, text="Configure Plot", command=self.configure_plot_commands
         )
         self.configure_plot_button.grid(
-            column=2, row=5, padx=10, pady=5, sticky=tkinter.E + tkinter.W
-        )
-        self.mean_window_width_slider_variable = tkinter.DoubleVar(
-            value=read_from_conf(conf, ["stats", "mean_window_width_seconds"], 0)
-        )
-        self.mean_window_width_slider = tkinter.Scale(
-            self,
-            from_=0,
-            to=10,
-            variable=self.mean_window_width_slider_variable,
-            resolution=0.1,
-            orient=tkinter.HORIZONTAL,
-            command=self.mean_window_width_slider_commands,
-        )
-        self.mean_window_width_slider.grid(
-            column=1, row=6, sticky=tkinter.E + tkinter.W, padx=5, pady=5, columnspan=2
+            column=1, row=5, padx=10, pady=5, sticky=tkinter.E + tkinter.W
         )
 
-        mean_window_width_label = tkinter.Label(self, text="Rolling avg window (s):")
-        mean_window_width_label.grid(column=0, row=6, padx=5, pady=8, sticky=tkinter.S)
 
         spectrum_selector_label = tkinter.Label(self, text="Spectrum channel:")
         spectrum_selector_label.grid(column=0, row=7, padx=5, pady=8, sticky=tkinter.S)
@@ -566,10 +591,6 @@ class PlotSettingsFrame(tkinter.Frame):
             "<<ComboboxSelected>>", self.choose_spectrum_commands
         )
         self.channel_spectrum_combo.configure(state="disabled")
-
-    def mean_window_width_slider_commands(self, event: Any) -> None:
-        window_size = self.mean_window_width_slider_variable.get()
-        self.client.mean_window_width_value.value = window_size
 
     def configure_plot_commands(self) -> None:
         """

@@ -8,6 +8,8 @@ import shutil
 import pickle
 import socket
 import logging
+import psutil
+from statistics import fmean
 
 from typing import Any, Generator, Iterable, Optional
 
@@ -44,6 +46,8 @@ class Telemetry(Loop):
         self._latest_heading_status_time = 0.0
         self._cs_version = proto_data.Version()
 
+        self._cpu_count = psutil.cpu_count()
+
     def __call__(
         self,
         comm_queue_out: Queue[Any],
@@ -74,17 +78,17 @@ class Telemetry(Loop):
             self._latest_cs_telemetry_packet = proto_data.Telemetry()
         else:
             self._latest_cs_telemetry_packet = latest_cs_telemetry_packet
+    
+        self._telemetry_packet.CopyFrom(self._latest_cs_telemetry_packet)
         self._cs_version.MergeFrom(latest_cs_telemetry_packet.cs_version)
-        self._telemetry_packet.source.CopyFrom(self._latest_cs_telemetry_packet.source)
-        self._telemetry_packet.recording.CopyFrom(
-            self._latest_cs_telemetry_packet.recording
-        )
+        self._telemetry_packet.ClearField("cs_version") # Its in sysinfo packets also
 
     def _construct_sysinfo_packet(self) -> None:
         self._sysinfo_packet.Clear()
         total, used, free = shutil.disk_usage(self._data_partition_path)
         self._sysinfo_packet.hardware.hostname = self._hostname
         self._sysinfo_packet.hardware.disk = total // (2**20)  # MiB
+        self._sysinfo_packet.hardware.ram = psutil.virtual_memory().total // 2**20  # MB
         self._sysinfo_packet.software.pysagax_version = pysagax.__version__  # type: ignore
         cs_version_string = f"{self._cs_version.major}.{self._cs_version.minor}.{self._cs_version.patch}"
         if self._cs_version.prerelase:
@@ -112,10 +116,19 @@ class Telemetry(Loop):
 
         total, used, free = shutil.disk_usage(self._data_partition_path)
 
-        # print("Total: %d GiB" % (total // (2**30)))
-        # print("Used: %d GiB" % (used // (2**30)))
-        # print("Free: %d GiB" % (free // (2**30)))
+        self._telemetry_packet.hardware.cpu_usage = (
+            psutil.getloadavg()[0] / self._cpu_count
+        )  # avg load last minute
         self._telemetry_packet.hardware.disk_usage = used // (2**20)  # MiB
+
+        self._telemetry_packet.hardware.ram_usage = (
+            psutil.virtual_memory().used // 2**20
+        )
+
+        temps = [core.current for core in psutil.sensors_temperatures()["coretemp"]]
+        self._telemetry_packet.hardware.cpu_temperature = (
+            fmean(temps) if len(temps) else -1
+        )
 
     def _get_heading_module_info(self) -> None:
         assert self._heading_status_queue is not None
@@ -169,8 +182,8 @@ class Telemetry(Loop):
 
     def _loop(self) -> None:
         self._get_heading_module_info()
-        self._measure_hardware_stats()
         self._get_from_cs()
+        self._measure_hardware_stats()
         if not self._sysinfo_packet.software.cs_version:
             self._construct_sysinfo_packet()
         self._push_finished_packet()

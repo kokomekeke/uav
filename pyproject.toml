@@ -1,6 +1,6 @@
 [project]
 name = "pysagax"
-version = "0.5.1"
+version = "0.5.8"
 authors = [
   { name="Peter Rigo", email="peter.rigo@sagaxcommunications.com" },
   { name="Gergely Deak", email="gergely.deak@sagaxcommunications.com" },
@@ -47,7 +47,8 @@ dependencies = [
     "psycopg2",
     "geographiclib",
     "tqdm",
-    "tkinter-tooltip"
+    "tkinter-tooltip",
+    "psutil"
 ]
 
 [project.optional-dependencies]

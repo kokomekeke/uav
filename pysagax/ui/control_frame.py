@@ -235,13 +235,13 @@ class ControlFrame(tkinter.Frame):
         )
 
         self.gain_entry = EntryWithLabel(
-            self, "USRP Gain:", 0, 2, read_from_conf(conf, ["defaults", "gain"], "50")
+            self, "Gain:", 0, 2, read_from_conf(conf, ["defaults", "gain"], "50")
         )
 
-        bin_count_entry_label = ttk.Label(
+        antenna_id_entry_label = ttk.Label(
             self, text="Bin count:"
         )  # TODO:separate bin count and burst stride setting?
-        bin_count_entry_label.grid(column=2, row=0, sticky=tkinter.W, padx=5, pady=5)
+        antenna_id_entry_label.grid(column=2, row=0, sticky=tkinter.W, padx=5, pady=5)
 
         bin_count_combo = ttk.Combobox(
             self, textvariable=self.bin_count_string, width=11
@@ -281,6 +281,16 @@ class ControlFrame(tkinter.Frame):
             row=1,
             default_value=read_from_conf(conf, ["defaults", "burst_stride"], "50000"),
         )
+
+        antenna_id_entry_label = ttk.Label(self, text="AOA antenna id:")
+        antenna_id_entry_label.grid(column=2, row=2, sticky=tkinter.W, padx=5, pady=5)
+
+        self.antenna_id_entry = ttk.Combobox(self, width=11)
+        self.antenna_id_entry["values"] = [""]
+        self.antenna_id_entry.grid(
+            column=3, row=2, sticky=tkinter.E + tkinter.W, padx=5, pady=5
+        )
+
         self.configure_button = tkinter.Button(
             self, text="Configure radio", command=self.configure_commands
         )
@@ -299,6 +309,7 @@ class ControlFrame(tkinter.Frame):
 
     def config_update(self) -> None:
         self._update_bandwith_entry()
+        self._update_antenna_config_entry()
         tuning_settings_state = en_if(self.source_manager.current_source.is_tunable)
         self.freq_entry.config(state=tuning_settings_state)
         self.bw_entry.config(state=tuning_settings_state)
@@ -312,24 +323,37 @@ class ControlFrame(tkinter.Frame):
         if bw_tuple is None and isinstance(self.bw_entry, ComboboxWithLabel):
             # redraw as text entry
             self.bw_entry.destroy()
-            self.bw_entry = EntryWithLabel(self, "Bandwidth:", 0, 2)
+            self.bw_entry = EntryWithLabel(self, "Bandwidth:", 0, 1)
         elif bw_tuple is not None:
             if not isinstance(self.bw_entry, ComboboxWithLabel):
                 # redraw as combobox
                 self.bw_entry.destroy()
                 self.bw_entry = ComboboxWithLabel(
-                    self, "Bandwidth:", 0, 2, value_options=bw_tuple
+                    self, "Bandwidth:", 0, 1, value_options=bw_tuple
                 )
             elif self.bw_entry["values"] != bw_tuple:
                 # update the list of bandwith options
                 self.bw_entry["values"] = bw_tuple
 
+    def _update_antenna_config_entry(self):
+        if self.source_manager.latest_config is None:
+            # self.antenna_id_entry["values"] = [""]
+            return
+        cnt = self.source_manager.latest_config.config.cs.aoa_antenna_count
+        if cnt == len(self.antenna_id_entry["values"]) + 1:
+            # cnt remained unchanged
+            return
+        self.antenna_id_entry["values"] = [""] + [i + 1 for i in range(cnt)]
+
     def configure_commands(self) -> None:
+        antenna_id = self.antenna_id_entry.get()
+        antenna_id = None if antenna_id == "" else antenna_id
         kwargs = {
             "freq": si_to_float(self.freq_entry.get()),
             "bw": si_to_float(self.bw_entry.get()),
             "gain": self.gain_entry.get(),
             "bin_count": self.bin_count_string.get(),
             "burst_stride": self.burst_stride_entry.get(),
+            "antenna_id": antenna_id,
         }
         self.do_configuration_function(**kwargs)

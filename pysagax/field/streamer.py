@@ -140,7 +140,7 @@ class Streamer(Loop):
                 self._logger.debug(
                     f"{packet.DESCRIPTOR.name} ({type_field.name} -> {type_field.value}) "
                     f"#{self._total_packets[type_field]} /{server.packet_period[type_field]}"
-                    f" packet to {host_port} level {server.level}"
+                    f" packet to {host_port} level {server.level} size {len(stream_packet)} bytes"
                 )
                 server.server.send(stream_packet, type_field.value)
 
