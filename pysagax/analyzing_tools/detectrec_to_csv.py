@@ -272,7 +272,11 @@ def run_error_calc_with_stationary_tx(paths, transmitters: list[Transmitter]):
         df = pd.read_csv(input)
 
         frequencies = df[df["detection.frequency"] > 0]
-        detection_freq = frequencies["detection.frequency"].mean()
+
+        # I think mode worked better, but I haven't used this code for some time before commiting this change
+        # detection_freq = frequencies["detection.frequency"].mean()
+        detection_freq = frequencies["detection.frequency"].mode()[0]
+
         print("Detection", detection_freq)
         # print("\n DETECTION FREQ", detection_freq)
         # found_transmitter = None
