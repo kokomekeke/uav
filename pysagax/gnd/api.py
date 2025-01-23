@@ -95,6 +95,8 @@ class GeoJSONSchema(ma.Schema):
 comintdetections_schema = ComIntDetectionSchema(many=True)
 comintdetection_schema = ComIntDetectionSchema()
 
+comintevent_schema = ComIntEventSchema()
+
 uavs_schema = UAVSchema(many=True)
 uav_schema = UAVSchema()
 
@@ -322,6 +324,48 @@ def comintdetection_detail(id):
     comintdetection = ComIntDetectionEntity.query.get(id)
     return comintdetection_schema.jsonify(comintdetection)
 
+
+
+@open_api.get(
+    response_schema=GeoJSONSchema,
+    has_id_in_path=True,
+)
+@api.route("/comintevent/geojson/<int:event_id>", methods=["GET"])
+def comintevent_geojson(event_id):
+    """
+    Return a geojson of the given event_id.
+    TODO: comintevent table should contain previous measurements, and this endpoint should be able 
+    to return multiple of them if the query asks for it (eg in url parameters)
+    """
+    event: ComIntEventEntity = ComIntEventEntity.query.get(event_id)
+
+    return jsonify(
+        {
+            "type": "FeatureCollection",
+            "name": "ComIntEvent",
+            "crs": {
+                "type": "name",
+                "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"},
+            },
+            "features": 
+                [
+                 
+                 {
+                    "type": "Feature",
+                    "properties": {
+                        "radius": event.last_location_certainty_radius
+                    },
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [float(event.last_location_lon), float(event.last_location_lat)],
+                    },
+                }
+                 
+                 
+                 ]
+            
+        }
+    )
 
 @open_api.get_list(UAVSchema)
 @api.route("/uav/")

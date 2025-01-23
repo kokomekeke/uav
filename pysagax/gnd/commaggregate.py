@@ -58,8 +58,12 @@ class UAVConnection(threading.Thread):
         self.packet_callback = packet_callback
         self.target_id = 1
 
-        self.uav_address = uav_entity.uav_address
-        self.uav_command_port = 5556
+        # check if address also contains port
+        if len(uav_entity.uav_address.split(":")) == 2:
+            self.uav_address, self.uav_command_port = uav_entity.uav_address.split(":")
+        else:
+            self.uav_address = uav_entity.uav_address
+            self.uav_command_port = 5556
         self.own_address = get_ip(self.uav_address)
         self.own_stream_udp_port = find_free_port()
         self.sysinfo = proto_cmd.SystemInfo()

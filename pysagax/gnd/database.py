@@ -141,10 +141,19 @@ class ComIntDatabase:
         global db
         db.session.add(entity)
         db.session.commit()
+    
+    # TODO: do we need this?
+    # def update(self, entity: Any) -> None:
+    #     global db
+    #     db.session.
 
     def commit(self) -> None:
         global db
         db.session.commit()
+
+    def query(self, *args, **kwargs):
+        global db
+        return db.session.query(*args, **kwargs)
 
     def rollback(self) -> None:
         global db
