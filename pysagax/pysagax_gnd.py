@@ -61,7 +61,7 @@ class Commander:
         self._commaggregate = CommAggregate(level=level, db=self._db)
         self._commandengine = CommandEngine(level=level)
         self._monitoring = Monitoring(level=level)
-        self._ppgeoloc = PPGeoLoc(level=level)
+        self._ppgeoloc = PPGeoLoc(level=level, db=self._db)
 
     def start(self) -> None:
         """Start all background processes"""

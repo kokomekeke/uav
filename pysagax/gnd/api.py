@@ -8,6 +8,7 @@ from flask_marshmallow_openapi import open_api
 from pysagax.gnd.database import (
     AreaOfInterestEntity,
     ComIntDetectionEntity,
+    ComIntGeoLocEntity,
     ComIntEventEntity,
     ConfigurationEntity,
     FreqOfInterestEntity,
@@ -94,6 +95,8 @@ class GeoJSONSchema(ma.Schema):
 
 comintdetections_schema = ComIntDetectionSchema(many=True)
 comintdetection_schema = ComIntDetectionSchema()
+
+comintevent_schema = ComIntEventSchema()
 
 uavs_schema = UAVSchema(many=True)
 uav_schema = UAVSchema()
@@ -187,6 +190,25 @@ def geojson_feature_from_detection(
     }
 
 
+def geojson_feature_from_geoloc(
+    point: ComIntGeoLocEntity,
+) -> dict[str, str | dict[str, int | float | str | list[float]]]:
+    return {
+        "type": "Feature",
+        "properties": {
+            "geoloc_id": point.geoloc_id,
+            "certainty_radius": point.certainty_radius,
+            "roi_id": point.roi_identifier,
+            "detections_time_delta": point.detections_time_delta.total_seconds(),
+            "timestamp": str(point.timestamp.isoformat("T")),
+        },
+        "geometry": {
+            "type": "Point",
+            "coordinates": [float(point.lon), float(point.lat)],
+        },
+    }
+
+
 def not_found_error(message):
     return make_response(jsonify(message), 404)
 
@@ -236,6 +258,7 @@ def comintdetection_geojson_list_last(limit):
     Return a geojson of the most recent detections.
     limit sets the number of returned detections.
     uav URL parameter filters the detections for the given uav_ids.
+    roi URL parameter filters the detections for the given roi_ids.
     if stride URL parameter is specifie:d it only returns every n-th row of the detection DB.
 
     Usage with limit=1000, uav=[10, 12, 15] and stride=5
@@ -248,10 +271,9 @@ def comintdetection_geojson_list_last(limit):
     event_ids = flask.request.args.getlist("e_id", type=int)
     # freqs = flask.request.args.getlist("freq", type=int)
 
-
     # sql = """
     # WITH ranked AS (
-    #     SELECT *, 
+    #     SELECT *,
     #         ROW_NUMBER() OVER (ORDER BY detection_id DESC) AS rn
     #     FROM comintdetection
     #     {where_clause}
@@ -292,14 +314,16 @@ def comintdetection_geojson_list_last(limit):
     where_clause = " AND ".join(filter(None, where_clause_parts))
     where_clause = "WHERE " + where_clause if where_clause else ""
 
-
     sql = sql.format(where_clause=where_clause)
     query = db.session.query(ComIntDetectionEntity).from_statement(text(sql))
 
     params = {"stride": stride, "limit": limit}
-    if uavs: params["uavs"] = tuple(uavs)
-    if roi_ids: params["roi_ids"] = tuple(roi_ids)
-    if event_ids: params["event_ids"] = tuple(event_ids)
+    if uavs:
+        params["uavs"] = tuple(uavs)
+    if roi_ids:
+        params["roi_ids"] = tuple(roi_ids)
+    if event_ids:
+        params["event_ids"] = tuple(event_ids)
 
     detections = query.params(**params).all()
 
@@ -321,6 +345,62 @@ def comintdetection_geojson_list_last(limit):
 def comintdetection_detail(id):
     comintdetection = ComIntDetectionEntity.query.get(id)
     return comintdetection_schema.jsonify(comintdetection)
+
+
+@open_api.get(
+    response_schema=GeoJSONSchema,
+    has_id_in_path=True,
+)
+@api.route("/comintgeoloc/geojson/list_last/<int:limit>", methods=["GET"])
+def comintevent_geojson(limit):
+    """
+    Return a geojson of the most recent geolocations.
+    limit sets the number of returned points.
+    roi URL parameter filters the points for the given roi_ids.
+    if stride URL parameter is specified it only returns every n-th row of the geolocation table.
+
+    Usage with limit=1000, roi=[10, 12, 15] and stride=5
+        .../geojson/list_last/1000?roi=10@&roi=12&roi=15&stride=5
+
+    """
+    stride = flask.request.args.get("stride", 1, type=int)
+    roi_ids = flask.request.args.getlist("roi_id", type=int)
+
+    sql = """
+    WITH ranked AS (
+        SELECT *
+        FROM comintgeoloc
+        {where_clause}
+    )
+    SELECT *
+    FROM ranked
+    WHERE geoloc_id % :stride = 0 
+    ORDER BY geoloc_id DESC
+    LIMIT :limit
+    """
+
+    where_clause = "WHERE roi_identifier IN :roi_ids" if roi_ids else ""
+
+    sql = sql.format(where_clause=where_clause)
+    query = db.session.query(ComIntGeoLocEntity).from_statement(text(sql))
+
+    params = {"stride": stride, "limit": limit}
+    if roi_ids:
+        params["roi_ids"] = tuple(roi_ids)
+
+    points = query.params(**params).all()
+
+    return jsonify(
+        {
+            "type": "FeatureCollection",
+            "name": "ComIntGeoLoc",
+            "crs": {
+                "type": "name",
+                "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"},
+            },
+            "features": [geojson_feature_from_geoloc(point) for point in points],
+        }
+    )
 
 
 @open_api.get_list(UAVSchema)
