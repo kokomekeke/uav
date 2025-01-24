@@ -10,7 +10,7 @@ import geographiclib.geodesic
 from pysagax.common.loop import Loop
 
 
-from pysagax.gnd.database import ComIntDatabase, ComIntDetectionEntity, UAVEntity, ComIntEventEntity
+from pysagax.gnd.database import ComIntDatabase, ComIntDetectionEntity, UAVEntity, ComIntEventEntity, ComIntGeoLocEntity
 
 
 from typing import Any, Callable, Optional
@@ -358,28 +358,23 @@ class PPGeoLoc(Loop):
         return lat, lon
 
     def _save_results(self, d1:ComIntDetectionEntity, d2:ComIntDetectionEntity, target_lat, target_lon):
-        """Updates existing event row or creates a new if it doesn't yet exist"""
-        event = ComIntEventEntity.query.filter_by(event_id=d1.roi_identifier).first()
-        if event is None:
-            # Add new row
-            event =ComIntEventEntity()
-            self._db.add(event)
-            event.event_id = d1.roi_identifier
-            event.frequency = (d1.frequency+ d2.frequency) / 2 
-        # event = query.all()
-        # print("EVENT:", event)
-        # event.event_id=d1.roi_identifier
-        event.frequency = event.frequency + 1 #(d1.frequency+ d2.frequency) / 2 
-        event.avg_signal_strength = (d1.signal_strength + d2.signal_strength) / 2
-        # # event.timestamp_of_first_detection
-        # # event.duration_sec
-        event.last_location_lat = target_lat
-        event.last_location_lon = target_lon
-        # # event.last_location_certainty_radius 
-        # self._db.add(event)
+        """Save geolocation data to DB"""
+
+        new_geoloc = ComIntGeoLocEntity()
+        # TODO: define event_id, measurement_id, etc. in table definition and fill them here
+        
+
+        new_geoloc.roi_identifier = d1.roi_identifier
+        new_geoloc.lat = target_lat
+        new_geoloc.lon = target_lon
+        # TODO: new_geoloc.certainty_radius = ???
+        time_diff = d1.timestamp - d2.timestamp
+        new_geoloc.detections_time_delta = abs(time_diff)
+        new_geoloc.timestamp = d2.timestamp + time_diff /2
+        
+        self._db.add(new_geoloc)
         self._db.commit()
-        #TODO
-    
+   
     def _loop(self) -> None:
         time.sleep(0.1)
 
