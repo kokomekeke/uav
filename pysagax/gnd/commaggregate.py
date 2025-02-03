@@ -67,7 +67,7 @@ class UAVConnection(threading.Thread):
 
     def send_command(
         self, cmd: proto_cmd.Command, address: str, port: int
-    ) -> Optional[proto_cmd.Response]:
+        ) -> Optional[proto_cmd.Response]:
 
         cmd_zmq = REQ(address_server=address, port_server=port)
         cmd_zmq.connect()
@@ -199,7 +199,8 @@ class CommAggregate(Loop):
         self._app: Optional[Any] = None
         self._uavs: dict[int, UAVConnection] = {}
         self._telemetry_to_monitoring: Optional[Queue] = None
-        Loop.__init__(self, *args, **kwargs)
+        # Loop.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def __call__(
         self,

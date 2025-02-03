@@ -33,7 +33,8 @@ class Monitoring(Loop):
         After this duration without telemetry the UAV counts as missing
         """
 
-        Loop.__init__(self, *args, **kwargs)
+        # Loop.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def __call__(
         self,

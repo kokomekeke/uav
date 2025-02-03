@@ -17,7 +17,8 @@ class PPGeoLoc(Loop):
         *args,
         **kwargs,
     ) -> None:
-        Loop.__init__(self, *args, **kwargs)
+        # Loop.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def __call__(
         self,
