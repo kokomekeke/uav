@@ -18,6 +18,8 @@ from pysagax.gnd.database import (
 )
 from pysagax.util.mat import yaw_pitch_roll_from_quaternion
 
+from math import isfinite
+
 api = flask.Blueprint("api", __name__)
 
 
@@ -193,6 +195,12 @@ def geojson_feature_from_detection(
 def geojson_feature_from_geoloc(
     point: ComIntGeoLocEntity,
 ) -> dict[str, str | dict[str, int | float | str | list[float]]]:
+    # TODO: WHY do we save NaN values to the DB? do we want that? It might be useful to keep track of the unsuccessful geolocation attempts.
+    lat = float(point.lat)
+    lon = float(point.lon)
+    if not (isfinite(lat) and isfinite(lon)):
+        # json standard doesn't have NaN and QGIS can't handle these values 
+        lat, lon = (0.0, 0.0)
     return {
         "type": "Feature",
         "properties": {
@@ -204,7 +212,7 @@ def geojson_feature_from_geoloc(
         },
         "geometry": {
             "type": "Point",
-            "coordinates": [float(point.lon), float(point.lat)],
+            "coordinates": [lon, lat],
         },
     }
 
