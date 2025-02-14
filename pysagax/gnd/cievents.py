@@ -8,7 +8,6 @@ from typing import Optional
 from pysagax.common.loop import Loop
 
 
-
 class CIEvents(Loop):
     """Background process for processing the ComInt events"""
 
@@ -17,7 +16,8 @@ class CIEvents(Loop):
         *args,
         **kwargs,
     ) -> None:
-        Loop.__init__(self, *args, **kwargs)
+        # Loop.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def __call__(
         self,

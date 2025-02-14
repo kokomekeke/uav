@@ -57,10 +57,13 @@ class Commander:
             self._db.initialize_db(self._db.get_app_instance())
             return
         self._telemetry_for_monitoring_q = self._manager.Queue(maxsize=8)
+        # not implemented yet
         self._cievents = CIEvents(level=level)
         self._commaggregate = CommAggregate(level=level, db=self._db)
+        # not implemented yet
         self._commandengine = CommandEngine(level=level)
         self._monitoring = Monitoring(level=level)
+        # not implemented yet
         self._ppgeoloc = PPGeoLoc(level=level)
 
     def start(self) -> None:
@@ -69,6 +72,7 @@ class Commander:
         self._logger.debug("Starting Commander")
 
         cievents_future = self._pool.submit(self._cievents)
+        # itt aktivalodik a __call__()
         commaggregate_future = self._pool.submit(
             self._commaggregate, self._telemetry_for_monitoring_q
         )
