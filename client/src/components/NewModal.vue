@@ -26,6 +26,11 @@ defineEmits(['close'])
             <button class="modal-submit-button" @click="submit">Submit</button>
           </slot>
         </div>
+        <div class="modal-alerts">
+          <slot name="alert">
+            <label>alert!!!</label>
+          </slot>
+        </div>
       </div>
     </div>
   </Transition>

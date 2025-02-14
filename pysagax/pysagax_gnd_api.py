@@ -2,6 +2,7 @@ import logging
 import os
 import time
 from queue import Queue
+from flask_socketio import SocketIO, disconnect
 from threading import Thread
 from typing import Optional
 
@@ -16,6 +17,25 @@ from pysagax.gnd.api import api
 from pysagax.gnd.database import db
 
 app = Flask(__name__)
+socketio = SocketIO(app, async_mode="eventlet", cors_allowed_origins="*")
+
+
+@socketio.on('connect')
+def handle_connect():
+    print("Client connected")
+
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print("Client disconnected")
+
+
+@socketio.on('ping')
+def ping():
+    print('Ping received from client')
+    socketio.emit('pong')
+
+
 if "DATABASE_URI" in os.environ:
     app.config["SQLALCHEMY_DATABASE_URI"] = os.environ["DATABASE_URI"]
 else:
@@ -43,3 +63,6 @@ if "PYSAGAX_GND_PROXY_FIX" in os.environ:
     app.wsgi_app = ProxyFix(
         app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1
     )
+
+if __name__ == '__main__':
+    socketio.run(app, host="0.0.0.0", port=5000, debug=True)
