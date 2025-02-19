@@ -1,9 +1,8 @@
 <template>
-  <div class="min-h-screen flex flex-col">
+  <div class="bg-green-500 min-h-screen flex flex-col">
 <!--    <SensorPane></SensorPane>-->
     <BurgerMenu class="burger-menu"/>
     <button id="show-modal" @click="showModal = true">Show Modal</button>
-
     <Teleport to="body">
       <NewModal :show="showModal" @close="showModal = false">
         <template #header>
@@ -25,7 +24,7 @@
         </template>
       </NewModal>
     </Teleport>
-    <p v-if="connectionMessage" :class="{'text-green-500': connectionMessage.includes('✅'), 'text-red-500': connectionMessage.includes('❌')}">
+    <p v-if="connectionMessage" :class="{'text-green-500': connectionMessage.value.includes('✅'), 'text-red-500': connectionMessage.value.includes('❌')}">
       {{ connectionMessage }}
     </p>
   </div>
@@ -52,6 +51,7 @@ const info = ref(null)
 
 onMounted(() => {
   console.log(`SGX-PC-1 client loaded v${packageVer} (${gitHash})`)
+  getSensors()
   console.log('hajajj', info.value)
 })
 
@@ -85,7 +85,7 @@ const connectToServer = () => {
 
   socket.on('connect', () => {
     console.log('✅ Connected to server')
-    connectionMessage.value = 'success'
+    connectionMessage.value = '✅success❌⚠️'
     setTimeout(() => {
       showModal.value = false
     }, 3000)
@@ -93,12 +93,12 @@ const connectToServer = () => {
 
   socket.on('connect_error', (error) => {
     console.error('❌ Connection failed:', error)
-    connectionMessage.value = 'error'
+    connectionMessage.value = '❌error✅⚠️'
   })
 
   socket.on('disconnect', () => {
     console.log('⚠️ Disconnected from server')
-    connectionMessage.value = 'info'
+    connectionMessage.value = '⚠️info❌✅'
   })
 
   socket.on('pong', () => {
@@ -138,7 +138,7 @@ const getSensors = () => {
 
 </script>
 
-<style src="./assets/styles/app.css">
+<style src="./assets/tailwind.css">
 #app {
   font-family: Avenir, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
