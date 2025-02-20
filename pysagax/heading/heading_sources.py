@@ -458,7 +458,10 @@ class HeadingFlightInfo(HeadingSource):
             return
         packet_b: Optional[bytes] = None
         try:
-            packet_b = self._sub.receive(timeout=1000)
+            # packet_b = self._sub.receive(timeout=1000)
+            packet_b, topic = self._sub.recv(timeout=1000)
+            if topic != "fi":
+                return
             if packet_b is None:
                 # timeout
                 return
