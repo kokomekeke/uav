@@ -64,6 +64,20 @@ def normalize_angle(angle: float, high: float = np.pi, low: float = -np.pi) -> f
         angle = angle + span
     return angle
 
+def ypr(w, x, y, z, degrees=False):
+    """Convert quaternion to Euler angles"""
+    try:
+        a = Rotation.from_quat([x, y, z, w])
+    except ValueError:  # 0-norm quaternions or nans
+        return [float("nan")] * 3
+    return a.as_euler("ZYX", degrees=degrees)
+
+def quat(y, p, r, degrees=False):
+    """Convert Euler angles to quaternion in scalar-first form: [w, x, y, z]"""
+    a = Rotation.from_euler("ZYX", [y, p, r], degrees=degrees)
+    q_scalar_last = a.as_quat()
+    q = np.concatenate((q_scalar_last[-1:], q_scalar_last[:-1]))
+    return q
 
 def yaw_pitch_roll_from_quaternion(quaternion: list[float]) -> list[float]:
     """
