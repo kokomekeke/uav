@@ -28,7 +28,6 @@ defineEmits(['close'])
         </div>
         <div class="modal-alerts">
           <slot name="alert">
-            <label>alert!!!</label>
           </slot>
         </div>
       </div>

@@ -2,6 +2,8 @@ import logging
 import os
 import time
 from queue import Queue
+
+from flask_cors import CORS
 from flask_socketio import SocketIO, disconnect
 from threading import Thread
 from typing import Optional
@@ -17,6 +19,7 @@ from pysagax.gnd.api import api
 from pysagax.gnd.database import db
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 socketio = SocketIO(app, async_mode="eventlet", cors_allowed_origins="*")
 
 

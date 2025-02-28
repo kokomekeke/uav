@@ -330,6 +330,7 @@ def uav_list():
     return jsonify(uavs_schema.dump(all_uavs))
 
 
+
 @open_api.get(
     response_schema=GeoJSONSchema,
     has_id_in_path=False,

@@ -66,6 +66,9 @@ style = "pep440"
 versionfile_source = "pysagax/_version.py"
 tag_prefix = "v"
 
+[tool.setuptools]
+packages = ["pysagax"]
+
 [build-system]
 requires = ["setuptools", "wheel", "versioneer"]
 build-backend = "setuptools.build_meta"
