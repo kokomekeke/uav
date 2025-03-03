@@ -1,140 +1,53 @@
 <template>
-  <div class="bg-green-500 min-h-screen flex flex-col">
-<!--    <SensorPane></SensorPane>-->
-    <BurgerMenu class="burger-menu"/>
-    <button id="show-modal" @click="showModal = true">Show Modal</button>
-    <Teleport to="body">
-      <NewModal :show="showModal" @close="showModal = false">
-        <template #header>
-          <img src="/sgxlogo.jpg"/>
-          <h3>Connect to ground server</h3>
-        </template>
-        <template #body>
-          <label>Enter IP Address and Port:</label>
-          <input v-model="ipPort" placeholder="192.168.1.100:8080">
-        </template>
-        <template #close>
-          <button class="modal-default-button" @click="closeModal">Close</button>
-        </template>
-        <template #submit>
-          <button class="modal-default-button" @click="connectToServer">Submit</button>
-        </template>
-        <template #alert>
-          <AlertBox :type="connectionMessage"/>
-        </template>
-      </NewModal>
-    </Teleport>
-    <p v-if="connectionMessage" :class="{'text-green-500': connectionMessage.value.includes('✅'), 'text-red-500': connectionMessage.value.includes('❌')}">
-      {{ connectionMessage }}
-    </p>
-  </div>
+<!--  <main class="bg-green-500 min-h-screen flex flex-row">-->
+  <main class="bg-green-500 min-h-screen grid grid-cols-7">
+    <div class="sticky top-0 px-4 py-6 col-span-7 w-full h-20 bg-gray-300 border-gray-800 p-4 text-center border-2 rounded font-mono uppercase text-lg text-black font-stretch-extra-expanded font-bold">
+      <h1>App Header</h1>
+    </div>
+    <div class="bg-green-500 grid grid-cols-7 flex-1">
+      <BurgerMenu class="burger-menu col-span-1"
+                  :isMenuOpen="isMenuOpen"
+                  :isConnected="isConnected"
+                  :ipPort="ipPort"
+      />
+      <div
+        class="flex flex-col transition-all duration-300 place-content-center"
+        :class="isMenuOpen ? 'grid-cols-[250px,1fr]' : 'grid-cols-[60px,1fr]'"
+      >
+        <router-view
+          :isConnected="isConnected"
+          :isMenuOpen="isMenuOpen"
+          :ipPort="ipPort"
+          @update:isConnected="isConnected = $event"
+          @update:isMenuOpen="isMenuOpen = $event"
+          @update:ipPort="ipPort = $event"
+        />
+      </div>
+      <div class="fixed top-20 h-full right-0 w-64 bg-gray-500 p-4 shadow-lg">
+        egyeb content
+      </div>
+    </div>
+  </main>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
-import NewModal from '@/components/NewModal.vue'
-import BurgerMenu from '@/components/buttons/BurgerMenu.vue'
-import { io } from 'socket.io-client'
-// import SensorPane from '@/components/sidebar-components/SensorPane.vue'
-import AlertBox from '@/components/alerts/AlertBox.vue'
-import axios from 'axios'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import BurgerMenu from '@/components/layout/BurgerMenu.vue'
 
-const showModal = ref(true)
 const ipPort = ref('http://192.168.1.245:5000') // IP:Port beviteli mező
-const connectionMessage = ref('')
-const pingInterval = ref(null)
-let socket = null // Tároljuk a socket példányt
 
 const packageVer = '0'
 const gitHash = '0'
-const info = ref(null)
+const isConnected = ref(false)
+const isMenuOpen = ref(false)
 
 onMounted(() => {
   console.log(`SGX-PC-1 client loaded v${packageVer} (${gitHash})`)
-  getSensors()
-  console.log('hajajj', info.value)
 })
 
-const closeModal = () => {
-  showModal.value = false
-  stopPinging() // Biztosítjuk, hogy az interval leáll
-}
-
-const stopPinging = () => {
-  console.log('valami')
-  if (pingInterval.value) {
-    console.log('⏹️ Stopping ping interval...')
-    clearInterval(pingInterval.value)
-    pingInterval.value = null
-  }
-  if (socket) {
-    console.log('🔌 Disconnecting from server...')
-    socket.disconnect() // Leállítja a kapcsolatot
-    socket = null
-  }
-}
-
-const connectToServer = () => {
-  stopPinging() // Ha van már aktív kapcsolat, először leállítjuk
-
-  socket = io(ipPort.value, {
-    transports: ['websocket']
-  })
-
-  console.log('🔌 Connecting to:', ipPort.value)
-
-  socket.on('connect', () => {
-    console.log('✅ Connected to server')
-    connectionMessage.value = '✅success❌⚠️'
-    setTimeout(() => {
-      showModal.value = false
-    }, 3000)
-  })
-
-  socket.on('connect_error', (error) => {
-    console.error('❌ Connection failed:', error)
-    connectionMessage.value = '❌error✅⚠️'
-  })
-
-  socket.on('disconnect', () => {
-    console.log('⚠️ Disconnected from server')
-    connectionMessage.value = '⚠️info❌✅'
-  })
-
-  socket.on('pong', () => {
-    console.log('🏓 Pong received')
-  })
-
-  pingInterval.value = setInterval(() => {
-    if (socket && socket.connected) {
-      console.log('📡 Sending ping...')
-      socket.emit('ping')
-    } else {
-      console.log('⏹️ No active connection, stopping ping interval...')
-      stopPinging() // Ha nincs kapcsolat, állítsuk le az időzítőt
-    }
-  }, 2000)
-}
-
-const getSensors = () => {
-  axios.get(ipPort.value)
-    .then(response => {
-      // Ellenőrizzük, hogy a válasz megfelelő formátumban van-e
-      if (Array.isArray(response.data.bpi)) {
-        // Ha valóban lista (tömb) a válasz, akkor beállítjuk a `info` változót
-        info.value = response.data.bpi
-        console.log('iiii', info.value)
-      } else {
-        // Ha nem lista, akkor egy új lista elemet adunk hozzá
-        info.value = [response.data.bpi]
-        console.log('iiik', info.value)
-      }
-    })
-    .catch(error => {
-      console.error('API hívás hiba:', error)
-      connectionMessage.value = '❌ Hiba történt a szenzorok betöltésekor.'
-    })
-}
+onBeforeUnmount(() => {
+  console.log('Component unmounted')
+})
 
 </script>
 

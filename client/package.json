@@ -13,7 +13,8 @@
     "postcss-import": "^16.1.0",
     "socket.io-client": "^4.8.1",
     "vue": "^3.2.13",
-    "vue-final-modal": "^4.5.5"
+    "vue-final-modal": "^4.5.5",
+    "vue-router": "^4.5.0"
   },
   "devDependencies": {
     "@babel/core": "^7.12.16",

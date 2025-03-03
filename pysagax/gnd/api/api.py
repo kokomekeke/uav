@@ -1,190 +1,23 @@
 import flask
-import marshmallow as ma
 from flask import jsonify, make_response
 from sqlalchemy.sql import text
-from flask_marshmallow.sqla import SQLAlchemyAutoSchema
 from flask_marshmallow_openapi import open_api
 
+from pysagax.gnd.api.api_utils import geojson_feature_from_detection, geojson_feature_from_uav
+from pysagax.gnd.api.model import ComIntDetectionSchema, UAVSchema, UAVCreateSchema, UAVUpdateSchema, GeoJSONSchema
 from pysagax.gnd.database import (
-    AreaOfInterestEntity,
     ComIntDetectionEntity,
-    ComIntEventEntity,
-    ConfigurationEntity,
-    FreqOfInterestEntity,
     UAVEntity,
-    UAVEventEntity,
     db,
 )
-from pysagax.util.mat import yaw_pitch_roll_from_quaternion
 
 api = flask.Blueprint("api", __name__)
-
-
-class UAVSchema(SQLAlchemyAutoSchema):
-    class Meta:
-        model = UAVEntity
-        include_relationships = True
-        load_instance = True
-        include_fk = True
-
-
-class UAVCreateSchema(ma.Schema):
-    uav_label = ma.fields.String(allow_none=True, required=False)
-    uav_address = ma.fields.String(allow_none=False, required=True)
-    active = ma.fields.Boolean(allow_none=False, required=True)
-
-
-class UAVUpdateSchema(ma.Schema):
-    uav_label = ma.fields.String(allow_none=True, required=False)
-    uav_address = ma.fields.String(allow_none=False, required=False)
-    active = ma.fields.Boolean(allow_none=False, required=False)
-
-
-class UAVEventSchema(SQLAlchemyAutoSchema):
-    class Meta:
-        model = UAVEventEntity
-        include_relationships = True
-        include_fk = True
-        load_instance = True
-
-
-class ComIntEventSchema(SQLAlchemyAutoSchema):
-    class Meta:
-        model = ComIntEventEntity
-        include_relationships = True
-        include_fk = True
-        load_instance = True
-
-
-class ComIntDetectionSchema(SQLAlchemyAutoSchema):
-    class Meta:
-        model = ComIntDetectionEntity
-        include_fk = True
-        load_instance = True
-
-
-class ConfigurationSchema(SQLAlchemyAutoSchema):
-    class Meta:
-        model = ConfigurationEntity
-        include_relationships = True
-        include_fk = True
-        load_instance = True
-
-
-class AreaOfInterestSchema(SQLAlchemyAutoSchema):
-    class Meta:
-        model = AreaOfInterestEntity
-        include_fk = True
-        load_instance = True
-
-
-class FreqOfInterestSchema(SQLAlchemyAutoSchema):
-    class Meta:
-        model = FreqOfInterestEntity
-        include_fk = True
-        load_instance = True
-
-
-class GeoJSONSchema(ma.Schema):
-    type = ma.fields.String()
-    name = ma.fields.String()
-    crs = ma.fields.Dict()
-    features = ma.fields.List(ma.fields.Dict())
-
 
 comintdetections_schema = ComIntDetectionSchema(many=True)
 comintdetection_schema = ComIntDetectionSchema()
 
 uavs_schema = UAVSchema(many=True)
 uav_schema = UAVSchema()
-
-
-def geojson_feature_from_uav(
-    uav: UAVEntity,
-) -> dict[str, str | dict[str, int | float | str | list[float]]]:
-    if all(
-        q is not None
-        for q in [uav.last_pos_q0, uav.last_pos_q1, uav.last_pos_q2, uav.last_pos_q3]
-    ):
-        try:
-            yaw, pitch, roll = yaw_pitch_roll_from_quaternion(
-                [
-                    float(uav.last_pos_q0),
-                    float(uav.last_pos_q1),
-                    float(uav.last_pos_q2),
-                    float(uav.last_pos_q3),
-                ]
-            )
-        except:
-            yaw, pitch, roll = 0.0, 0.0, 0.0
-    else:
-        yaw, pitch, roll = 0.0, 0.0, 0.0
-    return {
-        "type": "Feature",
-        "properties": {
-            "uav_id": uav.uav_id,
-            "uav_label": uav.uav_label,
-            "active": bool(uav.active),
-            "conf_id": uav.conf_id,
-            "last_seen": str(uav.last_seen.isoformat("T")),
-            "last_pos_altitude": float(uav.last_pos_altitude),
-            "last_pos_yaw": yaw,
-            "last_pos_pitch": pitch,
-            "last_pos_roll": roll,
-            "health_report": uav.health_report,
-        },
-        "geometry": {
-            "type": "Point",
-            "coordinates": [float(uav.last_pos_lon), float(uav.last_pos_lat)],
-        },
-    }
-
-
-def geojson_feature_from_detection(
-    det: ComIntDetectionEntity,
-) -> dict[str, str | dict[str, int | float | str | list[float]]]:
-    if all(
-        q is not None
-        for q in [det.uav_pos_q0, det.uav_pos_q1, det.uav_pos_q2, det.uav_pos_q3]
-    ):
-        try:
-            yaw, pitch, roll = yaw_pitch_roll_from_quaternion(
-                [
-                    float(det.uav_pos_q0),
-                    float(det.uav_pos_q1),
-                    float(det.uav_pos_q2),
-                    float(det.uav_pos_q3),
-                ]
-            )
-        except:
-            yaw, pitch, roll = 0.0, 0.0, 0.0
-    else:
-        yaw, pitch, roll = 0.0, 0.0, 0.0
-    return {
-        "type": "Feature",
-        "properties": {
-            "bandwidth": float(det.bandwidth),
-            "detection_id": det.detection_id,
-            "frequency": int(det.frequency),
-            "lob_azim_deg": float(det.lob_azim_deg),
-            "lob_elev_deg": float(det.lob_elev_deg),
-            "precision": float(det.precision),
-            "signal_strength": float(det.signal_strength),
-            "snr": float(det.snr),
-            "timestamp": str(det.timestamp.isoformat("T")),
-            "uav_event_id": det.uav_event_id,
-            "uav_id": det.uav_id,
-            "uav_pos_altitude": float(det.uav_pos_altitude),
-            "uav_pos_yaw": yaw,
-            "uav_pos_pitch": pitch,
-            "uav_pos_roll": roll,
-            "roi_id": det.roi_identifier,
-        },
-        "geometry": {
-            "type": "Point",
-            "coordinates": [float(det.uav_pos_lon), float(det.uav_pos_lat)],
-        },
-    }
 
 
 def not_found_error(message):

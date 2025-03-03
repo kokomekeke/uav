@@ -1,5 +1,11 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 import './assets/tailwind.css'
+import router from './routes/index.js'
 
-createApp(App).mount('#app')
+const app = createApp(App)
+
+app.use(router)
+app.config.performance = true
+
+app.mount('#app')

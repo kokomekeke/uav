@@ -2,6 +2,8 @@ import logging
 import os
 import time
 from queue import Queue
+
+from flask_cors import CORS
 from flask_socketio import SocketIO, disconnect
 from threading import Thread
 from typing import Optional
@@ -17,6 +19,7 @@ from pysagax.gnd.api import api
 from pysagax.gnd.database import db
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 socketio = SocketIO(app, async_mode="eventlet", cors_allowed_origins="*")
 
 
@@ -64,5 +67,11 @@ if "PYSAGAX_GND_PROXY_FIX" in os.environ:
         app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1
     )
 
+
+def run_api():
+    print("Starting api...")
+    socketio.run(app, host="0.0.0.0", port=5000)
+
+
 if __name__ == '__main__':
-    socketio.run(app, host="0.0.0.0", port=5000, debug=True)
+    run_api()
