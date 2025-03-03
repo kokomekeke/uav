@@ -67,5 +67,11 @@ if "PYSAGAX_GND_PROXY_FIX" in os.environ:
         app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1
     )
 
+
+def run_api():
+    print("Starting api...")
+    socketio.run(app, host="0.0.0.0", port=5000)
+
+
 if __name__ == '__main__':
-    socketio.run(app, host="0.0.0.0", port=5000, debug=True)
+    run_api()

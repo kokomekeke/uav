@@ -25,6 +25,7 @@ from pysagax.gnd.commandengine import CommandEngine
 from pysagax.gnd.database import ComIntDatabase
 from pysagax.gnd.monitoring import Monitoring
 from pysagax.gnd.ppgeoloc import PPGeoLoc
+from pysagax.pysagax_gnd_api import run_api
 
 try:
     import tomllib
@@ -48,7 +49,7 @@ class Commander:
 
         self._logger = getLogger("Commander")
         self._manager = multiprocessing.Manager()
-        self._pool = ProcessPoolExecutor(max_workers=14)
+        self._pool = ProcessPoolExecutor(max_workers=15)
 
         self._db = ComIntDatabase(db_url)
         # self._example_q = self._manager.Queue(maxsize=1)
@@ -71,8 +72,9 @@ class Commander:
 
         self._logger.debug("Starting Commander")
 
+        api_future = self._pool.submit(run_api)
+
         cievents_future = self._pool.submit(self._cievents)
-        # itt aktivalodik a __call__()
         commaggregate_future = self._pool.submit(
             self._commaggregate, self._telemetry_for_monitoring_q
         )
@@ -88,6 +90,7 @@ class Commander:
         while True:
             done, running = wait(
                 (
+                    api_future,
                     cievents_future,
                     commaggregate_future,
                     commandengine_future,
