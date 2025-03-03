@@ -333,16 +333,22 @@ class PlotFrame(tkinter.Frame):
 
         is_scanning = (
             self.master.client.source_manager.latest_telemetry is not None
-            and self.master.client.source_manager.latest_telemetry.scanengine_state
-            == str(ScanEngineState.SCANNING_IN_PROGRESS).split(".")[-1]
+            and self.master.client.source_manager.latest_telemetry.scanengine_state in (
+                str(ScanEngineState.SCANNING_IN_PROGRESS).split(".")[-1],
+                str(ScanEngineState.SCANNING_IDLE).split(".")[-1],
+            )
         )  # TODO: protobuf telemetry shouldn't send SE state in enum instead of string
 
         spectrum_index = self._check_existing_spectrum_plots(
             bin_count, center_frequency, iq_rate, is_scanning
         )
         if spectrum_index is None:
+            new_row = "\n" # cant have '\' inside f-string expressions
             self._logger.warning(
-                f"No spectrum found with cf={center_frequency}, iq_rate={iq_rate}, bin_count={bin_count}"
+                f"No spectrum found with cf={center_frequency}, iq_rate={iq_rate}, bin_count={bin_count}\n"
+                f"List pof spectrum params (len={len(self.params)}): \n"
+                f"cf\t\tiq\t\tbc\n"
+                f"{new_row.join([f'{p.center_frequency}    {p.iq_rate}   {p.bin_count}' for p in self.params])}"
             )
         else:
             if bin_count != self.params[spectrum_index].bin_count:
@@ -540,7 +546,7 @@ class PlotSettingsFrame(tkinter.Frame):
             "Spectrum graph min dB:",
             0,
             1,
-            read_from_conf(conf, ["display", "spectrum_graph_min_db"], -80),
+            read_from_conf(conf, ["display", "spectrum_graph_min_db"], -120),
             tkinter.DoubleVar,
         )
 
