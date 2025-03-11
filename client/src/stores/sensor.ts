@@ -32,11 +32,11 @@ export const useSensorStore = defineStore('sensor', () => {
       if (response.status !== 200) {
         throw new Error(`API hiba: ${response.status} - ${response.statusText}`)
       }
-
+      console.log("response data: ", response.data)
       sensors.value = Array.isArray(response.data) ? response.data : response.data.sensors || []
     } catch (error) {
       console.error('Hiba az API hívás során:', error)
-      sensors.value = ['10.1.1.113', '10.1.1.119'] // Új referencia, hogy Vue érzékelje a változást
+      sensors.value = ['10.1.1.113', '10.1.1.119']
       console.log('szenzór:: ', sensors.value)
     } finally {
       isLoading.value = false
@@ -48,7 +48,7 @@ export const useSensorStore = defineStore('sensor', () => {
     if (newSensor.value.trim() === '') return
     console.log('...')
     try {
-      await axios.post(`${ipPort.value}/v1/uav/addSensor`, { sensor: newSensor.value })
+      await axios.post(`${ipPort.value}/v1/uav/`, { sensor: newSensor.value })
 
       // API sikeres válasz után frissítjük a listát
       await fetchSensors()

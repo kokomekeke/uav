@@ -27,6 +27,10 @@ watch(() => sensorStore.sensors, (newSensors) => {
   console.log('🔄 Szenzor lista változott:', newSensors)
 }, { deep: true })
 
+watch(() => sensorStore.selectSensor, (n) => {
+    console.log('🔄 S:', n)
+}, { deep: true })
+
 const toggleMenu = () => {
   isOpen.value = !isOpen.value
   emit('update:isMenuOpen', isOpen.value)
@@ -63,22 +67,24 @@ const toggleMenu = () => {
               v-for="sensor in sensors"
               :key="sensor"
               @click="sensorStore.selectSensor(sensor)"
-              :class="{'bg-gray-500': sensorStore.selectedSensor === sensor, 'bg-gray-700 hover:bg-gray-500': sensorStore.selectedSensor !== sensor}"
+              :class="{'bg-gray-700': sensorStore.selectedSensor === sensor, 'bg-gray-700 hover:bg-gray-600': sensorStore.selectedSensor !== sensor}"
               class="p-2 flex justify-between items-center rounded cursor-pointer"
             >
-              <router-link :to="`/sensor/${sensor}`" class="text-white hover:underline flex-grow text-left">
-                {{ sensor }}
+              <input type="checkbox" id="checkbox">
+              <router-link :to="`/sensor/${sensor}`" class="pl-2 text-white hover:underline flex-grow text-left">
+                {{ sensor['uav_label'] }}
               </router-link>
+              <button class="text-white p-2 rounded">⚙️</button>
               <button @click="sensorStore.removeSensor(sensor)" class="text-red-400 hover:text-red-600 ml-2">❌</button>
             </li>
           </ul>
 
           <div class="mt-4">
-            <input
+            <!--<input
               v-model="sensorStore.newSensor"
               placeholder="Új szenzor hozzáadása"
               class="text-black p-2 w-full rounded"
-            />
+            />-->
             <button @click="sensorStore.addSensor" class="mt-2 w-full bg-green-500 text-white p-2 rounded hover:bg-green-700">
               + Szenzor hozzáadása
             </button>
@@ -88,6 +94,7 @@ const toggleMenu = () => {
             RMS
           </button>
         </div>
+
       </div>
     </div>
   </div>

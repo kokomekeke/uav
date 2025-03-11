@@ -57,7 +57,7 @@ watch(() => showModal.value, (newValue) => {
           </template>
           <template #body>
             <label>Enter IP Address and Port:</label>
-            <input v-model="ipPort" placeholder="localhost:5000" class="w-64">
+            <input v-model="ipPort" placeholder="http://192.168.0.82:5000" class="w-64">
           </template>
           <template #close>
             <button class="modal-default-button" @click="closeModal">Close</button>
