@@ -1,97 +1,44 @@
 <script setup>
 import { ref, watch, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
-import axios from 'axios'
+import { storeToRefs } from 'pinia'
+import { useConnectionStore } from '@/stores/connection'
+import { useSensorStore } from '@/stores/sensor'
 
 const route = useRoute()
+const connectionStore = useConnectionStore()
+const { ipPort, isConnected } = storeToRefs(connectionStore)
+
+const sensorStore = useSensorStore()
+const { sensors } = storeToRefs(sensorStore)
 
 const props = defineProps({
-  ipPort: String,
-  isConnected: Boolean,
   isMenuOpen: Boolean
 })
 const isOpen = ref(props.isMenuOpen)
-const newSensor = ref('')
-const sensors = ref([])
-const selectedSensor = ref(null)
 
 const emit = defineEmits(['update:isMenuOpen'])
 
 watch(() => props.isMenuOpen, (newValue) => {
-  console.log('newvalue:', isOpen.value)
   isOpen.value = newValue
 })
+
+watch(() => sensorStore.sensors, (newSensors) => {
+  console.log('🔄 Szenzor lista változott:', newSensors)
+}, { deep: true })
 
 const toggleMenu = () => {
   isOpen.value = !isOpen.value
   emit('update:isMenuOpen', isOpen.value)
 }
 
-const addSensor = () => {
-  sensors.value.push(newSensor.value)
-  newSensor.value = ''
-}
-
-const selectSensor = (sensor, event) => {
-  selectedSensor.value = sensor
-  console.log('sensor: ', sensor)
-  if (event) event.stopPropagation()
-}
-
-watchEffect(() => {
-  console.log('BurgerMenu ipPort:', props.ipPort)
-  console.log('BurgerMenu:', props.isConnected)
-  if (props.isConnected && props.ipPort) {
-    console.log('Fetching sensors...')
-    fetchSensors()
-  }
-})
-
-watch(() => route.params.sensor, (newSensor) => {
-  selectedSensor.value = newSensor
-  console.log('Új szenzor kiválasztva:', newSensor)
-  fetchSensors()
-})
-
-const fetchSensors = async () => {
-  try {
-    const url = `${props.ipPort}/v1/uav/`
-    console.log('Fetching from:', url)
-    const response = await axios.get(url)
-
-    if (!response || !response.data) {
-      console.error('API válasz üres vagy undefined!')
-      sensors.value = [1, 2]
-      return
-    }
-
-    if (response.status !== 200) {
-      console.error(`API hiba: ${response.status} - ${response.statusText}`)
-      sensors.value = [2, 3]
-      return
-    }
-
-    if (Array.isArray(response.data)) {
-      sensors.value = response.data
-    } else {
-      console.error('API response is not an array:', response.data)
-      sensors.value = response.data.sensors || []
-    }
-
-    console.log('Updated sensors list:', sensors.value)
-  } catch (error) {
-    console.error('Hiba az API hívás során:', error)
-    sensors.value = ['10.1.1.113', '10.1.1.119']
-  }
-}
 </script>
 
 <template>
   <div class="flex min-h-screen transition-all duration-300">
-    <div v-if="isOpen" class="w-64"></div> <!-- Sidebar helykitöltő -->
+    <div v-if="isOpen" class="w-64"></div>
 
     <div class="flex-1">
-      <!-- Hamburger Button -->
       <button
         @click="toggleMenu"
         class="fixed top-4 left-4 z-50 h-10 w-10 p-2 bg-blue-600 flex flex-col items-center justify-center gap-1 rounded"
@@ -102,33 +49,46 @@ const fetchSensors = async () => {
         <span class="h-0.5 rounded bg-gray-400 w-6"></span>
       </button>
 
-      <!-- Sidebar -->
       <div
         class="fixed top-0 left-0 h-full w-64 bg-gray-800 p-5 z-40 transition-transform duration-300"
         :class="{ '-translate-x-full': !isOpen, 'translate-x-0': isOpen }"
       >
         <button @click="toggleMenu" class="text-white text-2xl mb-4">✖</button>
+
         <div class="bg-blue-500 flex-grow my-4 text-white p-4 text-center overflow-y-auto rounded-lg">
-          <ul v-if="props.isConnected" class="max-h-90">
+          <p v-if="sensorStore.isLoading" class="text-yellow-300">Betöltés...</p>
+          <p v-if="sensorStore.errorMessage" class="text-red-500">{{ sensorStore.errorMessage }}</p>
+          <ul class="max-h-90">
             <li
-              v-for="sensor in sensors" :key="sensor"
-              @click="selectSensor(sensor, $event)"
-              :class="{'bg-gray-500': selectedSensor === sensor, 'bg-gray-700 hover:bg-gray-500': selectedSensor !== sensor}"
+              v-for="sensor in sensors"
+              :key="sensor"
+              @click="sensorStore.selectSensor(sensor)"
+              :class="{'bg-gray-500': sensorStore.selectedSensor === sensor, 'bg-gray-700 hover:bg-gray-500': sensorStore.selectedSensor !== sensor}"
+              class="p-2 flex justify-between items-center rounded cursor-pointer"
             >
-              <router-link :to="`/sensor/${sensor}`" class="text-white hover:underline">
+              <router-link :to="`/sensor/${sensor}`" class="text-white hover:underline flex-grow text-left">
                 {{ sensor }}
               </router-link>
-              <button>❌</button>
+              <button @click="sensorStore.removeSensor(sensor)" class="text-red-400 hover:text-red-600 ml-2">❌</button>
             </li>
           </ul>
-          <input v-model="newSensor" placeholder="Add new sensor">
-          <button @click="addSensor">add sensor</button>
-          <button>rms</button>
+
+          <div class="mt-4">
+            <input
+              v-model="sensorStore.newSensor"
+              placeholder="Új szenzor hozzáadása"
+              class="text-black p-2 w-full rounded"
+            />
+            <button @click="sensorStore.addSensor" class="mt-2 w-full bg-green-500 text-white p-2 rounded hover:bg-green-700">
+              + Szenzor hozzáadása
+            </button>
+          </div>
+
+          <button class="mt-4 w-full bg-gray-700 text-white p-2 rounded hover:bg-gray-900">
+            RMS
+          </button>
         </div>
       </div>
-
-      <!-- Fő tartalom -->
-<!--      <router-view :key="route.fullPath"/>-->
     </div>
   </div>
 </template>

@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { ref } from 'vue'
 
 // Alapértelmezett konfiguráció beállítása ref-ként
 const config = ref({
@@ -12,7 +12,7 @@ const config = ref({
   roi_center: '446.065M',
   roi_span: '100k',
   roi_threshold: '-40'
-});
+})
 
 // Változások kezelése
 const updateConfig = () => {

@@ -69,8 +69,10 @@ if "PYSAGAX_GND_PROXY_FIX" in os.environ:
 
 
 def run_api():
-    print("Starting api...")
-    socketio.run(app, host="0.0.0.0", port=5000)
+    host = "0.0.0.0"
+    port = 5000
+    print(f"Starting API on http://{host}:{port}")
+    socketio.run(app, host=host, port=port)
 
 
 if __name__ == '__main__':

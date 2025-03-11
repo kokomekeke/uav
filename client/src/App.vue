@@ -7,20 +7,14 @@
     <div class="bg-green-500 grid grid-cols-7 flex-1">
       <BurgerMenu class="burger-menu col-span-1"
                   :isMenuOpen="isMenuOpen"
-                  :isConnected="isConnected"
-                  :ipPort="ipPort"
       />
       <div
         class="flex flex-col transition-all duration-300 place-content-center"
         :class="isMenuOpen ? 'grid-cols-[250px,1fr]' : 'grid-cols-[60px,1fr]'"
       >
         <router-view
-          :isConnected="isConnected"
           :isMenuOpen="isMenuOpen"
-          :ipPort="ipPort"
-          @update:isConnected="isConnected = $event"
           @update:isMenuOpen="isMenuOpen = $event"
-          @update:ipPort="ipPort = $event"
         />
       </div>
       <div class="fixed top-20 h-full right-0 w-64 bg-gray-500 p-4 shadow-lg">
@@ -34,11 +28,8 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import BurgerMenu from '@/components/layout/BurgerMenu.vue'
 
-const ipPort = ref('http://192.168.1.245:5000') // IP:Port beviteli mező
-
 const packageVer = '0'
 const gitHash = '0'
-const isConnected = ref(false)
 const isMenuOpen = ref(false)
 
 onMounted(() => {
@@ -52,15 +43,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style src="./assets/tailwind.css">
-#app {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-align: center;
-  color: #2c3e50;
-  margin-top: 60px;
-}
-
 .burger-menu {
   position: fixed;
   top: 10px;
