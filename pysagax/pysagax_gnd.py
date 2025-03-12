@@ -25,7 +25,7 @@ from pysagax.gnd.commandengine import CommandEngine
 from pysagax.gnd.database import ComIntDatabase
 from pysagax.gnd.monitoring import Monitoring
 from pysagax.gnd.ppgeoloc import PPGeoLoc
-from pysagax.pysagax_gnd_api import run_api
+# from pysagax.pysagax_gnd_api import run_api
 
 
 try:

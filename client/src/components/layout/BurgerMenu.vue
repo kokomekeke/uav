@@ -1,13 +1,7 @@
 <script setup>
-import { ref, watch, watchEffect } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useConnectionStore } from '@/stores/connection'
 import { useSensorStore } from '@/stores/sensor'
-
-const route = useRoute()
-const connectionStore = useConnectionStore()
-const { ipPort, isConnected } = storeToRefs(connectionStore)
 
 const sensorStore = useSensorStore()
 const { sensors } = storeToRefs(sensorStore)
@@ -15,38 +9,35 @@ const { sensors } = storeToRefs(sensorStore)
 const props = defineProps({
   isMenuOpen: Boolean
 })
-const isOpen = ref(props.isMenuOpen)
+const isMenuOpen = ref(props.isMenuOpen)
+const isModalOpen = ref(false) // ✅ Hozzáadott változó a modal állapotának követéséhez
 
 const emit = defineEmits(['update:isMenuOpen'])
 
 watch(() => props.isMenuOpen, (newValue) => {
-  isOpen.value = newValue
+  isMenuOpen.value = newValue
 })
 
-watch(() => sensorStore.sensors, (newSensors) => {
-  console.log('🔄 Szenzor lista változott:', newSensors)
-}, { deep: true })
-
-watch(() => sensorStore.selectSensor, (n) => {
-    console.log('🔄 S:', n)
-}, { deep: true })
-
-const toggleMenu = () => {
-  isOpen.value = !isOpen.value
-  emit('update:isMenuOpen', isOpen.value)
+const removeSensor = () => {
+  sensorStore.removeSensor()
+  isModalOpen.value = false
 }
 
+const toggleMenu = () => {
+  isMenuOpen.value = !isMenuOpen.value
+  emit('update:isMenuOpen', isMenuOpen.value)
+}
 </script>
 
 <template>
   <div class="flex min-h-screen transition-all duration-300">
-    <div v-if="isOpen" class="w-64"></div>
+    <div v-if="isMenuOpen" class="w-64"></div>
 
     <div class="flex-1">
       <button
         @click="toggleMenu"
         class="fixed top-4 left-4 z-50 h-10 w-10 p-2 bg-blue-600 flex flex-col items-center justify-center gap-1 rounded"
-        v-if="!isOpen"
+        v-if="!isMenuOpen"
       >
         <span class="h-0.5 rounded bg-gray-400 w-6"></span>
         <span class="h-0.5 rounded bg-gray-400 w-6"></span>
@@ -55,18 +46,21 @@ const toggleMenu = () => {
 
       <div
         class="fixed top-0 left-0 h-full w-64 bg-gray-800 p-5 z-40 transition-transform duration-300"
-        :class="{ '-translate-x-full': !isOpen, 'translate-x-0': isOpen }"
+        :class="{ '-translate-x-full': !isMenuOpen, 'translate-x-0': isMenuOpen }"
       >
         <button @click="toggleMenu" class="text-white text-2xl mb-4">✖</button>
 
         <div class="bg-blue-500 flex-grow my-4 text-white p-4 text-center overflow-y-auto rounded-lg">
           <p v-if="sensorStore.isLoading" class="text-yellow-300">Betöltés...</p>
           <p v-if="sensorStore.errorMessage" class="text-red-500">{{ sensorStore.errorMessage }}</p>
+
           <ul class="max-h-90">
             <li
               v-for="sensor in sensors"
-              :key="sensor"
+              :key="sensor.uav_label"
               @click="sensorStore.selectSensor(sensor)"
+              @mouseover="sensorStore.handleMouseOver(sensor)"
+              @mouseleave="sensorStore.handleMouseLeave"
               :class="{'bg-gray-700': sensorStore.selectedSensor === sensor, 'bg-gray-700 hover:bg-gray-600': sensorStore.selectedSensor !== sensor}"
               class="p-2 flex justify-between items-center rounded cursor-pointer"
             >
@@ -75,33 +69,56 @@ const toggleMenu = () => {
                 {{ sensor['uav_label'] }}
               </router-link>
               <button class="text-white p-2 rounded">⚙️</button>
-              <button @click="sensorStore.removeSensor(sensor)" class="text-red-400 hover:text-red-600 ml-2">❌</button>
+              <button @click="isModalOpen = true" class="text-red-400 hover:text-red-600 ml-2">❌</button>
             </li>
           </ul>
 
           <div class="mt-4">
-            <!--<input
-              v-model="sensorStore.newSensor"
-              placeholder="Új szenzor hozzáadása"
-              class="text-black p-2 w-full rounded"
-            />-->
             <button @click="sensorStore.addSensor" class="mt-2 w-full bg-green-500 text-white p-2 rounded hover:bg-green-700">
               + Szenzor hozzáadása
             </button>
           </div>
 
-          <button class="mt-4 w-full bg-gray-700 text-white p-2 rounded hover:bg-gray-900">
-            RMS
+          <button
+            @click="isModalOpen = true"
+            class="rounded-md bg-slate-800 py-2 px-4 border border-transparent text-center text-sm text-white transition-all shadow-md hover:shadow-lg focus:bg-slate-700 focus:shadow-none active:bg-slate-700 hover:bg-slate-700 active:shadow-none disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none ml-2"
+          >
+            Open Modal
           </button>
-        </div>
 
+          <div
+            v-if="isModalOpen"
+            class="fixed inset-0 z-[999] grid h-screen w-screen place-items-center bg-black bg-opacity-60 backdrop-blur-sm transition-opacity duration-300"
+          >
+            <div class="relative m-4 p-4 w-2/5 min-w-[40%] max-w-[40%] rounded-lg bg-red-100 shadow-sm">
+              <div class="flex shrink-0 items-center pb-4 text-xl font-medium text-slate-800">
+              </div>
+              <div class="relative border-t border-slate-200 py-4 leading-normal text-slate-600 font-bold">
+                Are you sure you want to delete the sensor?
+              </div>
+              <div class="flex shrink-0 flex-wrap items-center pt-4 justify-end">
+                <button
+                  @click="isModalOpen = false"
+                  class="rounded-md border border-transparent py-2 px-4 text-center text-sm transition-all text-slate-600 hover:bg-slate-100 focus:bg-slate-100 active:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  @click="removeSensor"
+                  class="rounded-md bg-red-600 py-2 px-4 border border-transparent text-center text-sm text-white transition-all shadow-md hover:shadow-lg focus:bg-red-700 hover:bg-red-700 ml-2"
+                >
+                  Confirm
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* Alapértelmezett rejtett állapot */
 .-translate-x-full {
   transform: translateX(-100%);
 }

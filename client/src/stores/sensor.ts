@@ -1,10 +1,10 @@
-import { defineStore, storeToRefs } from 'pinia'
-import { computed, ref, watch } from 'vue'
+import {defineStore, storeToRefs} from 'pinia'
+import {computed, ref, watch} from 'vue'
 import axios from 'axios'
-import { useConnectionStore } from '@/stores/connection'
+import {useConnectionStore} from '@/stores/connection'
 
 export const useSensorStore = defineStore('sensor', () => {
-  const sensors = ref<string[]>()
+  const sensors = ref([])
   const newSensor = ref('')
   const selectedSensor = ref(null)
   const isLoading = ref<boolean>(false)
@@ -12,7 +12,15 @@ export const useSensorStore = defineStore('sensor', () => {
 
   const connectionStore = useConnectionStore()
   const { ipPort, isConnected } = storeToRefs(connectionStore)
+  const handleMouseOver = (sensor) => {
+    selectedSensor.value = sensor
+    console.log('over', sensor)
+  }
 
+  const handleMouseLeave = () => {
+    selectedSensor.value = null
+    console.log('leave')
+  }
   async function fetchSensors () {
     console.log('fetchSensors', ipPort.value)
     if (!isConnected.value) return
@@ -32,11 +40,14 @@ export const useSensorStore = defineStore('sensor', () => {
       if (response.status !== 200) {
         throw new Error(`API hiba: ${response.status} - ${response.statusText}`)
       }
-      console.log("response data: ", response.data)
+      console.log('response data: ', response.data)
       sensors.value = Array.isArray(response.data) ? response.data : response.data.sensors || []
     } catch (error) {
       console.error('Hiba az API hívás során:', error)
-      sensors.value = ['10.1.1.113', '10.1.1.119']
+      sensors.value = [
+        { uav_label: 'test01', ip: '10.1.1.113' },
+        { uav_label: 'test02', ip: '10.1.1.119' }
+      ]
       console.log('szenzór:: ', sensors.value)
     } finally {
       isLoading.value = false
@@ -70,11 +81,12 @@ export const useSensorStore = defineStore('sensor', () => {
     console.log('N', n)
   })
 
-  function removeSensor (sensor) {
-    sensors.value = sensors.value.filter(s => s !== sensor)
+  function removeSensor () {
+    sensors.value = sensors.value.filter(s => s !== selectedSensor.value)
   }
 
   function selectSensor (sensor) {
+    console.log(sensor, 'sensor selected')
     selectedSensor.value = sensor
   }
   const getSensors = computed(() => [...sensors.value])
@@ -88,6 +100,8 @@ export const useSensorStore = defineStore('sensor', () => {
     fetchSensors,
     addSensor,
     removeSensor,
-    selectSensor
+    selectSensor,
+    handleMouseOver,
+    handleMouseLeave
   }
 })
