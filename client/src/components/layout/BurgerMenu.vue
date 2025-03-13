@@ -96,10 +96,16 @@ const toggleMenu = () => {
                 <button @click.stop="openModifyPanel(sensor)" class="text-white p-2 rounded">⚙️</button>
                 <button @click.stop="isRemoveDialogOpen = true" class="text-red-400 hover:text-red-600 ml-2">❌</button>
               </div>
-              <div v-if="selectedSensorForModify === sensor" class="mt-2 h-20 bg-amber-500 rounded">
+              <div v-if="selectedSensorForModify === sensor" class="mt-2 h-40 bg-gray-800 rounded">
                 <div>
                   <p>Host ip:</p>
                   <input class="max-w-40 text-black">
+                  <p>Host label:</p>
+                  <input class="max-w-40 text-black">
+                  <div class="flex ml-12">
+                      <p>Active:</p>
+                      <input type="checkbox">
+                  </div>
                   <button class="bg-green-700 m-1 rounded">Confirm</button>
                 </div>
               </div>

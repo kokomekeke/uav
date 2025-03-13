@@ -76,14 +76,18 @@ export const useSensorStore = defineStore('sensor', () => {
     console.log('N', n)
   })
 
-  function removeSensor () {
+  async function removeSensor () {
     console.log(selectedSensor)
     if (!selectedSensor.value) return // Ha nincs kiválasztott szenzor, kilépünk
 
     sensors.value = sensors.value.filter(s => s.uav_label !== selectedSensor.value.uav_label)
-
+    const id = selectedSensor.value.uav_id
     selectedSensor.value = null
 
+//     ide kéne a backend endpointot aktiválni
+    await axios.delete(`${ipPort.value}/v1/uav/` + id).then(response => {
+      console.log("juhuuuuu");
+    });
     console.log('new values::::', sensors.value)
   }
 
