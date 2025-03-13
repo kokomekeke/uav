@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSensorStore } from '@/stores/sensor'
+import NewSensorModal from "@/components/common/NewSensorModal.vue";
 
 const sensorStore = useSensorStore()
 const { sensors } = storeToRefs(sensorStore)
@@ -10,8 +11,10 @@ const props = defineProps({
   isMenuOpen: Boolean
 })
 const isMenuOpen = ref(props.isMenuOpen)
-const isModalOpen = ref(false) // ✅ Hozzáadott változó a modal állapotának követéséhez
-
+const isRemoveDialogOpen = ref(false)
+const isModalOpen = ref(false)
+// const isModifyPanelOpen = ref(false)
+const selectedSensorForModify = ref(null)
 const emit = defineEmits(['update:isMenuOpen'])
 
 watch(() => props.isMenuOpen, (newValue) => {
@@ -19,8 +22,28 @@ watch(() => props.isMenuOpen, (newValue) => {
 })
 
 const removeSensor = () => {
+  console.log('remove sensor')
   sensorStore.removeSensor()
-  isModalOpen.value = false
+  isRemoveDialogOpen.value = false
+}
+
+const openModifyPanel = (sensor) => {
+  console.log('open modify panel for sensor:', sensor)
+  selectedSensorForModify.value = sensor
+}
+
+const selectSensor = (sensor) => {
+  sensorStore.selectSensor(sensor)
+}
+
+const handleMouseOver = (sensor) => {
+  sensorStore.handleMouseOver(sensor)
+}
+
+const addSensor = () => {
+  console.log('add sensor')
+  // sensorStore.addSensor()
+  isModalOpen.value = true
 }
 
 const toggleMenu = () => {
@@ -32,7 +55,6 @@ const toggleMenu = () => {
 <template>
   <div class="flex min-h-screen transition-all duration-300">
     <div v-if="isMenuOpen" class="w-64"></div>
-
     <div class="flex-1">
       <button
         @click="toggleMenu"
@@ -58,36 +80,41 @@ const toggleMenu = () => {
             <li
               v-for="sensor in sensors"
               :key="sensor.uav_label"
-              @click="sensorStore.selectSensor(sensor)"
-              @mouseover="sensorStore.handleMouseOver(sensor)"
-              @mouseleave="sensorStore.handleMouseLeave"
-              :class="{'bg-gray-700': sensorStore.selectedSensor === sensor, 'bg-gray-700 hover:bg-gray-600': sensorStore.selectedSensor !== sensor}"
-              class="p-2 flex justify-between items-center rounded cursor-pointer"
+              @click="selectSensor(sensor)"
+              @mouseover="handleMouseOver(sensor)"
+              :class="{
+                'bg-gray-700': sensorStore.selectedSensor === sensor,
+                'bg-gray-700 hover:bg-gray-600': sensorStore.selectedSensor !== sensor
+              }"
+              class="p-2 rounded cursor-pointer"
             >
-              <input type="checkbox" id="checkbox">
-              <router-link :to="`/sensor/${sensor}`" class="pl-2 text-white hover:underline flex-grow text-left">
-                {{ sensor['uav_label'] }}
-              </router-link>
-              <button class="text-white p-2 rounded">⚙️</button>
-              <button @click="isModalOpen = true" class="text-red-400 hover:text-red-600 ml-2">❌</button>
+              <div class="flex justify-between items-center">
+                <input type="checkbox" id="checkbox">
+                <router-link :to="`/sensor/${sensor['uav_label']}`" class="pl-2 text-white hover:underline flex-grow text-left">
+                  {{ sensor['uav_label'] }}
+                </router-link>
+                <button @click.stop="openModifyPanel(sensor)" class="text-white p-2 rounded">⚙️</button>
+                <button @click.stop="isRemoveDialogOpen = true" class="text-red-400 hover:text-red-600 ml-2">❌</button>
+              </div>
+              <div v-if="selectedSensorForModify === sensor" class="mt-2 h-20 bg-amber-500 rounded">
+                <div>
+                  <p>Host ip:</p>
+                  <input class="max-w-40 text-black">
+                  <button class="bg-green-700 m-1 rounded">Confirm</button>
+                </div>
+              </div>
             </li>
           </ul>
+          <new-sensor-modal></new-sensor-modal>
 
-          <div class="mt-4">
-            <button @click="sensorStore.addSensor" class="mt-2 w-full bg-green-500 text-white p-2 rounded hover:bg-green-700">
-              + Szenzor hozzáadása
-            </button>
-          </div>
-
-          <button
-            @click="isModalOpen = true"
-            class="rounded-md bg-slate-800 py-2 px-4 border border-transparent text-center text-sm text-white transition-all shadow-md hover:shadow-lg focus:bg-slate-700 focus:shadow-none active:bg-slate-700 hover:bg-slate-700 active:shadow-none disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none ml-2"
-          >
-            Open Modal
-          </button>
-
+<!--          <button-->
+<!--            @click="isRemoveDialogOpen = true"-->
+<!--            class="rounded-md bg-slate-800 py-2 px-4 border border-transparent text-center text-sm text-white transition-all shadow-md hover:shadow-lg focus:bg-slate-700 focus:shadow-none active:bg-slate-700 hover:bg-slate-700 active:shadow-none disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none ml-2"-->
+<!--          >-->
+<!--            Open Modal-->
+<!--          </button>-->
           <div
-            v-if="isModalOpen"
+            v-if="isRemoveDialogOpen"
             class="fixed inset-0 z-[999] grid h-screen w-screen place-items-center bg-black bg-opacity-60 backdrop-blur-sm transition-opacity duration-300"
           >
             <div class="relative m-4 p-4 w-2/5 min-w-[40%] max-w-[40%] rounded-lg bg-red-100 shadow-sm">
@@ -98,13 +125,13 @@ const toggleMenu = () => {
               </div>
               <div class="flex shrink-0 flex-wrap items-center pt-4 justify-end">
                 <button
-                  @click="isModalOpen = false"
+                  @click="isRemoveDialogOpen = false"
                   class="rounded-md border border-transparent py-2 px-4 text-center text-sm transition-all text-slate-600 hover:bg-slate-100 focus:bg-slate-100 active:bg-slate-100"
                 >
                   Cancel
                 </button>
                 <button
-                  @click="removeSensor"
+                  @click="removeSensor()"
                   class="rounded-md bg-red-600 py-2 px-4 border border-transparent text-center text-sm text-white transition-all shadow-md hover:shadow-lg focus:bg-red-700 hover:bg-red-700 ml-2"
                 >
                   Confirm

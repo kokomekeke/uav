@@ -3,7 +3,6 @@ import { ref } from 'vue'
 
 // Alapértelmezett konfiguráció beállítása ref-ként
 const config = ref({
-  host: 'localhost',
   center_freq: '446M',
   bandwidth: '1M',
   gain: '50',

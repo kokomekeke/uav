@@ -1,7 +1,7 @@
-import {defineStore, storeToRefs} from 'pinia'
-import {computed, ref, watch} from 'vue'
+import { defineStore, storeToRefs } from 'pinia'
+import { computed, ref, watch } from 'vue'
 import axios from 'axios'
-import {useConnectionStore} from '@/stores/connection'
+import { useConnectionStore } from '@/stores/connection'
 
 export const useSensorStore = defineStore('sensor', () => {
   const sensors = ref([])
@@ -15,11 +15,6 @@ export const useSensorStore = defineStore('sensor', () => {
   const handleMouseOver = (sensor) => {
     selectedSensor.value = sensor
     console.log('over', sensor)
-  }
-
-  const handleMouseLeave = () => {
-    selectedSensor.value = null
-    console.log('leave')
   }
   async function fetchSensors () {
     console.log('fetchSensors', ipPort.value)
@@ -82,7 +77,14 @@ export const useSensorStore = defineStore('sensor', () => {
   })
 
   function removeSensor () {
-    sensors.value = sensors.value.filter(s => s !== selectedSensor.value)
+    console.log(selectedSensor)
+    if (!selectedSensor.value) return // Ha nincs kiválasztott szenzor, kilépünk
+
+    sensors.value = sensors.value.filter(s => s.uav_label !== selectedSensor.value.uav_label)
+
+    selectedSensor.value = null
+
+    console.log('new values::::', sensors.value)
   }
 
   function selectSensor (sensor) {
@@ -101,7 +103,6 @@ export const useSensorStore = defineStore('sensor', () => {
     addSensor,
     removeSensor,
     selectSensor,
-    handleMouseOver,
-    handleMouseLeave
+    handleMouseOver
   }
 })
