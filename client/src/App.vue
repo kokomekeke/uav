@@ -1,28 +1,36 @@
 <template>
-<!--  <main class="bg-green-500 min-h-screen flex flex-row">-->
-  <main class="bg-green-500 min-h-screen grid grid-cols-7">
-    <div class="sticky top-0 px-4 py-6 col-span-7 w-full h-20 bg-gray-300 border-gray-800 p-4 text-center border-2 rounded font-mono uppercase text-lg text-black font-stretch-extra-expanded font-bold">
+  <main class="bg-green-500 min-h-screen grid grid-rows-[auto,1fr]">
+    <!-- Fejléc -->
+    <div class="sticky top-0 px-4 py-6 w-full h-20 bg-gray-300 border-gray-800 text-center border-2 rounded font-mono uppercase text-lg text-black font-bold">
       <h1>App Header</h1>
     </div>
-    <div class="bg-green-500 grid grid-cols-7 flex-1">
-      <BurgerMenu class="burger-menu col-span-1"
+
+    <!-- Tartalom -->
+    <div
+      class="bg-green-500 grid transition-all duration-300 flex-1"
+      :class="isMenuOpen ? 'grid-cols-[200px,1fr]' : 'grid-cols-[50px,1fr]'"
+    >
+      <!-- Burger Menü -->
+      <BurgerMenu class="burger-menu"
                   :isMenuOpen="isMenuOpen"
       />
-      <div
-        class="flex flex-col transition-all duration-300 place-content-center"
-        :class="isMenuOpen ? 'grid-cols-[250px,1fr]' : 'grid-cols-[60px,1fr]'"
-      >
+
+      <!-- Fő Tartalom -->
+      <div class="p-4">
         <router-view
           :isMenuOpen="isMenuOpen"
           @update:isMenuOpen="isMenuOpen = $event"
         />
       </div>
+
+      <!-- Jobb oldali content -->
       <div class="fixed top-20 h-full right-0 w-64 bg-gray-500 p-4 shadow-lg">
         egyeb content
       </div>
     </div>
   </main>
 </template>
+
 
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'

@@ -1,7 +1,6 @@
 <script setup>
 import { ref } from 'vue'
 
-// Alapértelmezett konfiguráció beállítása ref-ként
 const config = ref({
   center_freq: '446M',
   bandwidth: '1M',
@@ -13,7 +12,6 @@ const config = ref({
   roi_threshold: '-40'
 })
 
-// Változások kezelése
 const updateConfig = () => {
   console.log('Updates settings:', config.value);
 };

@@ -5,7 +5,6 @@ import { useConnectionStore } from '@/stores/connection'
 
 export const useSensorStore = defineStore('sensor', () => {
   const sensors = ref([])
-  const newSensor = ref('')
   const selectedSensor = ref(null)
   const isLoading = ref<boolean>(false)
   const errorMessage = ref('')
@@ -40,8 +39,8 @@ export const useSensorStore = defineStore('sensor', () => {
     } catch (error) {
       console.error('Hiba az API hívás során:', error)
       sensors.value = [
-        { uav_label: 'test01', ip: '10.1.1.113' },
-        { uav_label: 'test02', ip: '10.1.1.119' }
+        { uav_label: 'test001', ip: '10.1.1.113' },
+        { uav_label: 'test002', ip: '10.1.1.119' }
       ]
       console.log('szenzór:: ', sensors.value)
     } finally {
@@ -49,22 +48,30 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
-  async function addSensor () {
-    console.log('newSensor: ', newSensor.value)
-    if (newSensor.value.trim() === '') return
+  async function addSensor (sensor) {
+    console.log(sensor)
+    if (sensor.trim() === '') return
     console.log('...')
     try {
-      await axios.post(`${ipPort.value}/v1/uav/`, { sensor: newSensor.value })
+      await axios.post(`${ipPort.value}/v1/uav`,
+        {
+          uav_label: "sensor.uav_label",
+          uav_address: "sensor.uav_address",
+          active: false
+        },
+        { headers: { 'Content-Type': 'application/json' } }
+      ).catch(
+          (error) => {
+            console.error("❌ Hiba az API hívás során:", error.response ? error.response.data : error.message);
+          }
+        )
 
       // API sikeres válasz után frissítjük a listát
       await fetchSensors()
       sensors.value = [...sensors.value]
       console.log('✅ Szenzorok frissítve:', sensors.value)
-      newSensor.value = ''
     } catch (error) {
       console.error('Hiba az új szenzor hozzáadásakor:', error)
-      sensors.value.push(newSensor.value)
-      newSensor.value = ''
     }
   }
 
@@ -72,9 +79,6 @@ export const useSensorStore = defineStore('sensor', () => {
     console.log('🔄 Szenzor lista frissítve:', newSensors)
   }, { deep: true })
 
-  watch(newSensor, (n) => {
-    console.log('N', n)
-  })
 
   async function removeSensor () {
     console.log(selectedSensor)
@@ -98,7 +102,6 @@ export const useSensorStore = defineStore('sensor', () => {
   const getSensors = computed(() => [...sensors.value])
   return {
     sensors,
-    newSensor,
     selectedSensor,
     isLoading,
     errorMessage,
