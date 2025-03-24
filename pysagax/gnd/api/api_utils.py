@@ -1,6 +1,7 @@
-from pysagax.gnd.database import UAVEntity, ComIntDetectionEntity
+from pysagax.gnd.database import UAVEntity, ComIntDetectionEntity, ComIntGeoLocEntity
 from pysagax.util.mat import yaw_pitch_roll_from_quaternion
 
+from math import isfinite
 
 def geojson_feature_from_uav(
     uav: UAVEntity,
@@ -86,5 +87,30 @@ def geojson_feature_from_detection(
         "geometry": {
             "type": "Point",
             "coordinates": [float(det.uav_pos_lon), float(det.uav_pos_lat)],
+        },
+    }
+
+
+def geojson_feature_from_geoloc(
+    point: ComIntGeoLocEntity,
+) -> dict[str, str | dict[str, int | float | str | list[float]]]:
+    # TODO: WHY do we save NaN values to the DB? do we want that? It might be useful to keep track of the unsuccessful geolocation attempts.
+    lat = float(point.lat)
+    lon = float(point.lon)
+    if not (isfinite(lat) and isfinite(lon)):
+        # json standard doesn't have NaN and QGIS can't handle these values 
+        lat, lon = (0.0, 0.0)
+    return {
+        "type": "Feature",
+        "properties": {
+            "geoloc_id": point.geoloc_id,
+            "certainty_radius": point.certainty_radius,
+            "roi_id": point.roi_identifier,
+            "detections_time_delta": point.detections_time_delta.total_seconds(),
+            "timestamp": str(point.timestamp.isoformat("T")),
+        },
+        "geometry": {
+            "type": "Point",
+            "coordinates": [lon, lat],
         },
     }

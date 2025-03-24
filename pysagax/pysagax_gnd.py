@@ -58,14 +58,11 @@ class Commander:
             self._db.initialize_db(self._db.get_app_instance())
             return
         self._telemetry_for_monitoring_q = self._manager.Queue(maxsize=8)
-        # not implemented yet
         self._cievents = CIEvents(level=level)
         self._commaggregate = CommAggregate(level=level, db=self._db)
-        # not implemented yet
         self._commandengine = CommandEngine(level=level)
         self._monitoring = Monitoring(level=level)
-        # not implemented yet
-        self._ppgeoloc = PPGeoLoc(level=level)
+        self._ppgeoloc = PPGeoLoc(level=level, db=self._db)
 
     def start(self) -> None:
         """Start all background processes"""
