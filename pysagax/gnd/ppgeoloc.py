@@ -8,7 +8,6 @@ from typing import Optional
 from pysagax.common.loop import Loop
 
 
-
 class PPGeoLoc(Loop):
     """Background process for calculation the geolocation data for the ComInt events"""
 

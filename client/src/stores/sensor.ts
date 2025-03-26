@@ -50,21 +50,25 @@ export const useSensorStore = defineStore('sensor', () => {
 
   async function addSensor (sensor) {
     console.log(sensor)
-    if (sensor.trim() === '') return
-    console.log('...')
+    console.log(ipPort.value)
+    console.log('JSON sent:', JSON.stringify({
+      uav_label: sensor.uav_label,
+      uav_address: sensor.uav_address,
+      active: false
+    }))
     try {
       await axios.post(`${ipPort.value}/v1/uav`,
         {
-          uav_label: "sensor.uav_label",
-          uav_address: "sensor.uav_address",
+          uav_label: sensor.uav_label,
+          uav_address: sensor.uav_address,
           active: false
         },
         { headers: { 'Content-Type': 'application/json' } }
       ).catch(
-          (error) => {
-            console.error("❌ Hiba az API hívás során:", error.response ? error.response.data : error.message);
-          }
-        )
+        (error) => {
+          console.error('❌ Hiba az API hívás során:', error.response ? error.response.data : error.message)
+        }
+      )
 
       // API sikeres válasz után frissítjük a listát
       await fetchSensors()
@@ -79,7 +83,6 @@ export const useSensorStore = defineStore('sensor', () => {
     console.log('🔄 Szenzor lista frissítve:', newSensors)
   }, { deep: true })
 
-
   async function removeSensor () {
     console.log(selectedSensor)
     if (!selectedSensor.value) return // Ha nincs kiválasztott szenzor, kilépünk
@@ -88,10 +91,10 @@ export const useSensorStore = defineStore('sensor', () => {
     const id = selectedSensor.value.uav_id
     selectedSensor.value = null
 
-//     ide kéne a backend endpointot aktiválni
+    //     ide kéne a backend endpointot aktiválni
     await axios.delete(`${ipPort.value}/v1/uav/` + id).then(response => {
-      console.log("juhuuuuu");
-    });
+      console.log('juhuuuuu')
+    })
     console.log('new values::::', sensors.value)
   }
 

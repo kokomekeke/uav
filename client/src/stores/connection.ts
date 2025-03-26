@@ -3,19 +3,18 @@ import { ref } from 'vue'
 import { io } from 'socket.io-client'
 import axios, { AxiosResponse } from 'axios'
 
-// SensorData interfész
 interface SensorData {
   uav_label: string
   uav_address: string
   active: boolean
 }
 
-// Csatlakozás kezelése
 export const useConnectionStore = defineStore('connection', () => {
   const ipPort = ref('')
   const isConnected = ref(false)
   const connectionMessage = ref('')
   const pingInterval = ref<NodeJS.Timeout | null>(null)
+  const showModal = ref<boolean>(true)
 
   let socket: any = null
 
@@ -86,39 +85,39 @@ export const useConnectionStore = defineStore('connection', () => {
     }
   }
 
-  return { ipPort, isConnected, connectionMessage, setIpPort, setConnection, setConnectionMessage, connectToServer }
+  return { ipPort, isConnected, connectionMessage, showModal, setIpPort, setConnection, setConnectionMessage, connectToServer }
 })
-
-// Szenzorok kezelése
-export const useSensorStore = defineStore('sensor', () => {
-  const sensors = ref<SensorData[]>([])
-  const isLoading = ref<boolean>(false)
-  const errorMessage = ref<string>('')
-
-  const connectionStore = useConnectionStore()
-  const { ipPort, isConnected } = connectionStore
-
-  const addSensor = async (sensor: SensorData): Promise<void> => {
-    if (!isConnected.value) {
-      console.error('❌ Cannot add sensor, no connection!')
-      return
-    }
-
-    try {
-      const url = `${ipPort.value}/v1/uav/`
-      const response: AxiosResponse = await axios.post<SensorData>(url, sensor, {
-        headers: { 'Content-Type': 'application/json' }
-      })
-
-      console.log('✅ Sensor added successfully:', response.data)
-
-      // API válasz után frissítjük a listát
-      sensors.value.push(response.data)
-    } catch (error) {
-      console.error('❌ Error adding sensor:', error)
-      errorMessage.value = 'Hiba történt a szenzor hozzáadása során.'
-    }
-  }
-
-  return { sensors, isLoading, errorMessage, addSensor }
-})
+//
+// // Szenzorok kezelése
+// export const useSensorStore = defineStore('sensor', () => {
+//   const sensors = ref<SensorData[]>([])
+//   const isLoading = ref<boolean>(false)
+//   const errorMessage = ref<string>('')
+//
+//   const connectionStore = useConnectionStore()
+//   const { ipPort, isConnected } = connectionStore
+//
+//   const addSensor = async (sensor: SensorData): Promise<void> => {
+//     if (!isConnected.value) {
+//       console.error('❌ Cannot add sensor, no connection!')
+//       return
+//     }
+//
+//     try {
+//       const url = `${ipPort.value}/v1/uav/`
+//       const response: AxiosResponse = await axios.post<SensorData>(url, sensor, {
+//         headers: { 'Content-Type': 'application/json' }
+//       })
+//
+//       console.log('✅ Sensor added successfully:', response.data)
+//
+//       // API válasz után frissítjük a listát
+//       sensors.value.push(response.data)
+//     } catch (error) {
+//       console.error('❌ Error adding sensor:', error)
+//       errorMessage.value = 'Hiba történt a szenzor hozzáadása során.'
+//     }
+//   }
+//
+//   return { sensors, isLoading, errorMessage, addSensor }
+// })

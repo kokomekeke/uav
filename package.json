@@ -1,5 +1,11 @@
 {
   "dependencies": {
-    "pinia": "^3.0.1"
+    "-": "^0.0.1",
+    "leaflet": "^1.9.4",
+    "mapbox-gl": "^0.53.1",
+    "pinia": "^3.0.1",
+    "save": "^2.9.0",
+    "vue-mapbox": "^0.4.1",
+    "vue2-leaflet": "^2.7.1"
   }
 }

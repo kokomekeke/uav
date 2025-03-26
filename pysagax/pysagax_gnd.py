@@ -27,6 +27,13 @@ from pysagax.gnd.monitoring import Monitoring
 from pysagax.gnd.ppgeoloc import PPGeoLoc
 # from pysagax.pysagax_gnd_api import run_api
 
+# from pysagax.pysagax_gnd_api import run_api
+try:
+    from pysagax.pysagax_gnd_api import run_api
+    print("LINUX")
+except ImportError:
+    from pysagax_gnd_api import run_api
+    print('WINDOWS')
 
 try:
     import tomllib
@@ -66,14 +73,14 @@ class Commander:
         self._commandengine = CommandEngine(level=level)
         self._monitoring = Monitoring(level=level)
         # not implemented yet
-        self._ppgeoloc = PPGeoLoc(level=level)
+        self._ppgeoloc = PPGeoLoc(level=level, db=self._db)
 
     def start(self) -> None:
         """Start all background processes"""
 
         self._logger.debug("Starting Commander")
 
-        api_future = self._pool.submit(run_api)
+        api_future = self._pool.submit(run_api())
 
         cievents_future = self._pool.submit(self._cievents)
         commaggregate_future = self._pool.submit(

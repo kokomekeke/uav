@@ -5,7 +5,11 @@ module.exports = {
     './src/**/*.{js,ts,jsx,tsx,vue}'
   ],
   theme: {
-    extend: {}
+    extend: {
+      boxShadow: {
+        'inset-red': 'inset 4px 4px 30px 4px rgba(0, 0, 0, 0.5)'
+      }
+    }
   },
   plugins: []
 }
