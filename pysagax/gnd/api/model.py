@@ -4,6 +4,7 @@ from flask_marshmallow.sqla import SQLAlchemyAutoSchema
 from pysagax.gnd.database import (
     AreaOfInterestEntity,
     ComIntDetectionEntity,
+    ComIntGeoLocEntity,
     ComIntEventEntity,
     ConfigurationEntity,
     FreqOfInterestEntity,

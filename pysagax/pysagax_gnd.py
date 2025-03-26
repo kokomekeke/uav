@@ -25,9 +25,7 @@ from pysagax.gnd.commandengine import CommandEngine
 from pysagax.gnd.database import ComIntDatabase
 from pysagax.gnd.monitoring import Monitoring
 from pysagax.gnd.ppgeoloc import PPGeoLoc
-# from pysagax.pysagax_gnd_api import run_api
 
-# from pysagax.pysagax_gnd_api import run_api
 try:
     from pysagax.pysagax_gnd_api import run_api
     print("LINUX")
@@ -72,7 +70,6 @@ class Commander:
         # not implemented yet
         self._commandengine = CommandEngine(level=level)
         self._monitoring = Monitoring(level=level)
-        # not implemented yet
         self._ppgeoloc = PPGeoLoc(level=level, db=self._db)
 
     def start(self) -> None:
@@ -80,7 +77,7 @@ class Commander:
 
         self._logger.debug("Starting Commander")
 
-        api_future = self._pool.submit(run_api())
+        api_future = self._pool.submit(run_api)
 
         cievents_future = self._pool.submit(self._cievents)
         commaggregate_future = self._pool.submit(

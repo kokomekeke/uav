@@ -65,7 +65,9 @@ def test_center_freq_list(f0Max: tuple[float, float], B: float, expected_result)
     result = list(freq_range.center_freq_list(B))
     assert len(result) == len(expected_result)
     for res, expected_res in zip(result, expected_result):
-        assert res == pytest.approx(expected_res, abs=1e-4)
+        # we round scanning center frequencies to 100kHz for now(sidekiq radio might need it)
+        # assert res == pytest.approx(expected_res, abs=1e-4) 
+        assert res == pytest.approx(round(expected_res, -5), abs=1e-4)
 
 
 @pytest.mark.parametrize(

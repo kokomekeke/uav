@@ -1,6 +1,6 @@
 [project]
 name = "pysagax"
-version = "0.5.8"
+version = "0.5.15"
 authors = [
   { name="Peter Rigo", email="peter.rigo@sagaxcommunications.com" },
   { name="Gergely Deak", email="gergely.deak@sagaxcommunications.com" },
@@ -67,7 +67,20 @@ versionfile_source = "pysagax/_version.py"
 tag_prefix = "v"
 
 [tool.setuptools]
-packages = ["pysagax"]
+packages = [
+    "pysagax",
+    "pysagax.common",
+    "pysagax.communication",
+    "pysagax.df",
+    "pysagax.field",
+    "pysagax.gnd",
+    "pysagax.heading",
+    "pysagax.message",
+    "pysagax.source",
+    "pysagax.spot",
+    "pysagax.ui",
+    "pysagax.util"
+]
 
 [build-system]
 requires = ["setuptools", "wheel", "versioneer"]
