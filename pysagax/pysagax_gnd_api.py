@@ -15,11 +15,11 @@ from flask_sqlalchemy import SQLAlchemy as FlaskSQLAlchemy
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from pysagax.common.loop import Loop
-from pysagax.gnd.api import api
+from pysagax.gnd.api.api import api
 from pysagax.gnd.database import db
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+CORS(app, resources={r"*": {"origins": "*"}}, supports_credentials=True)
 socketio = SocketIO(app, async_mode="eventlet", cors_allowed_origins="*")
 
 

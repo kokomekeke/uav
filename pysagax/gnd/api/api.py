@@ -195,6 +195,7 @@ def uav_detail(id):
 @open_api.post(request_schema=UAVCreateSchema, response_schema=UAVSchema)
 @api.route("/uav", methods=["POST"])
 def uav_create():
+    print("uav create", flask.request.json)
     data = UAVCreateSchema(many=False).load(flask.request.json)
     new_uav = UAVEntity()
     new_uav.active = data["active"]
