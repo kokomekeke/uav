@@ -442,7 +442,7 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
 )
 @click.option(
     "--scanning-averaging-burst-count",
-    help="Number of bursts to averaging in scanning mode",
+    help="Number of requested bursts in SCANNING mode", #TODO:
     default=3,
     show_default=True,
 )
