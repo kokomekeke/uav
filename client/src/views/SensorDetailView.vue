@@ -1,14 +1,16 @@
 <script setup>
-import { useRoute } from 'vue-router'
-import { ref } from 'vue'
-import ConfigPane from '@/views/config/ConfigPane.vue'
-
-const route = useRoute()
-const sensorId = route.params.id
-const config = ref('')
-
+import ConfigurationView from '@/views/config/ConfigurationView.vue'
+import MapComponent from '@/components/map/MapComponent.vue'
 </script>
 
 <template>
-    <config-pane></config-pane>
+  <div class="bg-slate-400 w-full max-h-screen p-6 flex flex-row rounded">
+    <configuration-view class="flex-grow w-50"></configuration-view>
+    <div class="grid grid-rows-3 bg-red-500 w-full ml-6">
+      <div class="bg-blue-500 row-span-2 z-10">
+        <map-component class="z-10"></map-component>
+      </div>
+      <div class="bg-yellow-300">Spektrum helye</div>
+    </div>
+  </div>
 </template>

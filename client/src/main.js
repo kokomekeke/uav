@@ -3,6 +3,7 @@ import App from './App.vue'
 import './assets/tailwind.css'
 import router from './routes/index.js'
 import { createPinia } from 'pinia'
+import 'leaflet/dist/leaflet.css'
 
 const pinia = createPinia()
 const app = createApp(App)

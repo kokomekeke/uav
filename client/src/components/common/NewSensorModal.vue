@@ -23,19 +23,18 @@ const addSensor = () => {
 }
 
 const submit = () => {
-    if (label.value && address.value) {
-        console.log('submit data')
-        const data = JSON.stringify({
-            uav_label: label.value,
-            uav_address: address.value,
-            active: isActive.value
-        })
-        console.log(data)
-        sensorStore.addSensor(data)
-
-    } else {
-        console.log('fill the form!!!')
+  if (label.value && address.value) {
+    console.log('submit data')
+    const data = {
+      uav_label: label.value,
+      uav_address: address.value,
+      active: isActive.value
     }
+    console.log('sent data: ', data)
+    sensorStore.addSensor(data)
+  } else {
+    console.log('fill the form!!!')
+  }
 }
 
 </script>
@@ -108,7 +107,6 @@ const submit = () => {
     </div>
   </div>
 </template>
-
 
 <style scoped>
 

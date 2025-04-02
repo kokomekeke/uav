@@ -48,7 +48,7 @@ watch(() => showModal.value, (newValue) => {
 <template>
   <div>
       <Teleport to="body">
-        <NewModal :show="showModal" @close="showModal = false">
+        <NewModal :show="showModal" @close="showModal = false" class="grid grid-cols-2">
           <template #header>
             <div>
               <img src="/sgxlogo.jpg" class="border-4 border-gray-100 rounded-sd" alt="sgx-logo"/>
@@ -59,11 +59,11 @@ watch(() => showModal.value, (newValue) => {
             <label>Enter IP Address and Port:</label>
             <input v-model="ipPort" placeholder="http://192.168.0.82:5000" class="w-64">
           </template>
-          <template #close>
-            <button class="modal-default-button" @click="closeModal">Close</button>
-          </template>
           <template #submit>
-            <button class="modal-default-button" @click="connect">Submit</button>
+            <button class="modal-default-button bg-green-400 p-1 rounded-2xl border-2 border-green-600" @click="connect">Submit</button>
+          </template>
+          <template #close>
+            <button class="modal-default-button ml-32 bg-red-400 p-1 rounded-2xl border-2 border-red-600" @click="closeModal">Close</button>
           </template>
           <template #alert>
             <p v-if="connectionMessage" :class="{

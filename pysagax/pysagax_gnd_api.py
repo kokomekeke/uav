@@ -1,41 +1,49 @@
 import logging
 import os
-import time
-from queue import Queue
 
 from flask_cors import CORS
-from flask_socketio import SocketIO, disconnect
-from threading import Thread
-from typing import Optional
+from flask_socketio import SocketIO
 
-from flask import Blueprint, Flask, jsonify, url_for
-from flask_marshmallow import Marshmallow
-from flask_marshmallow_openapi import OpenAPI, OpenAPISettings, open_api
-from flask_sqlalchemy import SQLAlchemy as FlaskSQLAlchemy
+from flask import Flask
+from flask_marshmallow_openapi import OpenAPI, OpenAPISettings
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from pysagax.common.loop import Loop
-from pysagax.gnd.api.api import api
+# TODO: mi az oka ennek???
+platform = None
+try:
+    from pysagax.gnd.api.api import api
+
+    platform = 'LINUX'
+except ImportError:
+    from pysagax.gnd.api import api
+
+    platform = 'WIN'
+
 from pysagax.gnd.database import db
 
 app = Flask(__name__)
 CORS(app, resources={r"*": {"origins": "*"}}, supports_credentials=True)
 socketio = SocketIO(app, async_mode="eventlet", cors_allowed_origins="*")
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+logger.info(f"platform is {platform}")
+
 
 @socketio.on('connect')
 def handle_connect():
-    print("Client connected")
+    logger.info("Client connected")
 
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    print("Client disconnected")
+    logger.info("Client disconnected")
 
 
 @socketio.on('ping')
 def ping():
-    print('Ping received from client')
+    logger.info('Ping received from client')
     socketio.emit('pong')
 
 
@@ -71,7 +79,7 @@ if "PYSAGAX_GND_PROXY_FIX" in os.environ:
 def run_api():
     host = "0.0.0.0"
     port = 5000
-    print(f"Starting API on http://{host}:{port}")
+    logger.info(f"Starting API on http://{host}:{port}")
     socketio.run(app, host=host, port=port)
 
 
