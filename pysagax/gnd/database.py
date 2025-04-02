@@ -37,6 +37,11 @@ class UAVEntity(db.Model):
 
 
 class UAVEventEntity(db.Model):
+    """
+    TODO: use or discard this table
+    This should be a link table between uav and comintevent I guess
+    """
+
     __tablename__ = "uav_event"
     uav_event_id = db.Column(db.Integer(), primary_key=True)
     uav_id = db.Column(db.Integer(), db.ForeignKey("uav.uav_id"), nullable=False)
@@ -49,6 +54,10 @@ class UAVEventEntity(db.Model):
 
 
 class ComIntEventEntity(db.Model):
+    """
+    TODO: this could contain the final level of post-processing, such as trajectories aggregated from geolocations.
+    """
+
     __tablename__ = "comintevent"
 
     event_id = db.Column(db.Integer(), primary_key=True)
@@ -61,6 +70,36 @@ class ComIntEventEntity(db.Model):
     last_location_lat = db.Column(db.Numeric(10, 6))
     last_location_lon = db.Column(db.Numeric(10, 6))
     last_location_certainty_radius = db.Column(db.Numeric(10, 1))
+
+
+class ComIntGeoLocEntity(db.Model):
+    """
+    Table for storing geolocation data calculated from ComInt detections.
+    """
+
+    __tablename__ = "comintgeoloc"
+
+    geoloc_id = db.Column(db.BigInteger(), primary_key=True)  # autoincremented id
+
+    # TODO: 2 detection_id columns if each row is triangulated from 2 meauserements or a link table
+    # if a single geolocation is calculated from measurements of more than 2 uavs
+    # TODO: also keep in mind, that detections from a single, but moving uav could be used for geolocating
+    # detection_id = db.Column(db.Integer(), db.ForeignKey("comintdetection.detection_id"), nullable=False)
+
+    # TODO:
+    # uav_event_id = db.Column(
+    #     db.Integer(), db.ForeignKey("uav_event.uav_event_id"), nullable=True
+    # )
+
+    roi_identifier = db.Column(db.Integer(), nullable=True)
+
+    lat = db.Column(db.Numeric(10, 6))
+    lon = db.Column(db.Numeric(10, 6))
+    certainty_radius = db.Column(db.Numeric(10, 1))
+    # Time difference between detections that produced this geolocation (seconds)
+    detections_time_delta = db.Column(db.Interval)
+
+    timestamp = db.Column(db.DateTime(), default=datetime.datetime.now, nullable=False)
 
 
 class ComIntDetectionEntity(db.Model):
@@ -142,9 +181,18 @@ class ComIntDatabase:
         db.session.add(entity)
         db.session.commit()
 
+    # TODO: do we need this?
+    # def update(self, entity: Any) -> None:
+    #     global db
+    #     db.session.
+
     def commit(self) -> None:
         global db
         db.session.commit()
+
+    def query(self, *args, **kwargs):
+        global db
+        return db.session.query(*args, **kwargs)
 
     def rollback(self) -> None:
         global db

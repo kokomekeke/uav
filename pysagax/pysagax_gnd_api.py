@@ -8,17 +8,8 @@ from flask import Flask
 from flask_marshmallow_openapi import OpenAPI, OpenAPISettings
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-# TODO: mi az oka ennek???
-platform = None
-try:
-    from pysagax.gnd.api.api import api
-
-    platform = 'LINUX'
-except ImportError:
-    from pysagax.gnd.api import api
-
-    platform = 'WIN'
-
+from pysagax.common.loop import Loop
+from pysagax.gnd.api import api
 from pysagax.gnd.database import db
 
 app = Flask(__name__)

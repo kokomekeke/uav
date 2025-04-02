@@ -69,7 +69,7 @@ class FreqRangeInternal:
         for i in range(number_of_jumps):
             freq = self.start + (i + 0.5) * jump_bandwidth
             for _ in range(repeat):
-                yield freq
+                yield round(freq, -5) # round to 100kHz (sidekiq radio might need it)
         return None
 
     def __str__(self) -> str:
