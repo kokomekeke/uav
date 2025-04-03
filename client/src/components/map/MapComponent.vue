@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch } from 'vue'
-import { LMap, LTileLayer, LMarker } from '@vue-leaflet/vue-leaflet'
+import { LMap, LTileLayer, LMarker, LPolyline } from '@vue-leaflet/vue-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import pW from '@/assets/p3.png'
@@ -16,61 +16,87 @@ L.Icon.Default.mergeOptions({
 
 const sensorStore = useSensorStore()
 
-
 const zoom = ref(13)
 const center = ref([47.4979, 19.0402]) // Budapest példaként
+const markerLatLng = ref([47.4979, 19.0402]) // Marker pozíciója
+const azimuth = ref(0) // Azimut tárolása
+const polyline = ref({ coords: [], color: 'red' }) // Vonal adatai
 
 const url = ref('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
-const attribution = ref(
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-)
+const attribution = ref('&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors')
 
-const markerLatLng = ref([47.4979, 19.0402]) // Marker pozíciója
-
-const test = ref(0.001)
-
+// Repülő ikon beállítása
 const planeIcon = L.icon({
   iconUrl: pW,
-  iconSize: [64, 64], // Méret beállítása
-  iconAnchor: [32, 32] // Középpont igazítása
+  iconSize: [64, 64],
+  iconAnchor: [32, 32]
 })
 
+// **Függvény az új pont kiszámításához az azimut irányában**
+function calculateDestination(lat, lng, azimuth, distanceKm = 5) {
+  const R = 6371 // Föld sugara km-ben
+  const azimuthRad = (azimuth * Math.PI) / 180 // Fok -> radián
+
+  const latRad = (lat * Math.PI) / 180
+  const lngRad = (lng * Math.PI) / 180
+
+  const newLatRad = Math.asin(
+    Math.sin(latRad) * Math.cos(distanceKm / R) +
+    Math.cos(latRad) * Math.sin(distanceKm / R) * Math.cos(azimuthRad)
+  )
+
+  const newLngRad = lngRad + Math.atan2(
+    Math.sin(azimuthRad) * Math.sin(distanceKm / R) * Math.cos(latRad),
+    Math.cos(distanceKm / R) - Math.sin(latRad) * Math.sin(newLatRad)
+  )
+
+  return [(newLatRad * 180) / Math.PI, (newLngRad * 180) / Math.PI] // Visszaalakítjuk fokba
+}
+
+// **Watch a detections változásra**
 watch(
   () => sensorStore.selectedSensor?.detections,
   (newDetections) => {
-    console.log("---3-23-32323----new detections:", newDetections)
+    console.log("🔄 Új detections:", newDetections)
 
     if (newDetections && newDetections.features?.length > 0) {
-      // Az első találat kinyerése
-      const latestDetection = newDetections.features[0] // Az első objektum
-      console.log("latest detection::::", latestDetection)
+      const latestDetection = newDetections.features[0] // Az első detektált objektum
+      console.log("📍 Legutóbbi detection:", latestDetection)
 
-      // Koordináták kinyerése
       const coordinates = latestDetection.geometry?.coordinates
-      if (coordinates && coordinates.length === 2) {
-        const [lng, lat] = coordinates // GeoJSON formátumban [lng, lat] van!
+      const azimuthValue = latestDetection.properties?.lob_azim_deg
 
-        markerLatLng.value = [lat + test.value, lng + test.value + test.value] // Leafletnek [lat, lng] kell!
-        center.value = [lat + test.value, lng + test.value + test.value] // Középre állítjuk a térképet
+      if (coordinates && coordinates.length === 2 && azimuthValue !== undefined) {
+        const [lng, lat] = coordinates // GeoJSON formátum [lng, lat] !
+
+        // Frissítjük a marker pozícióját
+        markerLatLng.value = [lat, lng]
+        center.value = [lat, lng]
+
+        // Kiszámítjuk a vonal végpontját az azimut alapján
+        const destination = calculateDestination(lat, lng, azimuthValue)
+
+        // Frissítjük a vonalat
+        polyline.value.coords = [[lat, lng], destination]
+        console.log("➡️ Vonal:", polyline.value.coords)
       }
-      test.value = test.value + 0.001
     }
   },
-  { deep: true } // Mély figyelés, hogy az adatváltozásokra is reagáljon
+  { deep: true }
 )
-
 </script>
 
 <template>
   <l-map class="h-[500px] w-full z-1" :zoom="zoom" :center="center">
     <l-tile-layer :url="url" :attribution="attribution" class="z-1"></l-tile-layer>
+
+    <!-- Marker -->
     <l-marker :lat-lng="markerLatLng" :icon="planeIcon"></l-marker>
+
+    <!-- Azimut vonal -->
+    <l-polyline v-if="polyline.coords.length > 0" :lat-lngs="polyline.coords" :color="polyline.color"></l-polyline>
   </l-map>
 </template>
-
-<style scoped>
-@import "leaflet/dist/leaflet.css";
-</style>
 
 <style scoped>
 @import "leaflet/dist/leaflet.css";
