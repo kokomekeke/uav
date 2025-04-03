@@ -9,7 +9,15 @@ from flask_marshmallow_openapi import OpenAPI, OpenAPISettings
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from pysagax.common.loop import Loop
-from pysagax.gnd.api import api
+
+platform = None
+try:
+    from pysagax.gnd.api.api import api
+    platform = 'WINDOWS'
+except ImportError:
+    from pysagax.gnd.api.api import api
+    platform = 'LINUX'
+
 from pysagax.gnd.database import db
 
 app = Flask(__name__)

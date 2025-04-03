@@ -2,19 +2,21 @@ import { defineStore, storeToRefs } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import axios from 'axios'
 import { useConnectionStore } from '@/stores/connection'
+import { Sensor } from "../types/sensor"
 
 export const useSensorStore = defineStore('sensor', () => {
-  const sensors = ref([])
+  const sensors = ref<Sensor[]>([])
   const selectedSensor = ref(null)
   const isLoading = ref<boolean>(false)
   const errorMessage = ref('')
-
+  const detectionInterval = ref<number | null>(null)
   const connectionStore = useConnectionStore()
   const { ipPort, isConnected } = storeToRefs(connectionStore)
   const handleMouseOver = (sensor) => {
     selectedSensor.value = sensor
     console.log('over', sensor)
   }
+
   async function fetchSensors () {
     console.log('fetchSensors', ipPort.value)
     if (!isConnected.value) return
@@ -83,6 +85,7 @@ export const useSensorStore = defineStore('sensor', () => {
     console.log('🔄 Szenzor lista frissítve:', newSensors)
   }, { deep: true })
 
+
   async function removeSensor () {
     console.log(selectedSensor)
     if (!selectedSensor.value) return // Ha nincs kiválasztott szenzor, kilépünk
@@ -98,11 +101,63 @@ export const useSensorStore = defineStore('sensor', () => {
     console.log('new values::::', sensors.value)
   }
 
-  function selectSensor (sensor) {
+  async function selectSensor(sensor) {
     console.log(sensor, 'sensor selected')
     selectedSensor.value = sensor
+
+    // Meglévő timer törlése, ha már fut
+    if (detectionInterval.value) {
+      clearInterval(detectionInterval.value);
+    }
+
+    // Azonnal meghívjuk az API-t egyszer
+    fetchDetection(10);
+
+    // Timer beállítása, hogy 1 másodpercenként lefusson a fetchDetection
+    detectionInterval.value = setInterval(() => {
+      fetchDetection(10);
+    }, 10); // 1000 ms = 1 sec
   }
+
   const getSensors = computed(() => [...sensors.value])
+
+  async function fetchDetection(n) {
+    if (!selectedSensor.value) return; // Ha nincs kiválasztott szenzor, kilépünk
+
+    try {
+      const response = await axios.get(`${ipPort.value}/v1/comintdetection/geojson/list_last/${n}`);
+      console.log("API válasz:", response.data);
+
+      selectedSensor.value.detections = response.data;
+
+      console.log("DETECTIONS LIST: ", selectedSensor.value)
+      if (!response.data) {
+        throw new Error('Üres API válasz');
+      }
+
+      if (response.status !== 200) {
+        throw new Error(`API hiba: ${response.status} - ${response.statusText}`);
+      }
+
+      return response.data;
+    } catch (error) {
+      console.error("Hiba történt a fetchDetection során:", error);
+    }
+  }
+
+  function stopFetchingDetection() {
+    if (detectionInterval.value) {
+      clearInterval(detectionInterval.value);
+      detectionInterval.value = null;
+    }
+  }
+
+  watch(selectedSensor, (newSensor) => {
+    if (!newSensor) {
+      stopFetchingDetection(); // Ha nincs szenzor kiválasztva, leállítjuk az intervalt
+    }
+  });
+
   return {
     sensors,
     selectedSensor,
@@ -113,6 +168,8 @@ export const useSensorStore = defineStore('sensor', () => {
     addSensor,
     removeSensor,
     selectSensor,
-    handleMouseOver
+    handleMouseOver,
+    fetchDetection,
+    stopFetchingDetection
   }
 })
