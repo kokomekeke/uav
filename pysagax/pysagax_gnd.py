@@ -8,7 +8,7 @@ import multiprocessing
 import sys
 import traceback
 from concurrent.futures import ProcessPoolExecutor, wait
-from logging import Handler, StreamHandler, getLogger
+from logging import Handler, StreamHandler, getLogger, DEBUG
 from os import getpid
 from signal import SIGINT, SIGTERM, signal
 from typing import Any, Optional
@@ -21,6 +21,7 @@ from rich.logging import RichHandler
 from pysagax.field.scanengine import ScanEngine
 from pysagax.gnd.cievents import CIEvents
 from pysagax.gnd.commaggregate import CommAggregate
+from pysagax.gnd.measurementprocessor import MeasurementProcessor
 from pysagax.gnd.commandengine import CommandEngine
 from pysagax.gnd.database import ComIntDatabase
 from pysagax.gnd.monitoring import Monitoring
@@ -50,6 +51,7 @@ class Commander:
         self._logger = getLogger("Commander")
         self._manager = multiprocessing.Manager()
         self._pool = ProcessPoolExecutor(max_workers=15)
+        multiprocessing.current_process().name = "Commander"
 
         self._db = ComIntDatabase(db_url)
         # self._example_q = self._manager.Queue(maxsize=1)
@@ -58,9 +60,14 @@ class Commander:
             self._db.initialize_db(self._db.get_app_instance())
             return
         self._telemetry_for_monitoring_q = self._manager.Queue(maxsize=8)
+        self._api_to_command_engine_commands_q = self._manager.Queue(maxsize=8)
+        self._command_engine_to_api_responses_q = self._manager.Queue(maxsize=8)
+        self._uavs_to_measurement_processor_q = self._manager.Queue(maxsize=100)
+
         self._cievents = CIEvents(level=level)
         self._commaggregate = CommAggregate(level=level, db=self._db)
-        self._commandengine = CommandEngine(level=level)
+        self._measurement_processor = MeasurementProcessor(level=level, db=self._db)
+        # self._commandengine = CommandEngine(level=level)
         self._monitoring = Monitoring(level=level)
         self._ppgeoloc = PPGeoLoc(level=level, db=self._db)
 
@@ -69,13 +76,25 @@ class Commander:
 
         self._logger.debug("Starting Commander")
 
-        api_future = self._pool.submit(run_api)
+        api_future = self._pool.submit(
+            run_api,
+            self._api_to_command_engine_commands_q,
+            self._command_engine_to_api_responses_q,
+        )
 
         cievents_future = self._pool.submit(self._cievents)
         commaggregate_future = self._pool.submit(
-            self._commaggregate, self._telemetry_for_monitoring_q
+            self._commaggregate,
+            self._api_to_command_engine_commands_q,
+            self._command_engine_to_api_responses_q,
+            self._uavs_to_measurement_processor_q,
         )
-        commandengine_future = self._pool.submit(self._commandengine)
+        measurement_processor_future = self._pool.submit(
+            self._measurement_processor,
+            self._uavs_to_measurement_processor_q,
+            self._telemetry_for_monitoring_q,
+        )
+        # commandengine_future = self._pool.submit(self._commandengine)
         monitoring_future = self._pool.submit(
             self._monitoring, self._telemetry_for_monitoring_q
         )
@@ -90,7 +109,8 @@ class Commander:
                     api_future,
                     cievents_future,
                     commaggregate_future,
-                    commandengine_future,
+                    measurement_processor_future,
+                    # commandengine_future,
                     monitoring_future,
                     ppgeoloc_future,
                 ),
@@ -187,6 +207,10 @@ def setup_logging(
     stream_handler: Optional[Handler] = None,
 ) -> None:
     """Configure logging parameters"""
+
+    from pysagax.util.add_logging_level import addLoggingLevel
+
+    addLoggingLevel("TRACE", DEBUG - 5)
 
     if stream_handler is None:
         stream_handler = RichHandler(rich_tracebacks=True)

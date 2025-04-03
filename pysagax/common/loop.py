@@ -5,6 +5,7 @@ from os import kill, getpid
 import typing
 from google.protobuf import json_format
 import traceback
+from multiprocessing import current_process
 
 
 class Loop:
@@ -25,6 +26,7 @@ class Loop:
             self._pre_loop()
 
             self._logger.debug(f"Running main loop (Pid {getpid()})")
+            current_process().name = self.__class__.__name__
             while True:
                 self._loop()
         except Exception as e:

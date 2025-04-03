@@ -15,8 +15,16 @@ from pysagax.gnd.database import ComIntDatabase, ComIntDetectionEntity, UAVEntit
 from pysagax.message.data_types import DataType
 from pysagax.util.get_ip import get_ip
 
+from pysagax.util.queue_put import queue_put
+
+import queue
+import multiprocessing as mp
 
 
+# TODO: define control actions here for control message handler thread
+# class ControlAction(enum.Enum):
+#     SETUP = 1
+#     RESET = 2
 
 
 def find_free_port():
@@ -26,30 +34,41 @@ def find_free_port():
         return s.getsockname()[1]
 
 
-class SensorConnection(threading.Thread):
+class UAVConnection(mp.Process):
+    """
+    Class that can handle the communication with a single sensor in a process.
+
+    It runs 3 threads:
+    - main: handle the incoming data through UDP stream connection
+    - command: wait for command messages coming in the queue. Send them and wait for response
+    - TODO: control-message: handle instructions coming from UAVConnectionHandler.
+        This could do stuff like stream level modification or assemble more complicated command messages if neeeded
+    """
+
     def __init__(
         self,
         uav_entity: UAVEntity,
-        packet_callback: Callable[
-            [
-                int,
-                proto_data.Telemetry
-                | proto_data.Measurement
-                | proto_data.Event
-                | proto_data.OperationalError,
-            ],
-            None,
-        ],
+        stream_out_q: queue.Queue,
+        command_q: queue.Queue,
+        response_q: queue.Queue,
+        stop_event: mp.Event,
         level: Any,
     ) -> None:
         super().__init__()
-        self._logger = logging.getLogger(self.__class__.__name__)
+        self._logger = logging.getLogger(f"UAVConnection#{uav_entity.uav_id:02d}")
         self._logger.setLevel(level)
         self.daemon = True
-        self.running = True
         self.uav_db_id = uav_entity.uav_id
         self.uav_label = uav_entity.uav_label
-        self.packet_callback = packet_callback
+
+        self._stream_out_q = stream_out_q
+        self._command_q = command_q
+        self._response_q = response_q
+
+        self._stop_event = stop_event
+
+        self.control_pipe_parent, self.control_pipe_child = mp.Pipe()
+
         self.target_id = 1
 
         # check if address also contains port
@@ -61,30 +80,34 @@ class SensorConnection(threading.Thread):
         self.own_address = get_ip(self.uav_address)
         self.own_stream_udp_port = find_free_port()
         self.sysinfo = proto_cmd.SystemInfo()
-        self.last_interacted_ts = time.time()
+        self.last_interacted_ts = time.time()  # TODO: do we even need this ???
         self.reconnect_timeout = 10.0  # seconds
 
     def send_command(
-        self, cmd: proto_cmd.Command, address: str, port: int
-        ) -> Optional[proto_cmd.Response]:
-        self._logger.critical("COMMAND SEN")
-        cmd_zmq = REQ(address_server=address, port_server=port)
+        self, cmd: proto_cmd.Command, timeout: Optional[int] = 2
+    ) -> Optional[proto_cmd.Response]:
+        # TODO: always reopen connection?
+        # TODO: ideal timeout
+        self._logger.trace(f"sending command: {cmd}")
+        cmd_zmq = REQ(
+            address_server=self.uav_address, port_server=self.uav_command_port
+        )
         cmd_zmq.connect()
         resp = proto_cmd.Response()
-        resp_raw = cmd_zmq.send(cmd.SerializeToString(), timeout=2000)
+        resp_raw = cmd_zmq.send(cmd.SerializeToString(), timeout=timeout * 1000)
         cmd_zmq.disconnect()
         if resp_raw is None:
+            self._logger.warning(f"No response for command: {cmd}")
             return None
         resp.ParseFromString(resp_raw)
+        self._logger.trace(f"received response: {cmd}")
         return resp
 
     def query_sysinfo(self) -> None:
 
         cmd_sysinfo_query = proto_cmd.Command()
         cmd_sysinfo_query.instruction = proto_cmd.INFO
-        resp = self.send_command(
-            cmd_sysinfo_query, self.uav_address, self.uav_command_port
-        )
+        resp = self.send_command(cmd_sysinfo_query)
         if resp:
             if resp.HasField("error"):
                 self._logger.error(
@@ -120,9 +143,7 @@ class SensorConnection(threading.Thread):
         # TODO: think about ideal timeout values, move to config
         cmd_stream_start.target.heartbeat_timeout = 1
         cmd_stream_start.target.telemetry_timeout = 1
-        resp = self.send_command(
-            cmd_stream_start, self.uav_address, self.uav_command_port
-        )
+        resp = self.send_command(cmd_stream_start)
         if resp:
             if resp.HasField("error"):
                 self._logger.error(
@@ -143,9 +164,7 @@ class SensorConnection(threading.Thread):
         cmd_stream_start.target.id = self.target_id
         cmd_stream_start.target.address = self.own_address
         cmd_stream_start.target.port = self.own_stream_udp_port
-        resp = self.send_command(
-            cmd_stream_start, self.uav_address, self.uav_command_port
-        )
+        resp = self.send_command(cmd_stream_start)
         if resp:
             if resp.HasField("error"):
                 self._logger.error(
@@ -160,16 +179,82 @@ class SensorConnection(threading.Thread):
                 f"Stream stop timed out on {self.uav_address}:{self.uav_command_port}"
             )
 
+    def _handle_control_messages(self):
+        """Thread to handle control messages for setup, reset, etc."""
+        while not self._stop_event.is_set():
+            time.sleep(1)
+        return
+        # TODO: is this needed?
+        while not self._stop_event.is_set():
+            if self.control_pipe_child.poll(timeout=0.1):
+                try:
+                    msg = self.control_pipe_child.recv()
+
+                    if msg.action == ControlAction.SETUP:
+                        pass  # do stuff
+
+                    elif msg.action == ControlAction.RESET:
+                        pass  # do stuff
+
+                except Exception as e:
+                    print(f"Control message error in sensor {self.sensor_id}: {e}")
+
+    def _handle_commands(self):
+        """Thread to handle incoming commands from the command queue"""
+        while not self._stop_event.is_set():
+            try:
+                # TODO: timeout for send_command return and handle no answer
+                command = self._command_q.get(timeout=0.2)
+                response = self.send_command(command)
+                self._response_q.put(response)
+            except queue.Empty:
+                continue
+            except Exception as e:
+                self._logger.exception(f"Error in command handler: {e}")
+                time.sleep(0.2)
+
     def run(self) -> None:
+        # SETUP
+        mp.current_process().name = f"UAVConnection#{self.uav_db_id:02d}"
         self.query_sysinfo()
         self.stream_start()
+        client = self._create_stream_client()
+
+        # Start control message handler thread
+        control_thread = threading.Thread(target=self._handle_control_messages)
+        control_thread.daemon = True
+        control_thread.start()
+
+        # Start command handler thread
+        cmd_thread = threading.Thread(target=self._handle_commands)
+        cmd_thread.daemon = True
+        cmd_thread.start()
+
+        # ACT
+        self._run_upd_stream(client)
+
+        # TEARDOWN
+        self.stream_stop()
+        control_thread.join()
+        self._logger.debug("Control thread joined")
+        cmd_thread.join()
+        self._logger.debug("Command thread joined")
+
+        # TODO: free up TCP and UDP ports
+
+    def _create_stream_client(self):
         client = RX(self.own_stream_udp_port)
         all_groups = [group.value for group in DataType]
         client.connect(group=all_groups)
         self._logger.info(
             f"UDP port {self.own_stream_udp_port} is open for {self.uav_label} ({self.uav_address}) "
         )
-        while self.running:
+
+        return client
+
+    def _run_upd_stream(self, client):
+        """Receives and handles data coming through the UDP stream channel"""
+        while not self._stop_event.is_set():
             data, data_type = client.recv(timeout=1000) or (b"*", "*")
             if data_type in ["*", None]:
                 if self.last_interacted_ts + self.reconnect_timeout < time.time():
@@ -180,6 +265,11 @@ class SensorConnection(threading.Thread):
             data_type_object = DataType(data_type)
             stream_packet = DataType.to_message(data_type_object)
             stream_packet.ParseFromString(data)
-            self.packet_callback(self.uav_db_id, stream_packet)
+            queue_put(
+                self._stream_out_q,
+                (self.uav_db_id, stream_packet),
+                logger=self._logger,
+                timeout=0.01,
+            )
+            # self._stream_out_q.put((self.uav_db_id, stream_packet)) # TODO use queue_put?
             self.last_interacted_ts = time.time()
-        self.stream_stop()

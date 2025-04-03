@@ -68,7 +68,9 @@ if "PYSAGAX_GND_PROXY_FIX" in os.environ:
     )
 
 
-def run_api():
+def run_api(
+        q_to_command_engine: Optional[Queue] = None, q_from_command_engine: Optional[Queue]=None
+    ):
     print("Starting api...")
     socketio.run(app, host="0.0.0.0", port=5000)
 
