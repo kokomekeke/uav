@@ -75,15 +75,15 @@ export const useSensorStore = defineStore('sensor', () => {
       // API sikeres válasz után frissítjük a listát
       await fetchSensors()
       sensors.value = [...sensors.value]
-      console.log('✅ Szenzorok frissítve:', sensors.value)
+      // console.log('✅ Szenzorok frissítve:', sensors.value)
     } catch (error) {
       console.error('Hiba az új szenzor hozzáadásakor:', error)
     }
   }
 
-  watch(sensors, (newSensors) => {
-    console.log('🔄 Szenzor lista frissítve:', newSensors)
-  }, { deep: true })
+  // watch(sensors, (newSensors) => {
+  //  console.log('🔄 Szenzor lista frissítve:', newSensors)
+  // }, { deep: true })
 
 
   async function removeSensor () {
@@ -121,29 +121,48 @@ export const useSensorStore = defineStore('sensor', () => {
 
   const getSensors = computed(() => [...sensors.value])
 
-  async function fetchDetection(n) {
-    if (!selectedSensor.value) return; // Ha nincs kiválasztott szenzor, kilépünk
+    async function fetchDetection(n) {
+      if (!selectedSensor.value) return;
 
-    try {
-      const response = await axios.get(`${ipPort.value}/v1/comintdetection/geojson/list_last/${n}`);
-      console.log("API válasz:", response.data);
+      try {
+        const response = await axios.get(`${ipPort.value}/v1/comintdetection/geojson/list_last/${n}`);
+    //    console.log("API válasz:", response.data);
+        if (!response.data || response.status !== 200) {
+          throw new Error(`API hiba: ${response.status} - ${response.statusText}`);
+        }
 
-      selectedSensor.value.detections = response.data;
+        // Kinyerjük a detekciókat a GeoJSON FeatureCollectionből
+        const features = response.data.features || [];
 
-      console.log("DETECTIONS LIST: ", selectedSensor.value)
-      if (!response.data) {
-        throw new Error('Üres API válasz');
+        // A tényleges COMINT detekciók a feature.properties-ben vannak
+        const detections = features.map((feature) => feature.properties);
+
+        // Csoportosítás uav_id szerint
+        const groupedByUavId = detections.reduce((acc, detection) => {
+          const id = detection.uav_id;
+          if (!acc[id]) acc[id] = [];
+          acc[id].push(detection);
+          return acc;
+        }, {});
+
+        // Hozzárendelés a megfelelő szenzorhoz
+        for (const [uav_id, detectionList] of Object.entries(groupedByUavId)) {
+          const sensor = sensors.value.find(s => s.uav_id === Number(uav_id));
+          if (sensor) {
+            sensor.detections = detectionList;
+          }
+        }
+
+        // selectedSensor detekciók frissítése
+        const currentDetections = groupedByUavId[selectedSensor.value.uav_id] || [];
+        selectedSensor.value.detections = currentDetections;
+
+    //    console.log("Frissített szenzorok detekciókkal:", sensors.value);
+      } catch (error) {
+        console.error("Hiba történt a fetchDetection során:", error);
       }
-
-      if (response.status !== 200) {
-        throw new Error(`API hiba: ${response.status} - ${response.statusText}`);
-      }
-
-      return response.data;
-    } catch (error) {
-      console.error("Hiba történt a fetchDetection során:", error);
     }
-  }
+
 
   function stopFetchingDetection() {
     if (detectionInterval.value) {
