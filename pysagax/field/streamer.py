@@ -99,6 +99,7 @@ class Streamer(Loop):
         assert self._conf_in is not None
         try:
             command = self._conf_in.get(block=False)
+            print("cmd target", command.target)
             self._logger.debug("Got command packet")
             if isinstance(command, proto_cmd.Command):
                 match command.instruction:
@@ -111,6 +112,7 @@ class Streamer(Loop):
             pass
         try:
             packet = self._queue_in.get(block=True, timeout=1)
+            print("PEKIT: ", packet)
             self._logger.debug(f"Got {type(packet).__name__} stream packet")
             # Send response to remote client
             stream_packet = packet.SerializeToString()
