@@ -43,6 +43,7 @@ class Commander:
 
     def __init__(
         self,
+        db_commit_frequency: float,
         level: str,
         db_url: str,
         initialize_db: bool,
@@ -66,7 +67,9 @@ class Commander:
 
         self._cievents = CIEvents(level=level)
         self._commaggregate = CommAggregate(level=level, db=self._db)
-        self._measurement_processor = MeasurementProcessor(level=level, db=self._db)
+        self._measurement_processor = MeasurementProcessor(
+            level=level, db=self._db, db_commit_frequency=db_commit_frequency
+        )
         # self._commandengine = CommandEngine(level=level)
         self._monitoring = Monitoring(level=level)
         self._ppgeoloc = PPGeoLoc(level=level, db=self._db)
@@ -170,6 +173,12 @@ def set_default_config(ctx, param, conf_path):
     show_default=True,
     help="Location of the config file. Options set from command line overwrite the ones found in the config file.",
 )
+@click.option(
+    "--db-commit-frequency",
+    default=0.1,
+    show_default=True,
+    help="Frequency (in seconds) of MeasurementProcessor's DB commits. Increase on low-spec hw.",
+)
 @click.option("--level", "-l", default="INFO", show_default=True, help="Logging level")
 @click.option(
     "--db-url",
@@ -179,6 +188,7 @@ def set_default_config(ctx, param, conf_path):
 )
 @click.option("--initialize-db", is_flag=True)
 def main(
+    db_commit_frequency: float,
     level: str,
     db_url: str,
     initialize_db: bool,
@@ -195,7 +205,7 @@ def main(
     setup_logging(level=level)
 
     # TODO: Implement config file
-    commander = Commander(level, db_url, initialize_db)
+    commander = Commander(db_commit_frequency, level, db_url, initialize_db)
     if initialize_db:
         return
     commander.start()

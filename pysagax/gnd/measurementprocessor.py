@@ -10,6 +10,8 @@ from typing import Any, Callable, Optional
 from pysagax.gnd.database import ComIntDatabase, ComIntDetectionEntity, UAVEntity
 from pysagax.util.queue_put import queue_put
 
+from pysagax.util.run_once import run_once
+
 from pysagax.gnd.uav_report import UAVReport
 
 import pysagax.message.data_pb2 as proto_data
@@ -25,6 +27,7 @@ class MeasurementProcessor(Loop):
     def __init__(
         self,
         db: ComIntDatabase,
+        db_commit_frequency: float,
         *args,
         **kwargs,
     ) -> None:
@@ -35,6 +38,10 @@ class MeasurementProcessor(Loop):
 
         self._in_queue: Optional[Queue] = None
         self._to_monitoring_queue: Optional[Queue] = None
+        self._last_commit = time.time()
+        self._measurements_to_add = []
+        self._uavs_to_update = {}
+        self.db_commit_frequency = db_commit_frequency
 
 
     def __call__(
@@ -93,7 +100,7 @@ class MeasurementProcessor(Loop):
     def _receive_measurement(
         self, uav_entity: UAVEntity, packet: proto_data.Measurement
     ) -> None:
-        self._logger.debug(
+        self._logger.trace(
             f"Got a Measurement from {uav_entity.uav_label}! Detection count is {len(packet.detection)}"
         )
         self._logger.trace(f"Measurement packet delay: {time.time()-packet.time.seconds-packet.time.nanos/1e9}")
@@ -117,7 +124,7 @@ class MeasurementProcessor(Loop):
                 new_meas_entity.uav_pos_q1 = packet.heading_data.quaternion[1]
                 new_meas_entity.uav_pos_q2 = packet.heading_data.quaternion[2]
                 new_meas_entity.uav_pos_q3 = packet.heading_data.quaternion[3]
-            self._db.add(new_meas_entity)
+            self._measurements_to_add.append(new_meas_entity)
         uav_entity.last_pos_lat = packet.heading_data.gps_lat
         uav_entity.last_pos_lon = packet.heading_data.gps_lon
         uav_entity.last_pos_altitude = packet.heading_data.altitude
@@ -131,7 +138,7 @@ class MeasurementProcessor(Loop):
             self._logger.warning(
                 f"Received quaternion length is {len(packet.heading_data.quaternion)}"
             )
-        self._db.commit()
+        return uav_entity
     def _receive_event(self, uav_entity: UAVEntity, packet: proto_data.Event) -> None:
         self._logger.info(
             f"Got a Event from {uav_entity.uav_label}! Event id is {packet.event_id}"
@@ -160,18 +167,21 @@ class MeasurementProcessor(Loop):
             if uav_entity is None:
                 self._logger.error(f"UAVEntity {uav_id} not found in DB!")
                 return
-            
-            {
-                proto_data.Telemetry: self._receive_telemetry,
-                proto_data.Measurement: self._receive_measurement,
-                proto_data.Event: self._receive_event,
-                proto_data.OperationalError: self._receive_operror,
-            }[type(packet)](uav_entity, packet)
+            match type(packet):
+                case proto_data.Telemetry: self._receive_telemetry(uav_entity, packet)
+                case proto_data.Measurement: uav_entity = self._receive_measurement(uav_entity, packet)
+                case proto_data.Event: self._receive_event(uav_entity, packet)
+                case proto_data.OperationalError: self._receive_operror(uav_entity, packet)
+                case _: self._logger.critical(f"Unknown packet type ({type(packet)})") 
             uav_entity.last_seen = sqlalchemy.func.now()
 
-            self._db.commit()
+            self._uavs_to_update[uav_entity.uav_id] = uav_entity
 
-        self._logger.debug("Received packet processed!")
+    @run_once(timeout=1)
+    def _log_queue_filled(self, size):
+        self._logger.warning(f"input queue has {size} elements waiting to be processed")
+        # If you see this warning a lot, consider increasing db_commit_frequency
+
 
     def _loop(self) -> None:
         try:
@@ -179,8 +189,36 @@ class MeasurementProcessor(Loop):
             id, packet = self._in_queue.get(timeout=1.0)
             self._receive_packet(id, packet)
             in_q_size = self._in_queue.qsize()
-            if  in_q_size > 1:
-                self._logger.warning(f"input queue has {in_q_size} elements waiting to be processed")
+            if  in_q_size > 10:
+                self._log_queue_filled(in_q_size)
+            if time.time() - self._last_commit > self.db_commit_frequency:
+                # only commit the DB changes after db_commit_frequency seconds have elapsed
+                # TODO: we should use a DB technology where transactions are cheap
+                #       we might want to remove this and commit every update instantly 
+                #       when we have the new db
+                with self._app.app_context():
+                    self._logger.trace(f"Adding {len(self._measurements_to_add)} detections to DB")
+                    self._logger.trace(f"Updating {len(self._uavs_to_update)} uavs in DB")
+                    for meas_entity in self._measurements_to_add:
+                        self._db.add(meas_entity)
+                    self._measurements_to_add = []
+
+                    for uav_id, uav_entity in self._uavs_to_update.items():
+                        # we only want to owerwrite the fields updated in this module
+                        # # TODO: improve ?
+                        old_uav_entity: UAVEntity | None = UAVEntity.query.get(uav_id)
+                        old_uav_entity.last_seen = uav_entity.last_seen
+                        old_uav_entity.last_pos_lat = uav_entity.last_pos_lat
+                        old_uav_entity.last_pos_lon = uav_entity.last_pos_lon
+                        old_uav_entity.last_pos_altitude = uav_entity.last_pos_altitude
+                        old_uav_entity.last_pos_q0 = uav_entity.last_pos_q0
+                        old_uav_entity.last_pos_q1 = uav_entity.last_pos_q1
+                        old_uav_entity.last_pos_q2 = uav_entity.last_pos_q2
+                        old_uav_entity.last_pos_q3 = uav_entity.last_pos_q3
+                        old_uav_entity.last_seen = uav_entity.last_seen
+
+                    self._db.commit()
+                    self._last_commit = time.time()
         except queue.Empty:
             return  # No packets to process
         except Exception as e:
