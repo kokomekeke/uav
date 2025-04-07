@@ -12,21 +12,27 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from pysagax.common.loop import Loop
 
+<<<<<<< HEAD
 # TODO: mi az oka ennek???
+=======
+>>>>>>> 06177841dc990ecf06c3149f2016954ac503b0fb
 platform = None
 try:
     from pysagax.gnd.api.api import api
-
-    platform = 'LINUX'
+    platform = 'WINDOWS'
 except ImportError:
-    from pysagax.gnd.api import api
+    from pysagax.gnd.api.api import api
+    platform = 'LINUX'
 
+<<<<<<< HEAD
     platform = 'WIN'
 
+=======
+>>>>>>> 06177841dc990ecf06c3149f2016954ac503b0fb
 from pysagax.gnd.database import db
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+CORS(app, resources={r"*": {"origins": "*"}}, supports_credentials=True)
 socketio = SocketIO(app, async_mode="eventlet", cors_allowed_origins="*")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

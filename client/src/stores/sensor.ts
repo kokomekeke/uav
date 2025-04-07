@@ -2,10 +2,17 @@ import { defineStore, storeToRefs } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import axios from 'axios'
 import { useConnectionStore } from '@/stores/connection'
+<<<<<<< HEAD
 import { Sensor } from '../types/sensor'
 
 export const useSensorStore = defineStore('sensor', () => {
   const sensors = ref<{ [id: number] : Sensor}>({})
+=======
+import { Sensor } from "../types/sensor"
+
+export const useSensorStore = defineStore('sensor', () => {
+  const sensors = ref<Sensor[]>([])
+>>>>>>> 06177841dc990ecf06c3149f2016954ac503b0fb
   const selectedSensor = ref(null)
   const isLoading = ref<boolean>(false)
   const errorMessage = ref('')
@@ -17,7 +24,10 @@ export const useSensorStore = defineStore('sensor', () => {
     console.log('over', sensor)
   }
 
+<<<<<<< HEAD
   // TODO: fetchelodjenek a comintdetectionok is
+=======
+>>>>>>> 06177841dc990ecf06c3149f2016954ac503b0fb
   async function fetchSensors () {
     console.log('fetchSensors', ipPort.value)
     if (!isConnected.value) return
@@ -92,15 +102,16 @@ export const useSensorStore = defineStore('sensor', () => {
       // API sikeres válasz után frissítjük a listát
       await fetchSensors()
       sensors.value = [...sensors.value]
-      console.log('✅ Szenzorok frissítve:', sensors.value)
+      // console.log('✅ Szenzorok frissítve:', sensors.value)
     } catch (error) {
       console.error('Hiba az új szenzor hozzáadásakor:', error)
     }
   }
 
-  watch(sensors, (newSensors) => {
-    console.log('🔄 Szenzor lista frissítve:', newSensors)
-  }, { deep: true })
+  // watch(sensors, (newSensors) => {
+  //  console.log('🔄 Szenzor lista frissítve:', newSensors)
+  // }, { deep: true })
+
 
   async function removeSensor () {
     console.log(selectedSensor)
@@ -117,12 +128,17 @@ export const useSensorStore = defineStore('sensor', () => {
     console.log('new values::::', sensors.value)
   }
 
+<<<<<<< HEAD
   async function selectSensor (sensor) {
+=======
+  async function selectSensor(sensor) {
+>>>>>>> 06177841dc990ecf06c3149f2016954ac503b0fb
     console.log(sensor, 'sensor selected')
     selectedSensor.value = sensor
 
     // Meglévő timer törlése, ha már fut
     if (detectionInterval.value) {
+<<<<<<< HEAD
       clearInterval(detectionInterval.value)
     }
 
@@ -169,14 +185,83 @@ export const useSensorStore = defineStore('sensor', () => {
     if (detectionInterval.value) {
       clearInterval(detectionInterval.value)
       detectionInterval.value = null
+=======
+      clearInterval(detectionInterval.value);
+    }
+
+    // Azonnal meghívjuk az API-t egyszer
+    fetchDetection(10);
+
+    // Timer beállítása, hogy 1 másodpercenként lefusson a fetchDetection
+    detectionInterval.value = setInterval(() => {
+      fetchDetection(10);
+    }, 10); // 1000 ms = 1 sec
+  }
+
+  const getSensors = computed(() => [...sensors.value])
+
+    async function fetchDetection(n) {
+      if (!selectedSensor.value) return;
+
+      try {
+        const response = await axios.get(`${ipPort.value}/v1/comintdetection/geojson/list_last/${n}`);
+    //    console.log("API válasz:", response.data);
+        if (!response.data || response.status !== 200) {
+          throw new Error(`API hiba: ${response.status} - ${response.statusText}`);
+        }
+
+        // Kinyerjük a detekciókat a GeoJSON FeatureCollectionből
+        const features = response.data.features || [];
+
+        // A tényleges COMINT detekciók a feature.properties-ben vannak
+        const detections = features.map((feature) => feature.properties);
+
+        // Csoportosítás uav_id szerint
+        const groupedByUavId = detections.reduce((acc, detection) => {
+          const id = detection.uav_id;
+          if (!acc[id]) acc[id] = [];
+          acc[id].push(detection);
+          return acc;
+        }, {});
+
+        // Hozzárendelés a megfelelő szenzorhoz
+        for (const [uav_id, detectionList] of Object.entries(groupedByUavId)) {
+          const sensor = sensors.value.find(s => s.uav_id === Number(uav_id));
+          if (sensor) {
+            sensor.detections = detectionList;
+          }
+        }
+
+        // selectedSensor detekciók frissítése
+        const currentDetections = groupedByUavId[selectedSensor.value.uav_id] || [];
+        selectedSensor.value.detections = currentDetections;
+
+    //    console.log("Frissített szenzorok detekciókkal:", sensors.value);
+      } catch (error) {
+        console.error("Hiba történt a fetchDetection során:", error);
+      }
+    }
+
+
+  function stopFetchingDetection() {
+    if (detectionInterval.value) {
+      clearInterval(detectionInterval.value);
+      detectionInterval.value = null;
+>>>>>>> 06177841dc990ecf06c3149f2016954ac503b0fb
     }
   }
 
   watch(selectedSensor, (newSensor) => {
     if (!newSensor) {
+<<<<<<< HEAD
       stopFetchingDetection() // Ha nincs szenzor kiválasztva, leállítjuk az intervalt
     }
   })
+=======
+      stopFetchingDetection(); // Ha nincs szenzor kiválasztva, leállítjuk az intervalt
+    }
+  });
+>>>>>>> 06177841dc990ecf06c3149f2016954ac503b0fb
 
   return {
     sensors,
