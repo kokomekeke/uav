@@ -12,10 +12,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from pysagax.common.loop import Loop
 
-<<<<<<< HEAD
 # TODO: mi az oka ennek???
-=======
->>>>>>> 06177841dc990ecf06c3149f2016954ac503b0fb
 platform = None
 try:
     from pysagax.gnd.api.api import api
@@ -24,11 +21,6 @@ except ImportError:
     from pysagax.gnd.api.api import api
     platform = 'LINUX'
 
-<<<<<<< HEAD
-    platform = 'WIN'
-
-=======
->>>>>>> 06177841dc990ecf06c3149f2016954ac503b0fb
 from pysagax.gnd.database import db
 
 app = Flask(__name__)

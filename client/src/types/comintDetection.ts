@@ -1,11 +1,11 @@
 export interface ComintDetection {
-  detection_id: number; // Primary Key
+  detection_id?: number; // Primary Key
   uav_id: number; // Foreign Key referencing UAV table
   uav_event_id?: number | null; // Foreign Key referencing UAV event table
-  frequency: bigint; // Large integer
-  signal_strength: number; // Precision (8,3) -> Floating-point
-  bandwidth: bigint; // Large integer
-  snr: number; // Precision (8,3) -> Floating-point
+  frequency?: bigint; // Large integer
+  signal_strength?: number; // Precision (8,3) -> Floating-point
+  bandwidth?: bigint; // Large integer
+  snr?: number; // Precision (8,3) -> Floating-point
   lob_azim_deg: number; // Precision (6,3) -> Floating-point
   lob_elev_deg: number; // Precision (6,3) -> Floating-point
   precision: number; // Precision (4,3) -> Floating-point

@@ -2,32 +2,23 @@ import { defineStore, storeToRefs } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import axios from 'axios'
 import { useConnectionStore } from '@/stores/connection'
-<<<<<<< HEAD
 import { Sensor } from '../types/sensor'
+import { ComintDetection } from '../types/sensor'
 
 export const useSensorStore = defineStore('sensor', () => {
   const sensors = ref<{ [id: number] : Sensor}>({})
-=======
-import { Sensor } from "../types/sensor"
-
-export const useSensorStore = defineStore('sensor', () => {
-  const sensors = ref<Sensor[]>([])
->>>>>>> 06177841dc990ecf06c3149f2016954ac503b0fb
   const selectedSensor = ref(null)
   const isLoading = ref<boolean>(false)
   const errorMessage = ref('')
   const detectionInterval = ref<number | null>(null)
   const connectionStore = useConnectionStore()
   const { ipPort, isConnected } = storeToRefs(connectionStore)
+
   const handleMouseOver = (sensor) => {
     selectedSensor.value = sensor
     console.log('over', sensor)
   }
 
-<<<<<<< HEAD
-  // TODO: fetchelodjenek a comintdetectionok is
-=======
->>>>>>> 06177841dc990ecf06c3149f2016954ac503b0fb
   async function fetchSensors () {
     console.log('fetchSensors', ipPort.value)
     if (!isConnected.value) return
@@ -47,15 +38,18 @@ export const useSensorStore = defineStore('sensor', () => {
       if (response.status !== 200) {
         throw new Error(`API hiba: ${response.status} - ${response.statusText}`)
       }
-      console.log('response data: ', response.data)
-      // sensors.value = Array.isArray(response.data) ? response.data : response.data.sensors || []
+
       const sensorArray = Array.isArray(response.data) ? response.data : response.data.sensors || []
+        console.log("sensorArray", sensorArray)
       sensorArray.forEach((sensor: Sensor) => {
         sensors.value[sensor.uav_id] = sensor
+        console.log("inArray: ", sensors.value[sensor.uav_id])
       })
-    //   TODO: ide implementálni, hogy a sensors tartalmazza a comintdetecctionoket updatelve
+
     } catch (error) {
       console.error('Hiba az API hívás során:', error)
+
+      // Dummy adat fallback
       sensors.value = {
         1: {
           uav_id: 1,
@@ -79,12 +73,6 @@ export const useSensorStore = defineStore('sensor', () => {
 
   async function addSensor (sensor) {
     console.log(sensor)
-    console.log(ipPort.value)
-    console.log('JSON sent:', JSON.stringify({
-      uav_label: sensor.uav_label,
-      uav_address: sensor.uav_address,
-      active: false
-    }))
     try {
       await axios.post(`${ipPort.value}/v1/uav`,
         {
@@ -93,175 +81,120 @@ export const useSensorStore = defineStore('sensor', () => {
           active: false
         },
         { headers: { 'Content-Type': 'application/json' } }
-      ).catch(
-        (error) => {
-          console.error('❌ Hiba az API hívás során:', error.response ? error.response.data : error.message)
-        }
       )
 
-      // API sikeres válasz után frissítjük a listát
       await fetchSensors()
-      sensors.value = [...sensors.value]
-      // console.log('✅ Szenzorok frissítve:', sensors.value)
     } catch (error) {
       console.error('Hiba az új szenzor hozzáadásakor:', error)
     }
   }
 
-  // watch(sensors, (newSensors) => {
-  //  console.log('🔄 Szenzor lista frissítve:', newSensors)
-  // }, { deep: true })
-
-
   async function removeSensor () {
     console.log(selectedSensor)
-    if (!selectedSensor.value) return // Ha nincs kiválasztott szenzor, kilépünk
+    if (!selectedSensor.value) return
 
-    sensors.value = sensors.value.filter(s => s.uav_label !== selectedSensor.value.uav_label)
+    delete sensors.value[selectedSensor.value.uav_id]
     const id = selectedSensor.value.uav_id
     selectedSensor.value = null
 
-    //     ide kéne a backend endpointot aktiválni
-    await axios.delete(`${ipPort.value}/v1/uav/` + id).then(response => {
-      console.log('juhuuuuu')
+    await axios.delete(`${ipPort.value}/v1/uav/` + id).then(() => {
+      console.log('Szenzor törölve')
     })
+
     console.log('new values::::', sensors.value)
   }
 
-<<<<<<< HEAD
-  async function selectSensor (sensor) {
-=======
-  async function selectSensor(sensor) {
->>>>>>> 06177841dc990ecf06c3149f2016954ac503b0fb
-    console.log(sensor, 'sensor selected')
+  async function selectSensor (sensor: Sensor) {
+    console.log("SELECTED SENSOR: ", sensor, 'sensor selected')
     selectedSensor.value = sensor
 
-    // Meglévő timer törlése, ha már fut
     if (detectionInterval.value) {
-<<<<<<< HEAD
       clearInterval(detectionInterval.value)
     }
 
-    // Azonnal meghívjuk az API-t egyszer
+    clearDetections()
     await fetchDetection(10)
 
-    // Timer beállítása, hogy 1 másodpercenként lefusson a fetchDetection
     detectionInterval.value = setInterval(() => {
-      fetchDetection(10)
-    }, 10) // 1000 ms = 1 sec
+        clearDetections()
+        fetchDetection(10)
+    }, 1000)
   }
 
   const getSensors = computed(() => sensors.value)
 
   async function fetchDetection (n) {
-    if (!selectedSensor.value) return // Ha nincs kiválasztott szenzor, kilépünk
+    if (!selectedSensor.value) return
 
     try {
       const response = await axios.get(`${ipPort.value}/v1/comintdetection/geojson/list_last/${n}`)
 
-      selectedSensor.value.detections = response.data
-
-      if (!response.data) {
-        throw new Error('Üres API válasz')
-      }
-
-      if (response.status !== 200) {
+      if (!response.data || response.status !== 200) {
         throw new Error(`API hiba: ${response.status} - ${response.statusText}`)
       }
 
-      sortDetections(response.data)
+      const features = response.data.features || []
 
-      return response.data
+        features.forEach((f) => {
+            sensors.value[f.properties.uav_id].detections.push(f)
+        })
     } catch (error) {
       console.error('Hiba történt a fetchDetection során:', error)
     }
   }
-  
-  function sortDetections(detections) {
-    // ha dictionaire átalakítom a jelenleg listaként üzemelő sensorst, és az adott key hez rendelem hozzá a detectionst
-  }
-  
+
   function stopFetchingDetection () {
     if (detectionInterval.value) {
       clearInterval(detectionInterval.value)
       detectionInterval.value = null
-=======
-      clearInterval(detectionInterval.value);
     }
-
-    // Azonnal meghívjuk az API-t egyszer
-    fetchDetection(10);
-
-    // Timer beállítása, hogy 1 másodpercenként lefusson a fetchDetection
-    detectionInterval.value = setInterval(() => {
-      fetchDetection(10);
-    }, 10); // 1000 ms = 1 sec
   }
 
-  const getSensors = computed(() => [...sensors.value])
-
-    async function fetchDetection(n) {
-      if (!selectedSensor.value) return;
-
-      try {
-        const response = await axios.get(`${ipPort.value}/v1/comintdetection/geojson/list_last/${n}`);
-    //    console.log("API válasz:", response.data);
-        if (!response.data || response.status !== 200) {
-          throw new Error(`API hiba: ${response.status} - ${response.statusText}`);
-        }
-
-        // Kinyerjük a detekciókat a GeoJSON FeatureCollectionből
-        const features = response.data.features || [];
-
-        // A tényleges COMINT detekciók a feature.properties-ben vannak
-        const detections = features.map((feature) => feature.properties);
-
-        // Csoportosítás uav_id szerint
-        const groupedByUavId = detections.reduce((acc, detection) => {
-          const id = detection.uav_id;
-          if (!acc[id]) acc[id] = [];
-          acc[id].push(detection);
-          return acc;
-        }, {});
-
-        // Hozzárendelés a megfelelő szenzorhoz
-        for (const [uav_id, detectionList] of Object.entries(groupedByUavId)) {
-          const sensor = sensors.value.find(s => s.uav_id === Number(uav_id));
-          if (sensor) {
-            sensor.detections = detectionList;
-          }
-        }
-
-        // selectedSensor detekciók frissítése
-        const currentDetections = groupedByUavId[selectedSensor.value.uav_id] || [];
-        selectedSensor.value.detections = currentDetections;
-
-    //    console.log("Frissített szenzorok detekciókkal:", sensors.value);
-      } catch (error) {
-        console.error("Hiba történt a fetchDetection során:", error);
-      }
-    }
-
-
-  function stopFetchingDetection() {
-    if (detectionInterval.value) {
-      clearInterval(detectionInterval.value);
-      detectionInterval.value = null;
->>>>>>> 06177841dc990ecf06c3149f2016954ac503b0fb
+  function clearDetections() {
+    for (let key in sensors.value) {
+        sensors.value[key].detections = []
     }
   }
 
   watch(selectedSensor, (newSensor) => {
     if (!newSensor) {
-<<<<<<< HEAD
-      stopFetchingDetection() // Ha nincs szenzor kiválasztva, leállítjuk az intervalt
+      stopFetchingDetection()
     }
   })
-=======
-      stopFetchingDetection(); // Ha nincs szenzor kiválasztva, leállítjuk az intervalt
-    }
-  });
->>>>>>> 06177841dc990ecf06c3149f2016954ac503b0fb
+
+  function featureToComintDetection(feature: any): ComintDetection {
+  const props = feature.properties ?? {};
+  const coords = feature.geometry?.coordinates ?? [null, null];
+  const [lon, lat] = coords;
+
+  if (props.detection_id == null || props.uav_id == null || lat == null || lon == null) {
+    throw new Error('featureToComintDetection: Kötelező mezők hiányoznak (detection_id, uav_id, lat, lon)');
+  }
+
+  const detection: ComintDetection = {
+    detection_id: props.detection_id,
+    uav_id: props.uav_id,
+    uav_event_id: props.uav_event_id ?? null,
+    frequency: props.frequency != null ? BigInt(props.frequency) : undefined,
+    signal_strength: props.signal_strength ?? undefined,
+    bandwidth: props.bandwidth != null ? BigInt(props.bandwidth) : undefined,
+    snr: props.snr ?? undefined,
+    lob_azim_deg: props.lob_azim_deg ?? undefined,
+    lob_elev_deg: props.lob_elev_deg ?? undefined,
+    precision: props.precision ?? undefined,
+    timestamp: props.timestamp ? new Date(props.timestamp) : undefined,
+    uav_pos_lat: lat,
+    uav_pos_lon: lon,
+    uav_pos_altitude: props.uav_pos_altitude ?? null,
+    uav_pos_q0: null,
+    uav_pos_q1: null,
+    uav_pos_q2: null,
+    uav_pos_q3: null,
+    roi_identifier: props.roi_id ?? null,
+  };
+
+  return detection;
+}
 
   return {
     sensors,
