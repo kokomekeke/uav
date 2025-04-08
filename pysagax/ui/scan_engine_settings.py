@@ -61,12 +61,20 @@ class ScanningTab(tkinter.Frame):
         self.range_settings_frame = RepeatedEntry(
             self,
             entries_config={
-                "Start freq": SIPrefixDoubleVar,
-                "Stop freq": SIPrefixDoubleVar,
+                "Center freq": SIPrefixDoubleVar,
             },
-            default_new_tab_values={"Start freq": "442.5M", "Stop freq": "443.5M"},
+            default_new_tab_values={"Center freq": "442.5M"},
         )
         self.range_settings_frame.grid(row=1, column=0, columnspan=4, sticky="nw")
+
+        self.scan_burst_count_entry = EntryWithLabel(
+            self,
+            "Burst count:",
+            column=0,
+            row=2,
+            default_value=read_from_conf(conf, ["defaults", "scan_burst_count"], 10),
+            variable_type=tkinter.IntVar,
+        )
 
         self.send_command_function = send_command_function
 
@@ -81,13 +89,24 @@ class ScanningTab(tkinter.Frame):
         cmd = proto_cmd.Command(instruction=proto_cmd.Instruction.CONFIG)
         cmd.kind = proto_cmd.Command.WRITE
         cmd.config.se.mode = proto_cmd.ScanEngineConfig.Mode.SCANNING
-        freq_ranges = self.range_settings_frame.get_values()
-        for range in freq_ranges:
-            proto_range = proto_cmd.FreqRange(
-                start=range["Start freq"], stop=range["Stop freq"]
-            )
-            cmd.config.se.scanning.ranges.append(proto_range)
+        center_freqs = [value["Center freq"] for value in self.range_settings_frame.get_values()]
+        for cf in center_freqs:
+            cmd.config.cs.scan_plan.center_freqs.append(cf)
+        
+        cmd.config.cs.scan_plan.scan_burst_count = self.scan_burst_count_entry.get()
+
         self.send_command_function(cmd)
+
+
+        # Old ui used for Áron's scan algorithm
+
+        # freq_ranges = self.range_settings_frame.get_values()
+        # for range in freq_ranges:
+        #     proto_range = proto_cmd.FreqRange(
+        #         start=range["Start freq"], stop=range["Stop freq"]
+        #     )
+        #     cmd.config.se.scanning.ranges.append(proto_range)
+        # self.send_command_function(cmd)
 
 
 class TrackingTab(tkinter.Frame):
@@ -102,7 +121,6 @@ class TrackingTab(tkinter.Frame):
     ):
 
         tkinter.Frame.__init__(self, master, *args, **kwargs)
-        print("TYPE: ", type(conf))
         self.signals_settings_frame = RepeatedEntry(
             self,
             entries_config={
@@ -159,7 +177,7 @@ class ScanEngineSettingsFrame(tkinter.Frame):
         self.manual_tab = ManualTab(self.mode_tabs, self.send_command_function)
         self.mode_tabs.add(self.manual_tab, text="Manual")
 
-        self.scanning_tab = ScanningTab(self.mode_tabs, self.send_command_function)
+        self.scanning_tab = ScanningTab(self.mode_tabs, self.send_command_function, conf)
         self.mode_tabs.add(self.scanning_tab, text="Scanning")
 
         self.tracking_tab = TrackingTab(

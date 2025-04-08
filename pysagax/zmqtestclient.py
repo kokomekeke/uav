@@ -268,22 +268,47 @@ class PropSetter:
         type = self.descriptor.type
         label = self.descriptor.label
         try:
-            # if label == 3:  # repeated
-            #     if type in [3, 4, 5, 6, 7, 13, 15, 16, 17, 18]:  # types of int
-            #         val = [int(x.strip()) for x in val.split(",")]
-            #     elif type == 2:  # float
-            #         val = [float(x.strip()) for x in val.split(",")]
-            #     else:
-            #         val = [x.strip() for x in shlex.split(val)]
-            #     for x in val:
-            #         rgetattr(self.msg, self.field).append(x)
-            #     return
+            # Descriptor field type enum values:
+            #
+            # xTYPE_DOUBLE = 1
+            # xTYPE_FLOAT = 2
+            # xTYPE_INT64 = 3
+            # xTYPE_UINT64 = 4
+            # xTYPE_INT32 = 5
+            # xTYPE_FIXED64 = 6
+            # xTYPE_FIXED32 = 7
+            # xTYPE_BOOL = 8
+            # xTYPE_STRING = 9
+            #  TYPE_GROUP = 10
+            #  TYPE_MESSAGE = 11
+            #  TYPE_BYTES = 12
+            # xTYPE_UINT32 = 13
+            # xTYPE_ENUM = 14
+            # xTYPE_SFIXED32 = 15
+            # xTYPE_SFIXED64 = 16
+            # xTYPE_SINT32 = 17
+            # xTYPE_SINT64 = 18
+
+
+
+            print(f"    TYOE: {type}")
             if type in [3, 4, 5, 6, 7, 13, 15, 16, 17, 18]:  # types of int
                 val = int(val)
-            elif type == 2:  # float
+            elif type in [1, 2]:  # double and float
                 val = float(val)
+            elif type == 8: # 
+                print("TODO: bool fields shouldn't require user to type True or False")
+                if val == "False":
+                    val = False
+                val = bool(val) # TODO: bool fields shouldn't require user to type True or False
+            elif type == 9: # string
+                val = str(val)
+            elif type in [10, 11, 12]:
+                raise TypeError(f"This field type ({type}) with value='{val}' is not yet supported")
             elif type == 14:  # enum
                 val = self.descriptor.enum_type.values_by_name[val].number
+            else:
+                raise TypeError(f"This field type ({type}) with value='{val}' is unknown")
             if val != self.descriptor.default_value:
                 rsetattr(self.msg, self.field, val)
             else:

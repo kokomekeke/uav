@@ -8,6 +8,7 @@ burst_stride = '65536'
 roi_center = '446.065M'
 roi_span = '100k'
 roi_threshold = '-40'
+scan_burst_count = 10
 
 [display]
 fps = 10

@@ -597,9 +597,10 @@ class ScanEngine(Loop):
         command = proto_cmd.Command()
         command.instruction = proto_cmd.CONFIG
         command.kind = proto_cmd.Command.WRITE
-        command.config.cs.scan_plan.CopyFrom(
-            self._scan_algorithm(se_cmd.config.se.scanning)
-        )
+        # We don't use the scan algo right now. The client is expected to fill config.cs.scan_plan directly
+        # command.config.cs.scan_plan.CopyFrom(
+        #     self._scan_algorithm(se_cmd.config.se.scanning)
+        # )
         command.config.cs.source_type = self._source_device_type
         command.config.cs.source_path = self._source_device_path
         command.config.cs.burst_stride = self._source_burst_stride
@@ -611,6 +612,7 @@ class ScanEngine(Loop):
                 command.config.cs.burst_stride = se_cmd.config.cs.burst_stride
         self._last_config_command = se_cmd
         self._latest_cs_command = command
+        self._logger.debug(f"CS scan configure command: {command}")
         self._cs_commands_q.put(
             (command, self._config_cs_timeout)
         )  # should use util.queue_put?
