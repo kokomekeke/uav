@@ -61,14 +61,16 @@ class CalibrationSettingsFrame(tkinter.Frame):
             "IQ rate (Hz):",
             column=0,
             row=0,
-            default_value="1.0M",
+            default_value=read_from_conf(conf, ["defaults", "bandwith"], "1M"),
             variable_type=tkinter.StringVar,
         )
 
         self.center_freq_settings_frame = RepeatedEntry(
             self,
             entries_config={"Center freq": SIPrefixDoubleVar},
-            default_new_tab_values={"Center freq": "432M"},
+            default_new_tab_values={
+                "Center freq": read_from_conf(conf, ["defaults", "center_freq"], "446M")
+            },
         )
 
         self.center_freq_settings_frame.grid(row=1, column=0, columnspan=4, sticky="nw")
