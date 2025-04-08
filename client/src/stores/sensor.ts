@@ -2,8 +2,7 @@ import { defineStore, storeToRefs } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import axios from 'axios'
 import { useConnectionStore } from '@/stores/connection'
-import { Sensor } from '../types/sensor'
-import { ComintDetection } from '../types/sensor'
+import { Sensor, ComintDetection } from '../types/sensor'
 
 export const useSensorStore = defineStore('sensor', () => {
   const sensors = ref<{ [id: number] : Sensor}>({})
@@ -40,12 +39,11 @@ export const useSensorStore = defineStore('sensor', () => {
       }
 
       const sensorArray = Array.isArray(response.data) ? response.data : response.data.sensors || []
-        console.log("sensorArray", sensorArray)
+      console.log('sensorArray', sensorArray)
       sensorArray.forEach((sensor: Sensor) => {
         sensors.value[sensor.uav_id] = sensor
-        console.log("inArray: ", sensors.value[sensor.uav_id])
+        console.log('inArray: ', sensors.value[sensor.uav_id])
       })
-
     } catch (error) {
       console.error('Hiba az API hívás során:', error)
 
@@ -105,7 +103,7 @@ export const useSensorStore = defineStore('sensor', () => {
   }
 
   async function selectSensor (sensor: Sensor) {
-    console.log("SELECTED SENSOR: ", sensor, 'sensor selected')
+    console.log('SELECTED SENSOR: ', sensor, 'sensor selected')
     selectedSensor.value = sensor
 
     if (detectionInterval.value) {
@@ -116,8 +114,8 @@ export const useSensorStore = defineStore('sensor', () => {
     await fetchDetection(10)
 
     detectionInterval.value = setInterval(() => {
-        clearDetections()
-        fetchDetection(10)
+      clearDetections()
+      fetchDetection(10)
     }, 1000)
   }
 
@@ -135,9 +133,9 @@ export const useSensorStore = defineStore('sensor', () => {
 
       const features = response.data.features || []
 
-        features.forEach((f) => {
-            sensors.value[f.properties.uav_id].detections.push(f)
-        })
+      features.forEach((f) => {
+        sensors.value[f.properties.uav_id].detections.push(f)
+      })
     } catch (error) {
       console.error('Hiba történt a fetchDetection során:', error)
     }
@@ -150,9 +148,9 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
-  function clearDetections() {
-    for (let key in sensors.value) {
-        sensors.value[key].detections = []
+  function clearDetections () {
+    for (const key in sensors.value) {
+      sensors.value[key].detections = []
     }
   }
 
@@ -162,39 +160,39 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   })
 
-  function featureToComintDetection(feature: any): ComintDetection {
-  const props = feature.properties ?? {};
-  const coords = feature.geometry?.coordinates ?? [null, null];
-  const [lon, lat] = coords;
+  function featureToComintDetection (feature: any): ComintDetection {
+    const props = feature.properties ?? {}
+    const coords = feature.geometry?.coordinates ?? [null, null]
+    const [lon, lat] = coords
 
-  if (props.detection_id == null || props.uav_id == null || lat == null || lon == null) {
-    throw new Error('featureToComintDetection: Kötelező mezők hiányoznak (detection_id, uav_id, lat, lon)');
+    if (props.detection_id == null || props.uav_id == null || lat == null || lon == null) {
+      throw new Error('featureToComintDetection: Kötelező mezők hiányoznak (detection_id, uav_id, lat, lon)')
+    }
+
+    const detection: ComintDetection = {
+      detection_id: props.detection_id,
+      uav_id: props.uav_id,
+      uav_event_id: props.uav_event_id ?? null,
+      frequency: props.frequency != null ? BigInt(props.frequency) : undefined,
+      signal_strength: props.signal_strength ?? undefined,
+      bandwidth: props.bandwidth != null ? BigInt(props.bandwidth) : undefined,
+      snr: props.snr ?? undefined,
+      lob_azim_deg: props.lob_azim_deg ?? undefined,
+      lob_elev_deg: props.lob_elev_deg ?? undefined,
+      precision: props.precision ?? undefined,
+      timestamp: props.timestamp ? new Date(props.timestamp) : undefined,
+      uav_pos_lat: lat,
+      uav_pos_lon: lon,
+      uav_pos_altitude: props.uav_pos_altitude ?? null,
+      uav_pos_q0: null,
+      uav_pos_q1: null,
+      uav_pos_q2: null,
+      uav_pos_q3: null,
+      roi_identifier: props.roi_id ?? null
+    }
+
+    return detection
   }
-
-  const detection: ComintDetection = {
-    detection_id: props.detection_id,
-    uav_id: props.uav_id,
-    uav_event_id: props.uav_event_id ?? null,
-    frequency: props.frequency != null ? BigInt(props.frequency) : undefined,
-    signal_strength: props.signal_strength ?? undefined,
-    bandwidth: props.bandwidth != null ? BigInt(props.bandwidth) : undefined,
-    snr: props.snr ?? undefined,
-    lob_azim_deg: props.lob_azim_deg ?? undefined,
-    lob_elev_deg: props.lob_elev_deg ?? undefined,
-    precision: props.precision ?? undefined,
-    timestamp: props.timestamp ? new Date(props.timestamp) : undefined,
-    uav_pos_lat: lat,
-    uav_pos_lon: lon,
-    uav_pos_altitude: props.uav_pos_altitude ?? null,
-    uav_pos_q0: null,
-    uav_pos_q1: null,
-    uav_pos_q2: null,
-    uav_pos_q3: null,
-    roi_identifier: props.roi_id ?? null,
-  };
-
-  return detection;
-}
 
   return {
     sensors,
