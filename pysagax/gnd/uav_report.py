@@ -62,7 +62,7 @@ class UAVReport:
             f"less than 20 GB space ({free_space} MB) on the disk",
         )
         check(
-            free_space / self.sysinfo.hardware.disk < 0.5,
+            free_space <= 0.5 * self.sysinfo.hardware.disk,
             6,
             f"less than 50% space ({free_space} MB) space left on disk",
         )

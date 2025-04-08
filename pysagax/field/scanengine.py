@@ -534,6 +534,7 @@ class ScanEngine(Loop):
             if self._latest_se_proxy is not None:
                 self._latest_se_proxy["cs_config"] = response.config.cs
         if response.HasField("error") and self._reset_on_error:
+            self._logger.critical(f"CoreService response contains the following error message {response.error}. ScanEngine resets now.")
             self.reset()
 
         return not response.HasField("error")
