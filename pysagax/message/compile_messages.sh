@@ -6,6 +6,7 @@ sources=(
     "pysagax/message/data.proto" 
     "pysagax/message/heading.proto" 
     "pysagax/message/flight_info.proto"
+    "pysagax/message/altiss_intra_uav.proto"
 )
 target=$(dirname $(dirname $(dirname "${BASH_SOURCE[0]}")))  # project root dir
 set -x

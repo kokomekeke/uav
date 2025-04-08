@@ -3,6 +3,7 @@ package pysagax.message;
 import "google/protobuf/timestamp.proto";
 import "pysagax/message/data.proto";
 import "pysagax/message/heading.proto";
+import "pysagax/message/altiss_intra_uav.proto";
 
 enum Instruction {
     // Types of instructions that can be sent
@@ -126,6 +127,13 @@ enum Instruction {
     AUTO_CALIBRATION_DISABLE = 42;
     AUTO_CALIBRATION_TRIGGER = 43;
     CS_RELOAD_CONFIG = 44;
+
+
+    // Forward the message to the Aviation Processing Module in Altiss
+    //   parameter: MessageToAPM
+    //   response:  success [bool]
+    FORWARD_TO_APM = 50;
+
 }
 
 message ROIMask {
@@ -326,6 +334,15 @@ message CalibrationCommand {
 
 }
 
+message MessageToAPM{
+    // Wraps a message that we want to forward to the Avionics Processing Module in the Altiss project
+
+    oneof payload {
+        ComIntEmitterEvents emitter_events = 1;
+    }
+    
+}
+
 message Command {
     // Common message encapsulating all possible commands
 
@@ -358,6 +375,8 @@ message Command {
         uint64 rec_length_secs = 9;
 
         CalibrationCommand calib_command = 12;
+
+        MessageToAPM msg_to_apm = 13; 
     }
     reserved 11;
     bool test =15;
