@@ -9,3 +9,4 @@ heading_control_port = 5566
 heading_stream_port = 5567
 auto_config = '{"se": {"mode": "TRACKING", "tracking": {"signals": [{"frequency": 446000000.0, "bandwidth": 62500.0}]}}}'
 
+apm_communicator_port = 5568

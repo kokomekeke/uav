@@ -117,7 +117,7 @@ class PPStreamPreparation(Loop):
         spec_size = sum(len(data_part.data) for data_part in meas.data)
         fixed_size = len(meas.SerializeToString()) - spec_size
         downsample_factor = int(spec_size / (self._udp_max_size - fixed_size) + 1)
-        self._logger.debug(
+        self._logger.trace(
             f"Measurement packet downsample_factor={downsample_factor}"
             f"from fix_size={fixed_size} and spec_size={spec_size}"
             f"(max_size={self._udp_max_size})"
@@ -244,7 +244,7 @@ class PPStreamPreparation(Loop):
 
             self._stream_packet(packet)
 
-            self._logger.debug(
+            self._logger.trace(
                 f"PostProcessing/Stream preparation finished on packet {packet.packet_id}"
             )
 
