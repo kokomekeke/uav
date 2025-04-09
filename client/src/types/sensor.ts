@@ -2,6 +2,7 @@
 import { ComintDetection } from './comintDetection'
 
 export interface Sensor {
+  is_selected?: boolean
   uav_id: number
   uav_label?: string | null
   uav_address?: string | null

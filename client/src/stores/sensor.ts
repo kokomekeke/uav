@@ -88,7 +88,7 @@ export const useSensorStore = defineStore('sensor', () => {
   }
 
   async function removeSensor () {
-    console.log(selectedSensor)
+    console.log(selectedSensor.value)
     if (!selectedSensor.value) return
 
     delete sensors.value[selectedSensor.value.uav_id]
@@ -96,10 +96,10 @@ export const useSensorStore = defineStore('sensor', () => {
     selectedSensor.value = null
 
     await axios.delete(`${ipPort.value}/v1/uav/` + id).then(() => {
-      console.log('Szenzor törölve')
+      console.log('sensor deleted')
     })
 
-    console.log('new values::::', sensors.value)
+    console.log('new values: ', sensors.value)
   }
 
   async function selectSensor (sensor: Sensor) {
@@ -160,39 +160,43 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   })
 
-  function featureToComintDetection (feature: any): ComintDetection {
-    const props = feature.properties ?? {}
-    const coords = feature.geometry?.coordinates ?? [null, null]
-    const [lon, lat] = coords
+  watch(selectedSensor, (s) => {
+    console.log(s.is_selected)
+  })
 
-    if (props.detection_id == null || props.uav_id == null || lat == null || lon == null) {
-      throw new Error('featureToComintDetection: Kötelező mezők hiányoznak (detection_id, uav_id, lat, lon)')
-    }
-
-    const detection: ComintDetection = {
-      detection_id: props.detection_id,
-      uav_id: props.uav_id,
-      uav_event_id: props.uav_event_id ?? null,
-      frequency: props.frequency != null ? BigInt(props.frequency) : undefined,
-      signal_strength: props.signal_strength ?? undefined,
-      bandwidth: props.bandwidth != null ? BigInt(props.bandwidth) : undefined,
-      snr: props.snr ?? undefined,
-      lob_azim_deg: props.lob_azim_deg ?? undefined,
-      lob_elev_deg: props.lob_elev_deg ?? undefined,
-      precision: props.precision ?? undefined,
-      timestamp: props.timestamp ? new Date(props.timestamp) : undefined,
-      uav_pos_lat: lat,
-      uav_pos_lon: lon,
-      uav_pos_altitude: props.uav_pos_altitude ?? null,
-      uav_pos_q0: null,
-      uav_pos_q1: null,
-      uav_pos_q2: null,
-      uav_pos_q3: null,
-      roi_identifier: props.roi_id ?? null
-    }
-
-    return detection
-  }
+  // function featureToComintDetection (feature: any): ComintDetection {
+  //   const props = feature.properties ?? {}
+  //   const coords = feature.geometry?.coordinates ?? [null, null]
+  //   const [lon, lat] = coords
+  //
+  //   if (props.detection_id == null || props.uav_id == null || lat == null || lon == null) {
+  //     throw new Error('featureToComintDetection: Kötelező mezők hiányoznak (detection_id, uav_id, lat, lon)')
+  //   }
+  //
+  //   const detection: ComintDetection = {
+  //     detection_id: props.detection_id,
+  //     uav_id: props.uav_id,
+  //     uav_event_id: props.uav_event_id ?? null,
+  //     frequency: props.frequency != null ? BigInt(props.frequency) : undefined,
+  //     signal_strength: props.signal_strength ?? undefined,
+  //     bandwidth: props.bandwidth != null ? BigInt(props.bandwidth) : undefined,
+  //     snr: props.snr ?? undefined,
+  //     lob_azim_deg: props.lob_azim_deg ?? undefined,
+  //     lob_elev_deg: props.lob_elev_deg ?? undefined,
+  //     precision: props.precision ?? undefined,
+  //     timestamp: props.timestamp ? new Date(props.timestamp) : undefined,
+  //     uav_pos_lat: lat,
+  //     uav_pos_lon: lon,
+  //     uav_pos_altitude: props.uav_pos_altitude ?? null,
+  //     uav_pos_q0: null,
+  //     uav_pos_q1: null,
+  //     uav_pos_q2: null,
+  //     uav_pos_q3: null,
+  //     roi_identifier: props.roi_id ?? null
+  //   }
+  //
+  //   return detection
+  // }
 
   return {
     sensors,

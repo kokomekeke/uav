@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue'
+import {computed, ref, watch} from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSensorStore } from '@/stores/sensor'
 import NewSensorModal from '@/components/common/NewSensorModal.vue'
@@ -20,6 +20,7 @@ const emit = defineEmits(['update:isMenuOpen'])
 const address = ref('')
 const label = ref('')
 const active = ref(false)
+const sensorList = computed(() => Object.values(sensors.value))
 
 watch(() => props.isMenuOpen, (newValue) => {
   isMenuOpen.value = newValue
@@ -107,7 +108,7 @@ const toggleMenu = () => {
 
           <ul class="max-h-90">
             <li
-              v-for="sensor in sensors"
+              v-for="sensor in sensorList"
               :key="sensor.uav_label"
               @click="selectSensor(sensor)"
               @mouseover="handleMouseOver(sensor)"
@@ -118,7 +119,7 @@ const toggleMenu = () => {
               class="p-2 rounded cursor-pointer mb-1"
             >
               <div class="flex justify-between items-center">
-                <input type="checkbox" id="checkbox">
+                <input type="checkbox" id="checkbox" v-model="sensors[sensor.uav_id].is_selected">
                 <router-link :to="`/sensor/${sensor['uav_label']}`" class="pl-2 text-white hover:underline flex-grow text-left">
                   {{ sensor['uav_label'] }}
                 </router-link>
