@@ -42,6 +42,8 @@ export const useSensorStore = defineStore('sensor', () => {
       console.log('sensorArray', sensorArray)
       sensorArray.forEach((sensor: Sensor) => {
         sensors.value[sensor.uav_id] = sensor
+        sensors.value[sensor.uav_id].is_selected = false
+        sensors.value[sensor.uav_id].detections = []
         console.log('inArray: ', sensors.value[sensor.uav_id])
       })
     } catch (error) {
@@ -53,17 +55,17 @@ export const useSensorStore = defineStore('sensor', () => {
           uav_id: 1,
           uav_label: 'test001',
           uav_address: '10.1.1.113',
-          active: true
+          active: true,
+          detections: []
         },
         2: {
           uav_id: 2,
           uav_label: 'test002',
           uav_address: '10.1.1.119',
-          active: true
+          active: true,
+          detections: []
         }
       }
-
-      console.log('szenzór:: ', sensors.value)
     } finally {
       isLoading.value = false
     }
@@ -102,22 +104,30 @@ export const useSensorStore = defineStore('sensor', () => {
     console.log('new values: ', sensors.value)
   }
 
-  async function selectSensor (sensor: Sensor) {
-    console.log('SELECTED SENSOR: ', sensor, 'sensor selected')
-    selectedSensor.value = sensor
+  async function selectSensor(sensor: Sensor) {
+      console.log('SELECTED SENSOR: ', sensor, 'sensor selected')
 
-    if (detectionInterval.value) {
-      clearInterval(detectionInterval.value)
+      selectedSensor.value = sensor
+
+      // checkbox szinkronizálás
+      //Object.values(sensors.value).forEach(s => {
+        //s.is_selected = s === sensor
+      //    })
+
+      // régi interval leállítása
+      if (detectionInterval.value) {
+        clearInterval(detectionInterval.value)
+      }
+
+      //clearDetections()
+      await fetchDetection(10)
+
+      detectionInterval.value = setInterval(() => {
+        //clearDetections()
+        fetchDetection(10)
+      }, 1000)
     }
 
-    clearDetections()
-    await fetchDetection(10)
-
-    detectionInterval.value = setInterval(() => {
-      clearDetections()
-      fetchDetection(10)
-    }, 1000)
-  }
 
   const getSensors = computed(() => sensors.value)
 
@@ -134,7 +144,10 @@ export const useSensorStore = defineStore('sensor', () => {
       const features = response.data.features || []
 
       features.forEach((f) => {
+        console.log("f", f )
+        console.log(sensors.value[f.properties.uav_id])
         sensors.value[f.properties.uav_id].detections.push(f)
+        console.log("vmilyen uzenet:", sensors.value[f.properties.uav_id].detections)
       })
     } catch (error) {
       console.error('Hiba történt a fetchDetection során:', error)
@@ -163,6 +176,10 @@ export const useSensorStore = defineStore('sensor', () => {
   watch(selectedSensor, (s) => {
     console.log(s.is_selected)
   })
+
+  watch(sensors, (s) => {
+    console.log("ASDAZJKDGJKWDUIWDUWD=====", s)
+  }, { deep: true })
 
   // function featureToComintDetection (feature: any): ComintDetection {
   //   const props = feature.properties ?? {}

@@ -70,7 +70,7 @@ export const useConnectionStore = defineStore('connection', () => {
           console.log('⏹️ No active connection, stopping ping interval...')
           stopPinging()
         }
-      }, 2000)
+      }, 5000)
     })
   }
 
