@@ -8,6 +8,9 @@ from pysagax.util.protobuf_spectrum_utils import (
     protobuf_spectrum_to_numpy,
 )
 
+from pysagax.util.add_logging_level import addLoggingLevel
+from logging import DEBUG
+addLoggingLevel("TRACE", DEBUG - 5)
 
 @pytest.mark.parametrize(
     ["spectrum_data_count", "spectrum_data_type"],

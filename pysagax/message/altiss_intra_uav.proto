@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package pysagax.message;
+import "google/protobuf/timestamp.proto";
+
+// Messages used in the Altiss project to communicate with other modules
+
+message EmitterData {
+  uint64 timestamp_unix = 1;  // timestamp in microseconds since UNIX epoch
+  double latitude = 2;        // emitter latitude in degrees
+  double longitude = 3;       // emitter longitude in degrees
+  float altitude =  4;        // emitter altitude in meters
+  // TODO: emitter type enum or string, and additional info we calculate like speed
+  // TODO add roi_id of emitter
+}
+
+message ComIntEmitterEvents {
+  google.protobuf.Timestamp timestamp = 1;
+  repeated EmitterData emitter_data = 2;  // list of emitter data
+}

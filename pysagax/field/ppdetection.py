@@ -337,7 +337,7 @@ class PPDetection(Loop):
 
             # TODO: occasionally remove very old detection aggregators
 
-            self._logger.debug(
+            self._logger.trace(
                 f"PostProcessing/Detection finished on packet {packet.packet_id}"
             )
             queue_put(
