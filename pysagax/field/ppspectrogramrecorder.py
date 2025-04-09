@@ -184,7 +184,7 @@ class PPSpectrogramRecorder(Loop):
                 )
             self._file_streamer.put(packet)
 
-        self._logger.debug(f"Record/Playback finished on packet {packet.packet_id}")
+        self._logger.trace(f"Record/Playback finished on packet {packet.packet_id}")
 
     def _loop(self) -> None:
         assert self._queue_in is not None

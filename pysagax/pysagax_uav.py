@@ -8,7 +8,8 @@ import multiprocessing
 import sys
 import traceback
 from concurrent.futures import ProcessPoolExecutor, wait
-from logging import Handler, StreamHandler, getLogger
+from logging import Handler, StreamHandler, getLogger, DEBUG
+from pysagax.util.add_logging_level import addLoggingLevel
 from os import getpid
 from signal import SIGINT, SIGTERM, signal
 from typing import Any, Optional
@@ -40,6 +41,7 @@ from pysagax.field.ppspectrogramrecorder import PPSpectrogramRecorder
 from pysagax.field.ppstreamprep import PPStreamPreparation
 from pysagax.field.streamer import Streamer
 from pysagax.field.telemetry import Telemetry
+from pysagax.field.apm_communicator import APMCommunicator
 
 
 class Commander:
@@ -81,6 +83,7 @@ class Commander:
         detection_recording_max_length: float,
         measurement_udp_max_size: int,
         stream_decimation_factor: int,
+        apm_communicator_port: int,
     ) -> None:
 
         self._logger = getLogger("Commander")
@@ -105,6 +108,8 @@ class Commander:
         self._pp_streamprep_input_q = self._manager.Queue(maxsize=48)
         self._raw_cs_stream_q = self._manager.Queue()
         self._telemetry_in_q = self._manager.Queue(maxsize=10)
+        self._apm_communicator_messages_q = self._manager.Queue(maxsize=1)
+        self._apm_communicator_responses_q = self._manager.Queue(maxsize=1)
 
         self._telemetry_cs_commands_q = self._manager.Queue()
         self._telemetry_cs_responses_q = self._manager.Queue()
@@ -171,6 +176,9 @@ class Commander:
             port_control=heading_control_port,
             port_stream=heading_stream_port,
         )
+        self._apm_communicator = APMCommunicator(
+            level=level, pub_port=apm_communicator_port
+        )
 
     def start(self) -> None:
         """Start all background processes"""
@@ -190,6 +198,8 @@ class Commander:
             self._heading_commands_q,
             self._post_proc_commands_q,
             self._post_proc_responses_q,
+            self._apm_communicator_messages_q,
+            self._apm_communicator_responses_q,
             self._latest_se_proxy,
             self._latest_telemetry_proxy,
             self._latest_config_id_value,
@@ -261,6 +271,11 @@ class Commander:
             self._heading_data_q,
             self._heading_status_q,
         )
+        apm_communicator_future = self._pool.submit(
+            self._apm_communicator,
+            self._apm_communicator_messages_q,
+            self._apm_communicator_responses_q,
+        )
         # Periodically checking errors in threads
 
         signal(SIGINT, self._signal_handler)
@@ -281,6 +296,7 @@ class Commander:
                     cs_streamer_future,
                     telemetry_future,
                     heading_future,
+                    apm_communicator_future,
                 ),
                 timeout=1,
             )
@@ -442,7 +458,7 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
 )
 @click.option(
     "--scanning-averaging-burst-count",
-    help="Number of requested bursts in SCANNING mode", #TODO:
+    help="Number of requested bursts in SCANNING mode",  # TODO:
     default=3,
     show_default=True,
 )
@@ -545,6 +561,12 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     help="Decimates the measurement packets to be streamed to ground by this factor",
     type=int,
 )
+@click.option(
+    "--apm-communicator-port",
+    help="Aviation Processing Module Communicator (ZMQ PUB stream) port",
+    default=5568,
+    show_default=True,
+)
 def main(
     level: str,
     disk_path: str,
@@ -580,6 +602,7 @@ def main(
     detection_recording_max_length: float,
     measurement_udp_max_size: int,
     stream_decimation_factor: int,
+    apm_communicator_port: int,
 ) -> None:
     """Root command of CLI"""
 
@@ -628,6 +651,7 @@ def main(
         detection_recording_max_length,
         measurement_udp_max_size,
         stream_decimation_factor,
+        apm_communicator_port,
     )
     commander.start()
 
@@ -641,6 +665,8 @@ def setup_logging(
     stream_handler: Optional[Handler] = None,
 ) -> None:
     """Configure logging parameters"""
+
+    addLoggingLevel("TRACE", DEBUG - 5)
 
     if stream_handler is None:
         stream_handler = RichHandler(rich_tracebacks=True)

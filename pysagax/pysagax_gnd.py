@@ -9,6 +9,7 @@ import sys
 import traceback
 from concurrent.futures import ProcessPoolExecutor, wait
 from logging import Handler, StreamHandler, getLogger, DEBUG
+from pysagax.util.add_logging_level import addLoggingLevel
 from os import getpid
 from signal import SIGINT, SIGTERM, signal
 from typing import Any, Optional
@@ -217,8 +218,6 @@ def setup_logging(
     stream_handler: Optional[Handler] = None,
 ) -> None:
     """Configure logging parameters"""
-
-    from pysagax.util.add_logging_level import addLoggingLevel
 
     addLoggingLevel("TRACE", DEBUG - 5)
 
