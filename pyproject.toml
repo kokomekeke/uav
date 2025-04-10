@@ -38,6 +38,8 @@ dependencies = [
     "pymavlink",
     "sqlalchemy",
     "flask",
+    "flask-cors",
+    "flask-socketio",
     "marshmallow",
     "flask-marshmallow",
     "flask-sqlalchemy",

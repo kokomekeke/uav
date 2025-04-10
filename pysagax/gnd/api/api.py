@@ -1,10 +1,27 @@
+import logging
 import flask
 from flask import jsonify, make_response
 from sqlalchemy.sql import text
 from flask_marshmallow_openapi import open_api
 
-from pysagax.gnd.api.api_utils import geojson_feature_from_detection, geojson_feature_from_uav, geojson_feature_from_geoloc
-from pysagax.gnd.api.model import ComIntDetectionSchema, ComIntEventSchema, UAVSchema, UAVCreateSchema, UAVUpdateSchema, GeoJSONSchema
+
+import pysagax.message.command_pb2 as proto_cmd
+from google.protobuf.json_format import Parse, MessageToDict, ParseDict
+
+from pysagax.gnd.api.api_utils import (
+    geojson_feature_from_detection,
+    geojson_feature_from_uav,
+    geojson_feature_from_geoloc,
+    send_to_command_engine,
+)
+from pysagax.gnd.api.model import (
+    ComIntDetectionSchema,
+    ComIntEventSchema,
+    UAVSchema,
+    UAVCreateSchema,
+    UAVUpdateSchema,
+    GeoJSONSchema,
+)
 from pysagax.gnd.database import (
     ComIntDetectionEntity,
     UAVEntity,
@@ -21,6 +38,8 @@ comintevent_schema = ComIntEventSchema()
 
 uavs_schema = UAVSchema(many=True)
 uav_schema = UAVSchema()
+
+logger = logging.getLogger("api")
 
 
 def not_found_error(message):
@@ -128,14 +147,16 @@ def comintdetection_geojson_list_last(limit):
     where_clause = " AND ".join(filter(None, where_clause_parts))
     where_clause = "WHERE " + where_clause if where_clause else ""
 
-
     sql = sql.format(where_clause=where_clause)
     query = db.session.query(ComIntDetectionEntity).from_statement(text(sql))
 
     params = {"stride": stride, "limit": limit}
-    if uavs: params["uavs"] = tuple(uavs)
-    if roi_ids: params["roi_ids"] = tuple(roi_ids)
-    if event_ids: params["event_ids"] = tuple(event_ids)
+    if uavs:
+        params["uavs"] = tuple(uavs)
+    if roi_ids:
+        params["roi_ids"] = tuple(roi_ids)
+    if event_ids:
+        params["event_ids"] = tuple(event_ids)
 
     detections = query.params(**params).all()
 
@@ -291,3 +312,139 @@ def uav_delete(id):
     db.session.commit()
     return jsonify({})
 
+
+# mapping of command instructions to parameter name and message type tuples
+# if no parameter is used for the instruction, the value is None
+INSTRUCTION_MAP = {
+    proto_cmd.Instruction.PING: ("ping_data", str),
+    proto_cmd.Instruction.CONFIG: ("config", proto_cmd.Config),
+    proto_cmd.Instruction.TELEMETRY: None,
+    proto_cmd.Instruction.INFO: None,
+    proto_cmd.Instruction.CONFIG_STATUS: None,
+    proto_cmd.Instruction.PY_RESET: None,
+    proto_cmd.Instruction.CS_START: None,
+    proto_cmd.Instruction.CS_STOP: None,
+    proto_cmd.Instruction.CS_RESTART: None,
+    proto_cmd.Instruction.CS_PING: ("ping_data", str),
+    proto_cmd.Instruction.SOURCE_START: None,
+    proto_cmd.Instruction.SOURCE_STOP: None,
+    proto_cmd.Instruction.POSITION: ("position", int),
+    proto_cmd.Instruction.REC_START: None,
+    proto_cmd.Instruction.REC_STOP: None,
+    proto_cmd.Instruction.HEADING_START: None,
+    proto_cmd.Instruction.HEADING_STOP: None,
+    proto_cmd.Instruction.HEADING_RESTART: None,
+    proto_cmd.Instruction.STREAM_START: ("target", proto_cmd.StreamTarget),
+    proto_cmd.Instruction.STREAM_STOP: ("target", proto_cmd.StreamTarget),
+    proto_cmd.Instruction.SELF_TEST: None,
+    proto_cmd.Instruction.CS_SCAN_START: None,
+    proto_cmd.Instruction.CS_CALIBRATE_START: (
+        "calib_command",
+        proto_cmd.CalibrationCommand,
+    ),
+    proto_cmd.Instruction.CS_CALIBRATE_ABORT: None,
+    proto_cmd.Instruction.CS_TURN_OFF_COMPENSATION: None,
+    proto_cmd.Instruction.CS_TURN_ON_COMPENSATION: None,
+    proto_cmd.Instruction.CS_READ_PHASEDIFFS_FROM_FILE: (
+        "calib_command",
+        proto_cmd.CalibrationCommand,
+    ),
+    proto_cmd.Instruction.CS_CALIBRATION_VALUES_QUERY: None,
+    proto_cmd.Instruction.CS_CALIBRATION_PHASE_CHECK: None,
+    proto_cmd.Instruction.AUTO_CALIBRATION_ENABLE: None,
+    proto_cmd.Instruction.AUTO_CALIBRATION_DISABLE: None,
+    proto_cmd.Instruction.AUTO_CALIBRATION_TRIGGER: None,
+    proto_cmd.Instruction.CS_RELOAD_CONFIG: None,
+    proto_cmd.Instruction.FORWARD_TO_APM: ("msg_to_apm", proto_cmd.MessageToAPM),
+}
+cmd_id = 0
+
+
+@api.route("/uav/<int:id>/command/<string:instruction>/", methods=["POST"])
+def command(id, instruction):
+    """
+    Dynamically handle different types of commands based on the URL.
+
+    The HTTP/POST request should define the command's instruction in the URL.
+    The body of the request should have content-type 'application/json' and contain
+    the parameter of the corresponding protobuf Command.
+    Eg.
+        instruction == 'ping' -> body:string
+        instruction == 'config' -> body:json representation of Config protobuf message.
+    """
+
+    def assign_command_parameter(cmd, parameter_name, parameter):
+        """Fills in the oneof parameter field in the command message"""
+        try:
+            # For parameter fields with default types (eg ping_data)
+            setattr(cmd, parameter_name, parameter)
+        except AttributeError:
+            # For parameter fields of protobuf messages (eg config, target)
+            getattr(cmd, parameter_name).CopyFrom(parameter)
+
+    def convert_parameter_from_json_to_protobuf(parameter_type, raw_data):
+        """
+        Converting the body of HTTP POST request containing the parameter
+        to the type the Command packet expects based on the instruction string.
+        """
+        try:
+            # For parameter fields of protobuf messages (eg config, target)
+            parameter = parameter_type()  # create the correct message object
+            ParseDict(raw_data, parameter, ignore_unknown_fields=True)  # fill from json
+            # TODO: Maybe set ignore_unknown_fields=False and warn if
+            #       provided JSON is not compatible with protobuf definition
+        except AttributeError:
+            # For parameter fields with default types (eg ping_data)
+            parameter = raw_data
+        return parameter
+
+    try:
+        # convert instruction from URL to protobuf enum
+        instruction_enum_value = proto_cmd.Instruction.Value(instruction.upper())
+    except ValueError:
+        emsg = f"Invalid instruction ('{instruction.upper()}') specified in the URL"
+        logger.error(f"COMMAND: {emsg}")
+        return jsonify({"error": emsg}), 400
+    # Check instruction
+    if instruction_enum_value not in INSTRUCTION_MAP.keys():
+        emsg = f"Instruction ('{instruction.upper()}') is not yet supported"
+        logger.error(f"COMMAND: {emsg}")
+        return jsonify({"error": emsg}), 400
+
+    # Parse incoming JSON data into the corresponding Protobuf message
+    if flask.request.is_json:
+        raw_data = flask.request.get_json()
+    else:
+        raw_data = b""
+
+    logger.trace(f"Command endpoint: \n\tINSTRUCTION={instruction}\n\tDATA={raw_data}")
+
+    # create the Command packet that'll contain the instruction and the parameter
+    cmd = proto_cmd.Command()
+
+    if INSTRUCTION_MAP[instruction_enum_value] is not None:
+        # If the instruction expects a parameter -> fill it
+        # Get parameter type name corresponding to the specified instruction
+        parameter_name = INSTRUCTION_MAP[instruction_enum_value][0]
+        parameter_type = INSTRUCTION_MAP[instruction_enum_value][1]
+
+        parameter = convert_parameter_from_json_to_protobuf(parameter_type, raw_data)
+
+        # Fill in the oneof parameter field
+        assign_command_parameter(cmd, parameter_name, parameter)
+
+    # Fill in instruction
+    cmd.instruction = instruction_enum_value
+
+    # TODO: fill cmd.id
+    global cmd_id
+    cmd.id = cmd_id
+    cmd_id += 1
+
+    response: proto_cmd.Response = send_to_command_engine(target_id=id, cmd=cmd)
+    # TODO: check response.id == cmd.id??
+    #       or each module that needs a cmd and rsp queue should have separate
+    #       queues with maxsize=1, and CommAggregate should handle them all separately
+
+    # Convert Protobuf message back to JSON for response
+    return jsonify(MessageToDict(response))
