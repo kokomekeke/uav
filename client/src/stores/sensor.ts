@@ -156,7 +156,7 @@ export const useSensorStore = defineStore('sensor', () => {
 
   async function fetchAllSelectedDetections () {
   // Clear all existing detections
-    detections.value = []
+    //detections.value = []
 
     // Find all selected sensors
     const selectedSensorIds = Object.keys(sensors.value)
