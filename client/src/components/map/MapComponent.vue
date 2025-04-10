@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeMount } from 'vue'
+import { ref, watch, onMounted, onBeforeMount, computed } from 'vue'
 import { LMap, LTileLayer, LMarker, LPolyline } from '@vue-leaflet/vue-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
@@ -23,7 +23,7 @@ const planeIcon = L.icon({
   iconAnchor: [32, 32]
 })
 
-const detections = sensorStore.detections
+const detections = computed(() => sensorStore.detections)
 
 onBeforeMount(() => {
   console.log('beforeMount')
@@ -33,7 +33,8 @@ onMounted(() => {
   console.log('onmounted')
 })
 
-watch(detections, (n) => { console.log('detection debug:', n) })
+watch(detections, (n) => { console.log('detection debug:', n) }, { deep: true })
+watch(detections.value.length, (n) => { console.log('detection debug:', n) }, { deep: true })
 
 function computeAzimuthLine (coord: [number, number], azimuth: number): [number, number][] {
   if (
@@ -66,7 +67,6 @@ function computeAzimuthLine (coord: [number, number], azimuth: number): [number,
     <l-tile-layer :url="url" :attribution="attribution" class="z-1" />
     <template v-if="detections && detections.length > 0">
       <template v-for="(detection, index) in detections" :key="index">
-        <!-- Only render marker if detection and coordinates exist -->
         <l-marker
           v-if="detection && detection.coordinate &&
                 detection.coordinate.length === 2 &&

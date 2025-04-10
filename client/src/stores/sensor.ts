@@ -41,7 +41,6 @@ export const useSensorStore = defineStore('sensor', () => {
       }
 
       const sensorArray = Array.isArray(response.data) ? response.data : response.data.sensors || []
-      console.log('sensorArray', sensorArray)
       sensorArray.forEach((sensor: Sensor) => {
         sensors.value[sensor.uav_id] = sensor
         sensors.value[sensor.uav_id].is_selected = false
@@ -141,7 +140,7 @@ export const useSensorStore = defineStore('sensor', () => {
 
     detectionInterval.value = setInterval(() => {
       fetchAllSelectedDetections()
-    }, 1000)
+    }, 200)
   }
   const getSensors = computed(() => sensors.value)
 
@@ -178,12 +177,13 @@ export const useSensorStore = defineStore('sensor', () => {
 
       features.forEach((f) => {
         const uavId = f.properties.uav_id
-
+        console.log("id: ", uavId)
         // Only process if this sensor is selected
         if (!sensors.value[uavId] || !sensors.value[uavId].is_selected) return
 
         // Add to sensor's detection list
         sensors.value[uavId].detections.push(f)
+        sensors.value[uavId].detections = sensors.value[uavId].detections.slice(-10)
 
         const azimuth = f.properties?.lob_azim_deg
         const lon = f.geometry?.coordinates?.[0]
@@ -195,10 +195,11 @@ export const useSensorStore = defineStore('sensor', () => {
           typeof lon === 'number'
         ) {
           detections.value.push({
-            azimuth,
-            coordinate: [lat, lon],
-            uavId // Add this to track which sensor this detection belongs to
-          })
+              azimuth,
+              coordinate: [lat, lon],
+              uavId
+            })
+            detections.value = detections.value.slice(-10)
         }
       })
     } catch (error) {
@@ -229,6 +230,7 @@ export const useSensorStore = defineStore('sensor', () => {
 
         // Add to sensor's detection list
         sensors.value[uavId].detections.push(f)
+        sensors.value[uavId].detections = sensors.value[uavId].detections.slice(-10)
 
         const azimuth = f.properties?.lob_azim_deg
 
@@ -248,6 +250,7 @@ export const useSensorStore = defineStore('sensor', () => {
             coordinate: [lat, lon],
             uavId
           })
+          detections.value = detections.value.slice(-10)
         }
       })
     } catch (error) {

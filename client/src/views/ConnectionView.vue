@@ -39,7 +39,6 @@ const connect = async () => {
 }
 
 watch(() => showModal.value, (newValue) => {
-  console.log('Modal state changed:', newValue)
   emit('update:isModalVisible', newValue)
 })
 

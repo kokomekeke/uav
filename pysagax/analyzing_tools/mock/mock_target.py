@@ -31,6 +31,10 @@ class TargetMocker(multiprocessing.Process):
         self.heading_degrees = normalize_angle(heading, 360, 0)
         self.speed_mps = speed / 3600 * 1000  # speed in m/s
         print("speed:", self.speed_mps)
+        self.rx1_lat = Parameter(mu=rx1_lat, sigma=0, delta=0.0002, low_limit=-90, high_limit=90)
+        self.rx1_lon = Parameter(mu=rx1_lon, sigma=0, delta=-0.0002, low_limit=-180, high_limit=180)
+        self.rx2_lat = Parameter(mu=rx2_lat, sigma=0, delta=-0.0002, low_limit=-90, high_limit=90)
+        self.rx2_lon = Parameter(mu=rx2_lon, sigma=0, delta=-0.0010, low_limit=-180, high_limit=180)
 
         self.rx1_pos = Pos(rx1_lat, rx1_lon)
         self.rx2_pos = Pos(rx2_lat, rx2_lon)
@@ -49,6 +53,10 @@ class TargetMocker(multiprocessing.Process):
         """
         self.generate_current_location()
         azim1, azim2 = self.calculate_df_angles()
+
+        self.rx1_pos = Pos(self.rx1_lat.get(), self.rx1_lon.get())
+
+        self.rx2_pos = Pos(self.rx2_lat.get(), self.rx2_lon.get())
 
         lat1, lon1 = self.rx1_pos.coordinates()
         lat2, lon2 = self.rx2_pos.coordinates()
