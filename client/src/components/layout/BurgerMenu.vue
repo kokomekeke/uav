@@ -1,5 +1,5 @@
 <script setup>
-import {computed, ref, watch} from 'vue'
+import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSensorStore } from '@/stores/sensor'
 import NewSensorModal from '@/components/common/NewSensorModal.vue'
@@ -119,7 +119,12 @@ const toggleMenu = () => {
               class="p-2 rounded cursor-pointer mb-1"
             >
               <div class="flex justify-between items-center">
-                <input type="checkbox" id="checkbox" v-model="sensors[sensor.uav_id].is_selected">
+                <input
+                  type="checkbox"
+                  id="checkbox"
+                  :checked="sensors[sensor.uav_id].is_selected"
+                  @change="sensorStore.toggleSensorSelection(sensor.uav_id)"
+                >
                 <router-link :to="`/sensor/${sensor['uav_label']}`" class="pl-2 text-white hover:underline flex-grow text-left">
                   {{ sensor['uav_label'] }}
                 </router-link>

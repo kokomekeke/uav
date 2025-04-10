@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import axios from 'axios'
 import { useConnectionStore } from '@/stores/connection'
 import { Sensor, ComintDetection } from '../types/sensor'
+import { Detection } from '../types/detection'
 
 export const useSensorStore = defineStore('sensor', () => {
   const sensors = ref<{ [id: number] : Sensor}>({})
@@ -12,6 +13,7 @@ export const useSensorStore = defineStore('sensor', () => {
   const detectionInterval = ref<number | null>(null)
   const connectionStore = useConnectionStore()
   const { ipPort, isConnected } = storeToRefs(connectionStore)
+  const detections = ref<Detection[]>([])
 
   const handleMouseOver = (sensor) => {
     selectedSensor.value = sensor
@@ -104,32 +106,105 @@ export const useSensorStore = defineStore('sensor', () => {
     console.log('new values: ', sensors.value)
   }
 
-  async function selectSensor(sensor: Sensor) {
-      console.log('SELECTED SENSOR: ', sensor, 'sensor selected')
+  // async function selectSensor (sensor: Sensor) {
+  //   console.log('SELECTED SENSOR: ', sensor, 'sensor selected')
+  //
+  //   selectedSensor.value = sensor
+  //
+  //   // régi interval leállítása
+  //   if (detectionInterval.value) {
+  //     clearInterval(detectionInterval.value)
+  //   }
+  //
+  //   // clearDetections()
+  //   await fetchDetection(10)
+  //
+  //   detectionInterval.value = setInterval(() => {
+  //     // clearDetections()
+  //     fetchDetection(10)
+  //   }, 1000)
+  // }
 
-      selectedSensor.value = sensor
+  async function selectSensor (sensor: Sensor) {
+    selectedSensor.value = sensor
 
-      // checkbox szinkronizálás
-      //Object.values(sensors.value).forEach(s => {
-        //s.is_selected = s === sensor
-      //    })
+    // Don't automatically check the checkbox - let user do that
+    // This function just sets which sensor is "active" in the UI
 
-      // régi interval leállítása
-      if (detectionInterval.value) {
-        clearInterval(detectionInterval.value)
-      }
-
-      //clearDetections()
-      await fetchDetection(10)
-
-      detectionInterval.value = setInterval(() => {
-        //clearDetections()
-        fetchDetection(10)
-      }, 1000)
+    // Stop existing interval
+    if (detectionInterval.value) {
+      clearInterval(detectionInterval.value)
     }
 
+    // Set up interval to fetch detections for all selected sensors
+    await fetchAllSelectedDetections()
 
+    detectionInterval.value = setInterval(() => {
+      fetchAllSelectedDetections()
+    }, 1000)
+  }
   const getSensors = computed(() => sensors.value)
+
+  function toggleSensorSelection (sensorId: number) {
+    if (!sensors.value[sensorId]) return
+
+    // Toggle the selection
+    sensors.value[sensorId].is_selected = !sensors.value[sensorId].is_selected
+
+    // Refresh detections to reflect the new selection state
+    fetchAllSelectedDetections()
+  }
+
+  async function fetchAllSelectedDetections () {
+  // Clear all existing detections
+    detections.value = []
+
+    // Find all selected sensors
+    const selectedSensorIds = Object.keys(sensors.value)
+      .filter(key => sensors.value[Number(key)].is_selected)
+      .map(key => Number(key))
+
+    if (selectedSensorIds.length === 0) return
+
+    // For each selected sensor, fetch detections
+    try {
+      const response = await axios.get(`${ipPort.value}/v1/comintdetection/geojson/list_last/10`)
+
+      if (!response.data || response.status !== 200) {
+        throw new Error(`API hiba: ${response.status} - ${response.statusText}`)
+      }
+
+      const features = response.data.features || []
+
+      features.forEach((f) => {
+        const uavId = f.properties.uav_id
+
+        // Only process if this sensor is selected
+        if (!sensors.value[uavId] || !sensors.value[uavId].is_selected) return
+
+        // Add to sensor's detection list
+        sensors.value[uavId].detections.push(f)
+
+        const azimuth = f.properties?.lob_azim_deg
+        const lon = f.geometry?.coordinates?.[0]
+        const lat = f.geometry?.coordinates?.[1]
+
+        if (
+          typeof azimuth === 'number' &&
+          typeof lat === 'number' &&
+          typeof lon === 'number'
+        ) {
+          detections.value.push({
+            azimuth,
+            coordinate: [lat, lon],
+            uavId // Add this to track which sensor this detection belongs to
+          })
+        }
+      })
+    } catch (error) {
+      console.error('Hiba történt a fetchAllSelectedDetections során:', error)
+    }
+  }
 
   async function fetchDetection (n) {
     if (!selectedSensor.value) return
@@ -141,13 +216,39 @@ export const useSensorStore = defineStore('sensor', () => {
         throw new Error(`API hiba: ${response.status} - ${response.statusText}`)
       }
 
+      // Clear existing detections to avoid duplicates
+      detections.value = []
+
       const features = response.data.features || []
 
       features.forEach((f) => {
-        console.log("f", f )
-        console.log(sensors.value[f.properties.uav_id])
-        sensors.value[f.properties.uav_id].detections.push(f)
-        console.log("vmilyen uzenet:", sensors.value[f.properties.uav_id].detections)
+        const uavId = f.properties.uav_id
+
+        // Make sure the sensor exists
+        if (!sensors.value[uavId]) return
+
+        // Add to sensor's detection list
+        sensors.value[uavId].detections.push(f)
+
+        const azimuth = f.properties?.lob_azim_deg
+
+        // GeoJSON uses [longitude, latitude] order
+        const lon = f.geometry?.coordinates?.[0]
+        const lat = f.geometry?.coordinates?.[1]
+
+        if (
+          typeof azimuth === 'number' &&
+          typeof lat === 'number' &&
+          typeof lon === 'number' &&
+          sensors.value[uavId].is_selected
+        ) {
+          // Store in [latitude, longitude] format for Leaflet
+          detections.value.push({
+            azimuth,
+            coordinate: [lat, lon],
+            uavId
+          })
+        }
       })
     } catch (error) {
       console.error('Hiba történt a fetchDetection során:', error)
@@ -162,6 +263,7 @@ export const useSensorStore = defineStore('sensor', () => {
   }
 
   function clearDetections () {
+    detections.value = []
     for (const key in sensors.value) {
       sensors.value[key].detections = []
     }
@@ -178,42 +280,8 @@ export const useSensorStore = defineStore('sensor', () => {
   })
 
   watch(sensors, (s) => {
-    console.log("ASDAZJKDGJKWDUIWDUWD=====", s)
+    console.log('ASDAZJKDGJKWDUIWDUWD=====', s)
   }, { deep: true })
-
-  // function featureToComintDetection (feature: any): ComintDetection {
-  //   const props = feature.properties ?? {}
-  //   const coords = feature.geometry?.coordinates ?? [null, null]
-  //   const [lon, lat] = coords
-  //
-  //   if (props.detection_id == null || props.uav_id == null || lat == null || lon == null) {
-  //     throw new Error('featureToComintDetection: Kötelező mezők hiányoznak (detection_id, uav_id, lat, lon)')
-  //   }
-  //
-  //   const detection: ComintDetection = {
-  //     detection_id: props.detection_id,
-  //     uav_id: props.uav_id,
-  //     uav_event_id: props.uav_event_id ?? null,
-  //     frequency: props.frequency != null ? BigInt(props.frequency) : undefined,
-  //     signal_strength: props.signal_strength ?? undefined,
-  //     bandwidth: props.bandwidth != null ? BigInt(props.bandwidth) : undefined,
-  //     snr: props.snr ?? undefined,
-  //     lob_azim_deg: props.lob_azim_deg ?? undefined,
-  //     lob_elev_deg: props.lob_elev_deg ?? undefined,
-  //     precision: props.precision ?? undefined,
-  //     timestamp: props.timestamp ? new Date(props.timestamp) : undefined,
-  //     uav_pos_lat: lat,
-  //     uav_pos_lon: lon,
-  //     uav_pos_altitude: props.uav_pos_altitude ?? null,
-  //     uav_pos_q0: null,
-  //     uav_pos_q1: null,
-  //     uav_pos_q2: null,
-  //     uav_pos_q3: null,
-  //     roi_identifier: props.roi_id ?? null
-  //   }
-  //
-  //   return detection
-  // }
 
   return {
     sensors,
@@ -226,7 +294,10 @@ export const useSensorStore = defineStore('sensor', () => {
     removeSensor,
     selectSensor,
     handleMouseOver,
+    detections,
     fetchDetection,
+    clearDetections,
+    toggleSensorSelection,
     stopFetchingDetection
   }
 })

@@ -6,6 +6,7 @@ import L from 'leaflet'
 import pW from '@/assets/p3.png'
 import { useSensorStore } from '@/stores/sensor'
 import { Sensor } from '@/types/sensor'
+import { Detection } from '@/types/detection'
 
 const zoom = ref(10)
 const center = ref([47.4979, 19.0402])
@@ -22,57 +23,19 @@ const planeIcon = L.icon({
   iconAnchor: [32, 32]
 })
 
-interface Detection {
-  azimuth: number;
-  coordinate: [number, number];
-}
-
-const detections = ref<Detection[]>([])
+const detections = sensorStore.detections
 
 onBeforeMount(() => {
-  updateDetections()
-  console.log("beforeMount")
+  console.log('beforeMount')
 })
 
 onMounted(() => {
-  console.log("onmounted")
+  console.log('onmounted')
 })
 
-watch(() => sensorStore.sensors, updateDetections, { deep: true })
+watch(detections, (n) => { console.log('detection debug:', n) })
 
-watch(detections, (n) => { console.log("detection debug:", n)})
-
-async function updateDetections() {
-
-  const newDetections: Detection[] = []
-
-  for (const key in sensorStore.sensors) {
-    const s = sensorStore.sensors[key]
-    if (s.detections && s.detections.length > 0 && s.is_selected) {
-      s.detections.forEach((d: any) => {
-          const azimuth = d.properties?.lob_azim_deg
-          const lat = d.geometry?.coordinates?.[1]
-          const lon = d.geometry?.coordinates?.[0]
-
-          if (
-            typeof azimuth === 'number' &&
-            typeof lat === 'number' &&
-            typeof lon === 'number'
-          ) {
-            newDetections.push({
-              azimuth,
-              coordinate: [lat, lon]
-            })
-          }
-        })
-    }
-  }
-
-  // Csak a legfeljebb 10 elem
-  detections.value = newDetections.slice(0, 10)
-}
-
-function computeAzimuthLine(coord: [number, number], azimuth: number): [number, number][] {
+function computeAzimuthLine (coord: [number, number], azimuth: number): [number, number][] {
   if (
     !coord ||
     coord.length !== 2 ||
@@ -96,37 +59,41 @@ function computeAzimuthLine(coord: [number, number], azimuth: number): [number, 
 
   return [[lat, lon], [endLat, endLon]]
 }
-
-function haha() {
-  console.log("hahaha")
-}
 </script>
 
 <template>
   <l-map class="h-[500px] w-full z-1" :zoom="zoom" :center="center">
     <l-tile-layer :url="url" :attribution="attribution" class="z-1" />
-    <div
-      v-if="detections.length > 0"
-    >
-      <l-marker
-        v-for="(detection, index) in detections"
-        v-if="detection.coordinate && detection.coordinate.length === 2"
-        :key="index"
-        :lat-lng="detection.coordinate"
-        :icon="planeIcon"
-      />
-      <l-polyline
-        v-for="(detection, index) in detections"
-        :key="'line-' + index"
-        v-if="detections.length > 0 && computeAzimuthLine(detection.coordinate, detection.azimuth).length > 0"
-        :lat-lngs="computeAzimuthLine(detection.coordinate, detection.azimuth)"
-        color="red"
-      />
-    </div>
+    <template v-if="detections && detections.length > 0">
+      <template v-for="(detection, index) in detections" :key="index">
+        <!-- Only render marker if detection and coordinates exist -->
+        <l-marker
+          v-if="detection && detection.coordinate &&
+                detection.coordinate.length === 2 &&
+                typeof detection.coordinate[0] === 'number' &&
+                typeof detection.coordinate[1] === 'number'"
+          :lat-lng="detection.coordinate"
+          :icon="planeIcon"
+        />
 
-
+        <!-- Only render polyline if detection and azimuth exist and function returns valid points -->
+        <l-polyline
+          v-if="detection && detection.coordinate &&
+                detection.azimuth !== undefined &&
+                computeAzimuthLine(detection.coordinate, detection.azimuth).length > 0"
+          :lat-lngs="computeAzimuthLine(detection.coordinate, detection.azimuth)"
+          color="red"
+        />
+      </template>
+    </template>
   </l-map>
 
+  <!-- Optional: Add a clear button as suggested -->
+  <div class="controls mt-2">
+    <button @click="sensorStore.clearDetections()" class="bg-red-500 text-white p-2 rounded">
+      Clear Map
+    </button>
+  </div>
 </template>
 
 <style scoped>
