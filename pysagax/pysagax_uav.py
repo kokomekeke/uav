@@ -100,13 +100,13 @@ class Commander:
         self._stream_conf_q = self._manager.Queue()
         self._post_proc_commands_q = self._manager.Queue()
         self._post_proc_responses_q = self._manager.Queue()
-        self._post_proc_to_scan_engine_q = self._manager.Queue(maxsize=48)
-        self._pp_heading_sync_input_q = self._manager.Queue(maxsize=48)
-        self._pp_spectrogram_recorder_input_q = self._manager.Queue(maxsize=48)
-        self._pp_detection_input_q = self._manager.Queue(maxsize=48)
-        self._pp_events_input_q = self._manager.Queue(maxsize=48)
-        self._pp_streamprep_input_q = self._manager.Queue(maxsize=48)
-        self._raw_cs_stream_q = self._manager.Queue()
+        self._post_proc_to_scan_engine_q = self._manager.Queue(maxsize=10)
+        self._pp_heading_sync_input_q = self._manager.Queue(maxsize=10)
+        self._pp_spectrogram_recorder_input_q = self._manager.Queue(maxsize=10)
+        self._pp_detection_input_q = self._manager.Queue(maxsize=10)
+        # self._pp_events_input_q = self._manager.Queue(maxsize=48)
+        self._pp_streamprep_input_q = self._manager.Queue(maxsize=10)
+        # self._raw_cs_stream_q = self._manager.Queue()
         self._telemetry_in_q = self._manager.Queue(maxsize=10)
         self._apm_communicator_messages_q = self._manager.Queue(maxsize=1)
         self._apm_communicator_responses_q = self._manager.Queue(maxsize=1)
@@ -114,7 +114,7 @@ class Commander:
         self._telemetry_cs_commands_q = self._manager.Queue()
         self._telemetry_cs_responses_q = self._manager.Queue()
         self._heading_commands_q = self._manager.Queue()
-        self._heading_data_q = self._manager.Queue(maxsize=48)
+        self._heading_data_q = self._manager.Queue(maxsize=10)
         self._heading_status_q = self._manager.Queue(maxsize=2)
 
         self._latest_telemetry_proxy = self._manager.dict()
@@ -157,7 +157,7 @@ class Commander:
             max_recording_length=spectrogram_recording_max_length,
         )
         self._pp_detection = PPDetection(level=level, default_roi_mask=default_roi_mask)
-        self._pp_events = PPEvents(level=level)
+        # self._pp_events = PPEvents(level=level)
         self._pp_streamprep = PPStreamPreparation(
             level=level,
             udp_max_size=measurement_udp_max_size,
@@ -238,16 +238,16 @@ class Commander:
         pp_detection_future = self._pool.submit(
             self._pp_detection,
             self._pp_detection_input_q,
-            self._pp_events_input_q,
+            self._pp_streamprep_input_q,
             self._post_proc_commands_q,
             self._post_proc_responses_q,
             self._post_proc_to_scan_engine_q,
         )
-        pp_events_future = self._pool.submit(
-            self._pp_events,
-            self._pp_events_input_q,
-            self._pp_streamprep_input_q,
-        )
+        # pp_events_future = self._pool.submit(
+        #     self._pp_events,
+        #     self._pp_events_input_q,
+        #     self._pp_streamprep_input_q,
+        # )
         pp_streamprep_future = self._pool.submit(
             self._pp_streamprep,
             self._pp_streamprep_input_q,
@@ -291,7 +291,7 @@ class Commander:
                     pp_heading_sync_future,
                     pp_spectrogram_recorder_future,
                     pp_detection_future,
-                    pp_events_future,
+                    # pp_events_future,
                     pp_streamprep_future,
                     cs_streamer_future,
                     telemetry_future,

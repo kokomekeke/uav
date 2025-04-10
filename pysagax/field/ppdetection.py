@@ -341,12 +341,12 @@ class PPDetection(Loop):
                 f"PostProcessing/Detection finished on packet {packet.packet_id}"
             )
             queue_put(
-                self._queue_out, packet, 0.1, logger=self._logger, message="Queue out"
+                self._queue_out, packet, 0, logger=self._logger, message="Queue out"
             )
             queue_put(
                 self._se_queue_out,
                 packet,
-                0.1,
+                0,
                 logger=self._logger,
                 message="SE queue out",
             )

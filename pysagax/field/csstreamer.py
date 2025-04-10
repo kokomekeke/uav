@@ -61,7 +61,7 @@ class CSStreamer(Loop):
             queue_put(
                 self._stream_queue_out,
                 stream_packet,
-                0.1,
+                0,
                 self._logger,
                 "Stream queue out",
             )
@@ -70,7 +70,7 @@ class CSStreamer(Loop):
             queue_put(
                 self._telemetry_queue_out,
                 stream_packet,
-                0.1,
+                0,
                 self._logger,
                 "Telemetry queue out",
             )
