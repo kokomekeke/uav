@@ -343,12 +343,6 @@ class PPDetection(Loop):
             queue_put(
                 self._queue_out, packet, 0, logger=self._logger, message="Queue out"
             )
-            queue_put(
-                self._se_queue_out,
-                packet,
-                0,
-                logger=self._logger,
-                message="SE queue out",
-            )
+            queue_put(self._se_queue_out, packet, 0) # No logging since SE only takes packeges in scanning mode
         except queue.Empty:
             pass

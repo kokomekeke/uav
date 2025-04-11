@@ -605,6 +605,7 @@ class ScanEngine(Loop):
         command.config.cs.source_path = self._source_device_path
         command.config.cs.burst_stride = self._source_burst_stride
         command.config.cs.bin_count = self._source_bin_count
+        command.config.cs.scan_plan.CopyFrom(se_cmd.config.cs.scan_plan)
         if se_cmd.config.HasField("cs"):
             if se_cmd.config.cs.bin_count:
                 command.config.cs.bin_count = se_cmd.config.cs.bin_count
@@ -836,6 +837,7 @@ class ScanEngine(Loop):
     def _handle_instruction(
         self, command: proto_cmd.Command
     ) -> Optional[proto_cmd.Response]:
+        self._logger.debug(f"Handle instruction: {command}")
         if (
             command.instruction == proto_cmd.CONFIG
             and command.kind == proto_cmd.Command.WRITE
@@ -923,7 +925,9 @@ class ScanEngine(Loop):
             return response
         else:
             response = proto_cmd.Response()
-            response.error.description = f"Unsupported {str(command.instruction)}"
+            emsg = f"Unsupported {str(command.instruction)} instruction"
+            response.error.description = emsg
+            self._logger.warning(emsg)
             return response
 
     def _discard_post_proc_output(self) -> None:
@@ -961,6 +965,7 @@ class ScanEngine(Loop):
             # This will be used in the telemetry packet.
             self._latest_se_proxy["state"] = str(self.state).split(".")[-1]
 
+        self._logger.trace(f"STATE: {self.state.name}")
         match self.state:
             case ScanEngineState.INIT:
                 self._discard_post_proc_output()
