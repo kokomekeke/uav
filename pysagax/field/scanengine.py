@@ -577,9 +577,9 @@ class ScanEngine(Loop):
         # self._cs_commands_q.put(
         #     (command, self._instruction_cs_timeout)
         # )  # should use util.queue_put?
-        response: proto_cmd.Response = self._cs_responses_q.get()
-        if response.HasField("error"):
-            self._logger.error("Could not set CS Source to NULL")
+        # response: proto_cmd.Response = self._cs_responses_q.get()
+        # if response.HasField("error"):
+        #     self._logger.error("Could not set CS Source to NULL")
         command.config.cs.source_type = self._source_device_type
         command.config.cs.source_path = self._source_device_path
         self._latest_cs_command = command

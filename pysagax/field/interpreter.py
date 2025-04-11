@@ -52,7 +52,6 @@ class Interpreter(Loop):
         self._postproc_conf_queue_resp_in: Optional[Queue] = None
         self._latest_se_proxy: Optional[DictProxy] = None
         self._latest_telemetry_proxy: Optional[DictProxy] = None
-        self._cs_lock: Optional[threading.Lock] = None
         self._currently_running_cs_command = ""
         self._config_status_message: Optional[proto_cmd.ConfigStatus] = None
         self._latest_config_id_value: Optional[ValueProxy[int]] = None
@@ -90,7 +89,6 @@ class Interpreter(Loop):
         self._latest_se_proxy = latest_se_proxy
         self._latest_telemetry_proxy = latest_telemetry_proxy
         self._latest_config_id_value = latest_config_id_value
-        self._cs_lock = threading.Lock()
         return super()._call(*args, **kwargs)
 
     def _loop(self) -> None:

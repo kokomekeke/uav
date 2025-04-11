@@ -1,6 +1,7 @@
 from queue import Queue
 import queue
 from typing import Any, Optional
+from time import sleep, time
 
 import zmq
 from pysagax.communication.broadcast import TX
@@ -9,6 +10,7 @@ from pysagax.common.loop import Loop
 import pysagax.message.command_pb2 as proto_cmd
 from pysagax.message.data_types import DataType
 
+import threading
 
 class StreamerServer:
     """Background process for real-time bandwidth intensive UDP client communication"""
@@ -27,6 +29,7 @@ class StreamerServer:
             DataType.MEASUREMENT: 1,
             DataType.TELEMETRY: telemetry_packet_period,
         }
+
 
 
 class Streamer(Loop):
@@ -58,6 +61,10 @@ class Streamer(Loop):
             DataType.ERROR: 0,
             DataType.MEASUREMENT: 0,
         }
+
+
+        self._latest_loop = time()
+        self._restart_cnt = -1
 
     def __call__(
         self, queue_in: Queue[Any], conf_in: Queue[Any], *args, **kwargs
@@ -94,6 +101,22 @@ class Streamer(Loop):
             self._logger.critical(f"Trying to remove non-existent stream client '{target.address}:{target.port}' from stream client list [{self._servers.keys()}]")
 
     def _loop(self) -> None:
+        if time() - self._latest_loop > 2:
+            # restart thread if no update for 2 seconds
+            self._logger.critical(f"STREAM THREAD STOPPED AND RESTARTED")
+            self._stream_thread = threading.Thread(target=self._stream_runner)
+            self._stream_thread.daemon = True
+            self._stream_thread.start()
+            self._restart_cnt += 1
+        self._logger.info(f"Streamer thread watcher: restarts_so_far= {self._restart_cnt}")
+        sleep(1)
+
+    def _stream_runner(self):
+        while True:
+            self._latest_loop = time()
+            self.stream_loop()
+
+    def stream_loop(self) -> None:
         # Wait for response from Interpreter
         assert self._queue_in is not None
         assert self._conf_in is not None
@@ -110,6 +133,17 @@ class Streamer(Loop):
         except queue.Empty:
             pass
         try:
+            # TODO: On some devices (eg 10.1.1.114), at random times the process stops at Queue.get() 
+            # and never continues or raises an exception even though timeout is specified.
+            #
+            # I've worked around this bug by moving the main tasks into a thread 
+            # that is restarted if it doesn't loop anymore
+            # 
+            # I didn't find any explanation to this behavior or any mention of this exact bug.
+            # Possibly some sort of deadlock situation
+            # 
+            # Might be worth it to report to bugs.python.org, but I couldn't make a
+            #  more minimal reproducable code for it
             packet = self._queue_in.get(block=True, timeout=1)
             self._logger.debug(f"Got {type(packet).__name__} stream packet")
             # Send response to remote client

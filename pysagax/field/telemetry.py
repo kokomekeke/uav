@@ -105,9 +105,15 @@ class Telemetry(Loop):
         self._comm_queue_out_put(self._sysinfo_packet)
 
     def _comm_queue_out_put(self, packet: Any) -> None:
+        """
+        This terminates pysagaxUAV if the streamer gets stuck due to a not yet understood bug
+        
+        This shouldn't be necessary since the Streamer has a self watcher mechanism, 
+        but I'vve kept it in the code just to be sure.
+        """
         assert self._comm_queue_out is not None
         try:
-            self._comm_queue_out.put(packet, block=True, timeout=2.0)
+            self._comm_queue_out.put(packet, block=True, timeout=4.0)
         except:
             self._logger.critical("Output stream queue is stuck")
             raise Exception("Output stream queue is stuck")
