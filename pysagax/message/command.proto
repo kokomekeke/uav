@@ -131,7 +131,7 @@ enum Instruction {
     AUTO_CALIBRATION_DISABLE = 42;
     AUTO_CALIBRATION_TRIGGER = 43;
     CS_RELOAD_CONFIG = 44;
-
+    CS_WRITE_SAMPLE_SHIFT = 45;
 
     // Forward the message to the Aviation Processing Module in Altiss
     //   parameter: msg_to_apm [MessageToAPM]
@@ -331,6 +331,10 @@ message CommandError {
     string description = 5;
 }
 
+message WriteSampleShiftCommand {
+    uint32 card = 1;
+    int32 shift = 2;
+}
 
 message CalibrationCommand {
     FreqList calibration_freqs = 11;
@@ -381,6 +385,8 @@ message Command {
         CalibrationCommand calib_command = 12;
 
         MessageToAPM msg_to_apm = 13; 
+
+        WriteSampleShiftCommand write_shift_command = 14;
     }
     reserved 11;
 }

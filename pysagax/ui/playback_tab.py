@@ -98,9 +98,18 @@ class PlaybackTab(ttk.Frame):
             self.position_variable.set(current_position)
         self.update_buttons()
         self.update_recording_status()
-        self.telemetry_string.set(
-            f"{self.telemetry_string_format(self.source_manager.latest_telemetry, self.source_manager.latest_info)}"
+        
+        telemetry_str = self.telemetry_string_format(
+            self.source_manager.latest_telemetry, self.source_manager.latest_info
         )
+        self.telemetry_string.set(telemetry_str)
+        
+        # change text color to red if warning sign is in the telemetry string
+        if "⚠️" in telemetry_str: 
+            self.telemetry_label.config(fg="#f00")
+        else:
+            self.telemetry_label.config(fg="#000")
+
         self.config_string.set(
             f"{self.config_string_format(self.source_manager.latest_config)}"
         )

@@ -535,6 +535,7 @@ class ScanEngine(Loop):
                 self._latest_se_proxy["cs_config"] = response.config.cs
         if response.HasField("error") and self._reset_on_error:
             self._logger.critical(f"CoreService response contains the following error message {response.error}. ScanEngine resets now.")
+            time.sleep(2) # Wait a little, don't spam CS if it responds with error
             self.reset()
 
         return not response.HasField("error")
@@ -577,9 +578,9 @@ class ScanEngine(Loop):
         # self._cs_commands_q.put(
         #     (command, self._instruction_cs_timeout)
         # )  # should use util.queue_put?
-        response: proto_cmd.Response = self._cs_responses_q.get()
-        if response.HasField("error"):
-            self._logger.error("Could not set CS Source to NULL")
+        # response: proto_cmd.Response = self._cs_responses_q.get()
+        # if response.HasField("error"):
+        #     self._logger.error("Could not set CS Source to NULL")
         command.config.cs.source_type = self._source_device_type
         command.config.cs.source_path = self._source_device_path
         self._latest_cs_command = command
@@ -605,6 +606,7 @@ class ScanEngine(Loop):
         command.config.cs.source_path = self._source_device_path
         command.config.cs.burst_stride = self._source_burst_stride
         command.config.cs.bin_count = self._source_bin_count
+        command.config.cs.scan_plan.CopyFrom(se_cmd.config.cs.scan_plan)
         if se_cmd.config.HasField("cs"):
             if se_cmd.config.cs.bin_count:
                 command.config.cs.bin_count = se_cmd.config.cs.bin_count
@@ -836,6 +838,7 @@ class ScanEngine(Loop):
     def _handle_instruction(
         self, command: proto_cmd.Command
     ) -> Optional[proto_cmd.Response]:
+        self._logger.debug(f"Handle instruction: {command}")
         if (
             command.instruction == proto_cmd.CONFIG
             and command.kind == proto_cmd.Command.WRITE
@@ -923,7 +926,9 @@ class ScanEngine(Loop):
             return response
         else:
             response = proto_cmd.Response()
-            response.error.description = f"Unsupported {str(command.instruction)}"
+            emsg = f"Unsupported {str(command.instruction)} instruction"
+            response.error.description = emsg
+            self._logger.warning(emsg)
             return response
 
     def _discard_post_proc_output(self) -> None:
@@ -961,6 +966,7 @@ class ScanEngine(Loop):
             # This will be used in the telemetry packet.
             self._latest_se_proxy["state"] = str(self.state).split(".")[-1]
 
+        self._logger.trace(f"STATE: {self.state.name}")
         match self.state:
             case ScanEngineState.INIT:
                 self._discard_post_proc_output()

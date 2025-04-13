@@ -7,6 +7,7 @@ import os
 import click
 from math import cos, sin, sqrt
 
+import zmq
 
 @click.command()
 @click.option("--port", "-p", default=42069, help="Port for PUB server")
@@ -30,8 +31,12 @@ def main(port, constant_ypr, ocsa_circle):
         False: publish heading data that mocks an UAV flying along the M5 highway in Hungary
         True: publish heading data mocking flying circles over Ócsa military base
     """
-    pub = PUB(port_server=port)
-    pub.connect()
+    # pub = PUB(port_server=port)
+    # pub.connect()
+    context = zmq.Context()
+    pub = context.socket(zmq.PUB)
+    address = f"tcp://*:{port}"
+    pub.bind(address)
 
     # 47.3274,19.2556
     # 46.8865,19.6502
@@ -114,7 +119,8 @@ def fly_ocsa_circle(pub, port):
 def publish_flight_info(port, pub, position, attitude, i):
     packet = flight_info.UAVFlightInfo(position=position, attitude=attitude)
 
-    pub.publ(packet.SerializeToString())
+    # pub.publ(packet.SerializeToString())
+    pub.send_multipart([b'fi', packet.SerializeToString()])
         # pub.publ(b'fi')
     if not i % 10:
         os.system("clear")

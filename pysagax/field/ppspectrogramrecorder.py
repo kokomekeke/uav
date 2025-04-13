@@ -174,7 +174,7 @@ class PPSpectrogramRecorder(Loop):
         return packet
 
     def _put_packet(self, packet):
-        queue_put(self._queue_out, packet, timeout=0.1, logger=self._logger)
+        queue_put(self._queue_out, packet, timeout=0, logger=self._logger)
 
         # pushing measurement packet
         if self.mode == Mode.RECORD:

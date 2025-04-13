@@ -149,7 +149,7 @@ class PPHeadingSync(Loop):
                 self._logger.warning(
                     f"Heading data and measurement packets synced with large time difference: {delta_t/1e9:.2f} seconds"
                 )
-            queue_put(self._queue_out, meas_packet, 0.1, logger=self._logger)
+            queue_put(self._queue_out, meas_packet, 0, logger=self._logger)
 
         except queue.Empty:
             pass
