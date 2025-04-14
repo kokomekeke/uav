@@ -13,10 +13,13 @@ enum UTMFlightState {
 
 
 message Position {
-  float latitude = 1;         		// latitude in degree
-  float longitude = 2;        		// longitude in degree
+  double latitude = 1;         		// latitude in degree
+  double longitude = 2;        		// longitude in degree
   float ellipsoid_height = 3;  	// altitude (WGS84) in meter
   uint64 timestamp_unix = 4;   	// time of applicability of position (microseconds since UNIX epoch).
+  double north_speed = 5;
+  double east_speed = 6;
+  double down_speed = 7;
 }
 
 
