@@ -142,7 +142,7 @@ export const useSensorStore = defineStore('sensor', () => {
     // Set this interval for more detailed deviations
     detectionInterval.value = setInterval(() => {
       fetchAllSelectedDetections()
-    }, 500)
+    }, 300)
   }
   const getSensors = computed(() => sensors.value)
 

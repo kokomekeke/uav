@@ -62,7 +62,7 @@ watch(() => showModal.value, (newValue) => {
             <button class="modal-default-button bg-green-400 p-1 rounded-2xl border-2 border-green-600" @click="connect">Submit</button>
           </template>
           <template #close>
-            <button class="modal-default-button ml-32 bg-red-400 p-1 rounded-2xl border-2 border-red-600" @click="closeModal">Close</button>
+            <button class="modal-default-button bg-red-400 p-1 rounded-2xl border-2 border-red-600 ml-4" @click="closeModal">Close</button>
           </template>
           <template #alert>
             <p v-if="connectionMessage" :class="{
