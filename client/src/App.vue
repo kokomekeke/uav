@@ -1,6 +1,6 @@
 <template>
   <main class="bg-slate-500 min-h-screen flex flex-col">
-    <Header @click="toHome"/>
+    <Header @click="toHome" class="z-50"/>
     <div class="flex flex-row flex-1">
       <BurgerMenu class="burger-menu max-h-screen overflow-auto" :isMenuOpen="isMenuOpen" />
       <Content

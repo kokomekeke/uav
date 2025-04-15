@@ -14,6 +14,7 @@ export const useSensorStore = defineStore('sensor', () => {
   const connectionStore = useConnectionStore()
   const { ipPort, isConnected } = storeToRefs(connectionStore)
   const detections = ref<Detection[]>([])
+  const detectionSize = ref(-100)
 
   const handleMouseOver = (sensor) => {
     selectedSensor.value = sensor
@@ -138,9 +139,10 @@ export const useSensorStore = defineStore('sensor', () => {
     // Set up interval to fetch detections for all selected sensors
     await fetchAllSelectedDetections()
 
+    // Set this interval for more detailed deviations
     detectionInterval.value = setInterval(() => {
       fetchAllSelectedDetections()
-    }, 200)
+    }, 500)
   }
   const getSensors = computed(() => sensors.value)
 
@@ -156,7 +158,7 @@ export const useSensorStore = defineStore('sensor', () => {
 
   async function fetchAllSelectedDetections () {
   // Clear all existing detections
-    //detections.value = []
+    // detections.value = []
 
     // Find all selected sensors
     const selectedSensorIds = Object.keys(sensors.value)
@@ -177,17 +179,18 @@ export const useSensorStore = defineStore('sensor', () => {
 
       features.forEach((f) => {
         const uavId = f.properties.uav_id
-        console.log("id: ", uavId)
+        console.log('id: ', uavId)
         // Only process if this sensor is selected
         if (!sensors.value[uavId] || !sensors.value[uavId].is_selected) return
 
         // Add to sensor's detection list
         sensors.value[uavId].detections.push(f)
-        sensors.value[uavId].detections = sensors.value[uavId].detections.slice(-10)
+        sensors.value[uavId].detections = sensors.value[uavId].detections.slice(detectionSize.value)
 
         const azimuth = f.properties?.lob_azim_deg
         const lon = f.geometry?.coordinates?.[0]
         const lat = f.geometry?.coordinates?.[1]
+        console.log('YAAAAW: ', f.properties.uav_pos_yaw)
 
         if (
           typeof azimuth === 'number' &&
@@ -195,11 +198,11 @@ export const useSensorStore = defineStore('sensor', () => {
           typeof lon === 'number'
         ) {
           detections.value.push({
-              azimuth,
-              coordinate: [lat, lon],
-              uavId
-            })
-            detections.value = detections.value.slice(-10)
+            azimuth,
+            coordinate: [lat, lon],
+            uavId
+          })
+          detections.value = detections.value.slice(detectionSize.value)
         }
       })
     } catch (error) {
@@ -230,7 +233,7 @@ export const useSensorStore = defineStore('sensor', () => {
 
         // Add to sensor's detection list
         sensors.value[uavId].detections.push(f)
-        sensors.value[uavId].detections = sensors.value[uavId].detections.slice(-10)
+        sensors.value[uavId].detections = sensors.value[uavId].detections.slice(detectionSize.value)
 
         const azimuth = f.properties?.lob_azim_deg
 
@@ -250,7 +253,7 @@ export const useSensorStore = defineStore('sensor', () => {
             coordinate: [lat, lon],
             uavId
           })
-          detections.value = detections.value.slice(-10)
+          detections.value = detections.value.slice(detectionSize.value)
         }
       })
     } catch (error) {
@@ -301,6 +304,8 @@ export const useSensorStore = defineStore('sensor', () => {
     fetchDetection,
     clearDetections,
     toggleSensorSelection,
-    stopFetchingDetection
+    stopFetchingDetection,
+    fetchAllSelectedDetections,
+    detectionSize
   }
 })
