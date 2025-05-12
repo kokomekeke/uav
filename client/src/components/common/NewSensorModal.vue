@@ -18,19 +18,16 @@ const lastPosQ2 = ref(null)
 const lastPosQ3 = ref(null)
 
 const addSensor = () => {
-  console.log('add sensor')
   isModalOpen.value = true
 }
 
 const submit = () => {
   if (label.value && address.value) {
-    console.log('submit data')
     const data = {
       uav_label: label.value,
       uav_address: address.value,
       active: isActive.value
     }
-    console.log('sent data: ', data)
     sensorStore.addSensor(data)
   } else {
     console.log('fill the form!!!')

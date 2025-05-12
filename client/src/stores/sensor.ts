@@ -1,28 +1,54 @@
+// sensor.js optimalizált változat
 import { defineStore, storeToRefs } from 'pinia'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, shallowRef } from 'vue'
 import axios from 'axios'
 import { useConnectionStore } from '@/stores/connection'
-import { Sensor, ComintDetection } from '../types/sensor'
-import { Detection } from '../types/detection'
+import { Sensor } from '../types/sensor'
+import { useEventSource } from '@vueuse/core'
+
+  // Memória-hatékony interface a detekciókhoz
+  interface Comint {
+    coordinate: [number, number];
+    azimuth: number;
+    uavId: number;
+    timestamp: number;
+  }
 
 export const useSensorStore = defineStore('sensor', () => {
-  const sensors = ref<{ [id: number] : Sensor}>({})
-  const selectedSensor = ref(null)
+  // shallowRef használata a komplex objektumok esetén a mélyebb változások okozta újrarenderelés elkerülésére
+  const sensors = shallowRef<{ [id: number] : Sensor}>({})
+  const selectedSensor = shallowRef(null)
   const isLoading = ref<boolean>(false)
   const errorMessage = ref('')
-  const detectionInterval = ref<number | null>(null)
   const connectionStore = useConnectionStore()
   const { ipPort, isConnected } = storeToRefs(connectionStore)
-  const detections = ref<Detection[]>([])
-  const detectionSize = ref(-100)
+  let eventSourceStop = null
+
+  // Inicializáljuk egy üres tömbbel, hogy mindig legyen egy kezdeti érték
+  const comintDetections = shallowRef<Comint[]>([])
+  const detectionSize = ref(5)
+
+  // Feldolgozás közben használt változók
+  let lastProcessTime = 0
+  const processThrottle = 100 // ms - nagyobb érték kevesebb feldolgozást jelent
+  const samplingRate = ref(20)
+
+  // Statisztikák
+  const stats = ref({
+    totalReceived: 0,
+    totalProcessed: 0,
+    lastProcessingTime: 0
+  })
+
+  // Buffer feldolgozáshoz - a bufferben gyűjtjük az adatokat a feldolgozás előtt
+  const detectionBuffer = shallowRef<Comint[]>([])
+  const isProcessingBuffer = ref(false)
 
   const handleMouseOver = (sensor) => {
     selectedSensor.value = sensor
-    console.log('over', sensor)
   }
 
   async function fetchSensors () {
-    console.log('fetchSensors', ipPort.value)
     if (!isConnected.value) return
 
     isLoading.value = true
@@ -41,13 +67,20 @@ export const useSensorStore = defineStore('sensor', () => {
         throw new Error(`API hiba: ${response.status} - ${response.statusText}`)
       }
 
+      const newSensors = {}
       const sensorArray = Array.isArray(response.data) ? response.data : response.data.sensors || []
+
       sensorArray.forEach((sensor: Sensor) => {
-        sensors.value[sensor.uav_id] = sensor
-        sensors.value[sensor.uav_id].is_selected = false
-        sensors.value[sensor.uav_id].detections = []
-        console.log('inArray: ', sensors.value[sensor.uav_id])
+        const existingDetections = sensors.value[sensor.uav_id]?.detections || []
+
+        newSensors[sensor.uav_id] = {
+          ...sensor,
+          is_selected: sensors.value[sensor.uav_id]?.is_selected || false,
+          detections: existingDetections
+        }
       })
+
+      sensors.value = newSensors
     } catch (error) {
       console.error('Hiba az API hívás során:', error)
 
@@ -74,7 +107,6 @@ export const useSensorStore = defineStore('sensor', () => {
   }
 
   async function addSensor (sensor) {
-    console.log(sensor)
     try {
       await axios.post(`${ipPort.value}/v1/uav`,
         {
@@ -92,202 +124,211 @@ export const useSensorStore = defineStore('sensor', () => {
   }
 
   async function removeSensor () {
-    console.log(selectedSensor.value)
     if (!selectedSensor.value) return
 
-    delete sensors.value[selectedSensor.value.uav_id]
     const id = selectedSensor.value.uav_id
+
+    // Klónozzuk a jelenlegi szenzorokat
+    const updatedSensors = { ...sensors.value }
+    delete updatedSensors[id]
+
+    // Frissítjük a teljes objektumot
+    sensors.value = updatedSensors
     selectedSensor.value = null
 
-    await axios.delete(`${ipPort.value}/v1/uav/` + id).then(() => {
+    try {
+      await axios.delete(`${ipPort.value}/v1/uav/` + id)
       console.log('sensor deleted')
-    })
-
-    console.log('new values: ', sensors.value)
+    } catch (error) {
+      console.error('Hiba a szenzor törlésekor:', error)
+    }
   }
-
-  // async function selectSensor (sensor: Sensor) {
-  //   console.log('SELECTED SENSOR: ', sensor, 'sensor selected')
-  //
-  //   selectedSensor.value = sensor
-  //
-  //   // régi interval leállítása
-  //   if (detectionInterval.value) {
-  //     clearInterval(detectionInterval.value)
-  //   }
-  //
-  //   // clearDetections()
-  //   await fetchDetection(10)
-  //
-  //   detectionInterval.value = setInterval(() => {
-  //     // clearDetections()
-  //     fetchDetection(10)
-  //   }, 1000)
-  // }
 
   async function selectSensor (sensor: Sensor) {
     selectedSensor.value = sensor
 
-    // Don't automatically check the checkbox - let user do that
-    // This function just sets which sensor is "active" in the UI
-
-    // Stop existing interval
-    if (detectionInterval.value) {
-      clearInterval(detectionInterval.value)
+    if (eventSourceStop) {
+      eventSourceStop()
+      eventSourceStop = null
     }
-
-    // Set up interval to fetch detections for all selected sensors
-    await fetchAllSelectedDetections()
-
-    // Set this interval for more detailed deviations
-    detectionInterval.value = setInterval(() => {
-      fetchAllSelectedDetections()
-    }, 300)
+    await startDetectionStream()
   }
+
+  function getSensorsList () {
+    return Object.values(sensors.value)
+  }
+
   const getSensors = computed(() => sensors.value)
 
   function toggleSensorSelection (sensorId: number) {
     if (!sensors.value[sensorId]) return
 
-    // Toggle the selection
-    sensors.value[sensorId].is_selected = !sensors.value[sensorId].is_selected
-
-    // Refresh detections to reflect the new selection state
-    fetchAllSelectedDetections()
-  }
-
-  async function fetchAllSelectedDetections () {
-  // Clear all existing detections
-    // detections.value = []
-
-    // Find all selected sensors
-    const selectedSensorIds = Object.keys(sensors.value)
-      .filter(key => sensors.value[Number(key)].is_selected)
-      .map(key => Number(key))
-
-    if (selectedSensorIds.length === 0) return
-
-    // For each selected sensor, fetch detections
-    try {
-      const response = await axios.get(`${ipPort.value}/v1/comintdetection/geojson/list_last/10`)
-
-      if (!response.data || response.status !== 200) {
-        throw new Error(`API hiba: ${response.status} - ${response.statusText}`)
-      }
-
-      const features = response.data.features || []
-
-      features.forEach((f) => {
-        const uavId = f.properties.uav_id
-        console.log('id: ', uavId)
-        // Only process if this sensor is selected
-        if (!sensors.value[uavId] || !sensors.value[uavId].is_selected) return
-
-        // Add to sensor's detection list
-        sensors.value[uavId].detections.push(f)
-        sensors.value[uavId].detections = sensors.value[uavId].detections.slice(detectionSize.value)
-
-        const azimuth = f.properties?.lob_azim_deg
-        const lon = f.geometry?.coordinates?.[0]
-        const lat = f.geometry?.coordinates?.[1]
-        console.log('YAAAAW: ', f.properties.uav_pos_yaw)
-
-        if (
-          typeof azimuth === 'number' &&
-          typeof lat === 'number' &&
-          typeof lon === 'number'
-        ) {
-          detections.value.push({
-            azimuth,
-            coordinate: [lat, lon],
-            uavId
-          })
-          detections.value = detections.value.slice(detectionSize.value)
-        }
-      })
-    } catch (error) {
-      console.error('Hiba történt a fetchAllSelectedDetections során:', error)
+    const updatedSensors = { ...sensors.value }
+    updatedSensors[sensorId] = {
+      ...updatedSensors[sensorId],
+      is_selected: !updatedSensors[sensorId].is_selected
     }
+
+    sensors.value = updatedSensors
   }
 
-  async function fetchDetection (n) {
-    if (!selectedSensor.value) return
+  async function startDetectionStream () {
+    const { data, error, close } = useEventSource(`${ipPort.value}/v1/stream/comint_detection`, [], {
+      autoReconnect: {
+        retries: 3,
+        delay: 100,
+        onFailed () {
+          alert('Failed to reconnect')
+        }
+      }
+    })
+    eventSourceStop = close
+
+    watch(data, (newVal) => {
+      if (!newVal) return
+
+      try {
+        const parsed = JSON.parse(newVal)
+        stats.value.totalReceived++
+
+        detectionBuffer.value.push({
+          coordinate: [parsed.uav_pos_lat, parsed.uav_pos_lon],
+          azimuth: parsed.lob_azim_deg,
+          uavId: parsed.uav_id,
+          timestamp: Date.now()
+        })
+        const now = Date.now()
+        if (now - lastProcessTime > processThrottle && !isProcessingBuffer.value) {
+          processDetectionBuffer()
+          lastProcessTime = now
+        } else {
+          console.log('Waiting for processing')
+        }
+      } catch (e) {
+        console.error('Hiba a detekció feldolgozása során:', e)
+      }
+    })
+
+    watch(error, (err) => {
+      if (err) {
+        console.error('Hiba a stream során:', err)
+        close()
+      }
+    })
+  }
+
+  function processDetectionBuffer () {
+    if (detectionBuffer.value.length === 0 || isProcessingBuffer.value) return
+
+    isProcessingBuffer.value = true
+    const processStart = performance.now()
 
     try {
-      const response = await axios.get(`${ipPort.value}/v1/comintdetection/geojson/list_last/${n}`)
+      samplingRate.value = 20
 
-      if (!response.data || response.status !== 200) {
-        throw new Error(`API hiba: ${response.status} - ${response.statusText}`)
+      // minden samplingRatedik elemet tart csak meg
+      // const newDetections: Comint[] = detectionBuffer.value.filter((_, index) => index % samplingRate.value === 0)
+      const lastTimestampsByUav: Record<number, number> = {}
+
+      function isSampled (detection: Comint) {
+        const now = detection.timestamp
+        const last = lastTimestampsByUav[detection.uavId] || 0
+
+        if (now - last >= samplingRate.value) {
+          lastTimestampsByUav[detection.uavId] = now
+          return true
+        }
+        return false
       }
 
-      // Clear existing detections to avoid duplicates
-      detections.value = []
+      const newDetections = detectionBuffer.value.filter(isSampled)
+      stats.value.totalProcessed += newDetections.length
 
-      const features = response.data.features || []
+      if (newDetections.length > 0) {
+        const detectionsByUavId: Record<string, Comint[]> = {}
 
-      features.forEach((f) => {
-        const uavId = f.properties.uav_id
-
-        // Make sure the sensor exists
-        if (!sensors.value[uavId]) return
-
-        // Add to sensor's detection list
-        sensors.value[uavId].detections.push(f)
-        sensors.value[uavId].detections = sensors.value[uavId].detections.slice(detectionSize.value)
-
-        const azimuth = f.properties?.lob_azim_deg
-
-        // GeoJSON uses [longitude, latitude] order
-        const lon = f.geometry?.coordinates?.[0]
-        const lat = f.geometry?.coordinates?.[1]
-
-        if (
-          typeof azimuth === 'number' &&
-          typeof lat === 'number' &&
-          typeof lon === 'number' &&
-          sensors.value[uavId].is_selected
-        ) {
-          // Store in [latitude, longitude] format for Leaflet
-          detections.value.push({
-            azimuth,
-            coordinate: [lat, lon],
-            uavId
-          })
-          detections.value = detections.value.slice(detectionSize.value)
+        for (const det of newDetections) {
+          if (!detectionsByUavId[det.uavId]) {
+            detectionsByUavId[det.uavId] = []
+          }
+          detectionsByUavId[det.uavId].push(det)
         }
-      })
-    } catch (error) {
-      console.error('Hiba történt a fetchDetection során:', error)
+
+        // Új szenzor objektum létrehozása a módosításokkal
+        const updatedSensors = { ...sensors.value }
+        const maxSize = Math.abs(detectionSize.value)
+
+        // Frissítjük a szenzorok detekcióit
+        Object.entries(detectionsByUavId).forEach(([uavId, detections]) => {
+          const id = parseInt(uavId)
+          if (!updatedSensors[id]) return
+
+          const newSensorDetections = [
+            ...updatedSensors[id].detections,
+            ...detections
+          ].slice(-maxSize) // Korlátozzuk a méretet
+
+          // Frissítjük a szenzor detekciós listáját
+          updatedSensors[id] = {
+            ...updatedSensors[id],
+            detections: newSensorDetections
+          }
+        })
+        sensors.value = updatedSensors
+      }
+      // Buffer ürítése
+      detectionBuffer.value = []
+    } catch (e) {
+      console.error('Hiba a detekciók feldolgozása során:', e)
+    } finally {
+      stats.value.lastProcessingTime = performance.now() - processStart
+      isProcessingBuffer.value = false
     }
   }
 
-  function stopFetchingDetection () {
-    if (detectionInterval.value) {
-      clearInterval(detectionInterval.value)
-      detectionInterval.value = null
+  // Automatikus feldolgozás időzítő beállítása
+  let bufferProcessInterval = null
+
+  function startAutoProcessing () {
+    // Megállítjuk a korábbi időzítőt, ha van
+    if (bufferProcessInterval) {
+      clearInterval(bufferProcessInterval)
     }
+
+    // Új időzítő indítása
+    bufferProcessInterval = setInterval(() => {
+      if (detectionBuffer.value.length > 0) {
+        processDetectionBuffer()
+      }
+    }, processThrottle * 2) // Nagyobb időintervallum a feldolgozáshoz
   }
 
+  // Detekciók teljes törlése
   function clearDetections () {
-    detections.value = []
-    for (const key in sensors.value) {
-      sensors.value[key].detections = []
+    // Új szenzor objektum létrehozása üres detekciókkal
+    const updatedSensors = { ...sensors.value }
+
+    Object.keys(updatedSensors).forEach(id => {
+      updatedSensors[id] = {
+        ...updatedSensors[id],
+        detections: []
+      }
+    })
+
+    sensors.value = updatedSensors
+    comintDetections.value = []
+    detectionBuffer.value = []
+
+    // Statisztikák nullázása
+    stats.value = {
+      totalReceived: 0,
+      totalProcessed: 0,
+      lastProcessingTime: 0
     }
   }
 
-  watch(selectedSensor, (newSensor) => {
-    if (!newSensor) {
-      stopFetchingDetection()
-    }
-  })
-
-  watch(selectedSensor, (s) => {
-    console.log(s.is_selected)
-  })
-
-  watch(sensors, (s) => {
-    console.log('ASDAZJKDGJKWDUIWDUWD=====', s)
-  }, { deep: true })
+  // Komponens indításánál indítjuk a feldolgozást
+  startAutoProcessing()
 
   return {
     sensors,
@@ -295,17 +336,17 @@ export const useSensorStore = defineStore('sensor', () => {
     isLoading,
     errorMessage,
     getSensors,
+    getSensorsList, // Új metódus a szenzorok lekérdezésére
     fetchSensors,
     addSensor,
     removeSensor,
     selectSensor,
     handleMouseOver,
-    detections,
-    fetchDetection,
-    clearDetections,
     toggleSensorSelection,
-    stopFetchingDetection,
-    fetchAllSelectedDetections,
-    detectionSize
+    detectionSize,
+    comintDetections,
+    clearDetections, // Új metódus a detekciók törlésére
+    stats,
+    samplingRate
   }
 })

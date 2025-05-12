@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@vue-leaflet/vue-leaflet": "^0.10.1",
+    "@vueuse/core": "^13.1.0",
     "axios": "^1.7.9",
     "core-js": "^3.8.3",
     "leaflet": "^1.9.4",

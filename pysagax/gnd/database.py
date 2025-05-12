@@ -185,6 +185,9 @@ class ComIntDatabase:
     # def update(self, entity: Any) -> None:
     #     global db
     #     db.session.
+    def bulk_insertion(self, object_list):
+        global db
+        db.session.bulk_save_objects(object_list)
 
     def commit(self) -> None:
         global db

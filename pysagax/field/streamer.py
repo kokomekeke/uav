@@ -112,7 +112,6 @@ class Streamer(Loop):
             pass
         try:
             packet = self._queue_in.get(block=True, timeout=1)
-            print("PEKIT: ", packet)
             self._logger.debug(f"Got {type(packet).__name__} stream packet")
             # Send response to remote client
             stream_packet = packet.SerializeToString()

@@ -197,6 +197,7 @@ class CommAggregate(Loop):
     def __init__(
         self,
         db: ComIntDatabase,
+        measurement_to_stream_queue=None,
         *args,
         **kwargs,
     ) -> None:
@@ -204,6 +205,9 @@ class CommAggregate(Loop):
         self._app: Optional[Any] = None
         self._uavs: dict[int, UAVConnection] = {}
         self._telemetry_to_monitoring: Optional[Queue] = None
+        self.measurement_to_stream_queue: Optional[Queue] = measurement_to_stream_queue
+        self.detection_entities = []
+        self.stream_data_batch = []
         # Loop.__init__(self, *args, **kwargs)
         super().__init__(*args, **kwargs)
 
@@ -249,12 +253,77 @@ class CommAggregate(Loop):
         assert self._telemetry_to_monitoring is not None
         queue_put(self._telemetry_to_monitoring, report, 1, self._logger, "Telemetry to monitoring")
 
-    def _receive_measurement(
-        self, uav_entity: UAVEntity, packet: proto_data.Measurement
-    ) -> None:
+    # def _receive_measurement(
+    #     self, uav_entity: UAVEntity, packet: proto_data.Measurement
+    # ) -> None:
+    #     self._logger.debug(
+    #         f"Got a Measurement from {uav_entity.uav_label}! Detection count is {len(packet.detection)}"
+    #     )
+    #     for det in packet.detection:
+    #         new_meas_entity = ComIntDetectionEntity()
+    #         new_meas_entity.uav_id = uav_entity.uav_id
+    #         new_meas_entity.frequency = int(det.frequency)
+    #         new_meas_entity.bandwidth = int(det.bandwidth)
+    #         new_meas_entity.snr = det.snr
+    #         new_meas_entity.lob_azim_deg = det.mean_azimuth / math.pi * 180.0
+    #         new_meas_entity.lob_elev_deg = det.mean_elevation / math.pi * 180.0
+    #         new_meas_entity.precision = 1 - (det.deviation / (math.pi * 2))
+    #         new_meas_entity.signal_strength = det.strength
+    #         new_meas_entity.timestamp = packet.time.ToDatetime()
+    #         new_meas_entity.roi_identifier = det.roi_id
+    #         new_meas_entity.uav_pos_lat = packet.heading_data.gps_lat
+    #         new_meas_entity.uav_pos_lon = packet.heading_data.gps_lon
+    #         new_meas_entity.uav_pos_altitude = packet.heading_data.altitude
+    #         if len(packet.heading_data.quaternion) == 4:
+    #             new_meas_entity.uav_pos_q0 = packet.heading_data.quaternion[0]
+    #             new_meas_entity.uav_pos_q1 = packet.heading_data.quaternion[1]
+    #             new_meas_entity.uav_pos_q2 = packet.heading_data.quaternion[2]
+    #             new_meas_entity.uav_pos_q3 = packet.heading_data.quaternion[3]
+    #         self._db.add(new_meas_entity)
+    #         stream_data = {
+    #             "detection_id": -1,
+    #             "uav_id": uav_entity.uav_id,
+    #             "uav_label": uav_entity.uav_label,
+    #             "frequency": int(det.frequency),
+    #             "bandwidth": int(det.bandwidth),
+    #             "snr": det.snr,
+    #             "lob_azim_deg": det.mean_azimuth / math.pi * 180.0,
+    #             "lob_elev_deg": det.mean_elevation / math.pi * 180.0,
+    #             "precision": 1 - (det.deviation / (math.pi * 2)),
+    #             "signal_strength": det.strength,
+    #             "timestamp": packet.time.ToDatetime().isoformat(),
+    #             "roi_identifier": det.roi_id,
+    #             "uav_pos_lat": packet.heading_data.gps_lat,
+    #             "uav_pos_lon": packet.heading_data.gps_lon,
+    #             "uav_pos_altitude": packet.heading_data.altitude
+    #         }
+    #         print("measurement: ", stream_data)
+    #         queue_put(self.measurement_to_stream_queue, stream_data, 8, self._logger, "Measurement to stream")
+    #     uav_entity.last_pos_lat = packet.heading_data.gps_lat
+    #     uav_entity.last_pos_lon = packet.heading_data.gps_lon
+    #     uav_entity.last_pos_altitude = packet.heading_data.altitude
+    #     if len(packet.heading_data.quaternion) == 4:
+    #         uav_entity.last_pos_q0 = packet.heading_data.quaternion[0]
+    #         uav_entity.last_pos_q1 = packet.heading_data.quaternion[1]
+    #         uav_entity.last_pos_q2 = packet.heading_data.quaternion[2]
+    #         uav_entity.last_pos_q3 = packet.heading_data.quaternion[3]
+    #     else:
+    #         self._logger.warning(
+    #             f"Received quaternion length is {len(packet.heading_data.quaternion)}"
+    #         )
+    #     # stream endpoint
+    #
+    #     self._db.commit()
+
+    def _receive_measurement(self, uav_entity: UAVEntity, packet: proto_data.Measurement) -> None:
         self._logger.debug(
             f"Got a Measurement from {uav_entity.uav_label}! Detection count is {len(packet.detection)}"
         )
+
+        # Gyűjtsük össze az összes entitást
+        # detection_entities = []
+        # stream_data_batch = []
+
         for det in packet.detection:
             new_meas_entity = ComIntDetectionEntity()
             new_meas_entity.uav_id = uav_entity.uav_id
@@ -275,7 +344,35 @@ class CommAggregate(Loop):
                 new_meas_entity.uav_pos_q1 = packet.heading_data.quaternion[1]
                 new_meas_entity.uav_pos_q2 = packet.heading_data.quaternion[2]
                 new_meas_entity.uav_pos_q3 = packet.heading_data.quaternion[3]
-            self._db.add(new_meas_entity)
+
+            self.detection_entities.append(new_meas_entity)
+
+            stream_data = {
+                "detection_id": -1,
+                "uav_id": uav_entity.uav_id,
+                "uav_label": uav_entity.uav_label,
+                "frequency": int(det.frequency),
+                "bandwidth": int(det.bandwidth),
+                "snr": det.snr,
+                "lob_azim_deg": det.mean_azimuth / math.pi * 180.0,
+                "lob_elev_deg": det.mean_elevation / math.pi * 180.0,
+                "precision": 1 - (det.deviation / (math.pi * 2)),
+                "signal_strength": det.strength,
+                "timestamp": packet.time.ToDatetime().isoformat(),
+                "roi_identifier": det.roi_id,
+                "uav_pos_lat": packet.heading_data.gps_lat,
+                "uav_pos_lon": packet.heading_data.gps_lon,
+                "uav_pos_altitude": packet.heading_data.altitude
+            }
+            queue_put(self.measurement_to_stream_queue, stream_data, 8, self._logger, "Measurement to stream")
+            # self.stream_data_batch.append(stream_data)
+
+        # Tömegesen adjuk hozzá az entitásokat
+        if len(self.detection_entities) > 5:
+            self._db.bulk_insertion(self.detection_entities)
+            self.detection_entities = []
+
+        # Frissítsük az UAV pozíciót
         uav_entity.last_pos_lat = packet.heading_data.gps_lat
         uav_entity.last_pos_lon = packet.heading_data.gps_lon
         uav_entity.last_pos_altitude = packet.heading_data.altitude
@@ -288,6 +385,12 @@ class CommAggregate(Loop):
             self._logger.warning(
                 f"Received quaternion length is {len(packet.heading_data.quaternion)}"
             )
+
+        # Küldjük el az összes stream adatot egyszerre
+        # for stream_data in self.stream_data_batch:
+        #     queue_put(self.measurement_to_stream_queue, stream_data, 8, self._logger, "Measurement to stream")
+
+        # Csak egyszer commitoljunk
         self._db.commit()
 
     def _receive_event(self, uav_entity: UAVEntity, packet: proto_data.Event) -> None:

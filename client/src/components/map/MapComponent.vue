@@ -1,64 +1,115 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeMount, computed } from 'vue'
+import { ref, onMounted, computed, watch, nextTick, shallowRef, onBeforeUnmount } from 'vue'
 import { LMap, LTileLayer, LMarker, LPolyline } from '@vue-leaflet/vue-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import pW from '@/assets/p3.png'
 import { useSensorStore } from '@/stores/sensor'
-import { Sensor } from '@/types/sensor'
-import { Detection } from '@/types/detection'
+import { storeToRefs } from 'pinia'
+import { useWebWorkerFn } from '@vueuse/core'
 
 const zoom = ref(10)
 const center = ref([47.4979, 19.0402])
 const sensorStore = useSensorStore()
-const sensors: { [id: number] : Sensor} = sensorStore.sensors
-// Ha online vagy
-// const url = ref('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
+const { sensors } = storeToRefs(sensorStore)
 
-// Ha offline
-const url = ref('/tiles/{z}/{x}/{y}.png')
+// Használjunk shallowRef-et a lokális detekciók számára
+const localDetections = shallowRef([])
+
+// Csak az alapvető tulajdonságokat figyeljük, ne az egész objektumot
+const sensorsList = computed(() => {
+  return Object.values(sensors.value || {}).filter(s => s.is_selected)
+})
+
+// Map referencia
+const mapRef = ref(null)
+const leafletMap = shallowRef(null)
+
+// Alapvető térkép beállítások
+const url = ref('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
 const attribution = ref('&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors')
 
-// Repülő ikon
+// Ikonok létrehozása és memóriában tartása
 const planeIcon = L.icon({
   iconUrl: pW,
   iconSize: [64, 64],
   iconAnchor: [32, 32]
 })
 
-const detections = computed(() => sensorStore.detections)
+// Színek előre definiálása
+const lineColors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'cyan']
+const dotColors = ['blue', 'red', 'orange', 'green', 'cyan', 'magenta', 'yellow']
+
+// Dot ikonokat előre létrehozzuk minden színben
+const dotIcons = dotColors.map(color => L.divIcon({
+  className: '',
+  html: `<div style="
+    background-color: ${color};
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 1px solid white;
+    box-shadow: 0 0 2px rgba(0,0,0,0.5);
+  "></div>`,
+  iconSize: [12, 12],
+  iconAnchor: [6, 6]
+}))
+
+// Beállítások
 const newDetectionSize = ref(Math.abs(sensorStore.detectionSize))
+const autoZoom = ref(false)
+const mapBounds = shallowRef(null)
+const maxVisiblePoints = ref(100) // Alapértelmezetten maximum ennyi pontot jelenítünk meg szenzoronként
 
-onBeforeMount(() => {
-  console.log('beforeMount')
-})
+// Nagyobb méretű adatok esetén csökkentsük a frissítési gyakoriságot
+const updateThrottle = ref(500) // ms
 
-onMounted(() => {
-  console.log('onmounted')
-})
+let updateTimer = null
 
-watch(detections, (n) => { console.log('detection debug:', n) }, { deep: true })
-watch(() => detections.value.length, (n) => { console.log('detection debug11:', n) })
+// Optimalizált számításokhoz cache
+const azimuthLineCache = new Map()
 
-function updateDetectionSize() {
-  console.log("updateee")
-  // Ensure the input is a positive number
-  const size = parseInt(newDetectionSize.value)
-  if (!isNaN(size) && size > 0) {
-    // Access the actual ref value property
-    sensorStore.$patch({
-      detectionSize: -size
-    })
-    // Or try this alternative approach
-    // sensorStore.$state.detectionSize = size
-
-    console.log('Detection size updated to:', -size)
-    // Optionally refresh detections after changing the size
-    sensorStore.fetchAllSelectedDetections()
-  }
+// Láthatatlan pontok nem kerülnek feldolgozásra
+const isInViewport = (coords) => {
+  if (!mapBounds.value || !coords || coords.length !== 2) return false
+  return mapBounds.value.contains(L.latLng(coords[0], coords[1]))
 }
 
-function computeAzimuthLine (coord: [number, number], azimuth: number): [number, number][] {
+// Kombinált detekciós lista létrehozása az összes aktív szenzorból
+const visibleDetections = computed(() => {
+  const selectedSensors = sensorsList.value
+  if (!selectedSensors || selectedSensors.length === 0) return []
+
+  // Csak a kiválasztott szenzorok detekcióit gyűjtjük össze
+  let allDetections = []
+
+  selectedSensors.forEach(sensor => {
+    if (!sensor.detections || !Array.isArray(sensor.detections)) return
+
+    // Szűrjük és limitáljuk a szenzoronkénti pontokat
+    const sensorDetections = sensor.detections
+      .slice(-maxVisiblePoints.value) // Csak a legutolsó N pont
+      .filter(d => d && d.coordinate && isInViewport(d.coordinate)) // Csak a látható területen lévők
+
+    allDetections = [...allDetections, ...sensorDetections]
+  })
+
+  // Rendezzük időbélyeg szerint
+  allDetections.sort((a, b) => a.timestamp - b.timestamp)
+
+  // Korlátozzuk a teljes pontszámot a teljesítmény érdekében
+  return allDetections.slice(-maxVisiblePoints.value * 2)
+})
+
+// Metódus a térkép nézet frissítésére
+function updateMapView () {
+  if (!mapRef.value || !mapRef.value.leafletObject) return
+
+  leafletMap.value = mapRef.value.leafletObject
+  mapBounds.value = leafletMap.value.getBounds()
+}
+
+function computeAzimuthLine (coord: [number, number], azimuth: number, id: number): [number, number][] {
   if (
     !coord ||
     coord.length !== 2 ||
@@ -70,30 +121,148 @@ function computeAzimuthLine (coord: [number, number], azimuth: number): [number,
     return []
   }
 
+  const roundedLat = Math.round(coord[0] * 1000) / 1000
+  const roundedLon = Math.round(coord[1] * 1000) / 1000
+  const roundedAzimuth = Math.round(azimuth)
+  const cacheKey = `${roundedLat}_${roundedLon}_${roundedAzimuth}_${id}`
+
+  if (azimuthLineCache.has(cacheKey)) {
+    return azimuthLineCache.get(cacheKey)
+  }
+
   const lat = coord[0]
   const lon = coord[1]
-
   const distance = 0.1
-
   const azimuthRad = azimuth * (Math.PI / 180)
-
   const endLat = lat + distance * Math.cos(azimuthRad)
   const endLon = lon + distance * Math.sin(azimuthRad)
 
-  return [[lat, lon], [endLat, endLon]]
+  const result = [[lat, lon], [endLat, endLon]]
+
+  azimuthLineCache.set(cacheKey, result)
+
+  if (azimuthLineCache.size > 1000) {
+    const keys = Array.from(azimuthLineCache.keys()).slice(0, 200)
+    keys.forEach(key => azimuthLineCache.delete(key))
+  }
+
+  return result
 }
 
+// Optimalizált segédfüggvények
 function getColorById (id) {
-  const colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'cyan']
-  return colors[id % colors.length] // egyszerű színkiosztás ID alapján
+  return lineColors[id % lineColors.length]
 }
+
+function getDotIconById (id: number) {
+  return dotIcons[id % dotIcons.length]
+}
+
+// Frissítés throttling
+function throttledUpdate () {
+  if (updateTimer) clearTimeout(updateTimer)
+
+  updateTimer = setTimeout(() => {
+    updateMapView()
+  }, updateThrottle.value)
+}
+
+
+// Figyelés a kiválasztott szenzorok változására
+watch(sensorsList, () => {
+  throttledUpdate()
+}, { deep: false }) // Shallow figyelés a teljesítmény érdekében
+
+// Térképre nagyítás új pont érkezésekor
+watch(() => visibleDetections.value, (newVal) => {
+  if (autoZoom.value && newVal && newVal.length > 0 && leafletMap.value) {
+    const lastPoint = newVal[newVal.length - 1]
+    if (lastPoint && lastPoint.coordinate) {
+      leafletMap.value.setView(lastPoint.coordinate, zoom.value)
+    }
+  }
+}, { deep: false })
+
+// Beállítások frissítése
+function updateSettings () {
+  const size = newDetectionSize.value
+  if (!isNaN(size) && size > 0) {
+    sensorStore.$patch({
+      detectionSize: size
+    })
+  }
+
+  // Frissítsük a térkép nézetet
+  throttledUpdate()
+}
+
+// Adatok törlése
+function clearMapData () {
+  sensorStore.clearDetections()
+  azimuthLineCache.clear()
+  console.log('Térkép adatok törölve')
+}
+
+// Inicializálás
+onMounted(async () => {
+  // Várunk egy kis időt, hogy a térkép komponens betöltődjön
+  await nextTick()
+
+  try {
+    // Inicalizáljuk a térképet
+    if (mapRef.value && mapRef.value.leafletObject) {
+      leafletMap.value = mapRef.value.leafletObject
+      mapBounds.value = leafletMap.value.getBounds()
+
+      // Event listener a térkép mozgatáshoz
+      leafletMap.value.on('moveend', throttledUpdate)
+      leafletMap.value.on('zoomend', throttledUpdate)
+    }
+  } catch (error) {
+    console.error('Hiba a térkép inicializálása során:', error)
+
+    // Próbáljuk újra egy kis késleltetéssel
+    setTimeout(() => {
+      try {
+        if (mapRef.value && mapRef.value.leafletObject) {
+          leafletMap.value = mapRef.value.leafletObject
+          mapBounds.value = leafletMap.value.getBounds()
+
+          // Event listener a térkép mozgatáshoz
+          leafletMap.value.on('moveend', throttledUpdate)
+          leafletMap.value.on('zoomend', throttledUpdate)
+        }
+      } catch (innerError) {
+        console.error('Nem sikerült inicializálni a térképet:', innerError)
+      }
+    }, 500)
+  }
+})
+
+// Erőforrások felszabadítása
+onBeforeUnmount(() => {
+  if (updateTimer) {
+    clearTimeout(updateTimer)
+  }
+
+  if (leafletMap.value) {
+    leafletMap.value.off('moveend', throttledUpdate)
+    leafletMap.value.off('zoomend', throttledUpdate)
+  }
+
+  // Cache ürítése
+  azimuthLineCache.clear()
+})
 </script>
 
 <template>
-  <l-map class="h-[500px] w-full z-1" :zoom="zoom" :center="center">
-    <l-tile-layer :url="url" :attribution="attribution" class="z-1" />
-    <template v-if="detections && detections.length > 0">
-      <template v-for="(detection, index) in detections" :key="index">
+  <div v-bind="$attrs" class="h-[500px] w-full z-1">
+    <l-map ref="mapRef" :zoom="zoom" :center="center">
+      <l-tile-layer :url="url" :attribution="attribution" class="z-1" />
+
+      <!-- Csak a látható pontokat jelenítjük meg -->
+      <template v-for="(detection, index) in visibleDetections" :key="`det-${detection.uavId}-${index}`">
+        <!-- Repülő marker -->
         <l-marker
           v-if="detection && detection.coordinate &&
                 detection.coordinate.length === 2 &&
@@ -103,21 +272,31 @@ function getColorById (id) {
           :icon="planeIcon"
         />
 
-        <!-- Only render polyline if detection and azimuth exist and function returns valid points -->
+        <!-- Azimuth vonal -->
         <l-polyline
           v-if="detection && detection.coordinate &&
                 detection.azimuth !== undefined &&
-                computeAzimuthLine(detection.coordinate, detection.azimuth).length > 0"
-          :lat-lngs="computeAzimuthLine(detection.coordinate, detection.azimuth)"
+                computeAzimuthLine(detection.coordinate, detection.azimuth, detection.uavId).length > 0"
+          :lat-lngs="computeAzimuthLine(detection.coordinate, detection.azimuth, detection.uavId)"
           :color="getColorById(detection.uavId)"
+          :weight="2"
+        />
+
+        <!-- Pont ikon -->
+        <l-marker
+          v-if="detection && detection.coordinate &&
+                detection.coordinate.length === 2 &&
+                typeof detection.coordinate[0] === 'number' &&
+                typeof detection.coordinate[1] === 'number'"
+          :lat-lng="detection.coordinate"
+          :icon="getDotIconById(detection.uavId)"
         />
       </template>
-    </template>
-  </l-map>
+    </l-map>
+  </div>
 
-  <!-- Controls section with new input and button -->
-  <div class="controls mt-2 flex gap-2 items-center">
-    <button @click="sensorStore.clearDetections()" class="bg-red-500 text-white p-2 rounded">
+  <div class="controls mt-2 flex gap-2 items-center flex-wrap">
+    <button @click="clearMapData" class="bg-red-500 text-white p-2 rounded">
       Clear Map
     </button>
 
@@ -130,16 +309,64 @@ function getColorById (id) {
         min="1"
         class="border border-gray-300 rounded p-2 w-20"
       />
+    </div>
+
+    <div class="flex items-center ml-4">
+      <label for="maxVisible" class="mr-2">Max visible:</label>
+      <input
+        id="maxVisible"
+        type="number"
+        v-model="maxVisiblePoints"
+        min="10"
+        max="500"
+        class="border border-gray-300 rounded p-2 w-20"
+      />
       <button
-        @click="updateDetectionSize()"
+        @click="updateSettings"
         class="ml-2 bg-blue-500 text-white p-2 rounded"
       >
         Update
       </button>
     </div>
 
-    <div class="text-sm text-gray-500">
-      Current size: {{ Math.abs(sensorStore.detectionSize) }}
+    <div class="flex items-center ml-4">
+      <input
+        id="autoZoom"
+        type="checkbox"
+        v-model="autoZoom"
+        class="mr-2"
+      />
+      <label for="autoZoom">Auto-zoom</label>
+    </div>
+
+    <div class="ml-4">
+      <label for="updateThrottle" class="mr-2">Update Speed (ms):</label>
+      <input
+        id="updateThrottle"
+        type="number"
+        v-model="updateThrottle"
+        min="100"
+        max="2000"
+        step="100"
+        class="border border-gray-300 rounded p-2 w-20"
+      />
+    </div>
+
+<!--    <div class="ml-4">-->
+<!--      <label for="updateSampleRate" class="mr-2">Sampling Rate:</label>-->
+<!--      <input-->
+<!--        id="updateSampleRate"-->
+<!--        type="number"-->
+<!--        v-model="updateSampleRate"-->
+<!--        min="1"-->
+<!--        max="100"-->
+<!--        step="1"-->
+<!--        class="border border-gray-300 rounded p-2 w-20"-->
+<!--      />-->
+<!--    </div>-->
+
+    <div class="text-sm text-gray-500 ml-4">
+      Visible points: {{ visibleDetections.length }} | Sensors: {{ sensorsList.length }}
     </div>
   </div>
 </template>

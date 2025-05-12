@@ -10,12 +10,13 @@ import traceback
 from concurrent.futures import ProcessPoolExecutor, wait
 from logging import Handler, StreamHandler, getLogger
 from os import getpid
+from queue import Queue
 from signal import SIGINT, SIGTERM, signal
 from typing import Any, Optional
 
 import click
 from coloredlogs import install
-from flask import Flask
+from flask import Flask, current_app
 from rich.logging import RichHandler
 
 from pysagax.field.scanengine import ScanEngine
@@ -64,9 +65,12 @@ class Commander:
             self._db.initialize_db(self._db.get_app_instance())
             return
         self._telemetry_for_monitoring_q = self._manager.Queue(maxsize=8)
+        # stream q
+        self.measurement_to_stream_queue = self._manager.Queue(maxsize=32)
+        #
         # not implemented yet
         self._cievents = CIEvents(level=level)
-        self._commaggregate = CommAggregate(level=level, db=self._db)
+        self._commaggregate = CommAggregate(level=level, db=self._db, measurement_to_stream_queue=self.measurement_to_stream_queue)
         # not implemented yet
         self._commandengine = CommandEngine(level=level)
         self._monitoring = Monitoring(level=level)
@@ -77,7 +81,7 @@ class Commander:
 
         self._logger.debug("Starting Commander")
 
-        api_future = self._pool.submit(run_api)
+        api_future = self._pool.submit(run_api, self.measurement_to_stream_queue)
 
         cievents_future = self._pool.submit(self._cievents)
         commaggregate_future = self._pool.submit(

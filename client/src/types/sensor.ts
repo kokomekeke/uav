@@ -1,6 +1,13 @@
 
 import { ComintDetection } from './comintDetection'
 
+interface Comint {
+  coordinate: [number, number];
+  azimuth: number;
+  uavId: number;
+  timestamp?: number; // Időbélyeget adunk hozzá rendezéshez
+}
+
 export interface Sensor {
   is_selected?: boolean
   uav_id: number
@@ -17,6 +24,5 @@ export interface Sensor {
   last_pos_q2?: number | null
   last_pos_q3?: number | null
   health_report?: string | null
-  detections?: ComintDetection[] // ← ez lehet undefined is, ha nem inicializálod
+  detections?: Comint[] // ← ez lehet undefined is, ha nem inicializálod
 }
-

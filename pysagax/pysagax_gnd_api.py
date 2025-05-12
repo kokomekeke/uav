@@ -78,7 +78,10 @@ if "PYSAGAX_GND_PROXY_FIX" in os.environ:
     )
 
 
-def run_api():
+def run_api(measurement_queue=None):
+    if measurement_queue is not None:
+        print("not none")
+        app.measurement_to_stream_queue = measurement_queue
     host = "0.0.0.0"
     port = 5000
     logger.info(f"Starting API on http://{host}:{port}")

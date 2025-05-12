@@ -8,7 +8,7 @@ import MapComponent from '@/components/map/MapComponent.vue'
     <configuration-view class="flex-grow w-50"></configuration-view>
     <div class="grid grid-rows-3 bg-red-500 w-full ml-6">
       <div class="bg-blue-500 row-span-2 z-10">
-        <map-component class="z-0"></map-component>
+        <map-component></map-component>
       </div>
       <div class="bg-yellow-300">Spektrum helye</div>
     </div>
