@@ -48,6 +48,7 @@ class UAVConnection(mp.Process):
     def __init__(
         self,
         uav_entity: UAVEntity,
+        streaming_level: proto_cmd.StreamTarget.StreamLevel,
         stream_out_q: queue.Queue,
         command_q: queue.Queue,
         response_q: queue.Queue,
@@ -60,6 +61,7 @@ class UAVConnection(mp.Process):
         self.daemon = True
         self.uav_db_id = uav_entity.uav_id
         self.uav_label = uav_entity.uav_label
+        self.streaming_level = streaming_level
 
         self._stream_out_q = stream_out_q
         self._command_q = command_q
@@ -136,7 +138,7 @@ class UAVConnection(mp.Process):
         cmd_stream_start.instruction = proto_cmd.STREAM_START
         # TODO: customazible stream levels
         cmd_stream_start.target.id = self.target_id
-        cmd_stream_start.target.level = proto_cmd.StreamTarget.StreamLevel.SPECTRUM
+        cmd_stream_start.target.level = self.streaming_level
         cmd_stream_start.target.address = self.own_address
         cmd_stream_start.target.port = self.own_stream_udp_port
 
@@ -268,7 +270,6 @@ class UAVConnection(mp.Process):
             queue_put(
                 self._stream_out_q,
                 (self.uav_db_id, stream_packet),
-                logger=self._logger,
                 timeout=0.01,
             )
             # self._stream_out_q.put((self.uav_db_id, stream_packet)) # TODO use queue_put?

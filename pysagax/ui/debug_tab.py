@@ -155,14 +155,6 @@ class DebugTab(ttk.Frame):
             self.client.client_window.connect_frame.client_stream_port_entry.get()
         )
 
-        cmd_stream_stop = proto_cmd.Command(instruction=proto_cmd.STREAM_STOP)
-        cmd_stream_stop.target.id = 1
-        cmd_stream_stop.target.level = STREAM_LEVEL[self.stream_level_str.get()]
-        cmd_stream_stop.target.address = get_ip(host_address)
-        cmd_stream_stop.target.port = client_stream_port
-        cmd_stream_stop.target.heartbeat_timeout = int(self.heartbeat_to_entry.get())
-        cmd_stream_stop.target.telemetry_timeout = int(self.telemetry_to_entry.get())
-
         cmd_stream_start = proto_cmd.Command(instruction=proto_cmd.STREAM_START)
         cmd_stream_start.target.id = 1
         cmd_stream_start.target.level = STREAM_LEVEL[self.stream_level_str.get()]
@@ -172,4 +164,4 @@ class DebugTab(ttk.Frame):
         cmd_stream_start.target.telemetry_timeout = int(self.telemetry_to_entry.get())
 
         self.stream_target_ip_str.set(f"target IP: {cmd_stream_start.target.address}")
-        self.send_commands_function([cmd_stream_stop, cmd_stream_start])
+        self.send_commands_function([cmd_stream_start])
