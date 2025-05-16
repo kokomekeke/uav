@@ -124,6 +124,7 @@ const toggleMenu = () => {
                   id="checkbox"
                   :checked="sensors[sensor.uav_id].is_selected"
                   @change="sensorStore.toggleSensorSelection(sensor.uav_id)"
+                  @click.stop
                 >
                 <router-link :to="`/sensor/${sensor['uav_label']}`" class="pl-2 text-white hover:underline flex-grow text-left">
                   {{ sensor['uav_label'] }}
