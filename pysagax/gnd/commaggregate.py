@@ -30,6 +30,7 @@ class UAVConnectionHandler:
         uav_entity: UAVEntity,
         to_measurement_processor_q: queue.Queue,
         level: Any,
+        streaming_level: proto_cmd.StreamTarget.StreamLevel = proto_cmd.StreamTarget.StreamLevel.DETECTION,
     ):
         self._logger = logging.getLogger(
             f"UAVConnectionHandler#{uav_entity.uav_id:02d}"
@@ -43,6 +44,7 @@ class UAVConnectionHandler:
         self._stop_event = mp.Event()
         self._uav = UAVConnection(
             uav_entity=uav_entity,
+            streaming_level=streaming_level,
             stream_out_q=to_measurement_processor_q,
             command_q=self._command_q,
             response_q=self._response_q,
@@ -95,6 +97,8 @@ class UAVConnectionHandler:
 
     # def stream_stop(self) -> None:
     #     pass
+
+    # TODO: def change_stream_level(self, asdf): pass
 
 
 class CommAggregate(Loop):
@@ -195,6 +199,7 @@ class CommAggregate(Loop):
             )
 
             # send commands using UAVConnectionHandlers
+            response = None
             try:
                 # TODO: only target UAVs we're connected to, exclude those that we're trying to connect to
                 if target_id == 0:  # id==0 -> send to all connected uavs
@@ -208,6 +213,7 @@ class CommAggregate(Loop):
                 )
                 self._logger.warning(f"Command destination error: {emsg}")
             else:
+                # TODO: RuntimeError: dictionary changed size during iteration -> we need to lock the target list??
                 for uav in target_uav_list:
                     response = uav.send_command(command)
                     self._logger.trace(

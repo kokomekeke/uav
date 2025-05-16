@@ -3,6 +3,8 @@ import numpy as np
 import pysagax.message.data_pb2 as proto_data
 import pysagax.message.command_pb2 as proto_cmd
 
+import zlib
+
 from typing import ValuesView, Literal, Optional
 
 PROTOBUF_NUMPY_TYPE_MAPPING: dict[proto_data.Spectrum.DataType.ValueType, np.dtype] = {
@@ -11,6 +13,25 @@ PROTOBUF_NUMPY_TYPE_MAPPING: dict[proto_data.Spectrum.DataType.ValueType, np.dty
     proto_data.Spectrum.DataType.FLOAT16: np.dtype(np.float16),
     proto_data.Spectrum.DataType.FLOAT32: np.dtype(np.float32),
 }
+
+
+def compress_spectrum_data(packet: proto_data.Measurement):
+    """
+    Compresses the spectrum arrays within a Measurement packet.
+
+    Empirically it decreases the spectrums by about 25% with very little overhead
+    """
+    # TODO: set and unset a compressed (or uncompressed) bool in the packet?
+    for i in range(len(packet.data)):
+        packet.data[i].data = zlib.compress(packet.data[i].data, 1)
+    return packet
+
+
+def decompress_spectrum(packet):
+    """Decompresses the spectrum arrays within a Measurement packet."""
+    for i in range(len(packet.data)):
+        packet.data[i].data = zlib.decompress(packet.data[i].data, 0)
+    return packet
 
 
 def protobuf_spectrum_to_numpy(spectrum: proto_data.Spectrum) -> np.ndarray:

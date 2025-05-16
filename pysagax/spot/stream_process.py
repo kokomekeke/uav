@@ -8,6 +8,10 @@ from typing import Optional
 from pysagax.communication.broadcast import RX
 import pysagax.message.data_pb2 as proto_data
 from pysagax.message.data_types import DataType
+from pysagax.util.protobuf_spectrum_utils import decompress_spectrum
+from pysagax.util.run_once import run_once
+
+import logging
 
 from pysagax.util import MultiQueue
 
@@ -22,6 +26,7 @@ class StreamProcess(multiprocessing.Process):
         status_queue: queue.Queue,  # | multiprocessing.Queue,
     ):
         super().__init__(daemon=True, name="StreamProcess")
+        self._logger = logging.getLogger(self.__class__.__name__)
         self._connection_port = connection_port
         self._subscribed_groups = subscribed_groups
         self._queues = queues
@@ -83,7 +88,17 @@ class StreamProcess(multiprocessing.Process):
             data_type_object = DataType(group)
             stream_packet = DataType.to_message(data_type_object)
             stream_packet.ParseFromString(raw_data)
+            if isinstance(stream_packet, proto_data.Measurement):
+                try:
+                    stream_packet = decompress_spectrum(stream_packet)
+                except Exception as e:
+                    # The packet probably wasn't compressed to begin with
+                    self.log_decompress_error(stream_packet, e)
             self._queues.put(stream_packet)
 
     def _display_connection_status_callback(self, message: str) -> None:
         self._status_queue.put(message)
+
+    @run_once(timeout=5)
+    def log_decompress_error(self, packet, error):
+        self._logger.warning(f"Couldn't decompress spectrum array in packet: {error}")

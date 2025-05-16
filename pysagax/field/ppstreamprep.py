@@ -22,6 +22,7 @@ from pysagax.util.protobuf_spectrum_utils import (
     convert_iterable_to_spectrum_data,
     protobuf_spectrum_to_numpy,
     cast_all_spectrums_in_measurement,
+    compress_spectrum_data,
 )
 from pysagax.util.queue_put import queue_put
 import pysagax.communication.broadcast as pysagax_broadcast
@@ -34,6 +35,7 @@ class PPStreamPreparation(Loop):
     Optionally saves the Measurement packets without the spectrum data to files.
     Decimates the number of outgoing packets by the specified factor.
     Also downsamples the spectrum data in outgoing packets to fit the UDP packet size limit.
+    After downsampling it further compresses the spectrum data using zlib (this usually means a 25% further size decrease)
     """
 
     def __init__(
@@ -41,7 +43,7 @@ class PPStreamPreparation(Loop):
         data_type=proto_data.Spectrum.DataType.FLOAT16,
         udp_max_size: int = pysagax_broadcast.MESSAGE_LIMIT,
         detection_recording_path: str | None = None,
-        decimation_factor: int | None = None,
+        spectrum_interval: float | None = None,
         max_recording_length: float = 0,
         *args,
         **kwargs,
@@ -63,10 +65,14 @@ class PPStreamPreparation(Loop):
         # if non-positive -> the program will not split the recording files
         self._max_recording_length: float = max_recording_length
 
-        if not isinstance(decimation_factor, int | None):
-            raise ValueError("Only integer decimation factors are supported")
-        self._decimation_factor = decimation_factor
-        self._dropped_packet_counter: int = 0
+        self._spectrum_interval = spectrum_interval
+        self._logger.info(
+            f"\nPostProcessing-Stream Preparation module initialized with the following parameters:"
+            f"\n\tSpectrum streaming interval = {self._spectrum_interval}"
+            f"\n\tSpectrum streaming datatype = {proto_data.Spectrum.DataType.Name(self._data_type)}"
+        )
+
+        self._last_spectrum_sent = 0  # timestamp for latest
 
     def __call__(
         self,
@@ -82,7 +88,6 @@ class PPStreamPreparation(Loop):
         self._logger.info(
             f"Spectrum data type is {proto_data.Spectrum.DataType.Name(self._data_type)}, byte order {sys.byteorder}"
         )
-        self._logger.info(f"Decimation factor is {self._decimation_factor}")
 
         self._latest_telemetry_proxy = latest_telemetry_proxy
         sleep(2)  # wait for the Telemetry module to initialize
@@ -219,20 +224,27 @@ class PPStreamPreparation(Loop):
 
     def _stream_packet(self, packet):
         """
-        Decides if the packet needs to be streamed based on decimation factor.
-        If so, it prepares the packet and puts it in the queue to Streamer.
+        Prepares the packet based on the settings and puts it in the queue to Streamer.
         """
-        if self._decimation_factor is not None:
-            if self._dropped_packet_counter < self._decimation_factor - 1:
-                self._dropped_packet_counter += 1
-                return
+
+        current_time = time()
+        if current_time - self._last_spectrum_sent > self._spectrum_interval:
+            # Prepare spectrum for streaming
+            packet = self._convert_spectrums(packet)
+            packet = self._shrink_measurement_packet(
+                packet, self._calculate_downsample_factor(packet)
+            )
+            packet = compress_spectrum_data(packet)
+            self._last_spectrum_sent = current_time
+        else:
+            # delete spectrum if not needed
+            del packet.data[:]
 
         packet = self._convert_spectrums(packet)
         packet = self._shrink_measurement_packet(
             packet, self._calculate_downsample_factor(packet)
         )
         queue_put(self._queue_out, packet, 0.1, logger=self._logger)
-        self._dropped_packet_counter = 0
 
     def _loop(self) -> None:
         assert self._queue_in is not None

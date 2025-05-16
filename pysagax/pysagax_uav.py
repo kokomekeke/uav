@@ -82,7 +82,7 @@ class Commander:
         detection_recording_path: str,
         detection_recording_max_length: float,
         measurement_udp_max_size: int,
-        stream_decimation_factor: int,
+        stream_spectrum_interval: float,
         apm_address: Optional[str],
     ) -> None:
 
@@ -162,7 +162,7 @@ class Commander:
             level=level,
             udp_max_size=measurement_udp_max_size,
             detection_recording_path=detection_recording_path,
-            decimation_factor=stream_decimation_factor,
+            spectrum_interval=stream_spectrum_interval,
             max_recording_length=detection_recording_max_length,
         )
         self._cs_streamer = CSStreamer(
@@ -557,9 +557,10 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     show_default=True,
 )
 @click.option(
-    "--stream-decimation-factor",
-    help="Decimates the measurement packets to be streamed to ground by this factor",
-    type=int,
+    "--stream-spectrum-interval",
+    help="\n\b\nInterval (in seconds) of streamed measurement packets that include spectrum data. If 0 (default), then all packets will be sent with the spectrum included.\nStream socket approximate bandwidth = 0.75 * measurement_udp_max_size / stream_spectrum_interval [bytes/s]",
+    type=float,
+    default=0,
 )
 @click.option(
     "--apm-address",
@@ -601,7 +602,7 @@ def main(
     detection_recording_path: str,
     detection_recording_max_length: float,
     measurement_udp_max_size: int,
-    stream_decimation_factor: int,
+    stream_spectrum_interval: int,
     apm_address: Optional[str],
 ) -> None:
     """Root command of CLI"""
@@ -650,7 +651,7 @@ def main(
         detection_recording_path,
         detection_recording_max_length,
         measurement_udp_max_size,
-        stream_decimation_factor,
+        stream_spectrum_interval,
         apm_address,
     )
     commander.start()
@@ -681,4 +682,4 @@ def setup_logging(
 
 
 if __name__ == "__main__":
-    main()
+    main(max_content_width=200)  # max_content_width sets the help text's wrapping
