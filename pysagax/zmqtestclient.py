@@ -17,8 +17,11 @@ import threading
 import tkinter
 from tkinter import messagebox, ttk
 from typing import Any, Callable, Optional
-
+import requests
+import json
 from pysagax.communication.req_rep_tcp import REQ
+
+from pysagax.ui.custom_widgets import EntryWithLabel
 
 keys_cache = {"": []}
 
@@ -350,12 +353,47 @@ class ClientWindow(tkinter.Frame):
             text="ZMQ REQ:",
             font=tkinter.font.Font(weight=tkinter.font.BOLD, size=10),
         )
-        status_command_label_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
+        # status_command_label_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
+        status_command_label_label.grid(column=0, row=0)
 
         self.status_command_label = tkinter.Label(
             status_frame, text="Not connected", font=tkinter.font.Font(size=10)
         )
-        self.status_command_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
+        # self.status_command_label.pack(side=tkinter.LEFT, padx=5, pady=10, anchor="w")
+        self.status_command_label.grid(column=1, row=0)
+        
+        # spaceholder labeb (sorry for this)
+        tkinter.Label(
+            status_frame,text="                          ",
+        ).grid(column=2, row=0)
+
+
+        self.api_ip_entry = EntryWithLabel(
+            status_frame,
+            "API ip",
+            column=3,
+            row=0,
+            default_value="127.0.0.1",
+            variable_type=tkinter.StringVar,
+        )
+        self.api_port_entry = EntryWithLabel(
+            status_frame,
+            "API port",
+            column=5,
+            row=0,
+            default_value=5000,
+            variable_type=tkinter.IntVar,
+        )
+        self.api_uav_id_entry = EntryWithLabel(
+            status_frame,
+            "UAV id (0 for all UAVs)",
+            column=7,
+            row=0,
+            default_value=0,
+            variable_type=tkinter.IntVar,
+        )
+
+
 
         connect_frame = tkinter.Frame(self, relief=tkinter.RAISED, borderwidth=1)
         connect_frame.pack(fill=tkinter.BOTH, expand=False, side=tkinter.TOP)
@@ -407,10 +445,16 @@ class ClientWindow(tkinter.Frame):
             self.sample_command.DESCRIPTOR,
         )
 
+        self.send_api_button = tkinter.Button(
+            messages_frame, text="Send to API", command=self.send_api_commands
+        )
+        self.send_api_button.pack(side=tkinter.BOTTOM, padx=5, pady=5, fill=tkinter.X)
+
         self.send_button = tkinter.Button(
             messages_frame, text="Send", command=self.send_commands
         )
         self.send_button.pack(side=tkinter.BOTTOM, padx=5, pady=5, fill=tkinter.X)
+
         self.command_builder_frame.pack(
             side=tkinter.LEFT, fill=tkinter.BOTH, padx=6, expand=False
         )
@@ -687,6 +731,68 @@ class ClientWindow(tkinter.Frame):
             self.show_console("Not connected!", "j")
             return
         self.zmq_thread.send_queue.put(self.sample_command)
+
+    def send_api_commands(self, *args: Any) -> None:
+        pass
+        # this updates the self.sample_command with currently entered values?
+        self.sample_command.Clear()
+        for setter in self.prop_setters:
+            setter()
+
+        # todo: get from ui
+        ip = self.api_ip_entry.get() #"127.0.0.1"
+        port = self.api_port_entry.get() #5000
+        uav_id = self.api_uav_id_entry.get() #13
+        instruction = proto.Instruction.Name(self.sample_command.instruction).lower() #"config" # from message instruction
+
+        # assemble url
+        address = f"http://{ip}:{port}"
+        url = f"{address}/v1/uav/{uav_id}/command/{instruction}"
+
+        # convert parameter to json
+        try:
+            parameter = getattr(self.sample_command, self.sample_command.WhichOneof("parameter"))
+        except TypeError: # no parameter field is set
+            parameter = ""
+        print(f"PARAMETER: {parameter}")
+        try:    # protobuf defined fields
+            json_data = json_format.MessageToDict(parameter)
+        except: # default types
+            json_data = parameter
+
+        # print command
+        to_print = str(self.sample_command)
+        self.console_textarea.configure(
+            state="normal"
+        )  # Textarea has to be unlocked to enable modification
+        self.console_textarea.insert(tkinter.END, f"\n--- Command sent to API {url}\n")
+        self.console_textarea.tag_add("j", f"end -14 chars", "end -1 chars")
+        self.console_textarea.insert(tkinter.END, to_print)
+        self.console_textarea.tag_add(
+            "i", f"end -{len(to_print) + 1} chars", "end -1 chars"
+        )  # Tag, so that it will be blue
+        self.console_textarea.see(tkinter.END)  # Scroll to the bottom
+        self.console_textarea.configure(state="disabled")  
+
+        # Send command to API
+        try:
+            x: requests.Response = requests.post(url, json=json_data)
+        except:
+            self.show_console("Not connected!", "j")
+            return
+
+        print(json.dumps(json.loads(x.text), indent=2))
+        to_print = json.dumps(json.loads(x.text), indent=2)
+        self.console_textarea.configure(
+            state="normal"
+        )  # Textarea has to be unlocked to enable modification
+        self.console_textarea.insert(tkinter.END, "\n--- Response from API\n")
+        self.console_textarea.tag_add(
+            "j", f"end -15 chars", "end -1 chars"
+        )
+        self.console_textarea.insert(tkinter.END, to_print)
+        self.console_textarea.see(tkinter.END)  # Scroll to the bottom
+        self.console_textarea.configure(state="disabled")  # Block user editing
 
     def connect_action(self) -> None:
         """

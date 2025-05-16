@@ -100,7 +100,7 @@ class UAVConnection(mp.Process):
             self._logger.warning(f"No response for command: {cmd}")
             return None
         resp.ParseFromString(resp_raw)
-        self._logger.trace(f"received response: {cmd}")
+        self._logger.trace(f"received response: {resp}")
         return resp
 
     def query_sysinfo(self) -> None:
@@ -159,12 +159,12 @@ class UAVConnection(mp.Process):
             )
 
     def stream_stop(self) -> None:
-        cmd_stream_start = proto_cmd.Command()
-        cmd_stream_start.instruction = proto_cmd.STREAM_STOP
-        cmd_stream_start.target.id = self.target_id
-        cmd_stream_start.target.address = self.own_address
-        cmd_stream_start.target.port = self.own_stream_udp_port
-        resp = self.send_command(cmd_stream_start)
+        cmd_stream_stop = proto_cmd.Command()
+        cmd_stream_stop.instruction = proto_cmd.STREAM_STOP
+        cmd_stream_stop.target.id = self.target_id
+        cmd_stream_stop.target.address = self.own_address
+        cmd_stream_stop.target.port = self.own_stream_udp_port
+        resp = self.send_command(cmd_stream_stop)
         if resp:
             if resp.HasField("error"):
                 self._logger.error(

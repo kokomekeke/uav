@@ -5,6 +5,7 @@ import math
 import time
 import queue
 from typing import Any, Callable, Optional
+import threading
 
 import multiprocessing as mp
 
@@ -76,7 +77,7 @@ class UAVConnectionHandler:
     def send_command(
         self, cmd: proto_cmd.Command, timeout: Optional[int] = 1
     ) -> Optional[proto_cmd.Response]:
-        self._command_q.put(cmd)
+        self._command_q.put(cmd, timeout=timeout)
         try:
             rsp = self._response_q.get(timeout=timeout)
         except queue.Empty:
@@ -108,8 +109,8 @@ class CommAggregate(Loop):
         self._db: ComIntDatabase = db
         self._app: Optional[Any] = None
         self._uavs: dict[int, UAVConnectionHandler] = {}  # uav_id -> UAV handler dict
-        self._commands_from_api: Optional[queue.Queue] = None
-        self._responses_to_api: Optional[queue.Queue] = None
+        self._incoming_command_q: Optional[queue.Queue] = None
+        self._outgoing_responses_q: Optional[queue.Queue] = None
         self._uavs_to_measurement_processor: Optional[queue.Queue] = None
 
         super().__init__(*args, **kwargs)
@@ -123,8 +124,8 @@ class CommAggregate(Loop):
         **kwargs,
     ) -> None:
         self._app = self._db.get_app_instance()
-        self._commands_from_api = commands_from_api
-        self._responses_to_api = responses_to_api
+        self._incoming_command_q = commands_from_api
+        self._outgoing_responses_q = responses_to_api
         self._uavs_to_measurement_processor = uavs_to_measurement_processor
         return super()._call(*args, **kwargs)
 
@@ -179,6 +180,58 @@ class CommAggregate(Loop):
             self._logger.info(
                 f"Deactivated #{uav_id} {uav_conn.label} ({uav_conn.address})"
             )
+
+    def _handle_commands(self):
+        """Thread to handle incoming commands, and forward them to the UAVConnectionHandler with the correct id"""
+        while True:
+            # get commands
+            try:
+                target_id, command = self._incoming_command_q.get(timeout=0.2)
+            except queue.Empty:
+                continue
+
+            self._logger.info(
+                f"Forwarding command '{proto_cmd.Instruction.Name(command.instruction)}' to { f'uav_id #{target_id}' if target_id else 'all connected devices'}"
+            )
+
+            # send commands using UAVConnectionHandlers
+            try:
+                # TODO: only target UAVs we're connected to, exclude those that we're trying to connect to
+                if target_id == 0:  # id==0 -> send to all connected uavs
+                    target_uav_list = self._uavs.values()
+                else:
+                    target_uav_list = [self._uavs[target_id]]
+            except KeyError:
+                emsg = f"No uav with id {target_id} connected"
+                response = proto_cmd.Response(
+                    error=proto_cmd.CommandError(description=emsg)
+                )
+                self._logger.warning(f"Command destination error: {emsg}")
+            else:
+                for uav in target_uav_list:
+                    response = uav.send_command(command)
+                    self._logger.trace(
+                        f"Got response for command '{proto_cmd.Instruction.Name(command.instruction)}' from uav_id #{uav.id}: {response}"
+                    )
+
+            # TODO: aggregate responses for commands sent to all UAVs
+            if response is None:
+                emsg = f"No answer for command"
+                response = proto_cmd.Response(
+                    error=proto_cmd.CommandError(description=emsg)
+                )
+            # send the response
+            # TODO: timeou, check queue full exception???
+            self._outgoing_responses_q.put(response)
+
+    def _pre_loop(self):
+        """
+        Setup a thread managing commands
+        """
+        # Start command handler thread
+        cmd_thread = threading.Thread(target=self._handle_commands)
+        cmd_thread.daemon = True
+        cmd_thread.start()
 
     def _loop(self) -> None:
         self._refresh_active_sensor_list()

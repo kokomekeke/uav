@@ -1,6 +1,6 @@
 [project]
 name = "pysagax"
-version = "0.5.22"
+version = "0.5.23"
 authors = [
   { name="Peter Rigo", email="peter.rigo@sagaxcommunications.com" },
   { name="Gergely Deak", email="gergely.deak@sagaxcommunications.com" },
@@ -38,6 +38,8 @@ dependencies = [
     "pymavlink",
     "sqlalchemy",
     "flask",
+    "flask-cors",
+    "flask-socketio",
     "marshmallow",
     "flask-marshmallow",
     "flask-sqlalchemy",

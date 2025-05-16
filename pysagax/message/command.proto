@@ -105,7 +105,7 @@ enum Instruction {
     CS_SCAN_START = 30;
 
     // Start calibration of radios.
-    //   parameter: CalibrationCommand
+    //   parameter: calib_command [CalibrationCommand]
     //   response:  success [bool]
     CS_CALIBRATE_START = 31;
 
@@ -116,6 +116,10 @@ enum Instruction {
     CS_TURN_OFF_COMPENSATION = 34;
     CS_TURN_ON_COMPENSATION = 35;
     
+
+    // Load calibration phasediffs from a file given in calib_command.identifier
+    //   parameter: calib_command [CalibrationCommand]
+    //   response:  success [bool]
     CS_READ_PHASEDIFFS_FROM_FILE = 36;
 
     CS_CALIBRATION_VALUES_QUERY = 37;
@@ -130,7 +134,7 @@ enum Instruction {
     CS_WRITE_SAMPLE_SHIFT = 45;
 
     // Forward the message to the Aviation Processing Module in Altiss
-    //   parameter: MessageToAPM
+    //   parameter: msg_to_apm [MessageToAPM]
     //   response:  success [bool]
     FORWARD_TO_APM = 50;
 

@@ -17,26 +17,27 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from pysagax.common.loop import Loop
 from pysagax.gnd.api.api import api
 from pysagax.gnd.database import db
+from pysagax.gnd.api.api_utils import _set_queues
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 socketio = SocketIO(app, async_mode="eventlet", cors_allowed_origins="*")
 
 
-@socketio.on('connect')
+@socketio.on("connect")
 def handle_connect():
     print("Client connected")
 
 
-@socketio.on('disconnect')
+@socketio.on("disconnect")
 def handle_disconnect():
     print("Client disconnected")
 
 
-@socketio.on('ping')
+@socketio.on("ping")
 def ping():
-    print('Ping received from client')
-    socketio.emit('pong')
+    print("Ping received from client")
+    socketio.emit("pong")
 
 
 if "DATABASE_URI" in os.environ:
@@ -63,17 +64,19 @@ conf.swagger_json_template_loader = lambda: {
 docs = OpenAPI(config=conf)
 docs.init_app(app)
 if "PYSAGAX_GND_PROXY_FIX" in os.environ:
-    app.wsgi_app = ProxyFix(
-        app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1
-    )
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 
 def run_api(
-        q_to_command_engine: Optional[Queue] = None, q_from_command_engine: Optional[Queue]=None
-    ):
+    q_to_command_engine: Optional[Queue] = None,
+    q_from_command_engine: Optional[Queue] = None,
+):
     print("Starting api...")
+
+    _set_queues(q_to_command_engine, q_from_command_engine)
+
     socketio.run(app, host="0.0.0.0", port=5000)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     run_api()
