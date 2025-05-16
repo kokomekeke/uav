@@ -2,7 +2,7 @@ import json
 import time
 
 import flask
-from flask import jsonify, make_response, current_app, Response, request
+from flask import jsonify, make_response, current_app, Response, request, stream_with_context
 from sqlalchemy.sql import text
 from flask_marshmallow_openapi import open_api
 
@@ -15,12 +15,7 @@ from pysagax.gnd.database import (
     db,
 )
 
-import toml
-
 api = flask.Blueprint("api", __name__)
-
-with open('config.toml', 'r') as f:
-    config = toml.load(f)
 
 comintdetections_schema = ComIntDetectionSchema(many=True)
 comintdetection_schema = ComIntDetectionSchema()
@@ -300,73 +295,68 @@ def uav_delete(id):
     db.session.commit()
     return jsonify({})
 
-# @api.route("/stream/set_freq/<int:freq>", methods=["POST"])
-# def set_stream_freq():
-#     szeretnék a current appnak egy stream_freq változót
 
-@api.route("/stream/comint_detection")
+@api.route("/stream/comint_detection", methods=["GET", "OPTIONS"])
 def comint_detection_stream():
+    if request.method == 'OPTIONS':
+        return Response('', status=204, headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Allow-Credentials": "true"
+        })
+
     if not hasattr(current_app, 'measurement_to_stream_queue'):
         return make_response(jsonify({"error": "Stream queue not available"}), 503)
 
-    # Az alkalmazás objektumokat lokális változókba mentjük
     app_queue = current_app.measurement_to_stream_queue
     app_logger = current_app.logger
 
-    # Kliens által kérhető paraméterek
-    # max_batch_size = min(int(request.args.get('batch_size', 10)), 20)  # Max 50 elem/batch
-    max_batch_size = 10  # Max 50 elem/batch
-    # batch_interval = min(float(request.args.get('interval', 0.5)), 2.0)  # Max 2 másodperc
-    batch_interval = 2.0  # Max 2 másodperc
+    default_batch_interval = 0.2
+    min_batch_interval = 0.1
+    max_batch_interval = 2.0
+    max_connection_time = 3600
 
-    # ignoráljunk minden más adatot, csak a config mp enkéntit ne
+    try:
+        requested_interval = request.args.get('interval', default_batch_interval, type=float)
+        batch_interval = max(min_batch_interval, min(requested_interval, max_batch_interval))
+    except ValueError:
+        batch_interval = default_batch_interval
+        app_logger.warning(f"Invalid interval parameter, using default: {default_batch_interval}")
+
     def generate():
-        last_sent_time = time.perf_counter()
-        batch = []
-
+        start_time = time.perf_counter()
+        last_sent_time = start_time
         try:
             while True:
                 current_time = time.perf_counter()
-
-                # Adatok gyűjtése batch-be a queue-ból
-                while len(batch) < max_batch_size:
-                    try:
-                        if app_queue.empty():
-                            break
-                        data = app_queue.get(block=False)
-                        batch.append(data)
-                    except Exception:  # Explicit típus helyett általános kivétel kezelése
-                        break
-
-                # Batch küldése, ha (1) megtelt vagy (2) eltelt az interval és van adat
-                if (len(batch) >= max_batch_size) or (batch and current_time - last_sent_time >= batch_interval):
-                    yield f"data: {json.dumps(batch)}\n\n"
-                    print("Data: ", batch)
+                if current_time - start_time >= max_connection_time:
+                    app_logger.info("Max connection time reached")
+                    yield f"data: {json.dumps({'info': 'Connection timeout reached'})}\n\n"
+                    break
+                if current_time - last_sent_time >= batch_interval and not app_queue.empty():
+                    data = app_queue.get(block=False)
+                    yield f"data: {json.dumps(data)}\n\n"
+                    print("Stream", end=" ")
                     last_sent_time = current_time
-                    batch = []
-
-                # Kis szünet, hogy ne terheljük a CPU-t
                 time.sleep(0.05)
-
         except GeneratorExit:
-            # Ne használjunk current_app-ot itt, helyette a korábban mentett logger változót
-            try:
-                app_logger.info("Client disconnected from stream")
-            except Exception:
-                pass  # Ha még a loggert sem tudjuk elérni, csendben leállunk
+            app_logger.info("Client disconnected from stream")
         except Exception as e:
-            try:
-                app_logger.error(f"Error in stream processing: {str(e)}")
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
-            except Exception:
-                yield f"data: {json.dumps({'error': 'Internal server error'})}\n\n"
+            app_logger.error(f"Error in stream: {str(e)}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    app_logger.info(
+        f"Starting comint_detection stream with interval: {batch_interval}s, max time: {max_connection_time}s")
 
     return Response(
-        generate(),
+        stream_with_context(generate()),
         mimetype="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
+            "X-Accel-Buffering": "no",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Credentials": "true",
         }
     )

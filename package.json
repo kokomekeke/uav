@@ -2,6 +2,7 @@
   "dependencies": {
     "-": "^0.0.1",
     "leaflet": "^1.9.4",
+    "leaflet.fullscreen": "^4.0.0",
     "mapbox-gl": "^0.53.1",
     "pinia": "^3.0.1",
     "save": "^2.9.0",

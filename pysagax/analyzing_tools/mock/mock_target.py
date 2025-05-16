@@ -61,13 +61,13 @@ class TargetMocker(multiprocessing.Process):
         lat1, lon1 = self.rx1_pos.coordinates()
         lat2, lon2 = self.rx2_pos.coordinates()
 
-        sm1 = self.make_simulated_measurement(lat1, lon1, azim1, azim1, self.rx1_sigma)
-        sm2 = self.make_simulated_measurement(lat2, lon2, azim2, azim2, self.rx2_sigma)
+        sm1 = self.make_simulated_measurement(lat1, lon1, azim1, azim1, self.rx1_sigma, 50)
+        sm2 = self.make_simulated_measurement(lat2, lon2, azim2, azim2, self.rx2_sigma, 0)
 
         self.commander1_q.put(sm1)
         self.commander2_q.put(sm2)
 
-    def make_simulated_measurement(self, lat, lon, azimuth, mean_azimuth, deviation):
+    def make_simulated_measurement(self, lat, lon, azimuth, mean_azimuth, deviation, yaw):
         """Make an object where every attribute is none
         except for the ones we want to modify due to moving target"""
         sm = SimulatedMeasurement(
@@ -77,7 +77,7 @@ class TargetMocker(multiprocessing.Process):
             peaks=None,
             heading_data=SimulatedHeading(
                 packet_id=None,
-                yaw=None,
+                yaw=yaw,
                 pitch=None,
                 roll=None,
                 gps_lat=(lat, 0, 0),

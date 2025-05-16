@@ -6,15 +6,16 @@ import L from 'leaflet'
 import pW from '@/assets/p3.png'
 import { useSensorStore } from '@/stores/sensor'
 import { storeToRefs } from 'pinia'
-import { useWebWorkerFn } from '@vueuse/core'
+// Make sure to properly import the fullscreen plugin
+import 'leaflet.fullscreen'
+import 'leaflet.fullscreen/Control.FullScreen.css'
 
 const zoom = ref(10)
 const center = ref([47.4979, 19.0402])
 const sensorStore = useSensorStore()
 const { sensors } = storeToRefs(sensorStore)
 
-// Használjunk shallowRef-et a lokális detekciók számára
-const localDetections = shallowRef([])
+// const localDetections = shallowRef([])
 
 // Csak az alapvető tulajdonságokat figyeljük, ne az egész objektumot
 const sensorsList = computed(() => {
@@ -24,17 +25,49 @@ const sensorsList = computed(() => {
 // Map referencia
 const mapRef = ref(null)
 const leafletMap = shallowRef(null)
+// Ref to store the map container element
+const mapContainer = ref(null)
 
 // Alapvető térkép beállítások
 const url = ref('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
 const attribution = ref('&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors')
 
-// Ikonok létrehozása és memóriában tartása
-const planeIcon = L.icon({
-  iconUrl: pW,
-  iconSize: [64, 64],
-  iconAnchor: [32, 32]
-})
+function getHeading(sensor) {
+
+  const q0 = sensor.last_pos_q0 // w komponens
+  const q1 = sensor.last_pos_q1 // x komponens
+  const q2 = sensor.last_pos_q2 // y komponens
+  const q3 = sensor.last_pos_q3 // z komponens
+  console.log('q0', q0, 'q1', q1, 'q2', q2, 'q3', q3)
+  // Yaw (heading) kiszámítása quaternion-ból
+  const headingRad = Math.atan2(
+    2.0 * (q0 * q3 + q1 * q2),
+    q0 * q0 + q1 * q1 - q2 * q2 - q3 * q3
+  )
+
+  // Átváltjuk fokra (0-360 között)
+  let headingDeg = headingRad * (180 / Math.PI)
+  if (headingDeg < 0) {
+    headingDeg += 360
+  }
+  console.log('HEADING: ', headingDeg)
+  return headingDeg
+}
+
+function getPlaneIconById (Id: number) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="
+      width: 64px;
+      height: 64px;
+      background: url('${pW}') no-repeat center center;
+      background-size: contain;
+      transform: rotate(${getHeading(sensors.value[Id])}deg);
+    "></div>`,
+    iconSize: [64, 64],
+    iconAnchor: [32, 32]
+  })
+}
 
 // Színek előre definiálása
 const lineColors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'cyan']
@@ -80,21 +113,18 @@ const visibleDetections = computed(() => {
   const selectedSensors = sensorsList.value
   if (!selectedSensors || selectedSensors.length === 0) return []
 
-  // Csak a kiválasztott szenzorok detekcióit gyűjtjük össze
   let allDetections = []
 
   selectedSensors.forEach(sensor => {
     if (!sensor.detections || !Array.isArray(sensor.detections)) return
 
-    // Szűrjük és limitáljuk a szenzoronkénti pontokat
     const sensorDetections = sensor.detections
-      .slice(-maxVisiblePoints.value) // Csak a legutolsó N pont
-      .filter(d => d && d.coordinate && isInViewport(d.coordinate)) // Csak a látható területen lévők
+      .slice(-maxVisiblePoints.value)
+      .filter(d => d && d.coordinate && isInViewport(d.coordinate))
 
     allDetections = [...allDetections, ...sensorDetections]
   })
 
-  // Rendezzük időbélyeg szerint
   allDetections.sort((a, b) => a.timestamp - b.timestamp)
 
   // Korlátozzuk a teljes pontszámot a teljesítmény érdekében
@@ -145,7 +175,6 @@ function computeAzimuthLine (coord: [number, number], azimuth: number, id: numbe
     const keys = Array.from(azimuthLineCache.keys()).slice(0, 200)
     keys.forEach(key => azimuthLineCache.delete(key))
   }
-
   return result
 }
 
@@ -166,7 +195,6 @@ function throttledUpdate () {
     updateMapView()
   }, updateThrottle.value)
 }
-
 
 // Figyelés a kiválasztott szenzorok változására
 watch(sensorsList, () => {
@@ -253,10 +281,53 @@ onBeforeUnmount(() => {
   // Cache ürítése
   azimuthLineCache.clear()
 })
+
+// Fixed fullscreen function
+function goFullscreen() {
+  if (!mapContainer.value) {
+    console.warn('Fullscreen nem elérhető: nem található a térkép elem referencia.');
+    return;
+  }
+
+  try {
+    // Use the native browser fullscreen API
+    if (!document.fullscreenElement &&
+        !document.mozFullScreenElement &&
+        !document.webkitFullscreenElement &&
+        !document.msFullscreenElement) {
+
+      // Request fullscreen
+      if (mapContainer.value.requestFullscreen) {
+        mapContainer.value.requestFullscreen();
+      } else if (mapContainer.value.mozRequestFullScreen) {
+        mapContainer.value.mozRequestFullScreen();
+      } else if (mapContainer.value.webkitRequestFullscreen) {
+        mapContainer.value.webkitRequestFullscreen();
+      } else if (mapContainer.value.msRequestFullscreen) {
+        mapContainer.value.msRequestFullscreen();
+      } else {
+        console.warn('Fullscreen API nem támogatott ebben a böngészőben');
+      }
+    } else {
+      // Exit fullscreen
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      } else if (document.mozCancelFullScreen) {
+        document.mozCancelFullScreen();
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
+      } else if (document.msExitFullscreen) {
+        document.msExitFullscreen();
+      }
+    }
+  } catch (e) {
+    console.error('Hiba történt a fullscreen átváltása során:', e);
+  }
+}
 </script>
 
 <template>
-  <div v-bind="$attrs" class="h-[500px] w-full z-1">
+  <div v-bind="$attrs" class="h-[500px] w-full z-1" ref="mapContainer">
     <l-map ref="mapRef" :zoom="zoom" :center="center">
       <l-tile-layer :url="url" :attribution="attribution" class="z-1" />
 
@@ -269,7 +340,7 @@ onBeforeUnmount(() => {
                 typeof detection.coordinate[0] === 'number' &&
                 typeof detection.coordinate[1] === 'number'"
           :lat-lng="detection.coordinate"
-          :icon="planeIcon"
+          :icon="getPlaneIconById(detection.uavId)"
         />
 
         <!-- Azimuth vonal -->
@@ -282,7 +353,6 @@ onBeforeUnmount(() => {
           :weight="2"
         />
 
-        <!-- Pont ikon -->
         <l-marker
           v-if="detection && detection.coordinate &&
                 detection.coordinate.length === 2 &&
@@ -296,6 +366,12 @@ onBeforeUnmount(() => {
   </div>
 
   <div class="controls mt-2 flex gap-2 items-center flex-wrap">
+    <button
+        @click="goFullscreen"
+        class="ml-10 bg-green-500 text-white p-2 rounded z-4"
+      >
+        Fullscreen Térkép
+      </button>
     <button @click="clearMapData" class="bg-red-500 text-white p-2 rounded">
       Clear Map
     </button>

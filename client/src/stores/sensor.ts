@@ -1,4 +1,4 @@
-// sensor.js - Worker támogatással
+// sensor.js - Több worker támogatással
 import { defineStore, storeToRefs } from 'pinia'
 import { computed, ref, watch, shallowRef, onUnmounted, onMounted } from 'vue'
 import axios from 'axios'
@@ -36,99 +36,126 @@ export const useSensorStore = defineStore('sensor', () => {
     lastProcessingTime: 0
   })
 
-  // Worker referencia
-  let detectionWorker = null
+  // Worker referenciák tárolása UAV ID-nként
+  const detectionWorkers = shallowRef({})
 
-  // Worker inicializálása
-  function initWorker () {
-    console.log('init worker')
-    if (detectionWorker) {
-      detectionWorker.terminate()
+  // Worker inicializálása egy adott UAV-hoz
+  function initWorkerForUav(uavId) {
+    console.log(`Initializing worker for UAV ${uavId}`)
+
+    // Ha már létezik worker ehhez az UAV-hoz, leállítjuk
+    if (detectionWorkers.value[uavId]) {
+      detectionWorkers.value[uavId].terminate()
     }
 
-    // detectionWorker = new Worker(new URL('../workers/detectionWorker.js?worker', import.meta.url), { type: 'module' })
-    detectionWorker = new DetectionWorker()
+    // Új worker létrehozása az UAV-hoz
+    const worker = new DetectionWorker()
 
-    detectionWorker.onmessage = (e) => {
+    worker.onmessage = (e) => {
       const message = e.data
 
       switch (message.type) {
         case 'processedDetections': {
           const { detectionsByUavId, stats: workerStats } = message
 
-          // Frissítjük a statisztikákat
-          stats.value = workerStats
+          // Frissítjük a statisztikákat - összesítve minden workertől
+          stats.value = {
+            totalReceived: stats.value.totalReceived + (workerStats.totalReceived || 0),
+            totalProcessed: stats.value.totalProcessed + (workerStats.totalProcessed || 0),
+            lastProcessingTime: Math.max(stats.value.lastProcessingTime, workerStats.lastProcessingTime || 0)
+          }
 
+          // Csak ennek az UAV-nak a detekciói érdekesek, mivel worker UAV-specifikus
           const updatedSensors = { ...sensors.value }
           const maxSize = Math.abs(detectionSize.value)
 
-          Object.entries(detectionsByUavId).forEach(([uavId, detections]) => {
-            const id = parseInt(uavId)
-            if (!updatedSensors[id]) return
-
+          if (detectionsByUavId[uavId] && updatedSensors[uavId]) {
             const newSensorDetections = [
-              ...updatedSensors[id].detections,
-              ...detections
+              ...updatedSensors[uavId].detections,
+              ...detectionsByUavId[uavId]
             ].slice(-maxSize)
 
-            updatedSensors[id] = {
-              ...updatedSensors[id],
+            updatedSensors[uavId] = {
+              ...updatedSensors[uavId],
               detections: newSensorDetections
             }
-          })
+          }
 
           sensors.value = updatedSensors
           break
         }
 
         case 'statsUpdated':
-          // Statisztikák frissítése
-          stats.value = message.stats
+          // Statisztikák frissítése - ez összesített érték lesz minden workertől
+          stats.value = {
+            ...stats.value,
+            ...message.stats
+          }
           break
 
         case 'error':
-          console.error(message.message)
+          console.error(`Worker error for UAV ${uavId}:`, message.message)
           break
 
         case 'workerStarted':
-          console.log('Detection worker started successfully')
+          console.log(`Detection worker for UAV ${uavId} started successfully`)
           // Beállítások küldése a workernek
-          updateWorkerSettings()
+          updateWorkerSettings(uavId)
           break
       }
     }
 
-    // // Worker hibaesemények kezelése
-    detectionWorker.onerror = (error) => {
-      console.error('Worker error:', error)
-      detectionWorker.terminate()
+    // Worker hibaesemények kezelése
+    worker.onerror = (error) => {
+      console.error(`Worker error for UAV ${uavId}:`, error)
+      worker.terminate()
+      // Eltávolítjuk a hibás workert
+      const updatedWorkers = { ...detectionWorkers.value }
+      delete updatedWorkers[uavId]
+      detectionWorkers.value = updatedWorkers
     }
+
+    // Frissítjük a workerek listáját
+    const updatedWorkers = { ...detectionWorkers.value }
+    updatedWorkers[uavId] = worker
+    detectionWorkers.value = updatedWorkers
+
+    return worker
   }
 
-  // Worker beállítások frissítése
-  function updateWorkerSettings () {
-    if (!detectionWorker) return
+  // Worker beállítások frissítése egy adott UAV-hoz
+  function updateWorkerSettings(uavId) {
+    const worker = detectionWorkers.value[uavId]
+    if (!worker) return
 
-    detectionWorker.postMessage({
+    worker.postMessage({
       type: 'updateSettings',
+      uavId: uavId,
       samplingRate: samplingRate.value,
       processThrottle: 100 // Ez egy fix érték maradt
+    })
+  }
+
+  // Minden worker beállításának frissítése
+  function updateAllWorkerSettings() {
+    Object.keys(detectionWorkers.value).forEach(uavId => {
+      updateWorkerSettings(parseInt(uavId))
     })
   }
 
   // Mintavételezési ráta
   const samplingRate = ref(20)
 
-  // Figyelje a samplingRate változásait és frissítse a workert
+  // Figyelje a samplingRate változásait és frissítse a workereket
   watch(samplingRate, () => {
-    updateWorkerSettings()
+    updateAllWorkerSettings()
   })
 
   const handleMouseOver = (sensor) => {
     selectedSensor.value = sensor
   }
 
-  async function fetchSensors () {
+  async function fetchSensors() {
     if (!isConnected.value) return
 
     isLoading.value = true
@@ -186,7 +213,7 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
-  async function addSensor (sensor) {
+  async function addSensor(sensor) {
     try {
       await axios.post(`${ipPort.value}/v1/uav`,
         {
@@ -203,10 +230,18 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
-  async function removeSensor () {
+  async function removeSensor() {
     if (!selectedSensor.value) return
 
     const id = selectedSensor.value.uav_id
+
+    // Worker leállítása, ha létezik
+    if (detectionWorkers.value[id]) {
+      detectionWorkers.value[id].terminate()
+      const updatedWorkers = { ...detectionWorkers.value }
+      delete updatedWorkers[id]
+      detectionWorkers.value = updatedWorkers
+    }
 
     // Klónozzuk a jelenlegi szenzorokat
     const updatedSensors = { ...sensors.value }
@@ -224,14 +259,16 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
-  async function selectSensor (sensor: Sensor) {
+  async function selectSensor(sensor: Sensor) {
     selectedSensor.value = sensor
 
     if (eventSourceStop) {
       eventSourceStop()
       eventSourceStop = null
     }
-    initWorker()
+
+    // Inicializáljuk a kiválasztott UAV-hoz tartozó workert
+    initWorkerForUav(sensor.uav_id)
     await startDetectionStream()
   }
 
@@ -241,7 +278,7 @@ export const useSensorStore = defineStore('sensor', () => {
 
   const getSensors = computed(() => sensors.value)
 
-  function toggleSensorSelection (sensorId: number) {
+  function toggleSensorSelection(sensorId: number) {
     if (!sensors.value[sensorId]) return
 
     const updatedSensors = { ...sensors.value }
@@ -253,7 +290,25 @@ export const useSensorStore = defineStore('sensor', () => {
     sensors.value = updatedSensors
   }
 
-  async function startDetectionStream () {
+  // Detekció szétküldése a megfelelő workernek
+  function routeDetectionToWorker (parsed) {
+    const uavId = parsed.uav_id
+
+    // Ha még nincs worker ennek az UAV-nak, létrehozunk egyet
+    if (!detectionWorkers.value[uavId]) {
+      initWorkerForUav(uavId)
+    }
+
+    // Elküldjük a detekciót a megfelelő workernek
+    if (detectionWorkers.value[uavId]) {
+      detectionWorkers.value[uavId].postMessage({
+        type: 'newDetection',
+        value: JSON.stringify(parsed)
+      })
+    }
+  }
+
+  async function startDetectionStream() {
     console.log('stream start')
     const batchInterval = 0.2 // 200ms
     console.log(ipPort.value)
@@ -264,7 +319,7 @@ export const useSensorStore = defineStore('sensor', () => {
         autoReconnect: {
           retries: 3,
           delay: 100,
-          onFailed () {
+          onFailed() {
             alert('Failed to reconnect')
           }
         }
@@ -272,25 +327,14 @@ export const useSensorStore = defineStore('sensor', () => {
     )
     eventSourceStop = close
 
-    // a parset átszervezni a workerbe, illetve minden sensornak külön workere legyen
     watch(data, (newVal) => {
-      if (!newVal || !detectionWorker) return
+      if (!newVal) return
 
       try {
-        // const parsed = JSON.parse(newVal)
+        const parsed = JSON.parse(newVal)
 
-        // Detekció küldése a worker-nek
-        detectionWorker.postMessage({
-          type: 'newDetection',
-          value: newVal
-          // detection: {
-          //   coordinate: [parsed.uav_pos_lat, parsed.uav_pos_lon],
-          //   azimuth: parsed.lob_azim_deg,
-          //   uavId: parsed.uav_id,
-          //   timestamp: Date.now()
-          // },
-          // maxSize: detectionSize.value
-        })
+        // Detekció irányítása a megfelelő workerhez
+        routeDetectionToWorker(parsed)
       } catch (e) {
         console.error('Hiba a detekció feldolgozása során:', e)
       }
@@ -305,7 +349,7 @@ export const useSensorStore = defineStore('sensor', () => {
   }
 
   // Detekciók teljes törlése
-  function clearDetections () {
+  function clearDetections() {
     // Új szenzor objektum létrehozása üres detekciókkal
     const updatedSensors = { ...sensors.value }
 
@@ -319,25 +363,25 @@ export const useSensorStore = defineStore('sensor', () => {
     sensors.value = updatedSensors
     comintDetections.value = []
 
-    // Worker értesítése
-    if (detectionWorker) {
-      detectionWorker.postMessage({
+    // Minden worker értesítése
+    Object.entries(detectionWorkers.value).forEach(([uavId, worker]) => {
+      worker.postMessage({
         type: 'clearDetections'
       })
-    }
+    })
   }
 
-  // Worker inicializálása a komponens létrehozásakor
-  // onMounted(() => {
-  //   initWorker()
-  // })
+  // Összes worker leállítása és resources felszabadítása
+  function terminateAllWorkers() {
+    Object.values(detectionWorkers.value).forEach(worker => {
+      worker.terminate()
+    })
+    detectionWorkers.value = {}
+  }
 
-  // A komponens elpusztításakor a worker leállítása
+  // A komponens elpusztításakor az összes worker leállítása
   onUnmounted(() => {
-    if (detectionWorker) {
-      detectionWorker.terminate()
-      detectionWorker = null
-    }
+    terminateAllWorkers()
 
     if (eventSourceStop) {
       eventSourceStop()

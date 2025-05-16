@@ -15,7 +15,7 @@ tomli~=2.0.1
 rich>=13.6.0
 coloredlogs~=15.0.1
 pyzmq~=25.1.2
-protobuf~=3.20.3
+protobuf~=6.30.2
 click~=8.1.7
 sigmf~=1.2.0
 transitions~=0.9.1
@@ -34,3 +34,10 @@ tqdm>=4.66.4
 tkinter-tooltip
 psutil>=5.9.0
 
+
+requests~=2.32.3
+toml~=0.10.2
+python-dateutil~=2.9.0.post0
+humanfriendly~=10.0
+flask-cors~=5.0.1
+Flask-SocketIO~=5.5.1
