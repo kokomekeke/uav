@@ -83,7 +83,7 @@ class Commander:
         detection_recording_max_length: float,
         measurement_udp_max_size: int,
         stream_decimation_factor: int,
-        apm_communicator_port: int,
+        apm_address: Optional[str],
     ) -> None:
 
         self._logger = getLogger("Commander")
@@ -177,7 +177,7 @@ class Commander:
             port_stream=heading_stream_port,
         )
         self._apm_communicator = APMCommunicator(
-            level=level, pub_port=apm_communicator_port
+            level=level, apm_address=apm_address
         )
 
     def start(self) -> None:
@@ -500,7 +500,7 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
 )
 @click.option(
     "--auto-config",
-    default='{"se": {"mode": "TRACKING", "tracking": {"signals": [{"frequency": 446000000.0, "bandwidth": 62500.0}]}}}',
+    default=None,
     show_default=True,
     help="JSON-encoded protobuf configuration command",
 )
@@ -562,9 +562,9 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     type=int,
 )
 @click.option(
-    "--apm-communicator-port",
-    help="Aviation Processing Module Communicator (ZMQ PUB stream) port",
-    default=5568,
+    "--apm-address",
+    help="Aviation Processing Module address (ip:port) for Tip&Cue stream",
+    default=None,
     show_default=True,
 )
 def main(
@@ -602,7 +602,7 @@ def main(
     detection_recording_max_length: float,
     measurement_udp_max_size: int,
     stream_decimation_factor: int,
-    apm_communicator_port: int,
+    apm_address: Optional[str],
 ) -> None:
     """Root command of CLI"""
 
@@ -651,7 +651,7 @@ def main(
         detection_recording_max_length,
         measurement_udp_max_size,
         stream_decimation_factor,
-        apm_communicator_port,
+        apm_address,
     )
     commander.start()
 
