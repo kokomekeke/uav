@@ -8,6 +8,7 @@ from pysagax.common.loop import Loop
 import zmq
 
 from pysagax.util.queue_put import queue_put
+from pysagax.util.run_once import run_once
 
 import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.altiss_intra_uav_pb2 as proto_altiss
@@ -26,7 +27,12 @@ class APMCommunicator(Loop):
     For example, this process is responsible for streaming the calculated geolocation data of detected emitters
     """
 
-    def __init__(self, pub_port, *args, **kwargs) -> None:
+    def __init__(self, apm_address, *args, **kwargs) -> None:
+        """
+        apm_address: string of ip and port of APM module
+
+        TODO: If apm_address is None, the APMCommunicator shuts down (or it shouldn't even be made by Commander)
+        """
         super().__init__(*args, **kwargs)
 
         # Set up command channel
@@ -34,7 +40,7 @@ class APMCommunicator(Loop):
         self._queue_in: Optional[Queue] = None
         self._queue_out: Optional[Queue] = None
 
-        self._pub_port = pub_port
+        self._apm_address = apm_address
 
     def __call__(
         self, queue_in: Queue[Any], queue_out: Queue[Any], *args, **kwargs
@@ -55,20 +61,26 @@ class APMCommunicator(Loop):
         try:
             topic = PACKET_TYPE_TOPICS[type(message)]
         except KeyError:
-            error_msg = f"Unknown message type {type(message)}"
-            self._logger.warning(error_msg)
-            return proto_cmd.Response(error=error_msg, success=False)
+            response = proto_cmd.Response(success=False)
+            response.error.description = f"Unknown message type {type(message)}"
+            self._logger.warning(response.error.description)
+            return response
 
         self._logger.trace(f"publishing message with topic: {topic}")
         self._server.send_multipart([topic, message.SerializeToString()])
         return proto_cmd.Response(success=True)
 
     def _pre_loop(self) -> None:
+        if self._apm_address is None:
+            self._logger.warning(f"APM address not provided. Publish socket not opened")
+            return
+
         # creating zmq PUB socket
         context = zmq.Context()
         self._server = context.socket(zmq.PUB)
-        address = f"tcp://*:{self._pub_port}"
-        self._server.bind(address)
+
+        address = f"tcp://{self._apm_address}"
+        self._server.connect(address)
 
         self._logger.info(f"PUB socket live on {address}")
 
@@ -80,11 +92,23 @@ class APMCommunicator(Loop):
             sleep(0.1)
             return
 
-        # remove payload from ToAPM message
-        payload = getattr(msg.msg_to_apm, msg.msg_to_apm.WhichOneof("payload"))
+        if self._apm_address is None:
+            # No APM -> drop the packet
+            response = proto_cmd.Response(success=False)
+            response.error.description = "Packet can't be forwarded to APM since its address wasn't provided at launch"
+            self._log_no_apm_socket_opened()
+        else:
+            # remove payload from ToAPM message
+            payload = getattr(msg.msg_to_apm, msg.msg_to_apm.WhichOneof("payload"))
 
-        # publish payload
-        rsp = self._publish_msg(message=payload)
+            # publish payload
+            response = self._publish_msg(message=payload)
 
         # send a response in a queue
-        queue_put(self._queue_out, rsp, timeout=0.5)
+        queue_put(self._queue_out, response, timeout=0.5)
+
+    @run_once(timeout=20)
+    def _log_no_apm_socket_opened(self):
+        self._logger.error(
+            "Packet can't be forwarded to APM since its address wasn't provided at launch"
+        )
