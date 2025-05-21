@@ -41,23 +41,6 @@ $PYENV_HOME/bin/pip install -r requirements.txt
 PYTHONPATH=$PWD $PYENV_HOME/bin/python pysagax/spotclient.py  # run SPOTClient 
 ```
 
-# DFClient 
-
-![DFClient](screenshot_dfclient.png)
-
-DFClient is a client software for any generic radio direction finding system. It uses a common interface for all the supported DF devices and a driver can be quickly implemented for one.
-Its simple UI allows setting the center frequency and bandwidth of the receiver, and it displays the detected signal direction on both a time-angle waterfall graph and a compass rose.
-
-Supported DF systems:
-
- * Sagax LENA
- * R&S®DDF260
-
-```bash
-dfclient  # if wheel file is installed
-(cd sgx-pc; PYTHONPATH=$PWD python3 pysagax/dfclient.py)  # from source repo
-```
-
 # SPOTClient 
 
 ![SPOTClient](screenshot_spotclient.png)

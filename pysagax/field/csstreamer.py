@@ -5,7 +5,6 @@ import time
 
 from typing import Optional
 from pysagax.communication.pub_sub import SUB
-from pysagax.df.lena_core_service import BaseConnection
 
 from pysagax.common.loop import Loop
 

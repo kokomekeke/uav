@@ -89,7 +89,6 @@ requires = ["setuptools", "wheel", "versioneer"]
 build-backend = "setuptools.build_meta"
 
 [project.scripts]
-dfclient = "pysagax.dfclient:main"
 spotclient = "pysagax.spotclient:main"
 sigmfdisp = "pysagax.sigmfdisp:main"
 sigmfspectrum = "pysagax.sigmfspectrum:main"
