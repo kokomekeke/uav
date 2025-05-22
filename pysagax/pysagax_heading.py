@@ -10,12 +10,15 @@ from logging import Handler, getLogger
 from typing import Any, Optional
 import typing
 
+
 import click
+from pysagax.util.load_click_options_from_file import load_click_options_from_file
 from google.protobuf import json_format
 import google.protobuf.message
 from coloredlogs import install
 from rich.logging import RichHandler
 
+from pysagax import __version__
 import pysagax.message.heading_pb2 as proto_heading
 from pysagax.communication.pub_sub import PUB
 from pysagax.communication.req_rep_tcp import REP
@@ -34,11 +37,15 @@ from pysagax.heading.heading_sources import (
 class HeadingRunner:
     """Main process of the service. Holds and controls necessary concurrent tasks"""
 
-    def __init__(self, level: str, defaults: dict[str, Any]) -> None:
+    def __init__(self, level: str, control_address: str, stream_address: str, defaults: dict[str, Any]) -> None:
         self._logger = getLogger("HeadingRunner")
         self._logger.setLevel(level=level)
-        self._server_rep = REP(address_client="127.0.0.1", port_server=5566)
-        self._server_pub = PUB(address_client="127.0.0.1", port_server=5567)
+
+        rep_address, rep_port = control_address.split(":")
+        pub_address, pub_port = stream_address.split(":")
+        self._server_rep = REP(address_client=rep_address, port_server=rep_port)
+        self._server_pub = PUB(address_client=pub_address, port_server=pub_port)
+
         self._heading_source: Optional[HeadingSource] = None
         self._heading_sources = {
             "AHRS": HeadingAHRS,
@@ -232,14 +239,41 @@ class HeadingRunner:
 
 
 @click.command()
+@click.version_option(version=__version__, prog_name="PysagaxHeading")
+@click.option(
+    "--config",
+    "-c",
+    default="/var/sagax/pysagaxuav/pysagaxheading.toml",
+    type=click.Path(),
+    callback=load_click_options_from_file,
+    is_eager=True,
+    expose_value=False,
+    show_default=True,
+    help="Location of the config file. Options set from command line overwrite the ones found in the config file.",
+)
+
 @click.option("--level", "-l", help="Logging level", default="INFO")
+@click.option(
+    "--control-address",
+    "-c",
+    help="IP and port of control channel from pysagaxUAV",
+    default="127.0.0.1:5566",
+    show_default=True,
+)
+@click.option(
+    "--stream-address",
+    "-s",
+    help="IP and port of stream channel to pysagaxUAV",
+    default="127.0.0.1:5567",
+    show_default=True,
+)
 @click.option("--lat", help="Static GPS Lat", type=float, default=47.5226)
 @click.option("--lon", help="Static GPS Lon", type=float, default=19.0646)
 @click.option("--ang", help="Static Angle Degrees", type=float, default=120)
 @click.option(
     "--alt", help="Static Altitude (above ground, meters)", type=float, default=0
 )
-def main(level: str, lat: float, lon: float, ang: float, alt: float) -> None:
+def main(level: str, control_address: str, stream_address: str, lat: float, lon: float, ang: float, alt: float) -> None:
     """Root command of CLI"""
 
     # Validate logging level format
@@ -253,7 +287,10 @@ def main(level: str, lat: float, lon: float, ang: float, alt: float) -> None:
 
     # TODO: Implement config file
     heading_runner = HeadingRunner(
-        level=level, defaults={"lat": lat, "lon": lon, "angle": ang, "alt": alt}
+        level=level,
+        control_address=control_address, 
+        stream_address=stream_address,  
+        defaults={"lat": lat, "lon": lon, "angle": ang, "alt": alt}
     )
     heading_runner.start()
 
