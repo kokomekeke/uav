@@ -33,4 +33,5 @@ geographiclib~=2.0
 tqdm>=4.66.4
 tkinter-tooltip
 psutil>=5.9.0
+terminaltables>=3.1
 

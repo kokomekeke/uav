@@ -50,7 +50,8 @@ dependencies = [
     "geographiclib",
     "tqdm",
     "tkinter-tooltip",
-    "psutil"
+    "psutil",
+    "terminaltables"
 ]
 
 [project.optional-dependencies]

@@ -1,0 +1,31 @@
+#control_address="127.0.0.1:5566"
+#stream_address="127.0.0.1:5567"
+
+# example default init values for different heading sources
+
+# source="Static"
+# defaults=[["lat", 47.5226], ["lon", 19.0646], ["angle", 120]]
+
+
+# source="FlightInfo"
+# defaults=[["address", "192.168.0.10"], ["port", 5558]]
+
+
+# source="Encoder"
+# defaults=[["port", "COM6"], ["lat", 47.5226], ["lon", 19.0646]]
+
+
+# source="AHRS"
+# defaults=[["address", "127.0.0.1:1111"], ["use_magneto", false]]
+
+
+# source="AHRSFTDI"
+# defaults=[["use_magneto", false]]
+
+
+# source="AHRSUSB"
+# defaults=[["port", "COM6"], ["use_magneto", false]]
+
+
+# source="Mavlink (WIP)"
+# defaults=[["address", "udpin:127.0.0.1:14540"]]

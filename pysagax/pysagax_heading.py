@@ -33,11 +33,27 @@ from pysagax.heading.heading_sources import (
     HeadingMavlink,
 )
 
+HEADING_SOURCES = {
+    "AHRS": HeadingAHRS,
+    "AHRSFTDI": HeadingAHRSFTDI,
+    "AHRSUSB": HeadingAHRSUSB,
+    "Encoder": HeadingEncoder,
+    "Static": HeadingStatic,
+    "FlightInfo": HeadingFlightInfo,
+    "Mavlink (WIP)": HeadingMavlink,
+}
+
 
 class HeadingRunner:
     """Main process of the service. Holds and controls necessary concurrent tasks"""
 
-    def __init__(self, level: str, control_address: str, stream_address: str, defaults: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        level: str,
+        control_address: str,
+        stream_address: str,
+        defaults: dict[str, Any],
+    ) -> None:
         self._logger = getLogger("HeadingRunner")
         self._logger.setLevel(level=level)
 
@@ -47,17 +63,7 @@ class HeadingRunner:
         self._server_pub = PUB(address_client=pub_address, port_server=pub_port)
 
         self._heading_source: Optional[HeadingSource] = None
-        self._heading_sources = {
-            "AHRS": HeadingAHRS,
-            "AHRSFTDI": HeadingAHRSFTDI,
-            "Encoder": HeadingEncoder,
-            "Static": HeadingStatic,
-            "FlightInfo": HeadingFlightInfo,
-            "Mavlink (WIP)": HeadingMavlink,
-        }
-        self._heading_sources_labels = dict()
-        for key, value in self._heading_sources.items():
-            self._heading_sources_labels[value] = key
+
         self._heading_data = proto_heading.HeadingData()
         self._heading_status = proto_heading.HeadingStatus()
         self._current_heading_source_label: str = "Static"
@@ -129,7 +135,9 @@ class HeadingRunner:
         self._last_update_time = time.time()
         self.push_data()
 
-    def invalid_callback(self, msg: str= "", clear_values: Optional[bool]=True) -> None:
+    def invalid_callback(
+        self, msg: str = "", clear_values: Optional[bool] = True
+    ) -> None:
         if clear_values:
             self._heading_data.gps_lat = 0
             self._heading_data.gps_lon = 0
@@ -157,7 +165,7 @@ class HeadingRunner:
 
     def craft_status_packet(self) -> None:
         self._heading_status = proto_heading.HeadingStatus()
-        for key in self._heading_sources.keys():
+        for key in HEADING_SOURCES.keys():
             self._heading_status.available_source_types.append(key)
         self._heading_status.selected_source_type = self._current_heading_source_label
         for conf_key, (
@@ -181,7 +189,7 @@ class HeadingRunner:
                 self._heading_source.update_parameter(def_key, def_value)
                 self._logger.info(f"Set {def_key} = {def_value}")
         else:
-            self._heading_source: HeadingSource = self._heading_sources[
+            self._heading_source: HeadingSource = HEADING_SOURCES[
                 config.selected_source_type
             ]()
             self._current_heading_source_label = config.selected_source_type
@@ -238,7 +246,42 @@ class HeadingRunner:
             self._server_rep.resp(self._heading_status.SerializeToString())
 
 
-@click.command()
+def generate_help_epilog():
+    """Generates a nice help text of the available heading sources and their parameters"""
+
+    import terminaltables
+    from textwrap import wrap
+
+    table_data = [
+        ["Source", "parameter", "type", "default", "source description"],
+    ]
+    for src_name, src_cls in HEADING_SOURCES.items():
+        src_obj = src_cls()
+
+        key_cell = []
+        type_cell = []
+        value_cell = []
+        for conf_key, (conf_type, conf_val) in src_obj.get_parameters().items():
+            key_cell.append(str(conf_key))
+            type_cell.append(str(conf_type))
+            value_cell.append(str(conf_val))
+
+        table_data.append(
+            [
+                src_name,
+                "\n".join(key_cell),
+                "\n".join(type_cell),
+                "\n".join(value_cell),
+                "\n".join(wrap(src_obj.help_description, 50)),
+            ]
+        )
+    table = terminaltables.DoubleTable(table_data, "Supported Heading Sources")
+    table.inner_row_border = True
+
+    return "\n\b\n" + str(table.table)
+
+
+@click.command(epilog=generate_help_epilog())
 @click.version_option(version=__version__, prog_name="PysagaxHeading")
 @click.option(
     "--config",
@@ -251,7 +294,6 @@ class HeadingRunner:
     show_default=True,
     help="Location of the config file. Options set from command line overwrite the ones found in the config file.",
 )
-
 @click.option("--level", "-l", help="Logging level", default="INFO")
 @click.option(
     "--control-address",
@@ -273,8 +315,38 @@ class HeadingRunner:
 @click.option(
     "--alt", help="Static Altitude (above ground, meters)", type=float, default=0
 )
-def main(level: str, control_address: str, stream_address: str, lat: float, lon: float, ang: float, alt: float) -> None:
-    """Root command of CLI"""
+@click.option(
+    "--source",
+    "-S",
+    help="Heading source to initialize at startup.",
+    default="Static",
+    show_default=True,
+)
+@click.option(
+    "--defaults",
+    "-d",
+    type=(str, str),
+    multiple=True,
+    help="\n\b\nParameters for initializing a heading source at startup. Given as key-value pairs.\n Usage: pysagax-heading -S Static -d lat 47.5226 -d lon 19.0646 -d angle 120\n ",
+    default=[["lat", 47.5226], ["lon", 19.0646], ["angle", 120]],
+    show_default=True,
+)
+def main(
+    level: str,
+    control_address: str,
+    stream_address: str,
+    lat: float,
+    lon: float,
+    ang: float,
+    alt: float,
+    source: str,
+    defaults: dict,
+) -> None:
+    """
+    PysagaxHEADING is a sevice handling a variety of heading sources and forwarding their data to pysagaxUAV.
+    The heading data contains current location (lattitude, longitude, altitude) and current attitude (eg. yaw, pitch, roll)
+    """
+    defaults = dict(defaults)
 
     # Validate logging level format
     if level is None:
@@ -288,9 +360,9 @@ def main(level: str, control_address: str, stream_address: str, lat: float, lon:
     # TODO: Implement config file
     heading_runner = HeadingRunner(
         level=level,
-        control_address=control_address, 
-        stream_address=stream_address,  
-        defaults={"lat": lat, "lon": lon, "angle": ang, "alt": alt}
+        control_address=control_address,
+        stream_address=stream_address,
+        defaults={"lat": lat, "lon": lon, "angle": ang, "alt": alt},
     )
     heading_runner.start()
 
@@ -313,4 +385,4 @@ def setup_logging(
 
 
 if __name__ == "__main__":
-    main()
+    main(max_content_width=200)  # max_content_width sets the help text's wrapping
