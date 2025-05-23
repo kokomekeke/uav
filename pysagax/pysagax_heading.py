@@ -52,10 +52,19 @@ class HeadingRunner:
         level: str,
         control_address: str,
         stream_address: str,
+        source: str,
         defaults: dict[str, Any],
     ) -> None:
         self._logger = getLogger("HeadingRunner")
         self._logger.setLevel(level=level)
+
+        self._logger.info(
+            f"Starting with the following parameters:"
+            f"\n\tcontrol-address = {control_address}"
+            f"\n\tstream_address = {stream_address}"
+            f"\n\tsource={source}"
+            f"\n\tdefaults = {defaults}"
+        )
 
         rep_address, rep_port = control_address.split(":")
         pub_address, pub_port = stream_address.split(":")
@@ -71,6 +80,8 @@ class HeadingRunner:
         self._server_pub.connect()
         self._last_data_packet_time = time.time()
         self._last_update_time = time.time()
+
+        self._startup_source = source
         self._defaults = defaults
 
     def log_status(self, status: str):
@@ -181,18 +192,19 @@ class HeadingRunner:
     def _create_heading_source(
         self, config: Optional[proto_heading.HeadingConfig] = None
     ):
+        """
+        Creates a HeadingSource object. If config is not given then it uses the defaults.
+        Raises KeyError if the given source is not in the heading source dict
+        """
         if config is None:
             # Use static heading by default
-            self._heading_source = HeadingStatic()
-            self._current_heading_source_label = "Static"
-            for def_key, def_value in self._defaults.items():
-                self._heading_source.update_parameter(def_key, def_value)
-                self._logger.info(f"Set {def_key} = {def_value}")
+            self._heading_source = HEADING_SOURCES[self._startup_source]()
+            self._current_heading_source_label = self._startup_source
+            self._update_heading_source_parameters(self._defaults)
         else:
-            self._heading_source: HeadingSource = HEADING_SOURCES[
-                config.selected_source_type
-            ]()
+            self._heading_source = HEADING_SOURCES[config.selected_source_type]()
             self._current_heading_source_label = config.selected_source_type
+
         self._heading_source.gps_updated_callback = self.gps_callback
         self._heading_source.quaternion_updated_callback = self.quaternion_callback
         self._heading_source.altitude_updated_callback = self.altitude_callback
@@ -202,9 +214,24 @@ class HeadingRunner:
         self.invalid_callback()
         self._logger.info(f"Configured {self._heading_source.__class__.__name__}")
 
+    def _update_heading_source_parameters(self, parameters: dict):
+        for param_key, param_val in parameters.items():
+            if self._heading_source.update_parameter(param_key, param_val):
+                self._logger.info(f"Set {param_key} = {param_val}")
+            else:
+                self._logger.error(
+                    f'Invalid parameter "{param_key}" for heading source type "{type(self._heading_source)}"'
+                )
+
     def start(self) -> None:
         """Start all background processes"""
-        self._create_heading_source()
+        try:
+            self._create_heading_source()
+        except KeyError as e:
+            self._logger.critical(f"Unknown heading source type: {e}")
+            raise e
+
+        self._heading_source.initialize()
         self._logger.debug("Starting Heading")
         while True:
             self._execute_config_command()
@@ -232,17 +259,15 @@ class HeadingRunner:
 
             if config.selected_source_type != self._current_heading_source_label:
                 self._heading_source.close()
-                self._create_heading_source(config)
-
-            for param_key, param_val in config.parameters.items():
-                if self._heading_source.update_parameter(param_key, param_val):
-                    self._logger.info(f"Set {param_key} = {param_val}")
-                else:
-                    self._logger.error(
-                        f'Invalid parameter "{param_key}" for heading source type "{type(self._heading_source)}"'
-                    )
+                try:
+                    self._create_heading_source(config)
+                except KeyError as e:
+                    self._logger.error(f"Unknown heading source type: {e}")
+            self._update_heading_source_parameters(config.parameters)
             self._heading_source.initialize()
             self.craft_status_packet()
+
+            # TODO: put error in response (both from update_heading_source_parameters() and _create_heading_source())
             self._server_rep.resp(self._heading_status.SerializeToString())
 
 
@@ -309,12 +334,6 @@ def generate_help_epilog():
     default="127.0.0.1:5567",
     show_default=True,
 )
-@click.option("--lat", help="Static GPS Lat", type=float, default=47.5226)
-@click.option("--lon", help="Static GPS Lon", type=float, default=19.0646)
-@click.option("--ang", help="Static Angle Degrees", type=float, default=120)
-@click.option(
-    "--alt", help="Static Altitude (above ground, meters)", type=float, default=0
-)
 @click.option(
     "--source",
     "-S",
@@ -335,10 +354,6 @@ def main(
     level: str,
     control_address: str,
     stream_address: str,
-    lat: float,
-    lon: float,
-    ang: float,
-    alt: float,
     source: str,
     defaults: dict,
 ) -> None:
@@ -362,7 +377,8 @@ def main(
         level=level,
         control_address=control_address,
         stream_address=stream_address,
-        defaults={"lat": lat, "lon": lon, "angle": ang, "alt": alt},
+        source=source,
+        defaults=defaults,
     )
     heading_runner.start()
 
