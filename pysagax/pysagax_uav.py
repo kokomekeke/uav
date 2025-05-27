@@ -15,17 +15,11 @@ from signal import SIGINT, SIGTERM, signal
 from typing import Any, Optional
 
 import click
+from pysagax.util.load_click_options_from_file import load_click_options_from_file
 from coloredlogs import install
 from rich.logging import RichHandler
 
 from pysagax.field.scanengine import ScanEngine
-
-try:
-    import tomllib
-except ModuleNotFoundError:
-    import tomli as tomllib
-
-import os
 
 import pysagax.communication.broadcast as pysagax_broadcast
 from pysagax import __version__
@@ -326,21 +320,6 @@ class Commander:
         sys.exit(0)
 
 
-def set_default_config(ctx, param, conf_path):
-    """
-    Overwrites the default values for click options from the given config file.
-    These values can be further overwritten by providing a config file.
-    """
-    if os.path.exists(conf_path):
-        with open(conf_path, "rb") as f:
-            conf = tomllib.load(f)
-        ctx.default_map = conf
-    else:
-        # Can we use the logger instead of print?
-        print(f"Config file wasn't found at '{conf_path}'")
-    return conf_path
-
-
 def validate_spectrogram_mode_and_path(ctx, param, path):
     mode = ctx.params.get("spectrogram_mode")
     if mode in ["record", "playback"] and path is None:
@@ -357,7 +336,7 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     "-c",
     default="/var/sagax/pysagaxuav/pysagaxuav.toml",
     type=click.Path(),
-    callback=set_default_config,
+    callback=load_click_options_from_file,
     is_eager=True,
     expose_value=False,
     show_default=True,
