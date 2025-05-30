@@ -4,6 +4,9 @@
 #
 from __future__ import annotations
 
+# import eventlet
+# eventlet.monkey_patch()
+
 import multiprocessing
 import sys
 import traceback

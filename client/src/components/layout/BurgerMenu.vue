@@ -100,7 +100,12 @@ const toggleMenu = () => {
         class="fixed top-0 left-0 min-h-screen w-64 bg-gray-800 p-5 z-40 transition-transform duration-300"
         :class="{ '-translate-x-full': !isMenuOpen, 'translate-x-0': isMenuOpen }"
       >
-        <button @click="toggleMenu" class="text-white text-2xl mb-4 scale-x-150 font-bold">X</button>
+        <button
+          @click="toggleMenu"
+          class="text-white text-2xl mb-4 scale-x-150 font-bold z-[9999] relative"
+        >
+          X
+        </button>
 
         <div class="bg-blue-500 flex-grow my-4 text-white p-4 text-center overflow-y-auto rounded-lg">
           <p v-if="sensorStore.isLoading" class="text-yellow-300">Betöltés...</p>

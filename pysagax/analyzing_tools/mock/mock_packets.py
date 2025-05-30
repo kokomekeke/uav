@@ -55,8 +55,8 @@ class SimulatedPacket:
 
     def update(self, new):
         """
-        Updates the current object's attributes with the values from another 
-        SimulatedMeasurement object, but only if the values are not None. 
+        Updates the current object's attributes with the values from another
+        SimulatedMeasurement object, but only if the values are not None.
         """
         for attr, value in vars(new).items():
             if value is None:
@@ -190,8 +190,8 @@ class SimulatedMeasurement(SimulatedPacket):
 
     # def update(self, new):
     #     """
-    #     Updates the current object's attributes with the values from another 
-    #     SimulatedMeasurement object, but only if the values are not None. 
+    #     Updates the current object's attributes with the values from another
+    #     SimulatedMeasurement object, but only if the values are not None.
     #     """
     #     for attr, value in vars(new).items():
     #         if value is not None:

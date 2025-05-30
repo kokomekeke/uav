@@ -1,8 +1,12 @@
 <template>
   <main class="bg-slate-500 min-h-screen flex flex-col">
-    <Header @click="toHome" class="z-50"/>
+    <Header
+      @click="toHome"
+      :isMenuOpen="isMenuOpen"
+      class="z-50 transition-all duration-300"
+    />
     <div class="flex flex-row flex-1">
-      <BurgerMenu class="burger-menu max-h-screen overflow-auto" :isMenuOpen="isMenuOpen" />
+      <BurgerMenu class="burger-menu max-h-screen overflow-auto z-[9999]" :isMenuOpen="isMenuOpen" />
       <Content
         :isMenuOpen="isMenuOpen"
         @update:isMenuOpen="isMenuOpen = $event"

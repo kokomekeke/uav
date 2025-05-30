@@ -300,7 +300,7 @@ def uav_delete(id):
 def comint_detection_stream():
     if request.method == 'OPTIONS':
         return Response('', status=204, headers={
-            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Origin": "http://localhost:5173",
             "Access-Control-Allow-Methods": "GET, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type, Authorization",
             "Access-Control-Allow-Credentials": "true"
@@ -337,7 +337,7 @@ def comint_detection_stream():
                 if current_time - last_sent_time >= batch_interval and not app_queue.empty():
                     data = app_queue.get(block=False)
                     yield f"data: {json.dumps(data)}\n\n"
-                    print("Stream", end=" ")
+                    # print("Stream", end=" ")
                     last_sent_time = current_time
                 time.sleep(0.05)
         except GeneratorExit:
@@ -356,7 +356,7 @@ def comint_detection_stream():
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
-            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Origin": "http://localhost:5173",
             "Access-Control-Allow-Credentials": "true",
         }
     )

@@ -70,3 +70,9 @@ pysagax/message/*_pb2.pyi
 libzmq.tar.gz
 protoc3/
 pyzmq/
+
+.venv/
+venv/
+
+client/dist
+client/node_modules

@@ -5,7 +5,8 @@ interface Comint {
   coordinate: [number, number];
   azimuth: number;
   uavId: number;
-  timestamp?: number; // Időbélyeget adunk hozzá rendezéshez
+  roi_id: number | null;
+  timestamp: number; // Időbélyeget adunk hozzá rendezéshez
 }
 
 export interface Sensor {

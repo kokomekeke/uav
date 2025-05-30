@@ -41,3 +41,4 @@ python-dateutil~=2.9.0.post0
 humanfriendly~=10.0
 flask-cors~=5.0.1
 Flask-SocketIO~=5.5.1
+eventlet~=0.39.1

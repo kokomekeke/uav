@@ -22,13 +22,26 @@ const addSensor = () => {
 }
 
 const submit = () => {
+  console.log('ACTIVEEE: ', isActive.value)
+  console.log(11111)
   if (label.value && address.value) {
+    console.log(22222)
     const data = {
       uav_label: label.value,
       uav_address: address.value,
-      active: isActive.value
+      active: isActive.value,
+      last_pos_lat: lastPosLat,
+      last_pos_lon: lastPosLon,
+      last_pos_alt: lastPosAlt,
+      last_pos_q0: lastPosQ0,
+      last_pos_q1: lastPosQ1,
+      last_pos_q2: lastPosQ2,
+      last_pos_q3: lastPosQ3
     }
+    console.log('DATA: ', data)
+    console.log(33333)
     sensorStore.addSensor(data)
+    isModalOpen.value = false
   } else {
     console.log('fill the form!!!')
   }
@@ -43,7 +56,7 @@ const submit = () => {
         @click="addSensor"
         class="mt-2 w-full bg-green-500 text-white p-2 rounded hover:bg-green-700"
       >
-        + Szenzor hozzáadása
+        + Add Sensor
       </button>
     </div>
 
