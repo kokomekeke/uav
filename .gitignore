@@ -78,3 +78,4 @@ venv/
 client/dist
 client/node_modules
 client/public/tiles
+client/package-lock.json
