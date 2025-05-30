@@ -21,13 +21,17 @@ class PPHeadingSync(Loop):
     The module also fills the config_id field of the measurement packets with the correct value
     """
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, spectrogram_mode, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._queue_in: Optional[Queue] = None
         self._queue_out_pp: Optional[Queue] = None  # Queue to PostPrcessing/Detection
         self._queue_out_rec: Optional[Queue] = None  # Queue to SpectrogramRecorder
         self._heading_queue_in: Optional[Queue] = None
         self._latest_config_id_value: Optional[ValueProxy[int]] = None
+
+        # Don't forward packets to PostProcessing if we're in playback mode
+        # TODO: this should be replaced in the future when proper playback/recording settings are implemented for spectrograms
+        self._spectrogram_mode = spectrogram_mode
 
         # deque for storing 2 {delta_t, heading_data} pairs, where
         # delta_t is the time difference between the current measurement packet and the heading packet
@@ -153,6 +157,10 @@ class PPHeadingSync(Loop):
                 self._logger.warning(
                     f"Heading data and measurement packets synced with large time difference: {delta_t/1e9:.2f} seconds"
                 )
+
+            if self._spectrogram_mode.lower() == "playback":
+                # TODO: implement proper record/playback controlling mechanism
+                return
             queue_put(
                 self._queue_out_pp,
                 meas_packet,
