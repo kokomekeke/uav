@@ -67,14 +67,6 @@ build/
 pysagax/message/*_pb2.py
 pysagax/message/*_pb2.pyi
 
-# Locally ignored files/folders
-libzmq.tar.gz
-protoc3/
-pyzmq/
-
-.venv/
-venv/
-
 client/dist
 client/node_modules
 client/public/tiles
