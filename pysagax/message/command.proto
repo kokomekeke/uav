@@ -3,6 +3,7 @@ package pysagax.message;
 import "google/protobuf/timestamp.proto";
 import "pysagax/message/data.proto";
 import "pysagax/message/heading.proto";
+import "pysagax/message/altiss_intra_uav.proto";
 
 enum Instruction {
     // Types of instructions that can be sent
@@ -104,7 +105,7 @@ enum Instruction {
     CS_SCAN_START = 30;
 
     // Start calibration of radios.
-    //   parameter: CalibrationCommand
+    //   parameter: calib_command [CalibrationCommand]
     //   response:  success [bool]
     CS_CALIBRATE_START = 31;
 
@@ -115,6 +116,10 @@ enum Instruction {
     CS_TURN_OFF_COMPENSATION = 34;
     CS_TURN_ON_COMPENSATION = 35;
     
+
+    // Load calibration phasediffs from a file given in calib_command.identifier
+    //   parameter: calib_command [CalibrationCommand]
+    //   response:  success [bool]
     CS_READ_PHASEDIFFS_FROM_FILE = 36;
 
     CS_CALIBRATION_VALUES_QUERY = 37;
@@ -126,6 +131,13 @@ enum Instruction {
     AUTO_CALIBRATION_DISABLE = 42;
     AUTO_CALIBRATION_TRIGGER = 43;
     CS_RELOAD_CONFIG = 44;
+    CS_WRITE_SAMPLE_SHIFT = 45;
+
+    // Forward the message to the Aviation Processing Module in Altiss
+    //   parameter: msg_to_apm [MessageToAPM]
+    //   response:  success [bool]
+    FORWARD_TO_APM = 50;
+
 }
 
 message ROIMask {
@@ -142,7 +154,8 @@ message ROIMask {
 
 
 message FreqList {
-    uint32 iq_rate = 2;
+    uint32 iq_rate = 2;              // TODO: depracated?
+    uint32 scan_burst_count = 4;         // Bursts per center frequency before hopping to the next one in scanning mode
     repeated float center_freqs = 3;
 }
 
@@ -217,7 +230,7 @@ message ScanEngineConfig {
     }
     Mode mode = 1;
     oneof parameter {
-        ScanningConfig scanning = 6;
+        ScanningConfig scanning = 6; // TODO: kiirtani?
         TrackingConfig tracking = 7;
     }
 
@@ -318,11 +331,24 @@ message CommandError {
     string description = 5;
 }
 
+message WriteSampleShiftCommand {
+    uint32 card = 1;
+    int32 shift = 2;
+}
 
 message CalibrationCommand {
     FreqList calibration_freqs = 11;
     string identifier = 12;
 
+}
+
+message MessageToAPM{
+    // Wraps a message that we want to forward to the Avionics Processing Module in the Altiss project
+
+    oneof payload {
+        ComIntEmitterEvents emitter_events = 1;
+    }
+    
 }
 
 message Command {
@@ -357,6 +383,10 @@ message Command {
         uint64 rec_length_secs = 9;
 
         CalibrationCommand calib_command = 12;
+
+        MessageToAPM msg_to_apm = 13; 
+
+        WriteSampleShiftCommand write_shift_command = 14;
     }
     reserved 11;
 }

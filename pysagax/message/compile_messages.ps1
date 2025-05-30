@@ -5,7 +5,8 @@ $sources = @(
     "pysagax/message/command.proto",
     "pysagax/message/data.proto",
     "pysagax/message/heading.proto",
-    "pysagax/message/flight_info.proto"
+    "pysagax/message/flight_info.proto",
+    "pysagax/message/altiss_intra_uav.proto"
 )
 
 # Projekt gyökérkönyvtárának meghatározása (többszörös Split-Path használatával)

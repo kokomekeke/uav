@@ -5,6 +5,7 @@ from queue import Queue
 
 from flask_cors import CORS
 from flask_socketio import SocketIO
+from typing import Optional
 
 from flask import Flask, request
 from flask_marshmallow_openapi import OpenAPI, OpenAPISettings
@@ -22,6 +23,7 @@ except ImportError:
     platform = 'LINUX'
 
 from pysagax.gnd.database import db
+from pysagax.gnd.api.api_utils import _set_queues
 
 app = Flask(__name__)
 CORS(app,
@@ -104,7 +106,13 @@ if "PYSAGAX_GND_PROXY_FIX" in os.environ:
         app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1
     )
 
-def run_api(measurement_queue=None):
+def run_api(
+    q_to_command_engine: Optional[Queue] = None,
+    q_from_command_engine: Optional[Queue] = None,
+    measurement_queue: Optional[Queue] = None,
+):
+    # TODO: egységes queue átadási módszerek
+    _set_queues(q_to_command_engine, q_from_command_engine)
     if measurement_queue is not None:
         print("not none")
         app.measurement_to_stream_queue = measurement_queue
@@ -113,5 +121,5 @@ def run_api(measurement_queue=None):
     logger.info(f"Starting API on http://{host}:{port}")
     socketio.run(app, host=host, port=port, debug=False)  # ❗ debug=False production-hoz
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     run_api()

@@ -337,18 +337,12 @@ class PPDetection(Loop):
 
             # TODO: occasionally remove very old detection aggregators
 
-            self._logger.debug(
+            self._logger.trace(
                 f"PostProcessing/Detection finished on packet {packet.packet_id}"
             )
             queue_put(
-                self._queue_out, packet, 0.1, logger=self._logger, message="Queue out"
+                self._queue_out, packet, 0, logger=self._logger, message="Queue out"
             )
-            queue_put(
-                self._se_queue_out,
-                packet,
-                0.1,
-                logger=self._logger,
-                message="SE queue out",
-            )
+            queue_put(self._se_queue_out, packet, 0) # No logging since SE only takes packeges in scanning mode
         except queue.Empty:
             pass

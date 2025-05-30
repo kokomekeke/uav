@@ -16,11 +16,9 @@ from multiprocessing.managers import ValueProxy
 from pysagax.communication.broadcast import RX
 from pysagax.communication.req_rep_tcp import REQ
 from pysagax.heading.heading_pb_client import HeadingPbClient
-from pysagax.heading.queue_collector import QueueValueCollector
 from pysagax.source.source_manager import CoreServiceStatus, SourceManager
 from pysagax.spot.command_thread import CommandThread
 from pysagax.spot.map_server import MapServer
-from pysagax.spot.recording_thread import RecordingThread
 from pysagax.spot.status_query_thread import StatusQueryThread
 from pysagax.spot.stream_process import StreamProcess
 from pysagax.ui.connect_frame import ConnectFrame
@@ -335,8 +333,6 @@ class ClientWindow(tkinter.Frame):
         self.set_stream_status(message)
         self.info_update_handler(message, source="Stream Process")
 
-    def recording_status_msg_handler(self, message: str) -> None:
-        self.info_update_handler(message, "Recording Thread")
 
     def map_server_status_msg_handler(self, message: str) -> None:
         if message.startswith("#info"):
@@ -482,7 +478,6 @@ class Client:
 
         self.source_manager = SourceManager()
         self.stream_to_gui_queue: queue.Queue[Any] = self.manager.Queue(maxsize=1)
-        self.stream_to_rec_queue: Optional[queue.Queue[Any]] = None
         self.stream_to_map_queue: queue.Queue[Any] = self.manager.Queue(maxsize=1)
 
         self.stream_process_multiqueue = MultiQueue([self.stream_to_gui_queue])
@@ -491,7 +486,6 @@ class Client:
         self.command_thread: Optional[CommandThread] = None
         self.status_query_thread: Optional[StatusQueryThread] = None
         self.stream_process: Optional[StreamProcess] = None
-        self.recording_thread: Optional[RecordingThread] = None
         self.dfg_map_server: Optional[MapServer] = None
         self.repeat_playback: bool = False
 
@@ -507,9 +501,6 @@ class Client:
             multiprocessing.Queue()
         )
         self.command_thread_watcher_queue: multiprocessing.Queue[str] = (
-            multiprocessing.Queue()
-        )
-        self.recording_thread_watcher_queue: multiprocessing.Queue[str] = (
             multiprocessing.Queue()
         )
         self.map_server_thread_watcher_queue: multiprocessing.Queue[str] = (
@@ -565,13 +556,6 @@ class Client:
                     except queue.Empty:
                         pass
 
-                if self.recording_thread is not None:
-                    try:
-                        msg = self.recording_thread_watcher_queue.get_nowait()
-                        self.client_window.recording_status_msg_handler(msg)
-                        do_sleep = False
-                    except queue.Empty:
-                        pass
                 if self.dfg_map_server is not None:
                     try:
                         msg = self.map_server_thread_watcher_queue.get_nowait()
@@ -809,7 +793,6 @@ class Client:
         self.client_window.plot_frame.update_roi_graph(pp_config, active_roi)
 
     def start_recording(self) -> None:
-        self.start_local_recording()
         cmd = proto_cmd.Command()
         cmd.instruction = proto_cmd.REC_START
         self.send_commands(cmd)
@@ -817,31 +800,14 @@ class Client:
             True  # TODO: this is depracated (source_manager.recording_status)
         )
         ##TODO: start local recording if CS is also recording when connecting to it
-
     def stop_recording(self) -> None:
-        self.stop_local_recording()
         cmd = proto_cmd.Command()
         cmd.instruction = proto_cmd.REC_STOP
         self.send_commands(cmd)
         self.recording_started = False
 
-    def start_local_recording(self) -> None:
-        self.stream_to_rec_queue = self.manager.Queue()  # TODO: set some large maxsize
-        self.stream_process_multiqueue.add_queue(self.stream_to_rec_queue)
-        self.recording_thread = RecordingThread(
-            cs_packet_queue=self.stream_to_rec_queue,
-            status_queue=self.recording_thread_watcher_queue,
-        )
-        self.recording_thread.start()
-
     def set_repeat(self, repeat_value: bool) -> None:
         self.repeat_playback = repeat_value
-
-    def stop_local_recording(self) -> None:
-        if self.recording_thread is not None:
-            self.recording_thread.do_stop = True
-        self.stream_process_multiqueue.remove_queue(self.stream_to_rec_queue)
-        self.stream_to_rec_queue = None
 
 
 def on_close() -> None:

@@ -1,11 +1,16 @@
 disk_path = '/'
 level = 'INFO'
-command_port = 5555
+command_port = 5556
 cs_host = "127.0.0.1"
 cs_command_port = 12936
 cs_stream_port = 12937
 heading_host = "127.0.0.1"
 heading_control_port = 5566
 heading_stream_port = 5567
-auto_config = '{"se": {"mode": "TRACKING", "tracking": {"signals": [{"frequency": 446000000.0, "bandwidth": 62500.0}]}}}'
+#auto_config = '{"se": {"mode": "TRACKING", "tracking": {"signals": [{"frequency": 446000000.0, "bandwidth": 62500.0}]}}}'
 
+apm_communicator_port = 5568
+
+#spectrogram_mode = "record"
+#spectrogram_path = "/var/sagax/pysagaxuav/spectrogram_recordings/scan.protorec"
+#detection_recording_path = "/var/sagax/pysagaxuav/detection_recordings/detect.detectrec"

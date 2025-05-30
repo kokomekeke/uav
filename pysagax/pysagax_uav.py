@@ -8,23 +8,18 @@ import multiprocessing
 import sys
 import traceback
 from concurrent.futures import ProcessPoolExecutor, wait
-from logging import Handler, StreamHandler, getLogger
+from logging import Handler, StreamHandler, getLogger, DEBUG
+from pysagax.util.add_logging_level import addLoggingLevel
 from os import getpid
 from signal import SIGINT, SIGTERM, signal
 from typing import Any, Optional
 
 import click
+from pysagax.util.load_click_options_from_file import load_click_options_from_file
 from coloredlogs import install
 from rich.logging import RichHandler
 
 from pysagax.field.scanengine import ScanEngine
-
-try:
-    import tomllib
-except ModuleNotFoundError:
-    import tomli as tomllib
-
-import os
 
 import pysagax.communication.broadcast as pysagax_broadcast
 from pysagax import __version__
@@ -38,8 +33,10 @@ from pysagax.field.ppevents import PPEvents
 from pysagax.field.ppheadingsync import PPHeadingSync
 from pysagax.field.ppspectrogramrecorder import PPSpectrogramRecorder
 from pysagax.field.ppstreamprep import PPStreamPreparation
+from pysagax.field.ppdetectionrecorder import PPDetectionRecorder
 from pysagax.field.streamer import Streamer
 from pysagax.field.telemetry import Telemetry
+from pysagax.field.apm_communicator import APMCommunicator
 
 
 class Commander:
@@ -80,7 +77,8 @@ class Commander:
         detection_recording_path: str,
         detection_recording_max_length: float,
         measurement_udp_max_size: int,
-        stream_decimation_factor: int,
+        stream_spectrum_interval: float,
+        apm_address: Optional[str],
     ) -> None:
 
         self._logger = getLogger("Commander")
@@ -97,19 +95,22 @@ class Commander:
         self._stream_conf_q = self._manager.Queue()
         self._post_proc_commands_q = self._manager.Queue()
         self._post_proc_responses_q = self._manager.Queue()
-        self._post_proc_to_scan_engine_q = self._manager.Queue(maxsize=48)
-        self._pp_heading_sync_input_q = self._manager.Queue(maxsize=48)
-        self._pp_spectrogram_recorder_input_q = self._manager.Queue(maxsize=48)
-        self._pp_detection_input_q = self._manager.Queue(maxsize=48)
-        self._pp_events_input_q = self._manager.Queue(maxsize=48)
-        self._pp_streamprep_input_q = self._manager.Queue(maxsize=48)
-        self._raw_cs_stream_q = self._manager.Queue()
+        self._post_proc_to_scan_engine_q = self._manager.Queue(maxsize=10)
+        self._pp_heading_sync_input_q = self._manager.Queue(maxsize=10)
+        self._pp_spectrogram_recorder_input_q = self._manager.Queue(maxsize=400)
+        self._pp_detection_recorder_input_q = self._manager.Queue(maxsize=400)
+        self._pp_detection_input_q = self._manager.Queue(maxsize=10)
+        # self._pp_events_input_q = self._manager.Queue(maxsize=48)
+        self._pp_streamprep_input_q = self._manager.Queue(maxsize=10)
+        # self._raw_cs_stream_q = self._manager.Queue()
         self._telemetry_in_q = self._manager.Queue(maxsize=10)
+        self._apm_communicator_messages_q = self._manager.Queue(maxsize=1)
+        self._apm_communicator_responses_q = self._manager.Queue(maxsize=1)
 
         self._telemetry_cs_commands_q = self._manager.Queue()
         self._telemetry_cs_responses_q = self._manager.Queue()
         self._heading_commands_q = self._manager.Queue()
-        self._heading_data_q = self._manager.Queue(maxsize=48)
+        self._heading_data_q = self._manager.Queue(maxsize=10)
         self._heading_status_q = self._manager.Queue(maxsize=2)
 
         self._latest_telemetry_proxy = self._manager.dict()
@@ -143,7 +144,9 @@ class Commander:
         )
         self._cs_command = CSCommand(level=level, address=cs_host, port=cs_command_port)
 
-        self._pp_heading_sync = PPHeadingSync(level=level)
+        self._pp_heading_sync = PPHeadingSync(
+            level=level, spectrogram_mode=spectrogram_mode
+        )
         self._pp_spectrogram_recorder = PPSpectrogramRecorder(
             level=level,
             mode=spectrogram_mode,
@@ -152,12 +155,15 @@ class Commander:
             max_recording_length=spectrogram_recording_max_length,
         )
         self._pp_detection = PPDetection(level=level, default_roi_mask=default_roi_mask)
-        self._pp_events = PPEvents(level=level)
+        # self._pp_events = PPEvents(level=level)
         self._pp_streamprep = PPStreamPreparation(
             level=level,
             udp_max_size=measurement_udp_max_size,
+            spectrum_interval=stream_spectrum_interval,
+        )
+        self._pp_detection_recorder = PPDetectionRecorder(
+            level=level,
             detection_recording_path=detection_recording_path,
-            decimation_factor=stream_decimation_factor,
             max_recording_length=detection_recording_max_length,
         )
         self._cs_streamer = CSStreamer(
@@ -171,6 +177,7 @@ class Commander:
             port_control=heading_control_port,
             port_stream=heading_stream_port,
         )
+        self._apm_communicator = APMCommunicator(level=level, apm_address=apm_address)
 
     def start(self) -> None:
         """Start all background processes"""
@@ -190,6 +197,8 @@ class Commander:
             self._heading_commands_q,
             self._post_proc_commands_q,
             self._post_proc_responses_q,
+            self._apm_communicator_messages_q,
+            self._apm_communicator_responses_q,
             self._latest_se_proxy,
             self._latest_telemetry_proxy,
             self._latest_config_id_value,
@@ -215,6 +224,7 @@ class Commander:
         pp_heading_sync_future = self._pool.submit(
             self._pp_heading_sync,
             self._pp_heading_sync_input_q,
+            self._pp_detection_input_q,
             self._pp_spectrogram_recorder_input_q,
             self._heading_data_q,
             self._latest_config_id_value,
@@ -228,20 +238,25 @@ class Commander:
         pp_detection_future = self._pool.submit(
             self._pp_detection,
             self._pp_detection_input_q,
-            self._pp_events_input_q,
+            self._pp_streamprep_input_q,
             self._post_proc_commands_q,
             self._post_proc_responses_q,
             self._post_proc_to_scan_engine_q,
         )
-        pp_events_future = self._pool.submit(
-            self._pp_events,
-            self._pp_events_input_q,
-            self._pp_streamprep_input_q,
-        )
+        # pp_events_future = self._pool.submit(
+        #     self._pp_events,
+        #     self._pp_events_input_q,
+        #     self._pp_streamprep_input_q,
+        # )
         pp_streamprep_future = self._pool.submit(
             self._pp_streamprep,
             self._pp_streamprep_input_q,
             self._stream_packets_q,
+            self._pp_detection_recorder_input_q,
+        )
+        pp_detection_recorder_future = self._pool.submit(
+            self._pp_detection_recorder,
+            self._pp_detection_recorder_input_q,
             self._latest_telemetry_proxy,
         )
         cs_streamer_future = self._pool.submit(
@@ -261,6 +276,11 @@ class Commander:
             self._heading_data_q,
             self._heading_status_q,
         )
+        apm_communicator_future = self._pool.submit(
+            self._apm_communicator,
+            self._apm_communicator_messages_q,
+            self._apm_communicator_responses_q,
+        )
         # Periodically checking errors in threads
 
         signal(SIGINT, self._signal_handler)
@@ -276,11 +296,13 @@ class Commander:
                     pp_heading_sync_future,
                     pp_spectrogram_recorder_future,
                     pp_detection_future,
-                    pp_events_future,
+                    # pp_events_future,
                     pp_streamprep_future,
+                    pp_detection_recorder_future,
                     cs_streamer_future,
                     telemetry_future,
                     heading_future,
+                    apm_communicator_future,
                 ),
                 timeout=1,
             )
@@ -310,21 +332,6 @@ class Commander:
         sys.exit(0)
 
 
-def set_default_config(ctx, param, conf_path):
-    """
-    Overwrites the default values for click options from the given config file.
-    These values can be further overwritten by providing a config file.
-    """
-    if os.path.exists(conf_path):
-        with open(conf_path, "rb") as f:
-            conf = tomllib.load(f)
-        ctx.default_map = conf
-    else:
-        # Can we use the logger instead of print?
-        print(f"Config file wasn't found at '{conf_path}'")
-    return conf_path
-
-
 def validate_spectrogram_mode_and_path(ctx, param, path):
     mode = ctx.params.get("spectrogram_mode")
     if mode in ["record", "playback"] and path is None:
@@ -341,7 +348,7 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     "-c",
     default="/var/sagax/pysagaxuav/pysagaxuav.toml",
     type=click.Path(),
-    callback=set_default_config,
+    callback=load_click_options_from_file,
     is_eager=True,
     expose_value=False,
     show_default=True,
@@ -442,7 +449,7 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
 )
 @click.option(
     "--scanning-averaging-burst-count",
-    help="Number of bursts to averaging in scanning mode",
+    help="Number of requested bursts in SCANNING mode",  # TODO:
     default=3,
     show_default=True,
 )
@@ -484,7 +491,7 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
 )
 @click.option(
     "--auto-config",
-    default='{"se": {"mode": "TRACKING", "tracking": {"signals": [{"frequency": 446000000.0, "bandwidth": 62500.0}]}}}',
+    default=None,
     show_default=True,
     help="JSON-encoded protobuf configuration command",
 )
@@ -541,9 +548,16 @@ def validate_spectrogram_mode_and_path(ctx, param, path):
     show_default=True,
 )
 @click.option(
-    "--stream-decimation-factor",
-    help="Decimates the measurement packets to be streamed to ground by this factor",
-    type=int,
+    "--stream-spectrum-interval",
+    help="\n\b\nInterval (in seconds) of streamed measurement packets that include spectrum data. If 0 (default), then all packets will be sent with the spectrum included.\nStream socket approximate bandwidth = 0.75 * measurement_udp_max_size / stream_spectrum_interval [bytes/s]",
+    type=float,
+    default=0,
+)
+@click.option(
+    "--apm-address",
+    help="Aviation Processing Module address (ip:port) for Tip&Cue stream",
+    default=None,
+    show_default=True,
 )
 def main(
     level: str,
@@ -579,7 +593,8 @@ def main(
     detection_recording_path: str,
     detection_recording_max_length: float,
     measurement_udp_max_size: int,
-    stream_decimation_factor: int,
+    stream_spectrum_interval: int,
+    apm_address: Optional[str],
 ) -> None:
     """Root command of CLI"""
 
@@ -627,7 +642,8 @@ def main(
         detection_recording_path,
         detection_recording_max_length,
         measurement_udp_max_size,
-        stream_decimation_factor,
+        stream_spectrum_interval,
+        apm_address,
     )
     commander.start()
 
@@ -642,6 +658,8 @@ def setup_logging(
 ) -> None:
     """Configure logging parameters"""
 
+    addLoggingLevel("TRACE", DEBUG - 5)
+
     if stream_handler is None:
         stream_handler = RichHandler(rich_tracebacks=True)
 
@@ -655,4 +673,4 @@ def setup_logging(
 
 
 if __name__ == "__main__":
-    main()
+    main(max_content_width=200)  # max_content_width sets the help text's wrapping

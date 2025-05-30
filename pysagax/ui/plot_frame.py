@@ -17,7 +17,6 @@ from matplotlib.backends.backend_tkagg import (  # type: ignore
 )
 
 import pysagax
-from pysagax.df.lena_core_service import CoreServiceSpectrumPacket
 from pysagax.source.source_manager import CoreServiceStatus
 from pysagax.spot.calculate_df_corrected import calculate_df_corrected
 from pysagax.field.scanengine import ScanEngineState

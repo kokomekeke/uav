@@ -90,6 +90,7 @@ class DetectionControlFrame(tkinter.Frame):
         self.tabControl = ttk.Notebook(roi_settings_frame)
         self.tabControl.grid(row=0, column=1)
         self.tabControl.bind("<<NotebookTabChanged>>", self.on_roi_tab_change)
+        # TODO update ReapeatedEntry with the functionalities needed here, and use it instead of redifining it
 
         roi_settings_frame.grid(row=0, column=0, columnspan=4, sticky="nw")
 

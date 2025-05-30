@@ -5,7 +5,6 @@ import time
 
 from typing import Optional
 from pysagax.communication.pub_sub import SUB
-from pysagax.df.lena_core_service import BaseConnection
 
 from pysagax.common.loop import Loop
 
@@ -51,9 +50,13 @@ class CSStreamer(Loop):
         assert self._sub is not None
         assert self._stream_queue_out is not None
         assert self._telemetry_queue_out is not None
-        data, data_type = self._sub.recv() or (b"*", "*")
-        if data_type == "*":
+        
+        message = self._sub.recv(timeout=500)
+        if message is None:
+            self._logger.critical(f"No packet received from CS for 0.5s")
             return
+        data, data_type = message
+
         data_type_object = DataType(data_type)
         stream_packet = DataType.to_message(data_type_object)
         stream_packet.ParseFromString(data)
@@ -61,7 +64,7 @@ class CSStreamer(Loop):
             queue_put(
                 self._stream_queue_out,
                 stream_packet,
-                0.1,
+                0,
                 self._logger,
                 "Stream queue out",
             )
@@ -70,7 +73,7 @@ class CSStreamer(Loop):
             queue_put(
                 self._telemetry_queue_out,
                 stream_packet,
-                0.1,
+                0,
                 self._logger,
                 "Telemetry queue out",
             )

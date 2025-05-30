@@ -328,7 +328,7 @@ class StatFrame(tkinter.Frame):
                     )
                     yaw, pitch, roll = attitude.as_euler("ZYX", degrees=True)
                 except:
-                    yaw, pitch, roll = "", "", ""
+                    yaw, pitch, roll = float("NaN"), float("NaN"), float("NaN")
                     pass  # eg. 0-norm quaternion
 
                 self.yaw_string.set(f"{yaw:.2f}°")

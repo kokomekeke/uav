@@ -11,19 +11,6 @@ from pysagax.df.compass_sensors import (
     open_aaronia_socket_dev,
     open_arduino_serial_dev,
 )
-from pysagax.df.df_classes import DDF260, DfModule, DfResult, LenaDf
-from pysagax.df.lena_core_service import (
-    BaseConnection,
-    CoreServiceDebugPacket,
-    CoreServiceEOFPacket,
-    CoreServicePacket,
-    CoreServiceParser,
-    CoreServiceROILackOfSignalPacket,
-    CoreServiceROIResultPacket,
-    CoreServiceSpectrumPacket,
-    StreamConnectionProcess,
-)
-from pysagax.df.lena_with_compass import StreamAndCompassProcess
 from pysagax.heading.heading_sources import HeadingSource, HeadingStatic
 from pysagax.source.source_manager import SourceManager
 from pysagax.ui.autocomplete_command_box import AutocompleteCommandBox
@@ -46,15 +33,6 @@ from pysagax.ui.plot_frame import PlotFrame, PlotSettingsFrame
 from pysagax.util.mat import normalize_angle, si_to_float
 
 __all__ = [
-    "CoreServicePacket",
-    "CoreServiceSpectrumPacket",
-    "CoreServiceEOFPacket",
-    "CoreServiceDebugPacket",
-    "CoreServiceROIResultPacket",
-    "CoreServiceROILackOfSignalPacket",
-    "BaseConnection",
-    "StreamConnectionProcess",
-    "CoreServiceParser",
     "GraphParameters",
     "GraphImage",
     "AngleSpectrumGraph",
@@ -79,7 +57,6 @@ __all__ = [
     "LenaDf",
     "si_to_float",
     "normalize_angle",
-    "StreamAndCompassProcess",
     "HeadingSource",
     "SourceManager",
 ]

@@ -41,6 +41,9 @@ class HeadingSource:
 
         self.conf = conf
 
+        # Short description for the user about the source. Overwrite for child classes!
+        self.help_description = "" 
+
     def cr(self, keys, default_value):
         # shortened config parser for readablity
         if self.conf is None:
@@ -116,6 +119,9 @@ class HeadingStatic(HeadingSource):
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
+        
+        self.help_description = "Static settings for non-moving sensors"
+
         self.lat: float = self.cr(
             ["heading", "static", "lat"], self.cr(["heading", "lat"], 47.498056)
         )
@@ -165,6 +171,9 @@ class HeadingStatic(HeadingSource):
 class HeadingEncoder(HeadingSource):
     def __init__(self, *args) -> None:
         super().__init__(*args)
+
+        self.help_description = "Ocsa rotating platform encoder" 
+
         self.connection: Optional[serial.Serial] = None
         self.port: str = self.cr(
             ["heading", "encoder", "port"], self.cr(["heading", "port"], "")
@@ -234,6 +243,9 @@ class HeadingEncoder(HeadingSource):
 class HeadingAHRS(HeadingSource):
     def __init__(self, *args) -> None:
         super().__init__(*args)
+
+        self.help_description = ""  #TODO
+
         self.compass: Optional[CompassBase] = None
         self.address: str = self.cr(
             ["heading", "ahrs_socket", "address"], self.cr(["heading", "address"], "")
@@ -328,6 +340,9 @@ class HeadingAHRS(HeadingSource):
 class HeadingAHRSUSB(HeadingAHRS):
     def __init__(self, *args) -> None:
         super().__init__(*args)
+
+        self.help_description = ""  #TODO
+
         self.port: str = self.cr(
             ["heading", "ahrs_usb", "port"], self.cr(["heading", "port"], "")
         )
@@ -372,6 +387,9 @@ class HeadingAHRSUSB(HeadingAHRS):
 class HeadingAHRSFTDI(HeadingAHRS):
     def __init__(self, *args) -> None:
         super().__init__(*args)
+
+        self.help_description = ""  #TODO
+
         self.use_magneto: bool = self.cr(
             ["heading", "ahrs_ftdi", "use_magneto"], self.use_magneto
         )  # updating from parent clalss
@@ -416,6 +434,9 @@ class HeadingFlightInfo(HeadingSource):
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
+
+        self.help_description = "Used to receive data from the Aviation Processing Module (APM) in the Altiss project"
+
         self.address: str = self.cr(
             ["heading", "FlightInfo", "address"],
             self.cr(["heading", "address"], "127.0.0.1"),
@@ -495,6 +516,9 @@ class HeadingMavlink(HeadingSource):
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
+
+        self.help_description = ""  #TODO
+
         self.address: str = self.cr(
             ["heading", "Mavlink", "address"],
             self.cr(["heading", "address"], "udpin:127.0.0.1:14540"),

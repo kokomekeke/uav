@@ -44,8 +44,8 @@ class PPEvents(Loop):
 
             #TODO
 
-            self._logger.debug(f"PostProcessing/Events finished on packet {packet.packet_id}")
-            queue_put(self._queue_out, packet, timeout=0.1, logger=self._logger)
+            self._logger.trace(f"PostProcessing/Events finished on packet {packet.packet_id}")
+            queue_put(self._queue_out, packet, timeout=0, logger=self._logger)
 
         except queue.Empty:
             pass

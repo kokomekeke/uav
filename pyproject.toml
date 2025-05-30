@@ -1,6 +1,6 @@
 [project]
 name = "pysagax"
-version = "0.5.15"
+version = "0.6.6"
 authors = [
   { name="Peter Rigo", email="peter.rigo@sagaxcommunications.com" },
   { name="Gergely Deak", email="gergely.deak@sagaxcommunications.com" },
@@ -38,6 +38,8 @@ dependencies = [
     "pymavlink",
     "sqlalchemy",
     "flask",
+    "flask-cors",
+    "flask-socketio",
     "marshmallow",
     "flask-marshmallow",
     "flask-sqlalchemy",
@@ -48,7 +50,8 @@ dependencies = [
     "geographiclib",
     "tqdm",
     "tkinter-tooltip",
-    "psutil"
+    "psutil",
+    "terminaltables"
 ]
 
 [project.optional-dependencies]
@@ -87,7 +90,6 @@ requires = ["setuptools", "wheel", "versioneer"]
 build-backend = "setuptools.build_meta"
 
 [project.scripts]
-dfclient = "pysagax.dfclient:main"
 spotclient = "pysagax.spotclient:main"
 sigmfdisp = "pysagax.sigmfdisp:main"
 sigmfspectrum = "pysagax.sigmfspectrum:main"

@@ -52,10 +52,11 @@ class Interpreter(Loop):
         self._postproc_conf_queue_resp_in: Optional[Queue] = None
         self._latest_se_proxy: Optional[DictProxy] = None
         self._latest_telemetry_proxy: Optional[DictProxy] = None
-        self._cs_lock: Optional[threading.Lock] = None
         self._currently_running_cs_command = ""
         self._config_status_message: Optional[proto_cmd.ConfigStatus] = None
         self._latest_config_id_value: Optional[ValueProxy[int]] = None
+        self._apm_communicator_messages_q: Optional[Queue] = None
+        self._apm_communicator_responses_q: Optional[Queue] = None
 
     def __call__(
         self,
@@ -67,6 +68,8 @@ class Interpreter(Loop):
         heading_conf_queue_out: Queue[Any],
         postproc_conf_queue_out: Queue[Any],
         postproc_conf_queue_resp_in: Queue[Any],
+        apm_communicator_messages_q: Queue[Any],
+        apm_communicator_responses_q: Queue[Any],
         latest_se_proxy: Optional[DictProxy] = None,
         latest_telemetry_proxy: Optional[DictProxy] = None,
         latest_config_id_value: Optional[ValueProxy[int]] = None,
@@ -81,10 +84,11 @@ class Interpreter(Loop):
         self._heading_conf_queue_out = heading_conf_queue_out
         self._postproc_conf_queue_out = postproc_conf_queue_out
         self._postproc_conf_queue_resp_in = postproc_conf_queue_resp_in
+        self._apm_communicator_messages_q = apm_communicator_messages_q
+        self._apm_communicator_responses_q = apm_communicator_responses_q
         self._latest_se_proxy = latest_se_proxy
         self._latest_telemetry_proxy = latest_telemetry_proxy
         self._latest_config_id_value = latest_config_id_value
-        self._cs_lock = threading.Lock()
         return super()._call(*args, **kwargs)
 
     def _loop(self) -> None:
@@ -99,23 +103,32 @@ class Interpreter(Loop):
         try:
             response = self._process(command)
         except CSErrorException as cs_err:
-            response.id = command.id
-            response.instruction = command.instruction
-            response.error.description = (
-                f"CS{cs_err.error_code}: {cs_err.error_description}"
-            )
+            msg = f"CS{cs_err.error_code}: {cs_err.error_description}"
+            self._logger.error(msg)
+            response.error.description = msg
         except CSTimeoutException:
             self._logger.error("CS not responding")
-            response.id = command.id
-            response.instruction = command.instruction
             response.error.description = f"CS not responding"
         except CSThreadOccupied as cs_occ:
-            self._logger.error(f"CS is occupied by command {cs_occ.running_command}")
+            msg = f"CS is occupied by command {cs_occ.running_command}"
+            self._logger.error(msg)
+            response.error.description = msg
+        except queue.Empty:
+            # Works for those commands that wait for an answer on a queue from the target module
+            # TODO: check _process() so that no command has a response with possibly infinite wait time (eg in_queue.get witout timeout)
+            msg = f"The target module didn't answer on time for the command\n{command}"
+            self._logger.critical(msg)
+            response.error.description = msg
+        except queue.Full:
+            # TODO: check _process() so that no command has a response with possibly infinite wait time (eg in_queue.put witout timeout)
+            msg = f"The target module's command queue is full."
+            self._logger.critical(msg)
+            response.error.description = msg
+        finally:
+            # The response should contain the id and instruction of the comman
             response.id = command.id
             response.instruction = command.instruction
-            response.error.description = (
-                f"CS is occupied by command {cs_occ.running_command}"
-            )
+
         # Send response to Communicator
         self._comm_queue_out.put(response)  # should use util.queue_put?
 
@@ -132,8 +145,6 @@ class Interpreter(Loop):
 
         # Prepare appropriate response
         response = proto_cmd.Response()
-        response.id = command.id
-        response.instruction = command.instruction
 
         # Route command based on the given Instruction
         #   response is always passed as a reference
@@ -197,7 +208,8 @@ class Interpreter(Loop):
                     response.error.description = "No available config status"
                 else:
                     response.config_status.CopyFrom(self._config_status_message)
-
+            case proto_cmd.FORWARD_TO_APM:
+                response.MergeFrom(self._apm_control(command))
             case _:
                 response.error.description = "Unknown command"
 
@@ -224,11 +236,13 @@ class Interpreter(Loop):
         response.success = True
         if command.config.HasField("heading"):  # Heading part is set
             assert self._heading_conf_queue_out is not None
-            self._heading_conf_queue_out.put(command.config.heading) # should use util.queue_put?
+            self._heading_conf_queue_out.put(
+                command.config.heading
+            )  # should use util.queue_put?
 
         if command.config.HasField("cs") or command.config.HasField("se"):
             assert self._se_queue_in is not None and self._se_queue_out is not None
-            self._se_queue_out.put(command) # should use util.queue_put?
+            self._se_queue_out.put(command)  # should use util.queue_put?
             se_response = self._se_queue_in.get()
             if se_response.HasField("error"):
                 response.error.CopyFrom(se_response.error)
@@ -317,5 +331,11 @@ class Interpreter(Loop):
 
     def _se_control(self, command: proto_cmd.Command) -> proto_cmd.Response:
         assert self._se_queue_in is not None and self._se_queue_out is not None
-        self._se_queue_out.put(command)  # should use util.queue_put?
+        self._se_queue_out.put(command)  # should use util.queue_put? or timeout
+        # TODO: timeout needed. If cs is not connected we indefinitely wait here for example for a response to a CS_PING
         return self._se_queue_in.get()
+
+    def _apm_control(self, command: proto_cmd.Command) -> proto_cmd.Response:
+        """Route packets to APMCommunicator (Aviation Processing Module of the Altiss  project)"""
+        self._apm_communicator_messages_q.put(command, timeout=0.1)
+        return self._apm_communicator_responses_q.get(timeout=1)
