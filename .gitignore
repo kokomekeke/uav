@@ -23,6 +23,7 @@ dist/
 target/
 dist/
 
+
 # JetBrains IDE
 .idea/
 
@@ -76,3 +77,4 @@ venv/
 
 client/dist
 client/node_modules
+client/public/tiles
