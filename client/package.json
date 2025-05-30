@@ -13,14 +13,17 @@
     "axios": "^1.7.9",
     "core-js": "^3.8.3",
     "leaflet": "^1.9.4",
-    "leaflet-fullscreen": "^1.0.2",
+    "leaflet.fullscreen": "^4.0.0",
     "leaflet-rotatedmarker": "^0.2.0",
     "lodash-es": "^4.17.21",
+    "mapbox-gl": "^0.53.1",
     "pinia": "^3.0.1",
     "postcss-import": "^16.1.0",
+    "save": "^2.9.0",
     "socket.io-client": "^4.8.1",
     "vue": "^3.2.13",
     "vue-final-modal": "^4.5.5",
+    "vue-mapbox": "^0.4.1",
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
