@@ -69,9 +69,7 @@ class PacketFactory(Loop):
         assert self._queue_out is not None
 
         if self._queue_in is not None:
-            print("q out is not none")
             try:
-                print("aaaaa")
                 new_sm = self._queue_in.get_nowait()
                 self.measurement_packet.update(new_sm)
             except queue.Empty:
@@ -86,12 +84,11 @@ class PacketFactory(Loop):
 
         # packet =
         packet = self.measurement_packet.get_packet()
-        print("PACKET: ", packet)
+
         self._latest_push = time()
         self._queue_out.put(packet)
         if self._to_gui_queue is not None:
             self._to_gui_queue.put(self.measurement_packet)
-
 
 class MockCommunicator(Loop):
     def __init__(self, port: int = 5556, *args, **kwargs) -> None:
@@ -130,6 +127,8 @@ class MockCommunicator(Loop):
         self._server.resp(raw_response)
 
 
+
+
 class Commander:
     def __init__(self, level, command_port, show_gui=False):
         self._logger = getLogger("Commander")
@@ -148,22 +147,19 @@ class Commander:
             self._gui_out_q = None
             self._gui_in_q = None
 
-        print("HENLO WOERLD")
         self._packet_factory = PacketFactory(level=level)
         self._communicator = MockCommunicator(level=level, port=command_port)
         self._streamer = Streamer(level=level)
 
     def start(self):
-        print("asd")
+
         packet_factory_future = self._pool.submit(
             self._packet_factory,
             self._stream_packets_q,
             self._gui_out_q,
             self._gui_in_q
         )
-        print("asd2")
         communicator_future = self._pool.submit(self._communicator, self._stream_conf_q)
-        print("asd3")
         streamer_future = self._pool.submit(
             self._streamer, self._stream_packets_q, self._stream_conf_q
         )
