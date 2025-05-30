@@ -54,7 +54,6 @@ class PPSpectrogramRecorder(Loop):
     ) -> None:
         super().__init__(*args, **kwargs)
         self._queue_in: Optional[Queue] = None
-        self._queue_out: Optional[Queue] = None
         self._latest_telemetry_proxy: Optional[DictProxy] = None
         self.recording_dtype: Optional[proto_data.Spectrum.DataType.ValueType] = None
         if recording_dtype is not None and recording_dtype.upper() != "ORIGINAL":
@@ -82,13 +81,11 @@ class PPSpectrogramRecorder(Loop):
     def __call__(
         self,
         queue_in: Queue[Any],
-        queue_out: Queue[Any],
         latest_telemetry_proxy: Optional[DictProxy] = None,
         *args,
         **kwargs,
     ) -> None:
         self._queue_in = queue_in
-        self._queue_out = queue_out
         self._latest_telemetry_proxy = latest_telemetry_proxy
         sleep(2)  # wait for the Telemetry module to initialize
         self._enter_new_mode(self.path, self.mode)
@@ -174,7 +171,6 @@ class PPSpectrogramRecorder(Loop):
         return packet
 
     def _put_packet(self, packet):
-        queue_put(self._queue_out, packet, timeout=0, logger=self._logger)
 
         # pushing measurement packet
         if self.mode == Mode.RECORD:
@@ -188,7 +184,6 @@ class PPSpectrogramRecorder(Loop):
 
     def _loop(self) -> None:
         assert self._queue_in is not None
-        assert self._queue_out is not None
 
         self._read_commands()  # TODO: maybe don't check for commands in every iteration
         try:

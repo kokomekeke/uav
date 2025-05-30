@@ -24,7 +24,8 @@ class PPHeadingSync(Loop):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._queue_in: Optional[Queue] = None
-        self._queue_out: Optional[Queue] = None
+        self._queue_out_pp: Optional[Queue] = None  # Queue to PostPrcessing/Detection
+        self._queue_out_rec: Optional[Queue] = None  # Queue to SpectrogramRecorder
         self._heading_queue_in: Optional[Queue] = None
         self._latest_config_id_value: Optional[ValueProxy[int]] = None
 
@@ -38,14 +39,16 @@ class PPHeadingSync(Loop):
     def __call__(
         self,
         queue_in: Queue[Any],
-        queue_out: Queue[Any],
+        queue_out_pp: Queue[Any],
+        queue_out_rec: Queue[Any],
         heading_queue_in: Queue[Any],
         latest_config_id_value: Optional[ValueProxy[int]] = None,
         *args,
         **kwargs,
     ) -> None:
         self._queue_in = queue_in
-        self._queue_out = queue_out
+        self._queue_out_pp = queue_out_pp
+        self._queue_out_rec = queue_out_rec
         self._heading_queue_in = heading_queue_in
         self._latest_config_id_value = latest_config_id_value
 
@@ -124,7 +127,8 @@ class PPHeadingSync(Loop):
 
     def _loop(self) -> None:
         assert self._queue_in is not None
-        assert self._queue_out is not None
+        assert self._queue_out_pp is not None
+        assert self._queue_out_rec is not None
         assert self._heading_queue_in is not None
 
         try:
@@ -149,7 +153,20 @@ class PPHeadingSync(Loop):
                 self._logger.warning(
                     f"Heading data and measurement packets synced with large time difference: {delta_t/1e9:.2f} seconds"
                 )
-            queue_put(self._queue_out, meas_packet, 0, logger=self._logger)
+            queue_put(
+                self._queue_out_pp,
+                meas_packet,
+                0,
+                logger=self._logger,
+                message="[HeadingSync to Detection]",
+            )
+            queue_put(
+                self._queue_out_rec,
+                meas_packet,
+                0,
+                logger=self._logger,
+                message="[HeadingSync to SpectrogramRecorder]",
+            )
 
         except queue.Empty:
             pass
