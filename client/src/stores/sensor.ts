@@ -24,6 +24,7 @@ export const useSensorStore = defineStore('sensor', () => {
   const errorMessage = ref('')
   const connectionStore = useConnectionStore()
   const { ipPort, isConnected } = storeToRefs(connectionStore)
+  const batchInterval = ref(0.1)
   let eventSourceStop = null
 
   // Detekciók tárolása
@@ -295,7 +296,6 @@ export const useSensorStore = defineStore('sensor', () => {
   async function addSensor (sensor) {
     isLoading.value = true
     errorMessage.value = ''
-    console.log('gggggggggggg',sensor.active)
     try {
       await axios.post(`${ipPort.value}/v1/uav`,
         {
@@ -443,14 +443,29 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
+  watch(batchInterval, async (newVal) => {
+    console.log('Batch interval changed to:', newVal)
+
+    if (eventSourceStop) {
+      eventSourceStop() // előző stream leállítása
+      eventSourceStop = null
+    }
+
+    await startDetectionStream()
+
+    startDetectionStream().catch((err) => {
+      console.error('Stream indítási hiba:', err)
+    })
+  })
+
   // Detekciós stream indítása
   async function startDetectionStream () {
     console.log('Starting detection stream')
-    const batchInterval = 0.2 // 200ms
+    // const batchInterval = 0.2 // 200ms
 
     try {
       const { data, error, close } = useEventSource(
-        `${ipPort.value}/v1/stream/comint_detection?interval=${batchInterval}`,
+        `${ipPort.value}/v1/stream/comint_detection?interval=${batchInterval.value}`,
         [],
         {
           withCredentials: true,
@@ -640,6 +655,7 @@ export const useSensorStore = defineStore('sensor', () => {
     handleMouseOver,
     toggleSensorSelection,
     clearDetections,
+    batchInterval,
     startDetectionStream,
     debugReactivity,
 
