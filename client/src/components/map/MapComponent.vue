@@ -14,7 +14,34 @@ import { Sensor } from '@/types/sensor'
 const zoom = ref(10)
 const center = ref([47.4979, 19.0402])
 const sensorStore = useSensorStore()
-const { sensors } = storeToRefs(sensorStore)
+const { sensors, batchInterval } = storeToRefs(sensorStore)
+const batchIntervalLocal = ref(sensorStore.batchInterval)
+
+watch(batchInterval, (newVal) => {
+  batchIntervalLocal.value = newVal
+}, { immediate: true })
+
+function updateBatchInterval() {
+  // Konvertáljuk számmá, ha string lenne (input mezőből)
+  const newInterval = typeof batchIntervalLocal.value === 'string'
+    ? parseFloat(batchIntervalLocal.value)
+    : Number(batchIntervalLocal.value)
+
+  // Validáció
+  if (isNaN(newInterval) || newInterval < 0.1 || newInterval > 10) {
+    console.warn('Invalid batch interval value:', batchIntervalLocal.value, 'converted to:', newInterval)
+    // Visszaállítjuk az előző érvényes értékre
+    batchIntervalLocal.value = sensorStore.batchInterval
+    return
+  }
+
+  // Store frissítése
+  sensorStore.$patch({
+    batchInterval: newInterval
+  })
+
+  console.log('Batch interval updated to:', newInterval)
+}
 
 // Debug információk
 const debugInfo = ref({
@@ -268,7 +295,7 @@ function computeAzimuthLine (coord: [number, number], azimuth: number, id: numbe
   return result
 }
 
-function hasDifferentRoiFromDetectionList(detections, uav_id) {
+function hasDifferentRoiFromDetectionList (detections, uav_id) {
   if (!Array.isArray(detections)) return false
 
   for (const det of detections) {
@@ -280,7 +307,7 @@ function hasDifferentRoiFromDetectionList(detections, uav_id) {
 }
 
 // JAVÍTOTT színezési logika
-function getColorsByRoiId(detection, sensorId) {
+function getColorsByRoiId (detection, sensorId) {
   // Get the sensor object
   const sensor = sensorsList.value[sensorId]
   if (!sensor) {
@@ -349,7 +376,7 @@ function updateSettings () {
       detectionSize: size
     })
   }
-
+  updateBatchInterval()
   // Frissítsük a térkép nézetet
   throttledUpdate()
 }
@@ -369,6 +396,9 @@ function debugStore() {
   console.log('Visible detections:', visibleDetections.value)
   console.log('Map initialized:', debugInfo.value.mapInitialized)
   console.log('Map bounds:', mapBounds.value?.toBBoxString())
+  console.log('Batch interval:', sensorStore.batchInterval)
+  console.log('Selected sensor:', sensorStore.selectedSensor)
+  console.log('Active workers:', Object.keys(sensorStore.detectionWorkers || {}).length)
   console.log('==================')
 }
 
@@ -528,53 +558,73 @@ function goFullscreen () {
   </div>
 
   <div class="w-full h-40 mt-4 px-4">
-  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 bg-white p-4 rounded shadow">
-    <div>
-      <label class="font-semibold">Detection size</label>
-      <input type="number" v-model="newDetectionSize" @change="updateSettings" class="w-full border rounded px-2 py-1 mt-1" />
-    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 bg-white p-4 rounded shadow">
+      <div>
+        <label class="font-semibold">Detection size</label>
+        <input type="number" v-model="newDetectionSize" @change="updateSettings" class="w-full border rounded px-2 py-1 mt-1" />
+      </div>
 
-    <div>
-      <label class="font-semibold">Max visible points</label>
-      <input type="number" v-model="maxVisiblePoints" @change="updateSettings" class="w-full border rounded px-2 py-1 mt-1" />
-    </div>
+      <div>
+        <label class="font-semibold">Max visible points</label>
+        <input type="number" v-model="maxVisiblePoints" @change="updateSettings" class="w-full border rounded px-2 py-1 mt-1" />
+      </div>
 
-    <div>
-      <label class="font-semibold">Line length (km)</label>
-      <input type="number" v-model="lineLength" @change="updateSettings" class="w-full border rounded px-2 py-1 mt-1" />
-    </div>
+      <div>
+        <label class="font-semibold">Line length (km)</label>
+        <input type="number" v-model="lineLength" @change="updateSettings" class="w-full border rounded px-2 py-1 mt-1" />
+      </div>
 
-    <div>
-      <label class="font-semibold">Plane display period (points)</label>
-      <input type="number" v-model="planeDisplayPeriod" @change="updateSettings" class="w-full border rounded px-2 py-1 mt-1" />
-    </div>
+      <div>
+        <label class="font-semibold">Plane display period (points)</label>
+        <input type="number" v-model="planeDisplayPeriod" @change="updateSettings" class="w-full border rounded px-2 py-1 mt-1" />
+      </div>
 
-    <div class="flex items-center gap-2">
-      <input type="checkbox" id="autoz" v-model="autoZoom" @change="updateSettings" />
-      <label for="autoz" class="font-semibold">Auto zoom</label>
-    </div>
+      <!-- ÚJ: Batch interval beállítás -->
+      <div>
+        <label class="font-semibold">Batch interval (s)</label>
+        <input
+          type="number"
+          step="0.1"
+          min="0.1"
+          max="10"
+          v-model="batchIntervalLocal"
+          @change="updateBatchInterval"
+          class="w-full border rounded px-2 py-1 mt-1"
+        />
+      </div>
 
-    <div>
-      <button @click="clearMapData" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 w-full">
-        Adatok törlése
-      </button>
-    </div>
+      <div class="flex items-center gap-2">
+        <input type="checkbox" id="autoz" v-model="autoZoom" @change="updateSettings" />
+        <label for="autoz" class="font-semibold">Auto zoom</label>
+      </div>
 
-    <div>
-      <button @click="debugStore" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 w-full">
-        Debug info
-      </button>
-    </div>
+      <div>
+        <button @click="clearMapData" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 w-full">
+          Adatok törlése
+        </button>
+      </div>
 
-    <!-- Új: Fullscreen gomb -->
-    <div>
-      <button @click="goFullscreen" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 w-full">
-        Fullscreen
-      </button>
+      <div>
+        <button @click="debugStore" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 w-full">
+          Debug info
+        </button>
+      </div>
+
+      <div>
+        <button @click="goFullscreen" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 w-full">
+          Fullscreen
+        </button>
+      </div>
+
+      <!-- ÚJ: Stream állapot információ -->
+      <div class="col-span-1 md:col-span-2 lg:col-span-1">
+        <div class="text-sm bg-gray-100 p-2 rounded">
+          <div>Stream: {{ sensorStore.selectedSensor ? '🟢 Aktív' : '🔴 Inaktív' }}</div>
+          <div>Interval: {{ sensorStore.batchInterval }}s</div>
+        </div>
+      </div>
     </div>
   </div>
-</div>
-
 
 </template>
 

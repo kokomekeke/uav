@@ -446,22 +446,32 @@ export const useSensorStore = defineStore('sensor', () => {
   watch(batchInterval, async (newVal) => {
     console.log('Batch interval changed to:', newVal)
 
+    // Előző stream leállítása
     if (eventSourceStop) {
-      eventSourceStop() // előző stream leállítása
+      eventSourceStop()
       eventSourceStop = null
     }
 
-    await startDetectionStream()
-
-    startDetectionStream().catch((err) => {
-      console.error('Stream indítási hiba:', err)
-    })
+    // Ha van kiválasztott szenzor, újraindítjuk a streamet az új intervallummal
+    if (selectedSensor.value) {
+      try {
+        await startDetectionStream()
+        console.log('Detection stream restarted with new interval:', newVal)
+      } catch (err) {
+        console.error('Stream restart error:', err)
+        errorMessage.value = 'Hiba a stream újraindítása során'
+      }
+    }
   })
 
   // Detekciós stream indítása
   async function startDetectionStream () {
-    console.log('Starting detection stream')
-    // const batchInterval = 0.2 // 200ms
+    if (!selectedSensor.value) {
+      console.log('No sensor selected, cannot start stream')
+      return
+    }
+
+    console.log('Starting detection stream with interval:', batchInterval.value)
 
     try {
       const { data, error, close } = useEventSource(
@@ -482,11 +492,9 @@ export const useSensorStore = defineStore('sensor', () => {
 
       eventSourceStop = close
 
-      // Data watcher - most RAW string-et küldünk a workernek
+      // Data watcher - RAW string-et küldünk a workernek
       watch(data, (rawJsonString) => {
-        // console.log('elsoe: ', rawJsonString)
         if (!rawJsonString) return
-        // console.log('masodiek')
         // RAW JSON string küldése a workernek - nincs parsing itt
         routeRawDetectionToWorker(rawJsonString)
       })
