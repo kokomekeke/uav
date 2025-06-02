@@ -28,6 +28,7 @@ from pysagax.gnd.commandengine import CommandEngine
 from pysagax.gnd.database import ComIntDatabase
 from pysagax.gnd.monitoring import Monitoring
 from pysagax.gnd.ppgeoloc import PPGeoLoc
+from pysagax.gnd.apm_messenger import APMMessenger
 from pysagax.pysagax_gnd_api import run_api
 
 from pysagax import __version__
@@ -59,6 +60,7 @@ class Commander:
         self._api_to_command_engine_commands_q = self._manager.Queue(maxsize=8)
         self._command_engine_to_api_responses_q = self._manager.Queue(maxsize=8)
         self._uavs_to_measurement_processor_q = self._manager.Queue(maxsize=100)
+        self._geoloc_to_apm_q = self._manager.Queue(maxsize=8)
 
         self._cievents = CIEvents(level=level)
         self._commaggregate = CommAggregate(level=level, db=self._db)
@@ -68,6 +70,10 @@ class Commander:
         # self._commandengine = CommandEngine(level=level)
         self._monitoring = Monitoring(level=level)
         self._ppgeoloc = PPGeoLoc(level=level, db=self._db)
+
+        self._apm_messenger = APMMessenger(
+            level=level,
+        )
 
     def start(self) -> None:
         """Start all background processes"""
@@ -96,7 +102,11 @@ class Commander:
         monitoring_future = self._pool.submit(
             self._monitoring, self._telemetry_for_monitoring_q
         )
-        ppgeoloc_future = self._pool.submit(self._ppgeoloc)
+        ppgeoloc_future = self._pool.submit(self._ppgeoloc,self._geoloc_to_apm_q)
+        apm_messenger_future = self._pool.submit(self._apm_messenger,
+                                            self._geoloc_to_apm_q,
+                                            self._api_to_command_engine_commands_q,
+                                            self._command_engine_to_api_responses_q,)
         # Periodically checking errors in threads
 
         signal(SIGINT, self._signal_handler)
@@ -111,6 +121,7 @@ class Commander:
                     # commandengine_future,
                     monitoring_future,
                     ppgeoloc_future,
+                    apm_messenger_future,
                 ),
                 timeout=1,
             )
