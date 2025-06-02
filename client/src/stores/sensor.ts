@@ -72,6 +72,9 @@ export const useSensorStore = defineStore('sensor', () => {
       const existingDetections = [...(newSensors[uavId].detections || [])]
       const combinedDetections = [...existingDetections, ...newDetections]
         .slice(-maxSize)
+      console.log('EXISTING: ', existingDetections.length)
+      console.log('NEW: ', newDetections.length)
+      console.log('COMBINED: ', combinedDetections.length)
 
       // Teljes szenzor objektum újralétrehozása
       newSensors[uavId] = {
@@ -115,6 +118,7 @@ export const useSensorStore = defineStore('sensor', () => {
 
           // Detekciók hozzáadása reaktív módon
           if (detectionsByUavId[uavId] && detectionsByUavId[uavId].length > 0) {
+            console.log('add')
             addDetectionsToSensor(uavId, detectionsByUavId[uavId])
           }
           break

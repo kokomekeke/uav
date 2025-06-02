@@ -94,7 +94,7 @@ function getHeading (sensor) {
   const q1 = sensor.last_pos_q1 // x komponens
   const q2 = sensor.last_pos_q2 // y komponens
   const q3 = sensor.last_pos_q3 // z komponens
-  console.log('q0', q0, 'q1', q1, 'q2', q2, 'q3', q3)
+  // console.log('q0', q0, 'q1', q1, 'q2', q2, 'q3', q3)
 
   // Ellenőrizzük, hogy vannak-e érvényes értékek
   if (q0 === undefined || q1 === undefined || q2 === undefined || q3 === undefined) {
