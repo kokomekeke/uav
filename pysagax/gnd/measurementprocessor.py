@@ -199,8 +199,7 @@ class MeasurementProcessor(Loop):
                 with self._app.app_context():
                     self._logger.trace(f"Adding {len(self._measurements_to_add)} detections to DB")
                     self._logger.trace(f"Updating {len(self._uavs_to_update)} uavs in DB")
-                    for meas_entity in self._measurements_to_add:
-                        self._db.add(meas_entity)
+                    self._db.bulk_insert(self._measurements_to_add)
                     self._measurements_to_add = []
 
                     for uav_id, uav_entity in self._uavs_to_update.items():

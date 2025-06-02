@@ -181,6 +181,10 @@ class ComIntDatabase:
         db.session.add(entity)
         db.session.commit()
 
+    def bulk_insert(self, entity_list: list[Any]):
+        global db
+        db.session.bulk_save_objects(entity_list)
+
     # TODO: do we need this?
     # def update(self, entity: Any) -> None:
     #     global db

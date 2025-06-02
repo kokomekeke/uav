@@ -112,13 +112,26 @@ def geojson_feature_from_geoloc(
     if not (isfinite(lat) and isfinite(lon)):
         # json standard doesn't have NaN and QGIS can't handle these values 
         lat, lon = (0.0, 0.0)
+    # further needed validations.
+    # TODO: test this function for all possible input values. It shouldn't crash for any of them
+    try:
+        certainty_radius = float( point.certainty_radius)
+    except:
+        certainty_radius = 0 #should be inf instead??
+    if not (isfinite(certainty_radius)):
+        certainty_radius = 0
+    try:
+        time_delta =  point.detections_time_delta.total_seconds()
+    except:
+        time_delta = 0
+
     return {
         "type": "Feature",
         "properties": {
             "geoloc_id": point.geoloc_id,
-            "certainty_radius": point.certainty_radius,
+            "certainty_radius": certainty_radius,
             "roi_id": point.roi_identifier,
-            "detections_time_delta": point.detections_time_delta.total_seconds(),
+            "detections_time_delta": time_delta,
             "timestamp": str(point.timestamp.isoformat("T")),
         },
         "geometry": {

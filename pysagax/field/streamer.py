@@ -190,6 +190,8 @@ class Streamer(Loop):
             #
             # Might be worth it to report to bugs.python.org, but I couldn't make a
             #  more minimal reproducable code for it
+            #
+            # Possibly similar to: https://stackoverflow.com/a/59662879
             packet = self._queue_in.get(block=True, timeout=1)
             self._logger.debug(f"Got {type(packet).__name__} stream packet")
 
