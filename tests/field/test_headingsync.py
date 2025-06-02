@@ -13,7 +13,7 @@ def create_heading_sync(initial_deque, target_time) -> PPHeadingSync:
         target_time: delta_t-s are calculated based on this value
     """
 
-    hs = PPHeadingSync()
+    hs = PPHeadingSync(spectrogram_mode="record")
 
     # Modifying the deque if an initial_deque passed
     if initial_deque is None:

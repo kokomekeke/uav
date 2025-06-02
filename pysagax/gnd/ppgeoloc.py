@@ -18,6 +18,7 @@ from typing import Any, Callable, Optional
 import numpy as np
 from pysagax.util.mat import normalize_angle
 import pysagax.message.data_pb2 as proto_data
+from pysagax.util.queue_put import queue_put
 
 class PPGeoLoc(Loop):
     """Background process for calculation the geolocation data for the ComInt events"""
@@ -34,12 +35,16 @@ class PPGeoLoc(Loop):
         self._db: ComIntDatabase = db
         self._app: Optional[Any] = None
 
+        self._apm_queue: Optional[Queue]= None
+
     def __call__(
         self,
+        apm_queue,
         *args,
         **kwargs,
     ) -> None:
         self._app = self._db.get_app_instance()
+        self._apm_queue = apm_queue
         return super()._call(*args, **kwargs)
 
     def _pair_detections(self, threshold_seconds = 2): #10000):
@@ -387,4 +392,10 @@ class PPGeoLoc(Loop):
                 d1, d2 = d_pair
                 target_lat, target_lon = self._triangulate(d1, d2)
                 self._save_results(d1, d2, target_lat, target_lon)
+
+                # TODO: provide proper data to APMcomm.
+                roi_id = 0 # TODO
+                ts = 0 # TODO : type=??
+                queue_put(self._apm_queue, (roi_id, ts, target_lat, target_lon),
+                            0, self._logger)
         

@@ -33,6 +33,7 @@ from pysagax.field.ppevents import PPEvents
 from pysagax.field.ppheadingsync import PPHeadingSync
 from pysagax.field.ppspectrogramrecorder import PPSpectrogramRecorder
 from pysagax.field.ppstreamprep import PPStreamPreparation
+from pysagax.field.ppdetectionrecorder import PPDetectionRecorder
 from pysagax.field.streamer import Streamer
 from pysagax.field.telemetry import Telemetry
 from pysagax.field.apm_communicator import APMCommunicator
@@ -96,7 +97,8 @@ class Commander:
         self._post_proc_responses_q = self._manager.Queue()
         self._post_proc_to_scan_engine_q = self._manager.Queue(maxsize=10)
         self._pp_heading_sync_input_q = self._manager.Queue(maxsize=10)
-        self._pp_spectrogram_recorder_input_q = self._manager.Queue(maxsize=10)
+        self._pp_spectrogram_recorder_input_q = self._manager.Queue(maxsize=400)
+        self._pp_detection_recorder_input_q = self._manager.Queue(maxsize=400)
         self._pp_detection_input_q = self._manager.Queue(maxsize=10)
         # self._pp_events_input_q = self._manager.Queue(maxsize=48)
         self._pp_streamprep_input_q = self._manager.Queue(maxsize=10)
@@ -142,7 +144,9 @@ class Commander:
         )
         self._cs_command = CSCommand(level=level, address=cs_host, port=cs_command_port)
 
-        self._pp_heading_sync = PPHeadingSync(level=level)
+        self._pp_heading_sync = PPHeadingSync(
+            level=level, spectrogram_mode=spectrogram_mode
+        )
         self._pp_spectrogram_recorder = PPSpectrogramRecorder(
             level=level,
             mode=spectrogram_mode,
@@ -155,8 +159,11 @@ class Commander:
         self._pp_streamprep = PPStreamPreparation(
             level=level,
             udp_max_size=measurement_udp_max_size,
-            detection_recording_path=detection_recording_path,
             spectrum_interval=stream_spectrum_interval,
+        )
+        self._pp_detection_recorder = PPDetectionRecorder(
+            level=level,
+            detection_recording_path=detection_recording_path,
             max_recording_length=detection_recording_max_length,
         )
         self._cs_streamer = CSStreamer(
@@ -170,9 +177,7 @@ class Commander:
             port_control=heading_control_port,
             port_stream=heading_stream_port,
         )
-        self._apm_communicator = APMCommunicator(
-            level=level, apm_address=apm_address
-        )
+        self._apm_communicator = APMCommunicator(level=level, apm_address=apm_address)
 
     def start(self) -> None:
         """Start all background processes"""
@@ -219,6 +224,7 @@ class Commander:
         pp_heading_sync_future = self._pool.submit(
             self._pp_heading_sync,
             self._pp_heading_sync_input_q,
+            self._pp_detection_input_q,
             self._pp_spectrogram_recorder_input_q,
             self._heading_data_q,
             self._latest_config_id_value,
@@ -246,6 +252,11 @@ class Commander:
             self._pp_streamprep,
             self._pp_streamprep_input_q,
             self._stream_packets_q,
+            self._pp_detection_recorder_input_q,
+        )
+        pp_detection_recorder_future = self._pool.submit(
+            self._pp_detection_recorder,
+            self._pp_detection_recorder_input_q,
             self._latest_telemetry_proxy,
         )
         cs_streamer_future = self._pool.submit(
@@ -287,6 +298,7 @@ class Commander:
                     pp_detection_future,
                     # pp_events_future,
                     pp_streamprep_future,
+                    pp_detection_recorder_future,
                     cs_streamer_future,
                     telemetry_future,
                     heading_future,

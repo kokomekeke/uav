@@ -14,10 +14,48 @@ from google.protobuf.message import Message
 from time import time, sleep
 import struct
 from queue import Empty
+from datetime import datetime
+import os
 
 from pysagax.message.data_types import DataType
 
 FileStreamMode: TypeAlias = Literal["record", "playback"]
+
+
+def modify_recording_path(original_path: str, mode: str) -> str:
+    """
+    This function can be used to create the recording path in PPSpectrogramRecorder and PPDetectionRecorder.
+
+    It changes the original path to include
+    a daily subfolder and current timestamp, and the scanengine mode as well.
+
+    If the folder doesn't exist, it creates it.
+
+    Example (on 2025-05-30, 12:52:47):
+    >>> modifiy_recorind_path("/var/sagax/recordings/test.protorec", "MANUAL")
+    >>> "/var/sagax/recordings/test_20250530/test_20250530_125247_MANUAL.protorec"
+    """
+    now = datetime.now()
+    date_str = now.strftime("%Y%m%d")
+    time_str = now.strftime("%H%M%S")
+
+    dir_path, original_file = os.path.split(original_path)
+    file_name, ext = os.path.splitext(original_file)
+
+    # Construct new directory path
+    new_dir = f"{file_name}_{date_str}"
+    new_dir_path = os.path.join(dir_path, new_dir)
+
+    # Try to create the directory if it doesn't exist
+    try:
+        os.makedirs(new_dir_path, exist_ok=True)
+    except Exception as e:
+        raise RuntimeError(f"Failed to create directory '{new_dir_path}': {e}")
+
+    new_file_name = f"{file_name}_{date_str}_{time_str}_{mode}{ext}"
+    modified_path = os.path.join(new_dir_path, new_file_name)
+
+    return modified_path
 
 
 class FileStreamer:
@@ -168,15 +206,16 @@ class FileStreamer:
             msg.ParseFromString(buf)
         except Exception as e:
             current_pos = self.file_io.tell()
-            self.file_io.seek(0, 2) 
+            self.file_io.seek(0, 2)
             file_length = self.file_io.tell()
-            print(f"Message parsing has thrown an error. Probably because of an unsupported packet type or an abrupt EOF. Reading protorec terminates now. \nPacket data:"
-                  f"\n\trecording time={timestamp:2.7f};"
-                  f"\n\tmessage type={msg_type};" 
-                  f"\n\trecorded packet size={size}, file IO read buffer size={len(buf)} (these should be equal);"
-                  f"\n\tfile pointer position={f'{current_pos:,.0f}'.replace(',','.')}, file length= {f'{file_length:,.0f}'.replace(',','.')}"
-                  f"\n ERROR MESSAGE: {e}"
-                )
+            print(
+                f"Message parsing has thrown an error. Probably because of an unsupported packet type or an abrupt EOF. Reading protorec terminates now. \nPacket data:"
+                f"\n\trecording time={timestamp:2.7f};"
+                f"\n\tmessage type={msg_type};"
+                f"\n\trecorded packet size={size}, file IO read buffer size={len(buf)} (these should be equal);"
+                f"\n\tfile pointer position={f'{current_pos:,.0f}'.replace(',','.')}, file length= {f'{file_length:,.0f}'.replace(',','.')}"
+                f"\n ERROR MESSAGE: {e}"
+            )
             return None, None  # reached EOF
         return timestamp, msg
 

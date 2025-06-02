@@ -11,7 +11,7 @@ from typing import Any, Optional, Literal
 
 import pysagax.message.data_pb2 as proto_data
 import pysagax.message.heading_pb2 as proto_heading
-from pysagax.message.proto_stream_to_file import FileStreamer
+from pysagax.message.proto_stream_to_file import FileStreamer, modify_recording_path
 from pysagax.util.protobuf_spectrum_utils import cast_all_spectrums_in_measurement
 from pysagax.util.queue_put import queue_put
 
@@ -103,7 +103,11 @@ class PPSpectrogramRecorder(Loop):
             return "UNKNOWN"
         current_telemetry = proto_data.Telemetry()
         current_telemetry = pickle.loads(self._latest_telemetry_proxy["Telemetry"])
-        return current_telemetry.scanengine_state
+        full_state = current_telemetry.scanengine_state
+
+        # Remove IDLE and IN_PROGRESS substates, as we don't care about them here.
+        short_state = full_state.replace("_IDLE", "").replace("_IN_PROGRESS", "")
+        return short_state
 
     def _read_commands(self):
         """Gets commands and handles state transitions"""
@@ -155,9 +159,8 @@ class PPSpectrogramRecorder(Loop):
             case Mode.RECORD:
                 # Inserting a timestamp before the file extension
                 self._recording_start_time = time()
-                start_time_string = datetime.now().strftime("%Y%m%d_%H%M%S")
-                name, extension = os.path.splitext(new_path)
-                new_path = f"{name}_{start_time_string}_{self._latest_se_state}{extension}"  # Appending a timestamp and scan engine state to file name
+
+                new_path = modify_recording_path(new_path, self._latest_se_state)
 
                 self._file_streamer = FileStreamer(path=new_path, mode="record")
             case Mode.PLAYBACK:
@@ -174,7 +177,6 @@ class PPSpectrogramRecorder(Loop):
         return packet
 
     def _put_packet(self, packet):
-        queue_put(self._queue_out, packet, timeout=0, logger=self._logger)
 
         # pushing measurement packet
         if self.mode == Mode.RECORD:
@@ -183,6 +185,8 @@ class PPSpectrogramRecorder(Loop):
                     packet, self.recording_dtype, inplace=True
                 )
             self._file_streamer.put(packet)
+        elif self.mode == Mode.PLAYBACK:
+            queue_put(self._queue_out, packet, timeout=0, logger=self._logger)
 
         self._logger.trace(f"Record/Playback finished on packet {packet.packet_id}")
 
