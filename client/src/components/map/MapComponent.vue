@@ -21,7 +21,7 @@ watch(batchInterval, (newVal) => {
   batchIntervalLocal.value = newVal
 }, { immediate: true })
 
-function updateBatchInterval() {
+function updateBatchInterval () {
   // Konvertáljuk számmá, ha string lenne (input mezőből)
   const newInterval = typeof batchIntervalLocal.value === 'string'
     ? parseFloat(batchIntervalLocal.value)
@@ -56,7 +56,7 @@ const sensorsList = computed(() => {
   const result: { [id: number]: Sensor } = {}
   let count = 0
 
-  console.log('🔍 Sensors raw data:', sensors.value)
+  // console.log('🔍 Sensors raw data:', sensors.value)
 
   for (const key in sensors.value) {
     const sensor = sensors.value[key]
@@ -74,7 +74,7 @@ const sensorsList = computed(() => {
   }
 
   debugInfo.value.selectedSensorsCount = count
-  console.log('✅ Selected sensors:', result)
+  // console.log('✅ Selected sensors:', result)
 
   return result
 })
@@ -113,7 +113,7 @@ function getHeading (sensor) {
   if (headingDeg < 0) {
     headingDeg += 360
   }
-  console.log('HEADING: ', headingDeg)
+  // console.log('HEADING: ', headingDeg)
   return headingDeg
 }
 
@@ -174,7 +174,7 @@ const azimuthLineCache = new Map()
 const isInViewport = (coords) => {
   if (!coords || coords.length !== 2) return false
   if (!mapBounds.value) {
-    console.log('No map bounds available, showing all points')
+    // console.log('No map bounds available, showing all points')
     return true // Ha nincs mapBounds, akkor mutassunk mindent
   }
 
@@ -183,13 +183,46 @@ const isInViewport = (coords) => {
   return result
 }
 
-// Kombinált detekciós lista létrehozása az összes aktív szenzorból
+const flatDetections = computed(() => {
+  const result = []
+
+  Object.entries(visibleDetections.value).forEach(([sensorId, detections]) => {
+    const sensorIdNum = Number(sensorId)
+
+    detections.forEach((detection, index) => {
+      const isValid = detection &&
+                     detection.coordinate &&
+                     detection.coordinate.length === 2 &&
+                     typeof detection.coordinate[0] === 'number' &&
+                     typeof detection.coordinate[1] === 'number'
+
+      if (isValid) {
+        result.push({
+          ...detection,
+          uniqueKey: `${sensorId}-${index}`,
+          sensorId: sensorIdNum,
+          showPlane: index % planeDisplayPeriod.value === 0,
+          hasAzimuth: detection.azimuth !== undefined,
+          azimuthLine: detection.azimuth !== undefined
+            ? computeAzimuthLine(detection.coordinate, detection.azimuth, sensorIdNum)
+            : [],
+          color: getColorsByRoiId(detection, sensorIdNum),
+          dotIcon: getDotIconById(sensorIdNum),
+          planeIcon: getPlaneIconById(sensorIdNum)
+        })
+      }
+    })
+  })
+
+  return result
+})
+
 const visibleDetections = computed(() => {
   const selectedSensors = sensorsList.value
-  console.log('🎯 Computing visible detections from sensors:', selectedSensors)
+  // console.log('🎯 Computing visible detections from sensors:', selectedSensors)
 
   if (!selectedSensors || Object.keys(selectedSensors).length === 0) {
-    console.log('❌ No selected sensors')
+    // console.log('❌ No selected sensors')
     return {}
   }
 
@@ -197,32 +230,24 @@ const visibleDetections = computed(() => {
   let totalVisibleCount = 0
 
   Object.entries(selectedSensors).forEach(([key, sensor]) => {
-    console.log(`Processing sensor ${key}:`, {
-      has_detections: !!sensor.detections,
-      detections_type: typeof sensor.detections,
-      detections_length: sensor.detections?.length || 0,
-      first_detection: sensor.detections?.[0]
-    })
+    // console.log(`Processing sensor ${key}:`, {
+    //   has_detections: !!sensor.detections,
+    //   detections_type: typeof sensor.detections,
+    //   detections_length: sensor.detections?.length || 0,
+    //   first_detection: sensor.detections?.[0]
+    // })
 
     if (!sensor.detections || !Array.isArray(sensor.detections)) {
       console.log(`❌ Sensor ${key}: no valid detections array`)
       return
     }
 
-    // Egyszerűsítsük a szűrést - vegyük az utolsó N pontot és csak azokat szűrjük amelyeknek van koordinátája
     const sensorDetections = sensor.detections
       .slice(-maxVisiblePoints.value)
       .filter(d => {
         const hasCoord = d && d.coordinate && Array.isArray(d.coordinate) && d.coordinate.length === 2
         const isValid = hasCoord && typeof d.coordinate[0] === 'number' && typeof d.coordinate[1] === 'number'
         const inView = isValid ? isInViewport(d.coordinate) : false
-
-        // console.log(`Detection check:`, {
-        //   hasCoord,
-        //   isValid,
-        //   coordinate: d?.coordinate,
-        //   inView
-        // })
 
         return isValid && inView
       })
@@ -237,7 +262,7 @@ const visibleDetections = computed(() => {
   })
 
   debugInfo.value.visibleDetectionsCount = totalVisibleCount
-  console.log('✅ Final visible detections:', result, 'Total count:', totalVisibleCount)
+  // console.log('✅ Final visible detections:', result, 'Total count:', totalVisibleCount)
 
   return result
 })
@@ -245,7 +270,7 @@ const visibleDetections = computed(() => {
 // Metódus a térkép nézet frissítésére
 function updateMapView () {
   if (!mapRef.value || !mapRef.value.leafletObject) {
-    console.log('❌ Map not ready for view update')
+    // console.log('❌ Map not ready for view update')
     return
   }
 
@@ -253,7 +278,7 @@ function updateMapView () {
   mapBounds.value = leafletMap.value.getBounds()
   debugInfo.value.mapInitialized = true
 
-  console.log('🗺️ Map view updated, bounds:', mapBounds.value?.toBBoxString())
+  // console.log('🗺️ Map view updated, bounds:', mapBounds.value?.toBBoxString())
 }
 
 function computeAzimuthLine (coord: [number, number], azimuth: number, id: number): [number, number][] {
@@ -289,8 +314,10 @@ function computeAzimuthLine (coord: [number, number], azimuth: number, id: numbe
   azimuthLineCache.set(cacheKey, result)
 
   if (azimuthLineCache.size > 1000) {
-    const keys = Array.from(azimuthLineCache.keys()).slice(0, 200)
-    keys.forEach(key => azimuthLineCache.delete(key))
+  // Töröljük a legrégebbi 800 elemet, csak 200-at hagyunk
+    const keys = Array.from(azimuthLineCache.keys())
+    const keysToDelete = keys.slice(0, keys.length - 200)
+    keysToDelete.forEach(key => azimuthLineCache.delete(key))
   }
   return result
 }
@@ -306,28 +333,22 @@ function hasDifferentRoiFromDetectionList (detections, uav_id) {
   return false
 }
 
-// JAVÍTOTT színezési logika
 function getColorsByRoiId (detection, sensorId) {
-  // Get the sensor object
   const sensor = sensorsList.value[sensorId]
   if (!sensor) {
     return lineColors[sensorId % lineColors.length]
   }
 
-  // Check if there are different ROI IDs in the detection list
   if (hasDifferentRoiFromDetectionList(sensor.detections, sensor.uav_id)) {
-    // If there are different ROI IDs, use the detection's ROI ID
     if (detection.roi_id !== null && detection.roi_id !== undefined) {
       return lineColors[detection.roi_id % lineColors.length]
     }
   }
 
-  // If detection has a valid ROI ID, use it
   if (detection.roi_id !== null && detection.roi_id !== undefined) {
     return lineColors[detection.roi_id % lineColors.length]
   }
 
-  // Fallback to sensor's UAV ID
   return lineColors[sensor.uav_id % lineColors.length]
 }
 
@@ -346,13 +367,13 @@ function throttledUpdate () {
 
 // Figyelés a kiválasztott szenzorok változására
 watch(sensorsList, (newVal) => {
-  console.log('👀 Sensors list changed:', newVal)
+  // console.log('👀 Sensors list changed:', newVal)
   throttledUpdate()
 }, { deep: false })
 
 // Térképre nagyítás új pont érkezésekor
 watch(() => visibleDetections.value, (newVal) => {
-  console.log('👀 Visible detections changed:', newVal)
+  // console.log('👀 Visible detections changed:', newVal)
 
   if (autoZoom.value && newVal && Object.keys(newVal).length > 0 && leafletMap.value) {
     // Kiválasztjuk az összes detekciót, majd összefűzzük egy tömbbé
@@ -362,7 +383,7 @@ watch(() => visibleDetections.value, (newVal) => {
     const lastPoint = allDetections[allDetections.length - 1]
 
     if (lastPoint && lastPoint.coordinate) {
-      console.log('🎯 Auto-zooming to:', lastPoint.coordinate)
+      // console.log('🎯 Auto-zooming to:', lastPoint.coordinate)
       leafletMap.value.setView(lastPoint.coordinate, zoom.value)
     }
   }
@@ -385,11 +406,11 @@ function updateSettings () {
 function clearMapData () {
   sensorStore.clearDetections()
   azimuthLineCache.clear()
-  console.log('Térkép adatok törölve')
+  // console.log('Térkép adatok törölve')
 }
 
 // Debug funkció a store állapotának ellenőrzésére
-function debugStore() {
+function debugStore () {
   console.log('=== STORE DEBUG ===')
   console.log('Raw sensors:', sensors.value)
   console.log('Selected sensors:', sensorsList.value)
@@ -404,7 +425,7 @@ function debugStore() {
 
 // Inicializálás
 onMounted(async () => {
-  console.log('🚀 Component mounting...')
+  // console.log('🚀 Component mounting...')
 
   // Várunk egy kis időt, hogy a térkép komponens betöltődjön
   await nextTick()
@@ -416,13 +437,13 @@ onMounted(async () => {
       mapBounds.value = leafletMap.value.getBounds()
       debugInfo.value.mapInitialized = true
 
-      console.log('✅ Map initialized successfully')
+      // console.log('✅ Map initialized successfully')
 
       // Event listener a térkép mozgatáshoz
       leafletMap.value.on('moveend', throttledUpdate)
       leafletMap.value.on('zoomend', throttledUpdate)
     } else {
-      console.log('❌ Map not ready yet')
+      // console.log('❌ Map not ready yet')
     }
   } catch (error) {
     console.error('Hiba a térkép inicializálása során:', error)
@@ -435,7 +456,7 @@ onMounted(async () => {
           mapBounds.value = leafletMap.value.getBounds()
           debugInfo.value.mapInitialized = true
 
-          console.log('✅ Map initialized successfully (retry)')
+          // console.log('✅ Map initialized successfully (retry)')
 
           // Event listener a térkép mozgatáshoz
           leafletMap.value.on('moveend', throttledUpdate)
@@ -519,40 +540,27 @@ function goFullscreen () {
       </div>
 
       <!-- Iterate through each sensor's detections -->
-      <template v-for="(detections, sensorId) in visibleDetections" :key="sensorId">
-        <!-- Iterate through each detection for this sensor -->
-        <template v-for="(detection, index) in detections" :key="`${sensorId}-${index}`">
-          <!-- Plane marker -->
-          <l-marker
-            v-if="index % planeDisplayPeriod === 0 &&
-                  detection && detection.coordinate &&
-                  detection.coordinate.length === 2 &&
-                  typeof detection.coordinate[0] === 'number' &&
-                  typeof detection.coordinate[1] === 'number'"
-            :lat-lng="detection.coordinate"
-            :icon="getPlaneIconById(Number(sensorId))"
-          />
+      <template v-for="detection in flatDetections" :key="detection.uniqueKey">
+        <!-- Plane marker -->
+        <l-marker
+          v-if="detection.showPlane"
+          :lat-lng="detection.coordinate"
+          :icon="detection.planeIcon"
+        />
 
-          <!-- Azimuth line - JAVÍTOTT színezés -->
-          <l-polyline
-            v-if="detection && detection.coordinate &&
-                  detection.azimuth !== undefined &&
-                  computeAzimuthLine(detection.coordinate, detection.azimuth, Number(sensorId)).length > 0"
-            :lat-lngs="computeAzimuthLine(detection.coordinate, detection.azimuth, Number(sensorId))"
-            :color="getColorsByRoiId(detection, Number(sensorId))"
-            :weight="2"
-          />
+        <!-- Azimuth line -->
+        <l-polyline
+          v-if="detection.hasAzimuth && detection.azimuthLine.length > 0"
+          :lat-lngs="detection.azimuthLine"
+          :color="detection.color"
+          :weight="2"
+        />
 
-          <!-- Detection dot marker -->
-          <l-marker
-            v-if="detection && detection.coordinate &&
-                  detection.coordinate.length === 2 &&
-                  typeof detection.coordinate[0] === 'number' &&
-                  typeof detection.coordinate[1] === 'number'"
-            :lat-lng="detection.coordinate"
-            :icon="getDotIconById(Number(sensorId))"
-          />
-        </template>
+        <!-- Detection dot marker -->
+        <l-marker
+          :lat-lng="detection.coordinate"
+          :icon="detection.dotIcon"
+        />
       </template>
     </l-map>
   </div>
@@ -600,7 +608,7 @@ function goFullscreen () {
 
       <div>
         <button @click="clearMapData" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 w-full">
-          Adatok törlése
+          Clear Map
         </button>
       </div>
 
