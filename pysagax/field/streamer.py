@@ -164,6 +164,7 @@ class Streamer(Loop):
         """
         try:
             command = self._conf_in.get(block=False)
+            print("cmd target", command.target)
             self._logger.debug("Got command packet")
             if isinstance(command, proto_cmd.Command):
                 match command.instruction:

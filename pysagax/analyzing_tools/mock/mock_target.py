@@ -1,4 +1,4 @@
-"""Mocks multiple pysagaxUAV instances that all detect the same simulated target. 
+"""Mocks multiple pysagaxUAV instances that all detect the same simulated target.
 Useful for testing pysagaxGND and client, especially geolocation"""
 
 from pysagax.analyzing_tools.mock.pysagax_uav_mocker import Commander
@@ -45,7 +45,7 @@ class TargetMocker(multiprocessing.Process):
 
     def generate_new_config(self):
         """
-        
+
         """
         self.generate_current_location()
         azim1, azim2 = self.calculate_df_angles()
@@ -53,15 +53,15 @@ class TargetMocker(multiprocessing.Process):
         lat1, lon1 = self.rx1_pos.coordinates()
         lat2, lon2 = self.rx2_pos.coordinates()
 
-        
+
         sm1 = self.make_simulated_measurement(lat1, lon1, azim1, azim1, self.rx1_sigma)
         sm2 = self.make_simulated_measurement(lat2, lon2, azim2, azim2, self.rx2_sigma)
-        
+
         self.commander1_q.put(sm1)
         self.commander2_q.put(sm2)
 
     def make_simulated_measurement(self, lat, lon, azimuth, mean_azimuth, deviation):
-        """Make an object where every attribute is none 
+        """Make an object where every attribute is none
         except for the ones we want to modify due to moving target"""
         sm = SimulatedMeasurement(
             stream_id=None,
@@ -69,18 +69,18 @@ class TargetMocker(multiprocessing.Process):
             overflow=None,
             peaks=None,
             heading_data = SimulatedHeading(
-                packet_id = None, 
+                packet_id = None,
                 yaw=None,
                 pitch=None,
                 roll=None,
                 gps_lat=(lat, 0, 0),
                 gps_lon=(lon, 0, 0),
                 altitude=None,
-            ), 
+            ),
             detections=[
                 SimulatedDetection(
                     event_id = None,
-                    roi_id=None, frequency=None, 
+                    roi_id=None, frequency=None,
                     # azimuth=(azimuth,deg2rad(2),deg2rad(3)),
                     azimuth=(azimuth,deg2rad(deviation), 0),
                     # mean_azimuth=(mean_azimuth,deg2rad(1),deg2rad(3)),
@@ -92,7 +92,7 @@ class TargetMocker(multiprocessing.Process):
             ]
         )
         return sm
-    
+
     def generate_current_location(self):
         elapsed_time = time() - self.start_time
         distance_km = elapsed_time * self.speed_mps / 1000
@@ -208,7 +208,7 @@ def main(level: str, show_gui: bool = False, port: int = 5556,
         commander1._gui_out_q, commander2._gui_out_q, lat=lat, lon=lon, heading=heading, speed=speed
         , rx1_lat=rx1_lat, rx1_lon=rx1_lon, rx1_sigma=rx1_sigma, rx2_lat=rx2_lat, rx2_lon=rx2_lon,  rx2_sigma=rx2_sigma,
         )
-    
+
     for p in [process1, process2, target_mocker]:
         p.start()
 
@@ -222,3 +222,4 @@ def run_commander(level, port):
 
 if __name__ == "__main__":
     main()
+

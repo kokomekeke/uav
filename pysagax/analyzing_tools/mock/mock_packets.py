@@ -32,7 +32,7 @@ class Parameter:
         self._high_limit = high_limit
 
         self._last_called = time()
-    
+
     @classmethod
     def from_tuple(cls, values, low_limit=None, high_limit=None):
         if values == None:
@@ -50,14 +50,14 @@ class Parameter:
             return result
         return normalize_angle(result, high=self._high_limit, low=self._low_limit)
 
-class SimulatedPacket:        
+class SimulatedPacket:
     def __init__(self):
         pass
 
     def update(self, new):
         """
-        Updates the current object's attributes with the values from another 
-        SimulatedMeasurement object, but only if the values are not None. 
+        Updates the current object's attributes with the values from another
+        SimulatedMeasurement object, but only if the values are not None.
         """
         for attr, value in vars(new).items():
             if value is None:
@@ -66,7 +66,7 @@ class SimulatedPacket:
                 # list of some sort of simulated packets (eg. detections)
                 for i, x in enumerate(value):
                     if i < len(getattr(self, attr)):
-                        getattr(self, attr)[i].update(x) 
+                        getattr(self, attr)[i].update(x)
                     else:
                         new_object = type(x)()
                         new_object.update(x)
@@ -79,7 +79,7 @@ class SimulatedPacket:
 class SimulatedDetection(SimulatedPacket):
     def __init__(
         self,
-        event_id = 0, 
+        event_id = 0,
         roi_id = 0,
         frequency=(446e6, 0, 0),
         azimuth=(0, deg2rad(1), deg2rad(1)),
@@ -103,7 +103,7 @@ class SimulatedDetection(SimulatedPacket):
         packet = proto_data.Detection(
             event_id=self.event_id,
             roi_id=self.roi_id,
-            frequency=self.frequency.get(), 
+            frequency=self.frequency.get(),
             azimuth=self.azimuth.get(),
             mean_azimuth=self.mean_azimuth.get(),
             elevation=self.elevation.get(),
@@ -115,7 +115,7 @@ class SimulatedDetection(SimulatedPacket):
 class SimulatedHeading(SimulatedPacket):
     def __init__(
         self,
-        packet_id = 0, 
+        packet_id = 0,
         yaw=(0, 0, 0),
         pitch=(0, 0, 0),
         roll=(0, 0, 0),
@@ -159,9 +159,11 @@ class SimulatedMeasurement(SimulatedPacket):
                  config_id = 0,
                  overflow=False,
                  peaks=(10000, 10000, 10000, 10000),
-                 heading_data = SimulatedHeading(), 
+                 heading_data = SimulatedHeading(),
                  detections=[]):
         super().__init__()
+        if detections is None:
+            detections = []
         self.stream_id = stream_id,
         self.config_id = config_id
         self.overflow = overflow
@@ -183,11 +185,11 @@ class SimulatedMeasurement(SimulatedPacket):
         for d in self.detections:
             packet.detection.append(d.get_packet())
         return packet
-    
+
     # def update(self, new):
     #     """
-    #     Updates the current object's attributes with the values from another 
-    #     SimulatedMeasurement object, but only if the values are not None. 
+    #     Updates the current object's attributes with the values from another
+    #     SimulatedMeasurement object, but only if the values are not None.
     #     """
     #     for attr, value in vars(new).items():
     #         if value is not None:

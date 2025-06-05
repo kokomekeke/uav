@@ -19,11 +19,11 @@ defineEmits(['close'])
         </div>
 
         <div class="modal-footer">
-          <slot name="close">
-            <button class="modal-close-button" @click="close">Close</button>
-          </slot>
           <slot name="submit">
             <button class="modal-submit-button" @click="submit">Submit</button>
+          </slot>
+          <slot name="close">
+            <button class="modal-close-button" @click="close">Close</button>
           </slot>
         </div>
         <div class="modal-alerts">
@@ -49,9 +49,9 @@ defineEmits(['close'])
 }
 
 .modal-container {
-  width: 400px;
+  width: 360px;
   margin: auto;
-  padding: 20px 30px;
+  padding: 30px 50px;
   background-color: #dbd9d9;
   border-style: solid;
   border-radius: 8px;

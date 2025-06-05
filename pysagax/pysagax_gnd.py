@@ -17,7 +17,7 @@ from typing import Any, Optional
 import click
 from pysagax.util.load_click_options_from_file import load_click_options_from_file
 from coloredlogs import install
-from flask import Flask
+from flask import Flask, current_app
 from rich.logging import RichHandler
 
 from pysagax.field.scanengine import ScanEngine
@@ -29,7 +29,14 @@ from pysagax.gnd.database import ComIntDatabase
 from pysagax.gnd.monitoring import Monitoring
 from pysagax.gnd.ppgeoloc import PPGeoLoc
 from pysagax.gnd.apm_messenger import APMMessenger
-from pysagax.pysagax_gnd_api import run_api
+    
+
+try:
+    from pysagax.pysagax_gnd_api import run_api
+    print("LINUX")
+except ImportError:
+    from pysagax_gnd_api import run_api
+    print('WINDOWS')
 
 from pysagax import __version__
 
@@ -57,6 +64,7 @@ class Commander:
             self._db.initialize_db(self._db.get_app_instance())
             return
         self._telemetry_for_monitoring_q = self._manager.Queue(maxsize=8)
+        self.measurement_to_stream_queue = self._manager.Queue(maxsize=32)
         self._api_to_command_engine_commands_q = self._manager.Queue(maxsize=8)
         self._command_engine_to_api_responses_q = self._manager.Queue(maxsize=8)
         self._uavs_to_measurement_processor_q = self._manager.Queue(maxsize=100)
@@ -84,6 +92,7 @@ class Commander:
             run_api,
             self._api_to_command_engine_commands_q,
             self._command_engine_to_api_responses_q,
+            self.measurement_to_stream_queue,
         )
 
         cievents_future = self._pool.submit(self._cievents)

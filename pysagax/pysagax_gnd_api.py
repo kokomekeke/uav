@@ -4,41 +4,76 @@ import time
 from queue import Queue
 
 from flask_cors import CORS
-from flask_socketio import SocketIO, disconnect
-from threading import Thread
+from flask_socketio import SocketIO
 from typing import Optional
 
-from flask import Blueprint, Flask, jsonify, url_for
-from flask_marshmallow import Marshmallow
-from flask_marshmallow_openapi import OpenAPI, OpenAPISettings, open_api
-from flask_sqlalchemy import SQLAlchemy as FlaskSQLAlchemy
+from flask import Flask, request
+from flask_marshmallow_openapi import OpenAPI, OpenAPISettings
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from pysagax.common.loop import Loop
-from pysagax.gnd.api.api import api
+
+# TODO: mi az oka ennek???
+platform = None
+try:
+    from pysagax.gnd.api.api import api
+    platform = 'WINDOWS'
+except ImportError:
+    from pysagax.gnd.api.api import api
+    platform = 'LINUX'
+
 from pysagax.gnd.database import db
 from pysagax.gnd.api.api_utils import _set_queues
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
-socketio = SocketIO(app, async_mode="eventlet", cors_allowed_origins="*")
+CORS(app,
+     resources={
+         r"*": {
+             "origins": ["http://localhost:5173"],
+             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+             "allow_headers": ["Content-Type", "Authorization", "Accept", "Cache-Control"],
+             "expose_headers": ["Content-Type", "Cache-Control"],
+             "supports_credentials": True # Important for EventSource with wildcard origin
+         }
+     })
+
+# ❗ JAVÍTOTT SocketIO konfiguráció
+socketio = SocketIO(app,
+                   async_mode="eventlet",
+                   cors_allowed_origins="*",
+                   logger=True,
+                   engineio_logger=True,
+                   ping_timeout=45,           # ÚJ: ping timeout
+                   ping_interval=15,          # ÚJ: ping interval
+                   allow_upgrades=True,      # ÚJ: protokoll upgrade engedélyezése
+                   transports=['websocket', 'polling']) # ÚJ: csak websocket transport
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+logger.info(f"platform is {platform}")
 
 
-@socketio.on("connect")
-def handle_connect():
-    print("Client connected")
+@socketio.on('connect')
+def handle_connect(_):
+    logger.info(f"Client connected - Session ID: {request.sid}")
+    socketio.emit('connect_ack', {'status': 'connected', 'session_id': request.sid})
 
-
-@socketio.on("disconnect")
+@socketio.on('disconnect')
 def handle_disconnect():
-    print("Client disconnected")
+    logger.info(f"Client disconnected - Session ID: {request.sid}")
+
+@socketio.on('ping')
+def ping(data):
+    logger.info(f'Ping received from client - Session ID: {request.sid}')
+    socketio.emit('pong', {'timestamp': time.time()})
 
 
-@socketio.on("ping")
-def ping():
-    print("Ping received from client")
-    socketio.emit("pong")
-
+# ❗ ÚJ: Explicit kapcsolat reset
+@socketio.on('force_disconnect')
+def handle_force_disconnect():
+    logger.info(f"Force disconnect requested - Session ID: {request.sid}")
+    socketio.disconnect(request.sid)
 
 if "DATABASE_URI" in os.environ:
     app.config["SQLALCHEMY_DATABASE_URI"] = os.environ["DATABASE_URI"]
@@ -46,8 +81,10 @@ else:
     app.config["SQLALCHEMY_DATABASE_URI"] = (
         "postgresql+psycopg2://pysagax_gnd:S3cret@localhost/comint"
     )
+
 app.register_blueprint(api, url_prefix="/v1")
 db.init_app(app)
+
 conf = OpenAPISettings(
     api_version="v1",
     api_name="PySAGAX-GND API",
@@ -63,20 +100,26 @@ conf.swagger_json_template_loader = lambda: {
 
 docs = OpenAPI(config=conf)
 docs.init_app(app)
-if "PYSAGAX_GND_PROXY_FIX" in os.environ:
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
+if "PYSAGAX_GND_PROXY_FIX" in os.environ:
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1
+    )
 
 def run_api(
     q_to_command_engine: Optional[Queue] = None,
     q_from_command_engine: Optional[Queue] = None,
+    measurement_queue: Optional[Queue] = None,
 ):
-    print("Starting api...")
-
+    # TODO: egységes queue átadási módszerek
     _set_queues(q_to_command_engine, q_from_command_engine)
-
-    socketio.run(app, host="0.0.0.0", port=5000)
-
+    if measurement_queue is not None:
+        print("not none")
+        app.measurement_to_stream_queue = measurement_queue
+    host = "0.0.0.0"
+    port = 5000
+    logger.info(f"Starting API on http://{host}:{port}")
+    socketio.run(app, host=host, port=port, debug=False)  # ❗ debug=False production-hoz
 
 if __name__ == "__main__":
     run_api()
