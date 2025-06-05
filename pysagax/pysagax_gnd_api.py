@@ -76,8 +76,10 @@ def handle_force_disconnect():
     socketio.disconnect(request.sid)
 
 if "DATABASE_URI" in os.environ:
+    print("NAEZZ", os.environ["DATABASE_URI"])
     app.config["SQLALCHEMY_DATABASE_URI"] = os.environ["DATABASE_URI"]
 else:
+    print("DATABASE_URI environment variable not set")
     app.config["SQLALCHEMY_DATABASE_URI"] = (
         "postgresql+psycopg2://pysagax_gnd:S3cret@localhost/comint"
     )

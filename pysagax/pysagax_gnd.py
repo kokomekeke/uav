@@ -192,6 +192,7 @@ def main(
     setup_logging(level=level)
 
     # TODO: Implement config file
+    db_url = "postgresql+psycopg2://pysagax_gnd:S3cret@localhost/comint"
     commander = Commander(db_commit_frequency, level, db_url, initialize_db)
     if initialize_db:
         return
