@@ -109,13 +109,15 @@ if "PYSAGAX_GND_PROXY_FIX" in os.environ:
 def run_api(
     q_to_command_engine: Optional[Queue] = None,
     q_from_command_engine: Optional[Queue] = None,
-    measurement_queue: Optional[Queue] = None,
+    measurement_to_stream_queue: Optional[Queue] = None,
 ):
     # TODO: egységes queue átadási módszerek
     _set_queues(q_to_command_engine, q_from_command_engine)
-    if measurement_queue is not None:
+    if measurement_to_stream_queue is not None:
         print("not none")
-        app.measurement_to_stream_queue = measurement_queue
+        app.measurement_to_stream_queue = measurement_to_stream_queue
+    else:
+        print('kjuuuuu')
     host = "0.0.0.0"
     port = 5000
     logger.info(f"Starting API on http://{host}:{port}")

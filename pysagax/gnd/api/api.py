@@ -470,7 +470,7 @@ def comint_detection_stream():
     app_logger = current_app.logger
 
     default_batch_interval = 0.2
-    min_batch_interval = 0.1
+    min_batch_interval = 0.05
     max_batch_interval = 2.0
     max_connection_time = 3600
 
@@ -492,10 +492,13 @@ def comint_detection_stream():
                     yield f"data: {json.dumps({'info': 'Connection timeout reached'})}\n\n"
                     break
                 if current_time - last_sent_time >= batch_interval and not app_queue.empty():
+                    print("NOT EMPTY")
                     data = app_queue.get(block=False)
                     yield f"data: {json.dumps(data)}\n\n"
                     # print("Stream", end=" ")
                     last_sent_time = current_time
+                else:
+                    print("QUEUE IS EMPTY")
                 time.sleep(0.05)
         except GeneratorExit:
             app_logger.info("Client disconnected from stream")

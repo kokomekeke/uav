@@ -1,6 +1,6 @@
 // sensor.js - Frissített verzió, JSON parsing workerben történik
 import { defineStore, storeToRefs } from 'pinia'
-import { computed, ref, watch, shallowRef, onUnmounted, onMounted, triggerRef, nextTick } from 'vue'
+import { computed, ref, watch, shallowRef, onUnmounted, onMounted, triggerRef } from 'vue'
 import axios from 'axios'
 import { useConnectionStore } from '@/stores/connection'
 import { Sensor } from '../types/sensor'
@@ -8,13 +8,13 @@ import { useEventSource } from '@vueuse/core'
 import DetectionWorker from '../workers/detectionWorker?worker'
 
 // Memória-hatékony interface a detekciókhoz
-interface Comint {
-  coordinate: [number, number];
-  azimuth: number;
-  uavId: number;
-  roi_id: number | null;
-  timestamp: number;
-}
+// interface Comint {
+//   coordinate: [number, number];
+//   azimuth: number;
+//   uavId: number;
+//   roi_id: number | null;
+//   timestamp: number;
+// }
 
 export const useSensorStore = defineStore('sensor', () => {
   // Reaktív állapotok
@@ -24,6 +24,7 @@ export const useSensorStore = defineStore('sensor', () => {
   const errorMessage = ref('')
   const connectionStore = useConnectionStore()
   const { ipPort, isConnected } = storeToRefs(connectionStore)
+  const batchInterval = ref(0.1)
   let eventSourceStop = null
 
   // Detekciók tárolása
@@ -39,182 +40,58 @@ export const useSensorStore = defineStore('sensor', () => {
   })
 
   // Worker referenciák tárolása UAV ID-nként
-  const detectionWorkers = shallowRef({})
+  const detectionWorkers = shallowRef<Record<string, Worker>>({})
 
   // Mintavételezési ráta
   const samplingRate = ref(20)
 
-  // Reaktivitás segédfüggvények
-  function updateSensorReactive (uavId: number, updates: Partial<Sensor>) {
-    // Teljes sensors objektum újralétrehozása a reaktivitás biztosítására
-    const newSensors = { ...sensors.value }
-
-    if (newSensors[uavId]) {
-      newSensors[uavId] = {
-        ...newSensors[uavId],
-        ...updates
-      }
-
-      sensors.value = newSensors
-      triggerRef(sensors)
-
-      console.log(`Sensor ${uavId} updated reactively:`, updates)
-    }
-  }
-
-  function addDetectionsToSensor (uavId: number, newDetections: any[]) {
-    const newSensors = { ...sensors.value }
-    const maxSize = Math.abs(detectionSize.value)
-
-    if (newSensors[uavId]) {
-      // Új detekciók array létrehozása
-      const existingDetections = [...(newSensors[uavId].detections || [])]
-      const combinedDetections = [...existingDetections, ...newDetections]
-        .slice(-maxSize)
-
-      // Teljes szenzor objektum újralétrehozása
-      newSensors[uavId] = {
-        ...newSensors[uavId],
-        detections: combinedDetections
-      }
-
-      sensors.value = newSensors
-      triggerRef(sensors)
-
-      console.log(`Added ${newDetections.length} detections to sensor ${uavId}, total: ${combinedDetections.length}`)
-    }
-  }
-
-  // Worker inicializálása egy adott UAV-hoz
-  function initWorkerForUav (uavId) {
-    console.log(`Initializing worker for UAV ${uavId}`)
-
-    // Ha már létezik worker ehhez az UAV-hoz, leállítjuk
-    if (detectionWorkers.value[uavId]) {
-      detectionWorkers.value[uavId].terminate()
-    }
-
-    // Új worker létrehozása az UAV-hoz
-    const worker = new DetectionWorker()
-
-    worker.onmessage = (e) => {
-      const message = e.data
-
-      switch (message.type) {
-        case 'processedDetections': {
-          const { detectionsByUavId, stats: workerStats } = message
-
-          // Frissítjük a statisztikákat
-          stats.value = {
-            totalReceived: stats.value.totalReceived + (workerStats.totalReceived || 0),
-            totalProcessed: stats.value.totalProcessed + (workerStats.totalProcessed || 0),
-            lastProcessingTime: Math.max(stats.value.lastProcessingTime, workerStats.lastProcessingTime || 0),
-            activeWorkers: Object.keys(detectionWorkers.value).length
-          }
-
-          // Detekciók hozzáadása reaktív módon
-          if (detectionsByUavId[uavId] && detectionsByUavId[uavId].length > 0) {
-            addDetectionsToSensor(uavId, detectionsByUavId[uavId])
-          }
-          break
-        }
-
-        case 'statsUpdated':
-          // Statisztikák frissítése
-          stats.value = {
-            ...stats.value,
-            ...message.stats,
-            activeWorkers: Object.keys(detectionWorkers.value).length
-          }
-          break
-
-        case 'uavIdAssigned':
-          console.log(`Worker auto-assigned to UAV ${message.uavId}`)
-          break
-
-        case 'settingsUpdated':
-          console.log(`Worker settings updated for UAV ${uavId}:`, message.settings)
-          break
-
-        case 'error':
-          console.error(`Worker error for UAV ${uavId}:`, message.message)
-          errorMessage.value = `Worker error for UAV ${uavId}: ${message.message}`
-          break
-
-        case 'workerStarted':
-          console.log(`Detection worker for UAV ${uavId} started successfully at ${new Date(message.timestamp)}`)
-          // Beállítások küldése a workernek
-          updateWorkerSettings(uavId)
-          break
+  watch(isConnected, (newValue) => {
+    if (newValue) {
+      console.log('Connection established, fetching sensors')
+      fetchSensors()
+    } else {
+      console.log('Connection lost')
+      terminateAllWorkers()
+      if (eventSourceStop) {
+        eventSourceStop()
+        eventSourceStop = null
       }
     }
+  })
 
-    // Worker hibaesemények kezelése
-    worker.onerror = (error) => {
-      console.error(`Worker error for UAV ${uavId}:`, error)
-      errorMessage.value = `Worker error for UAV ${uavId}: ${error.message}`
-      worker.terminate()
-
-      // Eltávolítjuk a hibás workert reaktív módon
-      const updatedWorkers = { ...detectionWorkers.value }
-      delete updatedWorkers[uavId]
-      detectionWorkers.value = updatedWorkers
-
-      // Statisztikák frissítése
-      stats.value = {
-        ...stats.value,
-        activeWorkers: Object.keys(updatedWorkers).length
-      }
-    }
-
-    // Frissítjük a workerek listáját reaktív módon
-    const updatedWorkers = { ...detectionWorkers.value }
-    updatedWorkers[uavId] = worker
-    detectionWorkers.value = updatedWorkers
-
-    // Statisztikák frissítése
-    stats.value = {
-      ...stats.value,
-      activeWorkers: Object.keys(updatedWorkers).length
-    }
-
-    return worker
-  }
-
-  // Worker beállítások frissítése egy adott UAV-hoz
-  function updateWorkerSettings (uavId) {
-    const worker = detectionWorkers.value[uavId]
-    if (!worker) return
-
-    worker.postMessage({
-      type: 'updateSettings',
-      uavId,
-      samplingRate: samplingRate.value,
-      processThrottle: 100
-    })
-
-    console.log(`Updated worker settings for UAV ${uavId}`)
-  }
-
-  // Minden worker beállításának frissítése
-  function updateAllWorkerSettings () {
-    Object.keys(detectionWorkers.value).forEach(uavId => {
-      updateWorkerSettings(parseInt(uavId))
-    })
-  }
-
-  // Figyelje a samplingRate változásait és frissítse a workereket
   watch(samplingRate, () => {
     console.log('Sampling rate changed:', samplingRate.value)
     updateAllWorkerSettings()
   })
 
-  // Mouse over handler
+  watch(batchInterval, async (newVal) => {
+    console.log('Batch interval changed to:', newVal)
+
+    // Előző stream leállítása
+    if (eventSourceStop) {
+      eventSourceStop()
+      eventSourceStop = null
+    }
+
+    // Ha van kiválasztott szenzor, újraindítjuk a streamet az új intervallummal
+    if (selectedSensor.value) {
+      try {
+        await startDetectionStream()
+        console.log('Detection stream restarted with new interval:', newVal)
+      } catch (err) {
+        console.error('Stream restart error:', err)
+        errorMessage.value = 'Hiba a stream újraindítása során'
+      }
+    }
+  })
+
+
   const handleMouseOver = (sensor) => {
     selectedSensor.value = sensor
   }
 
-  // Szenzorok lekérése az API-ból
+  const getSensors = computed(() => sensors.value)
+
   async function fetchSensors () {
     if (!isConnected.value) {
       console.log('Not connected, skipping sensor fetch')
@@ -291,11 +168,9 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
-  // Új szenzor hozzáadása
   async function addSensor (sensor) {
     isLoading.value = true
     errorMessage.value = ''
-    console.log('gggggggggggg',sensor.active)
     try {
       await axios.post(`${ipPort.value}/v1/uav`,
         {
@@ -316,7 +191,6 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
-  // Szenzor eltávolítása
   async function removeSensor () {
     if (!selectedSensor.value) return
 
@@ -362,11 +236,9 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
-  // Szenzor kiválasztása
   async function selectSensor (sensor: Sensor) {
     selectedSensor.value = sensor
 
-    // Korábbi stream leállítása
     if (eventSourceStop) {
       eventSourceStop()
       eventSourceStop = null
@@ -374,83 +246,118 @@ export const useSensorStore = defineStore('sensor', () => {
 
     console.log('Sensor selected:', sensor.uav_id)
 
-    // Inicializáljuk a kiválasztott UAV-hoz tartozó workert
     initWorkerForUav(sensor.uav_id)
 
-    // Stream indítása
     await startDetectionStream()
   }
 
-  // Szenzorok listájának lekérése
-  function getSensorsList () {
-    return Object.values(sensors.value)
-  }
+  function initWorkerForUav (uavId) {
+    console.log(`Initializing worker for UAV ${uavId}`)
 
-  // Computed property a szenzorokhoz
-  const getSensors = computed(() => sensors.value)
-
-  // Szenzor kiválasztás toggle
-  function toggleSensorSelection (sensorId: number) {
-    if (!sensors.value[sensorId]) return
-
-    const isCurrentlySelected = sensors.value[sensorId].is_selected
-
-    updateSensorReactive(sensorId, {
-      is_selected: !isCurrentlySelected
-    })
-
-    console.log(`Sensor ${sensorId} selection toggled to:`, !isCurrentlySelected)
-  }
-
-  // Raw detekció küldése a megfelelő workernek - JSON parsing nélkül
-  function routeRawDetectionToWorker (rawJsonString) {
-    // Először megpróbáljuk kinyerni az UAV ID-t a JSON-ból, hogy tudjuk melyik workernek küldjük
-    try {
-      // Egyszerű regex alapú UAV ID kinyerés, teljes parsing nélkül
-      const uavIdMatch = rawJsonString.match(/"uav_id"\s*:\s*(\d+)/)
-
-      if (!uavIdMatch) {
-        console.warn('No UAV ID found in raw detection data')
-        return
-      }
-
-      const uavId = parseInt(uavIdMatch[1])
-
-      // Ha még nincs worker ennek az UAV-nak, létrehozunk egyet
-      if (!detectionWorkers.value[uavId]) {
-        console.log(`Creating worker for new UAV: ${uavId}`)
-        initWorkerForUav(uavId)
-      }
-
-      // Elküldjük a RAW JSON string-et a megfelelő workernek
-      if (detectionWorkers.value[uavId]) {
-        detectionWorkers.value[uavId].postMessage({
-          type: 'newDetection',
-          value: rawJsonString // RAW JSON string, nem parsed objektum
-        })
-
-        // Statisztikák frissítése
-        stats.value = {
-          ...stats.value,
-          totalReceived: stats.value.totalReceived + 1
-        }
-      } else {
-        console.warn(`No worker available for UAV ${uavId}`)
-      }
-    } catch (error) {
-      console.error('Error routing raw detection to worker:', error)
-      errorMessage.value = 'Hiba a detekció továbbítása során'
+    if (detectionWorkers.value[uavId]) {
+      console.log('TERMINATE')
+      detectionWorkers.value[uavId].terminate()
     }
+
+    // Új worker létrehozása az UAV-hoz
+    const worker = new DetectionWorker()
+
+    worker.onmessage = (e) => {
+      const message = e.data
+
+      switch (message.type) {
+        case 'processedDetections': {
+          const { detectionsByUavId, stats: workerStats } = message
+
+          // Frissítjük a statisztikákat
+          stats.value = {
+            totalReceived: stats.value.totalReceived + (workerStats.totalReceived || 0),
+            totalProcessed: stats.value.totalProcessed + (workerStats.totalProcessed || 0),
+            lastProcessingTime: Math.max(stats.value.lastProcessingTime, workerStats.lastProcessingTime || 0),
+            activeWorkers: Object.keys(detectionWorkers.value).length
+          }
+
+          // Detekciók hozzáadása reaktív módon
+          if (detectionsByUavId[uavId] && detectionsByUavId[uavId].length > 0) {
+            console.log('add')
+            addDetectionsToSensor(uavId, detectionsByUavId[uavId])
+          }
+          break
+        }
+
+        case 'statsUpdated':
+          // Statisztikák frissítése
+          stats.value = {
+            ...stats.value,
+            ...message.stats,
+            activeWorkers: Object.keys(detectionWorkers.value).length
+          }
+          break
+
+        case 'uavIdAssigned':
+          console.log(`Worker auto-assigned to UAV ${message.uavId}`)
+          break
+
+        case 'settingsUpdated':
+          console.log(`Worker settings updated for UAV ${uavId}:`, message.settings)
+          break
+
+        case 'error':
+          console.error(`Worker error for UAV ${uavId}:`, message.message)
+          errorMessage.value = `Worker error for UAV ${uavId}: ${message.message}`
+          break
+
+        case 'workerStarted':
+          console.log(`Detection worker for UAV ${uavId} started successfully at ${new Date(message.timestamp)}`)
+          // Beállítások küldése a workernek
+          updateWorkerSettings(uavId)
+          break
+      }
+    }
+
+    // Worker hibaesemények kezelése
+    worker.onerror = (error) => {
+      console.error(`Worker error for UAV ${uavId}:`, error)
+      errorMessage.value = `Worker error for UAV ${uavId}: ${error.message}`
+      worker.terminate()
+
+      // Eltávolítjuk a hibás workert reaktív módon
+      const updatedWorkers = { ...detectionWorkers.value }
+      delete updatedWorkers[uavId]
+      detectionWorkers.value = updatedWorkers
+
+      // Statisztikák frissítése
+      stats.value = {
+        ...stats.value,
+        activeWorkers: Object.keys(updatedWorkers).length
+      }
+    }
+
+    // Frissítjük a workerek listáját reaktív módon
+    const updatedWorkers = { ...detectionWorkers.value }
+    updatedWorkers[uavId] = worker
+    detectionWorkers.value = updatedWorkers
+
+    // Statisztikák frissítése
+    stats.value = {
+      ...stats.value,
+      activeWorkers: Object.keys(updatedWorkers).length
+    }
+
+    return worker
   }
 
-  // Detekciós stream indítása
   async function startDetectionStream () {
-    console.log('Starting detection stream')
-    const batchInterval = 0.2 // 200ms
+    if (!selectedSensor.value) {
+      console.log('No sensor selected, cannot start stream')
+      return
+    }
+
+    console.log('Starting detection stream with interval:', batchInterval.value)
 
     try {
       const { data, error, close } = useEventSource(
-        `${ipPort.value}/v1/stream/comint_detection?interval=${batchInterval}`,
+        `${ipPort.value}/v1/stream/comint_detection?interval=${batchInterval.value}`,
         [],
         {
           withCredentials: true,
@@ -467,12 +374,11 @@ export const useSensorStore = defineStore('sensor', () => {
 
       eventSourceStop = close
 
-      // Data watcher - most RAW string-et küldünk a workernek
+      // Data watcher - RAW string-et küldünk a workernek
       watch(data, (rawJsonString) => {
-        // console.log('elsoe: ', rawJsonString)
         if (!rawJsonString) return
-        // console.log('masodiek')
         // RAW JSON string küldése a workernek - nincs parsing itt
+        console.log('RAWJSON: ', rawJsonString)
         routeRawDetectionToWorker(rawJsonString)
       })
 
@@ -492,11 +398,128 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
+  function addDetectionsToSensor (uavId: number, newDetections: any[]) {
+    const newSensors = { ...sensors.value }
+    const maxSize = Math.abs(detectionSize.value)
+
+    if (newSensors[uavId]) {
+      const existingDetections = [...(newSensors[uavId].detections || [])]
+      const combinedDetections = [...existingDetections, ...newDetections]
+        .slice(-maxSize)
+      console.log('EXISTING: ', existingDetections.length)
+      console.log('NEW: ', newDetections.length)
+      console.log('COMBINED: ', combinedDetections.length)
+
+      // Teljes szenzor objektum újralétrehozása
+      newSensors[uavId] = {
+        ...newSensors[uavId],
+        detections: combinedDetections
+      }
+
+      sensors.value = newSensors
+      // triggerRef(sensors)
+
+      console.log(`Added ${newDetections.length} detections to sensor ${uavId}, total: ${combinedDetections.length}`)
+    }
+  }
+
+  function updateSensorReactive (uavId: number, updates: Partial<Sensor>) {
+    // Teljes sensors objektum újralétrehozása a reaktivitás biztosítására
+    const newSensors = { ...sensors.value }
+
+    if (newSensors[uavId]) {
+      newSensors[uavId] = {
+        ...newSensors[uavId],
+        ...updates
+      }
+
+      sensors.value = newSensors
+      triggerRef(sensors)
+
+      console.log(`Sensor ${uavId} updated reactively:`, updates)
+    }
+  }
+
+  function updateWorkerSettings (uavId) {
+    const worker = detectionWorkers.value[uavId]
+    if (!worker) return
+
+    worker.postMessage({
+      type: 'updateSettings',
+      uavId,
+      samplingRate: samplingRate.value,
+      processThrottle: 100
+    })
+
+    console.log(`Updated worker settings for UAV ${uavId}`)
+  }
+
+  function updateAllWorkerSettings () {
+    Object.keys(detectionWorkers.value).forEach(uavId => {
+      updateWorkerSettings(parseInt(uavId))
+    })
+  }
+
+  function getSensorsList () {
+    return Object.values(sensors.value)
+  }
+
+  function toggleSensorSelection (sensorId: number) {
+    if (!sensors.value[sensorId]) return
+
+    const isCurrentlySelected = sensors.value[sensorId].is_selected
+
+    updateSensorReactive(sensorId, {
+      is_selected: !isCurrentlySelected
+    })
+
+    console.log(`Sensor ${sensorId} selection toggled to:`, !isCurrentlySelected)
+  }
+
+  function routeRawDetectionToWorker (rawJsonString) {
+    // Először megpróbáljuk kinyerni az UAV ID-t a JSON-ból, hogy tudjuk melyik workernek küldjük
+    try {
+      // Egyszerű regex alapú UAV ID kinyerés, teljes parsing nélkül
+      const uavIdMatch = rawJsonString.match(/"uav_id"\s*:\s*(\d+)/)
+
+      if (!uavIdMatch) {
+        console.warn('No UAV ID found in raw detection data')
+        return
+      }
+
+      const uavId = parseInt(uavIdMatch[1])
+
+      if (!detectionWorkers.value[uavId]) {
+        console.log(`Creating worker for new UAV: ${uavId}`)
+        initWorkerForUav(uavId)
+      }
+
+      // Elküldjük a RAW JSON string-et a megfelelő workernek
+      if (detectionWorkers.value[uavId]) {
+        console.log(rawJsonString)
+        detectionWorkers.value[uavId].postMessage({
+          type: 'newDetection',
+          value: rawJsonString // RAW JSON string, nem parsed objektum
+        })
+
+        // Statisztikák frissítése
+        stats.value = {
+          ...stats.value,
+          totalReceived: stats.value.totalReceived + 1
+        }
+      } else {
+        console.warn(`No worker available for UAV ${uavId}`)
+      }
+    } catch (error) {
+      console.error('Error routing raw detection to worker:', error)
+      errorMessage.value = 'Hiba a detekció továbbítása során'
+    }
+  }
+
   // Detekciók teljes törlése
   function clearDetections () {
     console.log('Clearing all detections')
 
-    // Új szenzor objektum létrehozása üres detekciókkal
     const newSensors = {}
 
     Object.entries(sensors.value).forEach(([id, sensor]) => {
@@ -602,19 +625,6 @@ export const useSensorStore = defineStore('sensor', () => {
   })
 
   // Connection watcher
-  watch(isConnected, (newValue) => {
-    if (newValue) {
-      console.log('Connection established, fetching sensors')
-      fetchSensors()
-    } else {
-      console.log('Connection lost')
-      terminateAllWorkers()
-      if (eventSourceStop) {
-        eventSourceStop()
-        eventSourceStop = null
-      }
-    }
-  })
 
   return {
     // Állapotok
@@ -640,6 +650,7 @@ export const useSensorStore = defineStore('sensor', () => {
     handleMouseOver,
     toggleSensorSelection,
     clearDetections,
+    batchInterval,
     startDetectionStream,
     debugReactivity,
 
