@@ -470,13 +470,15 @@ def comint_detection_stream():
     app_logger = current_app.logger
 
     default_batch_interval = 0.2
-    min_batch_interval = 0.05
+    min_batch_interval = 0.01
     max_batch_interval = 2.0
     max_connection_time = 3600
 
     try:
         requested_interval = request.args.get('interval', default_batch_interval, type=float)
         batch_interval = max(min_batch_interval, min(requested_interval, max_batch_interval))
+        # with current_app.app_context():
+        current_app.batch_interval = batch_interval
     except ValueError:
         batch_interval = default_batch_interval
         app_logger.warning(f"Invalid interval parameter, using default: {default_batch_interval}")
@@ -500,6 +502,7 @@ def comint_detection_stream():
                 else:
                     print("QUEUE IS EMPTY")
                 time.sleep(0.05)
+                print("Queue size:", app_queue.qsize())
         except GeneratorExit:
             app_logger.info("Client disconnected from stream")
         except Exception as e:

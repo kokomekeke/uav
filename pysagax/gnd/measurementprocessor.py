@@ -7,6 +7,9 @@ import time
 
 import sqlalchemy
 from typing import Any, Callable, Optional
+
+from flask import current_app
+
 from pysagax.gnd.database import ComIntDatabase, ComIntDetectionEntity, UAVEntity
 from pysagax.util.queue_put import queue_put
 
@@ -25,12 +28,12 @@ class MeasurementProcessor(Loop):
     """Processes packets received from UAVs through the UDP stream connection"""
 
     def __init__(
-        self,
-        db: ComIntDatabase,
-        db_commit_frequency: float,
-        measurement_to_stream_queue=None,
-        *args,
-        **kwargs,
+            self,
+            db: ComIntDatabase,
+            db_commit_frequency: float,
+            measurement_to_stream_queue=None,
+            *args,
+            **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
 
@@ -45,6 +48,10 @@ class MeasurementProcessor(Loop):
         self.db_commit_frequency = db_commit_frequency
         self._measurement_to_stream_queue: Optional[Queue] = measurement_to_stream_queue
 
+        # Stream throttling
+        self._default_batch_interval = 0.2
+        self._last_stream_time_per_uav = {}
+
 
     def __call__(
         self,
@@ -57,6 +64,16 @@ class MeasurementProcessor(Loop):
         self._to_monitoring_queue = to_monitoring_queue
         self._app = self._db.get_app_instance()
         return super()._call(*args, **kwargs)
+
+    def get_batch_interval(self) -> float:
+        """Batch interval lekérése current_app-ból vagy default érték visszaadása"""
+        try:
+            if hasattr(current_app, 'batch_interval'):
+                return current_app.batch_interval
+        except RuntimeError:
+            # Nincs app context
+            pass
+        return self._default_batch_interval
 
 
     def _receive_telemetry(
@@ -169,6 +186,15 @@ class MeasurementProcessor(Loop):
         self._logger.trace(f"Measurement packet delay: {time.time() - packet.time.seconds - packet.time.nanos / 1e9}")
 
         quat = packet.heading_data.quaternion if len(packet.heading_data.quaternion) == 4 else [None] * 4
+        current_time = time.perf_counter()
+        batch_interval = self.get_batch_interval()
+
+        # UAV-specifikus timer inicializálása
+        uav_id = uav_entity.uav_id
+        if uav_id not in self._last_stream_time_per_uav:
+            self._last_stream_time_per_uav[uav_id] = 0
+
+        should_stream = (current_time - self._last_stream_time_per_uav[uav_id]) >= batch_interval
 
         for det in packet.detection:
             new_meas_entity = ComIntDetectionEntity()
@@ -194,30 +220,37 @@ class MeasurementProcessor(Loop):
 
             self._measurements_to_add.append(new_meas_entity)
 
-            stream_data = {
-                "detection_id": -1,
-                "uav_id": uav_entity.uav_id,
-                "uav_label": uav_entity.uav_label,
-                "frequency": int(det.frequency),
-                "bandwidth": int(det.bandwidth),
-                "snr": det.snr,
-                "lob_azim_deg": det.mean_azimuth / math.pi * 180.0,
-                "lob_elev_deg": det.mean_elevation / math.pi * 180.0,
-                "precision": 1 - (det.deviation / (math.pi * 2)),
-                "signal_strength": det.strength,
-                "timestamp": packet.time.ToDatetime().isoformat(),
-                "roi_identifier": det.roi_id,
-                "uav_pos_lat": packet.heading_data.gps_lat,
-                "uav_pos_lon": packet.heading_data.gps_lon,
-                "uav_pos_altitude": packet.heading_data.altitude,
-                "uav_pos_q0": quat[0],
-                "uav_pos_q1": quat[1],
-                "uav_pos_q2": quat[2],
-                "uav_pos_q3": quat[3]
-            }
+            # Stream adatok küldése throttling-gel
+            if should_stream and self._measurement_to_stream_queue is not None:
+                stream_data = {
+                    "detection_id": -1,
+                    "uav_id": uav_entity.uav_id,
+                    "uav_label": uav_entity.uav_label,
+                    "frequency": int(det.frequency),
+                    "bandwidth": int(det.bandwidth),
+                    "snr": det.snr,
+                    "lob_azim_deg": det.mean_azimuth / math.pi * 180.0,
+                    "lob_elev_deg": det.mean_elevation / math.pi * 180.0,
+                    "precision": 1 - (det.deviation / (math.pi * 2)),
+                    "signal_strength": det.strength,
+                    "timestamp": packet.time.ToDatetime().isoformat(),
+                    "roi_identifier": det.roi_id,
+                    "uav_pos_lat": packet.heading_data.gps_lat,
+                    "uav_pos_lon": packet.heading_data.gps_lon,
+                    "uav_pos_altitude": packet.heading_data.altitude,
+                    "uav_pos_q0": quat[0] if None not in quat else None,
+                    "uav_pos_q1": quat[1] if None not in quat else None,
+                    "uav_pos_q2": quat[2] if None not in quat else None,
+                    "uav_pos_q3": quat[3] if None not in quat else None
+                }
 
-            queue_put(self._measurement_to_stream_queue, stream_data, 8, self._logger, "Measurement to stream")
+                queue_put(self._measurement_to_stream_queue, stream_data, 8, self._logger, "Measurement to stream")
 
+        # Timer frissítése, ha streameltünk
+        if should_stream:
+            self._last_stream_time_per_uav[uav_id] = current_time
+
+        # UAV pozíció frissítése
         uav_entity.last_pos_lat = packet.heading_data.gps_lat
         uav_entity.last_pos_lon = packet.heading_data.gps_lon
         uav_entity.last_pos_altitude = packet.heading_data.altitude
@@ -231,6 +264,7 @@ class MeasurementProcessor(Loop):
             self._logger.warning(
                 f"Received quaternion length is {len(packet.heading_data.quaternion)}"
             )
+
         return uav_entity
 
     def _receive_event(self, uav_entity: UAVEntity, packet: proto_data.Event) -> None:

@@ -592,8 +592,8 @@ function goFullscreen () {
         <label class="font-semibold">Batch interval (s)</label>
         <input
           type="number"
-          step="0.1"
-          min="0.1"
+          step="0.01"
+          min="0.05"
           max="10"
           v-model="batchIntervalLocal"
           @change="updateBatchInterval"
