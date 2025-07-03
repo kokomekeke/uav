@@ -55,6 +55,9 @@ class APMMessenger(Loop):
         )
 
     def _send_to_apm(self):
+        """
+        Returns None if nothing to send. Else it returns a response.
+        """
         #send acqured data then delete the geoloc dict so we dont send non updated data again
         # cutoff_time = current_time - self._message_frequency
         # for roi, emitter_data in self._latest_geolocations.items():
@@ -62,7 +65,7 @@ class APMMessenger(Loop):
         if not self._latest_geolocations:
             # don't send empty packet
             self._logger.info("No geolocation data to be sent to APM")
-            return
+            return None
 
         cmd = proto_cmd.Command(
             instruction=proto_cmd.FORWARD_TO_APM,
@@ -102,6 +105,8 @@ class APMMessenger(Loop):
         if current_time > self._last_packet_sent + self._message_frequency:
             response = self._send_to_apm()
             self._last_packet_sent = current_time
+            if response is None:
+                return
             if not response.success:
                 self._logger.critical(response.error.description)
         

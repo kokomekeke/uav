@@ -64,10 +64,10 @@ class Commander:
             self._db.initialize_db(self._db.get_app_instance())
             return
         self._telemetry_for_monitoring_q = self._manager.Queue(maxsize=8)
-        self._measurement_to_stream_queue = self._manager.Queue(maxsize=64)
+        self._measurement_to_stream_queue = self._manager.Queue(maxsize=8)
         self._api_to_command_engine_commands_q = self._manager.Queue(maxsize=8)
         self._command_engine_to_api_responses_q = self._manager.Queue(maxsize=8)
-        self._uavs_to_measurement_processor_q = self._manager.Queue(maxsize=100)
+        self._uavs_to_measurement_processor_q = self._manager.Queue(maxsize=8)
         self._geoloc_to_apm_q = self._manager.Queue(maxsize=8)
 
         self._cievents = CIEvents(level=level)
