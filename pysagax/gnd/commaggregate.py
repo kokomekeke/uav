@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
-import socket
-import threading
 import time
-from contextlib import closing
 import queue
 from typing import Any, Callable, Optional
 import threading
