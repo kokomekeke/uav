@@ -1,6 +1,6 @@
 """
 Run this to mock a single pysagaxUAV output stream.
-    -> Streams  generated measurement packets with mocked heading and detection data.
+    -> Streams  generated measurement packets with mocked heading and detection data. 
     -> Use the GUI to set it up (currently can't run without gui)
 To mock MULTIPLE pysagaxUAV instances (all detecting the same target), run mock_target.py.
 """
