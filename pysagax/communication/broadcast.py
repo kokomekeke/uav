@@ -50,11 +50,7 @@ class RX:
 
 
 class TX:
-    def __init__(
-            self,
-            address: str = "127.0.0.1",
-            port: int = 5353
-    ) -> None:
+    def __init__(self, address: str = "127.0.0.1", port: int = 5353) -> None:
         self._logger = getLogger("TX")
 
         self._address = address
