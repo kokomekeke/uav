@@ -29,14 +29,15 @@ from pysagax.gnd.database import ComIntDatabase
 from pysagax.gnd.monitoring import Monitoring
 from pysagax.gnd.ppgeoloc import PPGeoLoc
 from pysagax.gnd.apm_messenger import APMMessenger
-    
 
-try:
+try:  # TODO: investigate this strange import differences
     from pysagax.pysagax_gnd_api import run_api
-    print("LINUX")
+
+    platform = "LINUX"
 except ImportError:
     from pysagax_gnd_api import run_api
-    print('WINDOWS')
+
+    platform = "WINDOWS"
 
 from pysagax import __version__
 
@@ -57,6 +58,8 @@ class Commander:
         self._pool = ProcessPoolExecutor(max_workers=15)
         multiprocessing.current_process().name = "Commander"
 
+        self._logger.info(f"Platform is {platform}")
+
         self._db = ComIntDatabase(db_url)
         # self._example_q = self._manager.Queue(maxsize=1)
         # self._example_proxy = self._manager.dict()
@@ -73,7 +76,10 @@ class Commander:
         self._cievents = CIEvents(level=level)
         self._commaggregate = CommAggregate(level=level, db=self._db)
         self._measurement_processor = MeasurementProcessor(
-            level=level, db=self._db, db_commit_frequency=db_commit_frequency, measurement_to_stream_queue=self._measurement_to_stream_queue,
+            level=level,
+            db=self._db,
+            db_commit_frequency=db_commit_frequency,
+            measurement_to_stream_queue=self._measurement_to_stream_queue,
         )
         # self._commandengine = CommandEngine(level=level)
         self._monitoring = Monitoring(level=level)
@@ -111,11 +117,13 @@ class Commander:
         monitoring_future = self._pool.submit(
             self._monitoring, self._telemetry_for_monitoring_q
         )
-        ppgeoloc_future = self._pool.submit(self._ppgeoloc,self._geoloc_to_apm_q)
-        apm_messenger_future = self._pool.submit(self._apm_messenger,
-                                            self._geoloc_to_apm_q,
-                                            self._api_to_command_engine_commands_q,
-                                            self._command_engine_to_api_responses_q,)
+        ppgeoloc_future = self._pool.submit(self._ppgeoloc, self._geoloc_to_apm_q)
+        apm_messenger_future = self._pool.submit(
+            self._apm_messenger,
+            self._geoloc_to_apm_q,
+            self._api_to_command_engine_commands_q,
+            self._command_engine_to_api_responses_q,
+        )
         # Periodically checking errors in threads
 
         signal(SIGINT, self._signal_handler)
@@ -204,8 +212,6 @@ def main(
     # Configure logging format
     setup_logging(level=level)
 
-    # TODO: Implement config file
-    db_url = "postgresql+psycopg2://pysagax_gnd:S3cret@localhost/comint"
     commander = Commander(db_commit_frequency, level, db_url, initialize_db)
     if initialize_db:
         return
