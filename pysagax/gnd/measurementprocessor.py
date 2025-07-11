@@ -28,6 +28,7 @@ class MeasurementProcessor(Loop):
         self,
         db: ComIntDatabase,
         db_commit_frequency: float,
+        measurement_to_stream_queue=None,
         *args,
         **kwargs,
     ) -> None:
@@ -42,6 +43,9 @@ class MeasurementProcessor(Loop):
         self._measurements_to_add = []
         self._uavs_to_update = {}
         self.db_commit_frequency = db_commit_frequency
+
+        self._logger.critical("Measurement packet streaming is not yet implemented")
+        self._measurement_to_stream_queue: Optional[Queue] = measurement_to_stream_queue
 
 
     def __call__(
@@ -176,6 +180,10 @@ class MeasurementProcessor(Loop):
             uav_entity.last_seen = sqlalchemy.func.now()
 
             self._uavs_to_update[uav_entity.uav_id] = uav_entity
+        
+        if self._measurement_to_stream_queue is not None:
+            pass # streaming is not yet implemented
+            # queue_put(self._measurement_to_stream_queue, packet, 0)
 
     @run_once(timeout=1)
     def _log_queue_filled(self, size):

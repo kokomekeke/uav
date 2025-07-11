@@ -163,8 +163,10 @@ class Streamer(Loop):
         Returns True if a new command was received
         """
         try:
-            command = self._conf_in.get(block=False)
-            self._logger.debug("Got command packet")
+            command: proto_cmd.Command = self._conf_in.get(block=False)
+            self._logger.debug(
+                f"Got command packet {proto_cmd.Instruction.Name(command.instruction)})"
+            )
             if isinstance(command, proto_cmd.Command):
                 match command.instruction:
                     case proto_cmd.STREAM_START:

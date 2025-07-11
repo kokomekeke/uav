@@ -1,6 +1,6 @@
 import logging
 import flask
-from flask import jsonify, make_response
+from flask import jsonify, make_response, current_app
 from sqlalchemy.sql import text
 from flask_marshmallow_openapi import open_api
 
@@ -448,3 +448,9 @@ def command(id, instruction):
 
     # Convert Protobuf message back to JSON for response
     return jsonify(MessageToDict(response))
+
+@api.route("/stream/comint_detection", methods=["GET", "OPTIONS"])
+def comint_detection_stream():
+    return make_response(jsonify({"error": "Stream endpoint not implemented yet"}), 503)
+
+    app_queue = current_app.measurement_to_stream_queue

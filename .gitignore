@@ -23,6 +23,7 @@ dist/
 target/
 dist/
 
+
 # JetBrains IDE
 .idea/
 
@@ -65,3 +66,8 @@ build/
 
 pysagax/message/*_pb2.py
 pysagax/message/*_pb2.pyi
+
+client/dist
+client/node_modules
+client/public/tiles
+client/package-lock.json
