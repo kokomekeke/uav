@@ -1,10 +1,6 @@
 import logging
-# TODO: felváltható e JSONIFY-al?
-import json
-import time
-
 import flask
-from flask import jsonify, make_response, current_app, Response, request, stream_with_context
+from flask import jsonify, make_response, current_app
 from sqlalchemy.sql import text
 from flask_marshmallow_openapi import open_api
 
@@ -455,71 +451,6 @@ def command(id, instruction):
 
 @api.route("/stream/comint_detection", methods=["GET", "OPTIONS"])
 def comint_detection_stream():
-    if request.method == 'OPTIONS':
-        return Response('', status=204, headers={
-            "Access-Control-Allow-Origin": "http://localhost:5173",
-            "Access-Control-Allow-Methods": "GET, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-            "Access-Control-Allow-Credentials": "true"
-        })
-
-    if not hasattr(current_app, 'measurement_to_stream_queue'):
-        return make_response(jsonify({"error": "Stream queue not available"}), 503)
+    return make_response(jsonify({"error": "Stream endpoint not implemented yet"}), 503)
 
     app_queue = current_app.measurement_to_stream_queue
-    app_logger = current_app.logger
-
-    default_batch_interval = 0.2
-    min_batch_interval = 0.01
-    max_batch_interval = 2.0
-    max_connection_time = 3600
-
-    try:
-        requested_interval = request.args.get('interval', default_batch_interval, type=float)
-        batch_interval = max(min_batch_interval, min(requested_interval, max_batch_interval))
-        # with current_app.app_context():
-        current_app.batch_interval = batch_interval
-    except ValueError:
-        batch_interval = default_batch_interval
-        app_logger.warning(f"Invalid interval parameter, using default: {default_batch_interval}")
-
-    def generate():
-        start_time = time.perf_counter()
-        last_sent_time = start_time
-        try:
-            while True:
-                current_time = time.perf_counter()
-                if current_time - start_time >= max_connection_time:
-                    app_logger.info("Max connection time reached")
-                    yield f"data: {json.dumps({'info': 'Connection timeout reached'})}\n\n"
-                    break
-                if current_time - last_sent_time >= batch_interval and not app_queue.empty():
-                    print("NOT EMPTY")
-                    data = app_queue.get(block=False)
-                    yield f"data: {json.dumps(data)}\n\n"
-                    # print("Stream", end=" ")
-                    last_sent_time = current_time
-                else:
-                    print("QUEUE IS EMPTY")
-                time.sleep(0.05)
-                print("Queue size:", app_queue.qsize())
-        except GeneratorExit:
-            app_logger.info("Client disconnected from stream")
-        except Exception as e:
-            app_logger.error(f"Error in stream: {str(e)}")
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-
-    app_logger.info(
-        f"Starting comint_detection stream with interval: {batch_interval}s, max time: {max_connection_time}s")
-
-    return Response(
-        stream_with_context(generate()),
-        mimetype="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-            "Access-Control-Allow-Origin": "http://localhost:5173",
-            "Access-Control-Allow-Credentials": "true",
-        }
-    )
