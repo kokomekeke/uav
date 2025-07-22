@@ -179,7 +179,8 @@ message CoreServiceConfig {
     string source_subdev = 20;
     uint64 aoa_antenna_id = 22; // indexing start from: 1; write: set the antenna descriptor; read: read the actual antenna descriptor
     uint32 aoa_antenna_count = 23; // the number of antenna presets; just read
-
+    // R - Reference, L - LowBand, M - MidBand, H - HighBand, U - Undefined; just read
+    string antenna_switch_mode = 24;
     // Type of source
     enum Type {
         LIVE = 0;
