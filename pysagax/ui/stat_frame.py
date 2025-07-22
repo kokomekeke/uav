@@ -87,7 +87,7 @@ class PeakChart(tkinter.Canvas):
             for peak in peaks
         ]
         min_dbfs_level = 20 * math.log10(
-            400 / adc_resolution
+            10 / adc_resolution
         )  # min value of the scale (aprox. noise level)
         bar_widths = [
             (

@@ -84,7 +84,8 @@ class PlaybackTab(ttk.Frame):
             f"Gain = {', '.join([f'{g:4.1f}' for g in cp.config.cs.channel_gain])}\n"
             f"Heading: {cp.config.heading.selected_source_type} [{heading_conf_str}]\n"
             f"ScanEngine: [{str(cp.config.se)}]\n"
-            f"Antenna configuration: {cp.config.cs.aoa_antenna_id}/{cp.config.cs.aoa_antenna_count}"
+            f"Antenna configuration: {cp.config.cs.aoa_antenna_id}/{cp.config.cs.aoa_antenna_count}\n"
+            f"Antenna switch mode: {cp.config.cs.antenna_switch_mode} {'⚠️' if cp.config.cs.antenna_switch_mode in 'RU' else ''}"
         )
 
     def update(
@@ -98,14 +99,14 @@ class PlaybackTab(ttk.Frame):
             self.position_variable.set(current_position)
         self.update_buttons()
         self.update_recording_status()
-        
+
         telemetry_str = self.telemetry_string_format(
             self.source_manager.latest_telemetry, self.source_manager.latest_info
         )
         self.telemetry_string.set(telemetry_str)
-        
+
         # change text color to red if warning sign is in the telemetry string
-        if "⚠️" in telemetry_str: 
+        if "⚠️" in telemetry_str:
             self.telemetry_label.config(fg="#f00")
         else:
             self.telemetry_label.config(fg="#000")
@@ -113,6 +114,12 @@ class PlaybackTab(ttk.Frame):
         self.config_string.set(
             f"{self.config_string_format(self.source_manager.latest_config)}"
         )
+
+        # change text color to red if warning sign is in the config string
+        if "⚠️" in self.config_string:
+            self.config_label.config(fg="#f00")
+        else:
+            self.config_label.config(fg="#000")
 
     def update_buttons(self) -> None:
         self.start_button.configure(

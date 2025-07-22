@@ -169,9 +169,19 @@ def plot(
     default=False,
     help="auto save .png images of the generated plots",
 )
+@click.option(
+    "--dont-plot",
+    type=bool,
+    required=False,
+    is_flag=True,
+    show_default=False,
+    default=False,
+    help="dont show plot windows. Use it with --save-png",
+)
 def main(
     path: str,
     save_png: bool = False,
+    dont_plot:bool = False,
 ):
 
     global save_png_g
@@ -192,7 +202,8 @@ def main(
         angles=detection_df["detection0.meanAzimuth"],
         deviations=detection_df["detection0.deviation"],
     )
-    plt.show(block=True)
+    if not dont_plot:
+        plt.show(block=True)
 
 
 if __name__ == "__main__":
