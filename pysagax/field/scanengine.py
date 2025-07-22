@@ -889,7 +889,7 @@ class ScanEngine(Loop):
         elif command.instruction in [
             proto_cmd.AUTO_CALIBRATION_ENABLE,
             proto_cmd.AUTO_CALIBRATION_DISABLE,
-        ]:
+        ]: # TODO: auto calibration commands are deprecated 
             self._calibration_interval_seconds = (
                 0.0
                 if command.instruction == proto_cmd.AUTO_CALIBRATION_DISABLE
@@ -918,6 +918,7 @@ class ScanEngine(Loop):
             proto_cmd.CS_CALIBRATION_PHASE_CHECK,
             proto_cmd.CS_TURN_OFF_COMPENSATION,
             proto_cmd.CS_TURN_ON_COMPENSATION,
+            proto_cmd.CS_RELOAD_CONFIG,
         ]:
             self.manual_command(command)
             self.check_cs_response()
@@ -926,9 +927,9 @@ class ScanEngine(Loop):
             return response
         else:
             response = proto_cmd.Response()
-            emsg = f"Unsupported {str(command.instruction)} instruction"
+            emsg = f"Instruction {proto_cmd.Instruction.Name(command.instruction)} is not supported by pysagax-UAV"
             response.error.description = emsg
-            self._logger.warning(emsg)
+            self._logger.error(emsg)
             return response
 
     def _discard_post_proc_output(self) -> None:

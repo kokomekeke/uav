@@ -61,7 +61,7 @@ class CalibrationSettingsFrame(tkinter.Frame):
             "IQ rate (Hz):",
             column=0,
             row=0,
-            default_value=read_from_conf(conf, ["defaults", "bandwith"], "1M"),
+            default_value=read_from_conf(conf, ["defaults", "bandwith"], ""),
             variable_type=tkinter.StringVar,
         )
 

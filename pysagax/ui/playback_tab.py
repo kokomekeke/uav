@@ -56,6 +56,7 @@ class PlaybackTab(ttk.Frame):
             f"Source module Mode: {proto_data.Telemetry.Source.Mode.Name(telem.source.mode)} \n"
             f"\tPosition:{'{:,}'.format(telem.source.position).replace(',', ' ')} / "
             f"{'{:,}'.format(telem.source.length).replace(',', ' ')} \n"
+            f"\tProgress:{telem.source.progress*100:.0f}%\n"
             f"Recording module {proto_data.Telemetry.Recording.Status.Name(telem.recording.status)} "
             f"{'{:,}'.format(telem.recording.length).replace(',', ' ')}\n"
             f"Heading module {telem.heading.status} [{telem.heading.selected_source_type}]\n"
@@ -111,12 +112,11 @@ class PlaybackTab(ttk.Frame):
         else:
             self.telemetry_label.config(fg="#000")
 
-        self.config_string.set(
-            f"{self.config_string_format(self.source_manager.latest_config)}"
-        )
+        config_str = self.config_string_format(self.source_manager.latest_config)
+        self.config_string.set(config_str)
 
         # change text color to red if warning sign is in the config string
-        if "⚠️" in self.config_string:
+        if "⚠️" in config_str:
             self.config_label.config(fg="#f00")
         else:
             self.config_label.config(fg="#000")

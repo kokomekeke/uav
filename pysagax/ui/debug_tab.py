@@ -61,6 +61,10 @@ class DebugTab(ttk.Frame):
             command=self.pysagax_restart_commands,
         )
         self.pysagax_restart_button.pack(side=tkinter.BOTTOM, anchor="w")
+        self.reload_cs_config_button = tkinter.Button(
+            self.buttons_frame, text="Reload CS config", command=self.reload_cs_config_commands
+        )
+        self.reload_cs_config_button.pack(side=tkinter.BOTTOM, anchor="w")
         self.buttons_frame.pack(side=tkinter.LEFT, anchor="ne")
         self.stream_packet_stat_string = tkinter.StringVar(value="stream packet stats")
         self.stream_packet_label = tkinter.Label(
@@ -131,6 +135,11 @@ class DebugTab(ttk.Frame):
     def pysagax_restart_commands(self) -> None:
         self.abort_commands_function()
         cmd = proto_cmd.Command(instruction=proto_cmd.PY_RESET)
+        self.send_commands_function(cmd)
+    
+    def reload_cs_config_commands(self) -> None:
+        self.abort_commands_function()  # is aborting needed?
+        cmd = proto_cmd.Command(instruction=proto_cmd.CS_RELOAD_CONFIG)
         self.send_commands_function(cmd)
 
     def ping_response_handler(self, resp: proto_cmd.Response) -> None:
