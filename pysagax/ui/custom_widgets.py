@@ -2,7 +2,7 @@ import tkinter
 from tkinter import ttk
 from tktooltip import ToolTip
 from typing import Any, Callable, Optional, Sequence, Type
-from pysagax.util.mat import si_to_float
+from pysagax.util.mat import si_to_float, float_to_si
 
 
 class ToggleButton(tkinter.Frame):
@@ -96,7 +96,7 @@ class ComboboxWithLabel(EntryWithLabel, ttk.Combobox):
         width: int = 11,
         padx: int = 5,
         pady: int = 5,
-        value_options: Sequence[str] =[],
+        value_options: Sequence[str] = [],
     ) -> None:
         super().__init__(
             master,
@@ -114,10 +114,13 @@ class ComboboxWithLabel(EntryWithLabel, ttk.Combobox):
 
 
 class SIPrefixDoubleVar(tkinter.StringVar):
-    def __init__(self, master = None, value = None, name = None):
+    def __init__(self, master=None, value=None, name=None):
         super().__init__(master, value, name)
+
     def get(self):
         return si_to_float(tkinter.StringVar.get())
+
+
 class RepeatedEntry(tkinter.Frame):
     """
     GUI element for creating repeated entry fields.
@@ -125,19 +128,24 @@ class RepeatedEntry(tkinter.Frame):
     Returns the entered values in a list of dicts.
     """
 
-    def __init__(self,master,
-                 entries_config: list[str] | dict[str, Any],
-                 default_values: list[dict] = [],
-                 default_new_tab_values: Optional[dict] = None,
-                 reload_callback: Optional[callable] = None,
-                 *args,
-                 **kwargs):
+    def __init__(
+        self,
+        master,
+        entries_config: list[str] | dict[str, Any],
+        default_values: list[dict] = [],
+        default_new_tab_values: Optional[dict] = None,
+        auto_increment_new_tab_values: bool = False,
+        reload_callback: Optional[callable] = None,
+        *args,
+        **kwargs,
+    ):
         """
         entries_config: list of field name strings, or dict of field name string -> field type
         default_values: a list of dictionary representing the starting state
         default_new_tab_values: default values for a newly added tab
+        auto_increment_new_tab_values: the numerical values of the new tab vill be extrapolated from the last two tabs
         reload_callback: a function to be called when pressing the reload button (eg for updating other gui elements too)
-        
+
         """
         tkinter.Frame.__init__(self, master, *args, **kwargs)
 
@@ -147,8 +155,8 @@ class RepeatedEntry(tkinter.Frame):
             self._entries_config = entries_config
         self._default_values = default_values
         self._default_new_tab_values = default_new_tab_values
+        self._auto_increment_new_tab_values = auto_increment_new_tab_values
         self._reload_callback = reload_callback
-
 
         tab_count_controls = tkinter.Frame(self)
         plus_button = tkinter.Button(
@@ -187,7 +195,9 @@ class RepeatedEntry(tkinter.Frame):
         for i, tab_name in enumerate(self._tabControl.tabs()):
             tab = self._tabControl.nametowidget(tab_name)
             values.append({})
-            for (name, vartype), entry in zip(self._entries_config.items(), tab._entries):
+            for (name, vartype), entry in zip(
+                self._entries_config.items(), tab._entries
+            ):
                 if vartype == SIPrefixDoubleVar:
                     value = si_to_float(entry.get())
                 else:
@@ -204,22 +214,23 @@ class RepeatedEntry(tkinter.Frame):
         if self._reload_callback is not None:
             self._reload_callback()
 
-        # create new tabs 
+        # create new tabs
         for values in self._default_values:
             i = self._tabControl.index(tkinter.END)
             tab = self._build_new_tab(values)
             self._tabControl.add(tab, text=f"[{i}]")
-    
-    def _build_new_tab(self, values: Optional[dict]=None):
+
+    def _build_new_tab(self, values: Optional[dict] = None):
         new_tab = self.SingleTab(self._tabControl, self._entries_config, values)
         new_tab.pack()
         return new_tab
+
     class SingleTab(tkinter.Frame):
         def __init__(
             self,
             master,
             entries_config,
-            values = None,
+            values=None,
             *args,
             **kwargs,
         ):
@@ -231,15 +242,20 @@ class RepeatedEntry(tkinter.Frame):
                 *args,
                 **kwargs,
             )
-                    
+
             self._entries = []
             for i, (name, vartype) in enumerate(entries_config.items()):
-                default_value = values[name] if values else None
-                new_entry = EntryWithLabel(self, name, 0, i, default_value) 
+
+                if values and name in values.keys():
+                    default_value = values[name]
+                    if vartype == SIPrefixDoubleVar:
+                        # Cast to SI format even if its a float
+                        default_value = float_to_si(si_to_float(str(default_value)))
+                else:
+                    default_value = None
+
+                new_entry = EntryWithLabel(self, name, 0, i, default_value)
                 self._entries.append(new_entry)
-
-
-
 
     def _repeated_field_minus(self):
         i = self._tabControl.index(tkinter.END)
@@ -249,8 +265,41 @@ class RepeatedEntry(tkinter.Frame):
 
     def _repeated_field_plus(self):
         i = self._tabControl.index(tkinter.END)
-        tab = self._build_new_tab(self._default_new_tab_values)
+        values = self._get_new_tab_values()
+        tab = self._build_new_tab(values)
         self._tabControl.add(tab, text=f"[{i}]")
+
+    def _get_new_tab_values(self):
+        """
+        Generate the values for the newly added tab
+        """
+        if not self._auto_increment_new_tab_values:  # auto increment turned off
+            return self._default_new_tab_values
+
+        old_values = self.get_values()  # values already entered to previous tabs
+
+        if len(old_values) == 1:  # only one tab -> copy it to the new
+            return old_values[-1]
+        if len(old_values) < 1:  # no tabs opened yet
+            return self._default_new_tab_values
+
+        numerical_types = [SIPrefixDoubleVar, tkinter.IntVar, tkinter.DoubleVar]
+
+        last_tab = old_values[-1]
+        last_but_one_tab = old_values[-2]
+
+        values = {}
+
+        for field_name, field_type in self._entries_config.items():
+            if field_type in numerical_types:
+                # extrapolate from previous tabs
+                difference = last_tab[field_name] - last_but_one_tab[field_name]
+                values[field_name] = last_tab[field_name] + difference
+            else:  # just copy non-numericals from last tab
+                values[field_name] = last_tab[field_name]
+
+        return values
+
 
 class ScrollableText(tkinter.Frame):
     """A tkinter widget that can display text from a stringvar and scrollable."""
@@ -286,7 +335,7 @@ class ScrollableText(tkinter.Frame):
 
         def update_text_widget(*args, **kwargs):
             """updating textvariable triggers this function"""
-            scroll_start, scroll_end = self.text.yview() # store scrollbar position
+            scroll_start, scroll_end = self.text.yview()  # store scrollbar position
             self.text.config(state="normal")
             self.text.delete(1.0, "end")
             self.text.insert("end", textvariable.get())
@@ -299,7 +348,9 @@ class ScrollableText(tkinter.Frame):
                 self.text.yview_moveto(scroll_start)
 
         # Attach stringvar trace to update Text
-        self.textvariable_callback = self.textvariable.trace_add("write", update_text_widget)
+        self.textvariable_callback = self.textvariable.trace_add(
+            "write", update_text_widget
+        )
 
         # Set initial text
         update_text_widget()

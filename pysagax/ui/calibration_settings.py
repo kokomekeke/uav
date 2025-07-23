@@ -71,6 +71,7 @@ class CalibrationSettingsFrame(tkinter.Frame):
             default_new_tab_values={
                 "Center freq": read_from_conf(conf, ["defaults", "center_freq"], "446M")
             },
+            auto_increment_new_tab_values=True,
         )
 
         self.center_freq_settings_frame.grid(row=1, column=0, columnspan=4, sticky="nw")

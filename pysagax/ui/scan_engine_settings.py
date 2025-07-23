@@ -64,6 +64,7 @@ class ScanningTab(tkinter.Frame):
                 "Center freq": SIPrefixDoubleVar,
             },
             default_new_tab_values={"Center freq": "442.5M"},
+            auto_increment_new_tab_values=True,
         )
         self.range_settings_frame.grid(row=1, column=0, columnspan=4, sticky="nw")
 
@@ -131,6 +132,7 @@ class TrackingTab(tkinter.Frame):
                 "Frequency": read_from_conf(conf, ["defaults", "center_freq"], "446M"),
                 "Bandwidth": read_from_conf(conf, ["defaults", "bandwith"], "1M"),
             },
+            auto_increment_new_tab_values=True,
         )
         self.signals_settings_frame.grid(row=1, column=0, columnspan=4, sticky="nw")
 
