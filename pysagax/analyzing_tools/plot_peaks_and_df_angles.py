@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from matplotlib import pyplot as plt
 import math
-
+pd.options.mode.copy_on_write=True
 """
 Useful tool for rotated measurements to see if the azimuth changes linearly.
 for plotting .csv files made from .detectrec files using protorec_to_csv.py
@@ -27,7 +27,7 @@ def plot(
     ax.grid(visible=True)
 
     angle_ax = ax.twinx()
-    angle_ax.set_ylabel("means azimuth angle")
+    angle_ax.set_ylabel("mean azimuth angle")
     angle_ax.set_ylim(-181, 181)
     angle_ax.set_yticks([a for a in range(-180, 181, 30)])
 
@@ -84,6 +84,7 @@ def plot(
         label="DF angle deviation",
     )
 
+    print("\rPlotting:\t|-|" , end="")
     ax.plot(
         x_values,
         peaks["peaks0"].map(
@@ -124,6 +125,7 @@ def plot(
         zorder=10,
         alpha=0.6,
     )
+    print("\rPlotting:\t|█|")
 
     ax.fill_between(
         x=x_values,
@@ -146,10 +148,13 @@ def plot(
 
     global save_png_g
     if save_png_g:
+
+        print("\rSaving:\t\t|-|   ", end="")
         fig.savefig(
             savepath,
             dpi=500,
         )
+        print("\rSaving:\t\t|█|")
 
 
 @click.command()
@@ -186,25 +191,31 @@ def main(
 
     global save_png_g
     save_png_g = save_png
+    print(f"\nRunning on file {path}")
 
+    print("\rReading:\t|-|", end="")
     detection_df = pd.read_csv(path)
+    print("\rReading:\t|█|")
 
+    print("\rProcessing:\t|-|", end="")
     detection_df["elapsed_time"] = (
         detection_df["record_time"] - detection_df["record_time"][0]
     )
     x_values = detection_df["elapsed_time"]
+    print("\rProcessing\t|█|")
 
     plot(
         savepath=".".join(path.split(".")[:-1]) + "_peaks.png",
-        title=f"{int(detection_df['detection0.frequency'].mean()/1e5)/10} MHz, channel peaks",
+        title=f"{int(detection_df['detection0.frequency'].round(-5).mode()/1e5)/10} MHz, channel peaks",
         x_values=x_values,
         peaks=detection_df[["peaks0", "peaks1", "peaks2", "peaks3"]],
         angles=detection_df["detection0.meanAzimuth"],
         deviations=detection_df["detection0.deviation"],
     )
     if not dont_plot:
+        print("Opening plot window", end="\r")
         plt.show(block=True)
-
+    print("Finished             ")
 
 if __name__ == "__main__":
     main()
