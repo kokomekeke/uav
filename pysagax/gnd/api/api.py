@@ -466,7 +466,7 @@ def comint_detection_stream():
     if not hasattr(current_app, 'measurement_to_stream_queue'):
         return make_response(jsonify({"error": "Stream queue not available"}), 503)
 
-    app_queue = current_app.measurement_to_stream_queue
+    app_queue = current_app.to_stream_queue
     app_logger = current_app.logger
 
     default_batch_interval = 0.2

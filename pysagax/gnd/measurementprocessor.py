@@ -8,9 +8,10 @@ import time
 import sqlalchemy
 from typing import Any, Callable, Optional
 
-from flask import current_app
+from flask import current_app, Flask
 
 from pysagax.gnd.database import ComIntDatabase, ComIntDetectionEntity, UAVEntity
+from pysagax.pysagax_gnd_api import app
 from pysagax.util.queue_put import queue_put
 
 from pysagax.util.run_once import run_once
@@ -31,14 +32,14 @@ class MeasurementProcessor(Loop):
             self,
             db: ComIntDatabase,
             db_commit_frequency: float,
-            measurement_to_stream_queue=None,
+            to_stream_q,
             *args,
             **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
 
         self._db: ComIntDatabase = db
-        self._app: Optional[Any] = None
+        self._db_app: Optional[Any] = None
 
         self._in_queue: Optional[Queue] = None
         self._to_monitoring_queue: Optional[Queue] = None
@@ -46,7 +47,7 @@ class MeasurementProcessor(Loop):
         self._measurements_to_add = []
         self._uavs_to_update = {}
         self.db_commit_frequency = db_commit_frequency
-        self._measurement_to_stream_queue: Optional[Queue] = measurement_to_stream_queue
+        self._to_stream_queue: Optional[Queue] = to_stream_q
 
         # Stream throttling
         self._default_batch_interval = 0.2
@@ -62,7 +63,7 @@ class MeasurementProcessor(Loop):
     ) -> None:
         self._in_queue = in_queue
         self._to_monitoring_queue = to_monitoring_queue
-        self._app = self._db.get_app_instance()
+        self._db_app = self._db.get_app_instance()
         return super()._call(*args, **kwargs)
 
     def get_batch_interval(self) -> float:
@@ -116,86 +117,13 @@ class MeasurementProcessor(Loop):
         assert self._telemetry_to_monitoring is not None
         queue_put(self._telemetry_to_monitoring, report, 1, self._logger, "Telemetry to monitoring")
 
-    # def _receive_measurement(
-    #     self, uav_entity: UAVEntity, packet: proto_data.Measurement
-    # ) -> None:
-    #     self._logger.trace(
-    #         f"Got a Measurement from {uav_entity.uav_label}! Detection count is {len(packet.detection)}"
-    #     )
-    #     self._logger.trace(f"Measurement packet delay: {time.time()-packet.time.seconds-packet.time.nanos/1e9}")
-    #     for det in packet.detection:
-    #         new_meas_entity = ComIntDetectionEntity()
-    #         new_meas_entity.uav_id = uav_entity.uav_id
-    #         new_meas_entity.frequency = int(det.frequency)
-    #         new_meas_entity.bandwidth = int(det.bandwidth)
-    #         new_meas_entity.snr = det.snr
-    #         new_meas_entity.lob_azim_deg = det.mean_azimuth / math.pi * 180.0
-    #         new_meas_entity.lob_elev_deg = det.mean_elevation / math.pi * 180.0
-    #         new_meas_entity.precision = 1 - (det.deviation / (math.pi * 2))
-    #         new_meas_entity.signal_strength = det.strength
-    #         new_meas_entity.timestamp = packet.time.ToDatetime()
-    #         new_meas_entity.roi_identifier = det.roi_id
-    #         new_meas_entity.uav_pos_lat = packet.heading_data.gps_lat
-    #         new_meas_entity.uav_pos_lon = packet.heading_data.gps_lon
-    #         new_meas_entity.uav_pos_altitude = packet.heading_data.altitude
-    #         if len(packet.heading_data.quaternion) == 4:
-    #             new_meas_entity.uav_pos_q0 = packet.heading_data.quaternion[0]
-    #             new_meas_entity.uav_pos_q1 = packet.heading_data.quaternion[1]
-    #             new_meas_entity.uav_pos_q2 = packet.heading_data.quaternion[2]
-    #             new_meas_entity.uav_pos_q3 = packet.heading_data.quaternion[3]
-    #         self._measurements_to_add.append(new_meas_entity)
-    #         stream_data = {
-    #             "detection_id": -1,
-    #             "uav_id": uav_entity.uav_id,
-    #             "uav_label": uav_entity.uav_label,
-    #             "frequency": int(det.frequency),
-    #             "bandwidth": int(det.bandwidth),
-    #             "snr": det.snr,
-    #             "lob_azim_deg": det.mean_azimuth / math.pi * 180.0,
-    #             "lob_elev_deg": det.mean_elevation / math.pi * 180.0,
-    #             "precision": 1 - (det.deviation / (math.pi * 2)),
-    #             "signal_strength": det.strength,
-    #             "timestamp": packet.time.ToDatetime().isoformat(),
-    #             "roi_identifier": det.roi_id,
-    #             "uav_pos_lat": packet.heading_data.gps_lat,
-    #             "uav_pos_lon": packet.heading_data.gps_lon,
-    #             "uav_pos_altitude": packet.heading_data.altitude
-    #         }
-    #         queue_put(self.measurement_to_stream_queue, stream_data, 8, self._logger, "Measurement to stream")
-    #
-    #     uav_entity.last_pos_lat = packet.heading_data.gps_lat
-    #     uav_entity.last_pos_lon = packet.heading_data.gps_lon
-    #     uav_entity.last_pos_altitude = packet.heading_data.altitude
-    #
-    #     if len(packet.heading_data.quaternion) == 4:
-    #         uav_entity.last_pos_q0 = packet.heading_data.quaternion[0]
-    #         uav_entity.last_pos_q1 = packet.heading_data.quaternion[1]
-    #         uav_entity.last_pos_q2 = packet.heading_data.quaternion[2]
-    #         uav_entity.last_pos_q3 = packet.heading_data.quaternion[3]
-    #     else:
-    #         self._logger.warning(
-    #             f"Received quaternion length is {len(packet.heading_data.quaternion)}"
-    #         )
-    #     return uav_entity
     def _receive_measurement(
-            self, uav_entity: UAVEntity, packet: proto_data.Measurement
+        self, uav_entity: UAVEntity, packet: proto_data.Measurement
     ) -> None:
         self._logger.trace(
             f"Got a Measurement from {uav_entity.uav_label}! Detection count is {len(packet.detection)}"
         )
-        self._logger.trace(f"Measurement packet delay: {time.time() - packet.time.seconds - packet.time.nanos / 1e9}")
-
-        quat = packet.heading_data.quaternion if len(packet.heading_data.quaternion) == 4 else [None] * 4
-        current_time = time.perf_counter()
-        batch_interval = self.get_batch_interval()
-
-        # UAV-specifikus timer inicializálása
-        uav_id = uav_entity.uav_id
-        if uav_id not in self._last_stream_time_per_uav:
-            self._last_stream_time_per_uav[uav_id] = 0
-
-        should_stream = (current_time - self._last_stream_time_per_uav[uav_id]) >= batch_interval
-
+        self._logger.trace(f"Measurement packet delay: {time.time()-packet.time.seconds-packet.time.nanos/1e9}")
         for det in packet.detection:
             new_meas_entity = ComIntDetectionEntity()
             new_meas_entity.uav_id = uav_entity.uav_id
@@ -211,60 +139,25 @@ class MeasurementProcessor(Loop):
             new_meas_entity.uav_pos_lat = packet.heading_data.gps_lat
             new_meas_entity.uav_pos_lon = packet.heading_data.gps_lon
             new_meas_entity.uav_pos_altitude = packet.heading_data.altitude
-
-            if None not in quat:
-                new_meas_entity.uav_pos_q0 = quat[0]
-                new_meas_entity.uav_pos_q1 = quat[1]
-                new_meas_entity.uav_pos_q2 = quat[2]
-                new_meas_entity.uav_pos_q3 = quat[3]
-
+            if len(packet.heading_data.quaternion) == 4:
+                new_meas_entity.uav_pos_q0 = packet.heading_data.quaternion[0]
+                new_meas_entity.uav_pos_q1 = packet.heading_data.quaternion[1]
+                new_meas_entity.uav_pos_q2 = packet.heading_data.quaternion[2]
+                new_meas_entity.uav_pos_q3 = packet.heading_data.quaternion[3]
             self._measurements_to_add.append(new_meas_entity)
-
-            # Stream adatok küldése throttling-gel
-            if should_stream and self._measurement_to_stream_queue is not None:
-                stream_data = {
-                    "detection_id": -1,
-                    "uav_id": uav_entity.uav_id,
-                    "uav_label": uav_entity.uav_label,
-                    "frequency": int(det.frequency),
-                    "bandwidth": int(det.bandwidth),
-                    "snr": det.snr,
-                    "lob_azim_deg": det.mean_azimuth / math.pi * 180.0,
-                    "lob_elev_deg": det.mean_elevation / math.pi * 180.0,
-                    "precision": 1 - (det.deviation / (math.pi * 2)),
-                    "signal_strength": det.strength,
-                    "timestamp": packet.time.ToDatetime().isoformat(),
-                    "roi_identifier": det.roi_id,
-                    "uav_pos_lat": packet.heading_data.gps_lat,
-                    "uav_pos_lon": packet.heading_data.gps_lon,
-                    "uav_pos_altitude": packet.heading_data.altitude,
-                    "uav_pos_q0": quat[0] if None not in quat else None,
-                    "uav_pos_q1": quat[1] if None not in quat else None,
-                    "uav_pos_q2": quat[2] if None not in quat else None,
-                    "uav_pos_q3": quat[3] if None not in quat else None
-                }
-
-                queue_put(self._measurement_to_stream_queue, stream_data, 8, self._logger, "Measurement to stream")
-
-        # Timer frissítése, ha streameltünk
-        if should_stream:
-            self._last_stream_time_per_uav[uav_id] = current_time
-
-        # UAV pozíció frissítése
         uav_entity.last_pos_lat = packet.heading_data.gps_lat
         uav_entity.last_pos_lon = packet.heading_data.gps_lon
         uav_entity.last_pos_altitude = packet.heading_data.altitude
 
-        if None not in quat:
-            uav_entity.last_pos_q0 = quat[0]
-            uav_entity.last_pos_q1 = quat[1]
-            uav_entity.last_pos_q2 = quat[2]
-            uav_entity.last_pos_q3 = quat[3]
+        if len(packet.heading_data.quaternion) == 4:
+            uav_entity.last_pos_q0 = packet.heading_data.quaternion[0]
+            uav_entity.last_pos_q1 = packet.heading_data.quaternion[1]
+            uav_entity.last_pos_q2 = packet.heading_data.quaternion[2]
+            uav_entity.last_pos_q3 = packet.heading_data.quaternion[3]
         else:
             self._logger.warning(
                 f"Received quaternion length is {len(packet.heading_data.quaternion)}"
             )
-
         return uav_entity
 
     def _receive_event(self, uav_entity: UAVEntity, packet: proto_data.Event) -> None:
@@ -289,8 +182,8 @@ class MeasurementProcessor(Loop):
             | proto_data.OperationalError
         ),
     ) -> None:
-        assert self._app
-        with self._app.app_context():
+        assert self._db_app
+        with self._db_app.app_context():
             uav_entity: UAVEntity | None = UAVEntity.query.get(uav_id)
             if uav_entity is None:
                 self._logger.error(f"UAVEntity {uav_id} not found in DB!")
@@ -316,6 +209,10 @@ class MeasurementProcessor(Loop):
             # Get  from the queue with a timeout
             id, packet = self._in_queue.get(timeout=1.0)
             self._receive_packet(id, packet)
+            # TODO: ellenőrizni, hogy kell e a batch interval
+            # TODO: kell a _measurement_to_stream_queue vagy lehet- e flask current_app contextben megvalósítani ezt?
+
+            queue_put(self._to_stream_queue, packet, 8, self._logger, "Measurement to stream")
             in_q_size = self._in_queue.qsize()
             if  in_q_size > 10:
                 self._log_queue_filled(in_q_size)
@@ -324,7 +221,7 @@ class MeasurementProcessor(Loop):
                 # TODO: we should use a DB technology where transactions are cheap
                 #       we might want to remove this and commit every update instantly 
                 #       when we have the new db
-                with self._app.app_context():
+                with self._db_app.app_context():
                     self._logger.trace(f"Adding {len(self._measurements_to_add)} detections to DB")
                     self._logger.trace(f"Updating {len(self._uavs_to_update)} uavs in DB")
                     self._db.bulk_insert(self._measurements_to_add)
