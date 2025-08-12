@@ -71,3 +71,5 @@ client/dist
 client/node_modules
 client/public/tiles
 client/package-lock.json
+
+zeromq-4.3.5
