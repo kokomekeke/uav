@@ -270,7 +270,7 @@ class UAVConnection(mp.Process):
             queue_put(
                 self._stream_out_q,
                 (self.uav_db_id, stream_packet),
-                timeout=0.1,
+                timeout=0,
             )
             # self._stream_out_q.put((self.uav_db_id, stream_packet)) # TODO use queue_put?
             self.last_interacted_ts = time.time()
