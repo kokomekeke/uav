@@ -609,7 +609,7 @@ class HeadingSidekiq(HeadingSource):
         ) # If true then the current heading angle is estimated from the motion over the last delta_t_angle_from_motion seconds
 
         self.delta_t_angle_from_motion: float = self.cr(
-            ["heading", "sidekiq", "delta_t_angle_from_motion"], self.cr(["heading", "delta_t_angle_from_motion"], False)
+            ["heading", "sidekiq", "delta_t_angle_from_motion"], self.cr(["heading", "delta_t_angle_from_motion"], 1)
         )
 
     def get_parameters(self) -> dict[str, list[Any]]:
