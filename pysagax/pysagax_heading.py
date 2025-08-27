@@ -31,6 +31,7 @@ from pysagax.heading.heading_sources import (
     HeadingStatic,
     HeadingFlightInfo,
     HeadingMavlink,
+    HeadingSidekiq,
 )
 
 HEADING_SOURCES = {
@@ -41,6 +42,7 @@ HEADING_SOURCES = {
     "Static": HeadingStatic,
     "FlightInfo": HeadingFlightInfo,
     "Mavlink (WIP)": HeadingMavlink,
+    "Sidekiq GNSS": HeadingSidekiq,
 }
 
 
@@ -188,6 +190,7 @@ class HeadingRunner:
             param.value = str(conf_val)
             param.type = conf_type
             self._heading_status.parameters.append(param)
+        self._heading_status.status
 
     def _create_heading_source(
         self, config: Optional[proto_heading.HeadingConfig] = None
@@ -372,7 +375,6 @@ def main(
     # Configure logging format
     setup_logging(level=level)
 
-    # TODO: Implement config file
     heading_runner = HeadingRunner(
         level=level,
         control_address=control_address,

@@ -51,7 +51,8 @@ dependencies = [
     "tqdm",
     "tkinter-tooltip",
     "psutil",
-    "terminaltables"
+    "terminaltables",
+    "pynmeagps"
 ]
 
 [project.optional-dependencies]

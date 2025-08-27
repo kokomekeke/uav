@@ -6,6 +6,7 @@ from typing import Any, Callable, Optional
 import numpy as np
 import pyquaternion
 import serial
+from pynmeagps import NMEAReader
 
 from pysagax.df.compass_sensors import (
     AaroniaParser,
@@ -584,3 +585,112 @@ class HeadingMavlink(HeadingSource):
     def close(self) -> None:
         if self._mavs:
             self._mavs.close()
+
+class HeadingSidekiq(HeadingSource):
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
+
+        self.help_description = "Sidekiq radio GNSS module with the angle given as a static parameter or calculated from the movement" 
+
+        self.connection: Optional[serial.Serial] = None
+        self.nmr: Optional[NMEAReader] = None
+        self.port: str = self.cr(
+            ["heading", "sidekiq", "port"], self.cr(["heading", "port"], "/dev/ttySKIQ_UART0")
+        )
+
+        self.angle: float = self.cr(
+            ["heading", "sidekiq", "angle"], self.cr(["heading", "angle"], 0)
+        )
+        self.altitude: float = self.cr(
+            ["heading", "sidekiq", "altitude"], self.cr(["heading", "altitude"], 0)
+        )
+        self.angle_from_motion: bool = self.cr(
+            ["heading", "sidekiq", "angle_from_motion"], self.cr(["heading", "angle_from_motion"], False)
+        ) # If true then the current heading angle is estimated from the motion over the last delta_t_angle_from_motion seconds
+
+        self.delta_t_angle_from_motion: float = self.cr(
+            ["heading", "sidekiq", "delta_t_angle_from_motion"], self.cr(["heading", "delta_t_angle_from_motion"], 1)
+        )
+
+    def get_parameters(self) -> dict[str, list[Any]]:
+        return {
+            "port": ["text", self.port],
+            "angle": ["0-360", self.angle],
+            "altitude": ["number", self.altitude],
+            "angle_from_motion": ["bool", self.angle_from_motion],
+            "delta_t_angle_from_motion": ["number", self.delta_t_angle_from_motion]
+        }
+
+    def update_parameter(self, key: str, value: Any) -> bool:
+        if super().update_parameter(key, value):
+            return True
+        if key == "port":
+            self.port = str(value)
+            # TODO: reconnect on new port
+        elif key == "angle":
+            self.angle = float(value)
+            self.update_heading(float(value) / 180 * np.pi, 0, 0)
+            self._quaternion(self.quaternion)
+        elif key == "altitude":
+            self.altitude = float(value)
+            self._altitude(self.altitude)
+        elif key == "angle_from_motion":
+            self.angle_from_motion = bool(value)
+        elif key == "delta_t_angle_from_motion":
+            self.delta_t_angle_from_motion = float(value)
+        else:
+            return False
+        return True
+
+    def initialize(self) -> bool:
+        try:
+            self.connection = serial.Serial(self.port, baudrate=9600, timeout=3)
+            self.nmr = NMEAReader(self.connection)
+            self._status("#sidekiqGNSS" + "Connected")
+            return True
+        except:
+            self._status(
+                "#sidekiqGNSS" + f"Could not connect to sidekiqGNSS on port {self.port}"
+            )
+            return False
+
+    def loop(self) -> None:
+        if self.connection is None:
+            return
+        try:
+            raw_data, parsed_data = self.nmr.read()
+            if parsed_data is None:
+                return
+            if not hasattr(parsed_data, "lat") or not parsed_data.lat:
+                # doesn't contain non-empty coordinate info
+                return
+            
+            # parse gps data
+            if hasattr(parsed_data, "date"):
+                dt = datetime.combine(parsed_data.date, parsed_data.time)
+                self._gps(parsed_data.lat, parsed_data.lon, dt.timestamp())
+            else:
+                self._gps(parsed_data.lat, parsed_data.lon)
+
+            # calculate angle
+            if self.angle_from_motion:
+                pass
+                # TODO: implement angle_from_motion
+
+        except Exception:
+            self._data_invalid()
+            self._status("#sidekiqGNSS" + "Disconnected.")
+
+    def close(self) -> None:
+        if self.connection is not None:
+            self.connection.close()
+    
+    # TODO: this function reads a flag in the radio if the gps sensor is locked or not
+    # TODO: maybe we want to poll it during initialization
+    # def has_gps_signal(has_fix_flag_dir ="/sys/fs/skiq_gps/0/has_fix" )->bool:
+
+    #     proc = subprocess.run(["cat", has_fix_flag_dir], capture_output=True)
+    #     out_str = proc.stdout.decode()
+    #     flag_value = bool(int(out_str[0])) # Convert the first character (0 or 1) to bool
+
+    #     return flag_value
