@@ -66,7 +66,7 @@ from . import _version
 __version__ = _version.get_versions()["version"]
 if "0+unknown" in __version__ or not __version__:
     try:
-        import pkg_resources
-        __version__ = pkg_resources.get_distribution('pysagax').version
+        from importlib.metadata import version
+        __version__ = version("pysagax")
     except:
         __version__ = "0+unknown"
