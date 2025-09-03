@@ -16,7 +16,10 @@ You might need to change a line here or there to make it work on your instance, 
 [Desktop Entry]
 Type=Application
 Name=SPOTclient
-Exec=zsh -c "./.sh/run_spotclient.sh"
+
+# Exec=zsh -c "./.sh/run_spotclient.sh"
+Exec=xfce4-terminal --title="SPOTclient Terminal" -e "./.sh/run_spotclient.sh" # This one sets the title to SPOTclient
+
 Icon=/home/username/Documents/sgx-pc/pysagax/spot.png
 Path=/home/username/Documents/sgx-pc
 Terminal=true

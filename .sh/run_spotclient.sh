@@ -1,5 +1,8 @@
 #!/bin/zsh
 
+# change the terminal window title
+echo -ne "\033]0;SPOTclient\007"
+
 # prevent keyboard interrupt from closing the terminal
 trap 'echo \\n\\nSPOTclient terminated!' INT
 

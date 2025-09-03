@@ -1,5 +1,8 @@
 #!/bin/zsh
 
+# change the terminal window title
+echo -ne "\033]0;pysagaxGND\007"
+
 # setup
 sudo systemctl stop postgresql
 sudo systemctl restart docker
