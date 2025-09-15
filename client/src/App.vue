@@ -1,5 +1,5 @@
 <template>
-  <main class="bg-slate-500 min-h-screen flex flex-col">
+  <main class="bg-slate-900 min-h-screen flex flex-col font-mono text-gray-200">
     <Header
       @click="toHome"
       :isMenuOpen="isMenuOpen"
@@ -11,7 +11,7 @@
         :isMenuOpen="isMenuOpen"
         @update:isMenuOpen="isMenuOpen = $event"
         class="transition-all duration-300 flex-1"
-        :class="isMenuOpen ? 'ml-64' : 'ml-0'"
+        :class="isMenuOpen ? 'ml-72' : 'ml-0'"
       />
     </div>
   </main>
@@ -28,7 +28,6 @@ import 'leaflet/dist/leaflet.css'
 const packageVer = '0'
 const gitHash = '0'
 const isMenuOpen = ref(false)
-// const connectionStore = useConnectionStore()
 
 onMounted(() => {
   console.log(`SGX-PC-1 client loaded v${packageVer} (${gitHash})`)
@@ -46,8 +45,8 @@ const toHome = () => {
 <style src="./assets/tailwind.css">
 .burger-menu {
   position: fixed;
-  top: 10px;
-  left: 10px;
+  top: 0;
+  left: 0;
   z-index: 1000;
 }
 </style>

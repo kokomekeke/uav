@@ -1,156 +1,252 @@
-// detectionWorker.js - Optimalizált verzió memory leak és teljesítmény javításokkal
-// detectionWorker.js - Frissített verzió JSON parsing-gal
-let detectionBuffer = []
-let processThrottle = 10 // Drastikusan csökkentve 10ms-re
-let samplingRate = 1 // Gyakorlatilag minden detekció (1ms)
-let lastProcessTime = 0
-let assignedUavId = null
-let isProcessing = false // Prevent overlapping processes
+// Optimized detection worker for real-time UAV tracking
+// Works with the hybrid Vue component approach
 
-// Statisztikák
+// --- CONFIGURATION ---
+const BATCH_SIZE = 5 // Smaller batches for smoother real-time updates
+const MAX_BUFFER_SIZE = 50 // Prevent memory buildup
+const PROCESSING_INTERVAL = 100 // ms - fast processing for real-time feel
+const MEMORY_CLEANUP_THRESHOLD = 1000
+
+// --- STATE MANAGEMENT ---
+let detectionBuffer = []
+let processedCount = 0
+let assignedUavId = null
+let isProcessing = false
+let processingTimer = null
+let samplingRate = 50 // ms between samples
+let lastSampleTime = 0
+
+// --- PERFORMANCE TRACKING ---
 let stats = {
   totalReceived: 0,
   totalProcessed: 0,
-  lastProcessingTime: 0
+  totalDropped: 0,
+  lastProcessingTime: 0,
+  averageProcessingTime: 0,
+  bufferSize: 0,
+  memoryUsage: 0
 }
 
-// Optimalizált buffer feldolgozás - blocking műveletek nélkül
-function processDetectionBuffer() {
+// --- OBJECT POOLING FOR MEMORY EFFICIENCY ---
+const detectionPool = []
+const POOL_SIZE = 100
+
+function getPooledDetection() {
+  return detectionPool.pop() || {}
+}
+
+function returnToPool(detection) {
+  if (detectionPool.length < POOL_SIZE) {
+    // Clear all properties efficiently
+    for (const key in detection) {
+      delete detection[key]
+    }
+    detectionPool.push(detection)
+  }
+}
+
+// --- OPTIMIZED BATCH PROCESSING ---
+function processBatch() {
   if (isProcessing || detectionBuffer.length === 0) return
 
   isProcessing = true
-  const processStart = performance.now()
+  const startTime = performance.now()
 
   try {
-    // Mintavételezés optimalizálva - egyszerű időellenőrzés
-    let lastTimestamp = 0
-    const newDetections = []
-
-    // Egyszerű loop a filter helyett
-    for (let i = 0; i < detectionBuffer.length; i++) {
-      const detection = detectionBuffer[i]
-      const now = detection.timestamp
-
-      if (now - lastTimestamp >= samplingRate) {
-        lastTimestamp = now
-        newDetections.push(detection)
-      }
+    // Process smaller batches for smoother performance
+    const batchSize = Math.min(BATCH_SIZE, detectionBuffer.length)
+    const batch = detectionBuffer.splice(0, batchSize)
+    
+    // Group by UAV ID for efficient processing
+    const detectionsByUavId = {}
+    
+    if (assignedUavId && batch.length > 0) {
+      detectionsByUavId[assignedUavId] = batch
     }
 
-    stats.totalProcessed += newDetections.length
+    // Update statistics
+    stats.totalProcessed += batch.length
+    stats.bufferSize = detectionBuffer.length
+    stats.memoryUsage = detectionBuffer.length + detectionPool.length
 
-    if (newDetections.length > 0) {
-      const detectionsByUavId = {}
-      detectionsByUavId[assignedUavId] = newDetections
-
-      // Azonnali küldés
+    // Send processed batch immediately for real-time updates
+    if (batch.length > 0) {
       self.postMessage({
         type: 'processedDetections',
         detectionsByUavId,
-        stats: { ...stats }
+        stats: { ...stats },
+        timestamp: Date.now()
       })
     }
 
-    // Buffer gyors törlése
-    detectionBuffer.length = 0
+    // Performance tracking
+    const processingTime = performance.now() - startTime
+    stats.lastProcessingTime = processingTime
+    
+    // Exponential moving average for smoother performance metrics
+    stats.averageProcessingTime = stats.averageProcessingTime === 0 
+      ? processingTime 
+      : (stats.averageProcessingTime * 0.8) + (processingTime * 0.2)
 
-  } catch (e) {
-    console.error('Processing error:', e)
+  } catch (error) {
+    console.error('Batch processing error:', error)
     self.postMessage({
       type: 'error',
-      message: 'Processing error: ' + e.message
+      message: 'Processing error: ' + error.message,
+      timestamp: Date.now()
     })
   } finally {
-    stats.lastProcessingTime = performance.now() - processStart
     isProcessing = false
-  }
-}
-
-// RequestAnimationFrame-based processing for real-time performance
-function scheduleProcessing() {
-  if (detectionBuffer.length > 0 && !isProcessing) {
-    // Használjuk a requestAnimationFrame-et ha elérhető, egyébként setTimeout
-    if (typeof requestAnimationFrame !== 'undefined') {
-      requestAnimationFrame(processDetectionBuffer)
-    } else {
-      setTimeout(processDetectionBuffer, 0)
+    
+    // Schedule next batch if buffer has data
+    if (detectionBuffer.length > 0) {
+      scheduleNextBatch()
     }
   }
 }
 
-// Optimalizált raw detekció feldolgozás
+// --- INTELLIGENT SCHEDULING ---
+function scheduleNextBatch() {
+  if (processingTimer) return
+
+  // Immediate processing for critical buffer size
+  const urgentProcessing = detectionBuffer.length >= MAX_BUFFER_SIZE
+  const delay = urgentProcessing ? 0 : PROCESSING_INTERVAL
+
+  processingTimer = setTimeout(() => {
+    processingTimer = null
+    processBatch()
+  }, delay)
+}
+
+// --- OPTIMIZED DETECTION CREATION ---
+function createOptimizedDetection(detectionItem, headingData, index, currentTimestamp) {
+  const detection = getPooledDetection()
+
+  // Only essential properties for performance
+  detection.coordinate = [headingData.gpsLat, headingData.gpsLon]
+  detection.azimuth = detectionItem.azimuth || 0
+  detection.elevation = detectionItem.elevation || 0
+  detection.uavId = assignedUavId
+  detection.timestamp = currentTimestamp + index
+
+  // Optional properties (only if available)
+  if (detectionItem.frequency) detection.frequency = detectionItem.frequency
+  if (headingData.altitude) detection.altitude = headingData.altitude
+  if (headingData.gpsTime) detection.gpsTime = headingData.gpsTime
+
+  // Quaternion data for heading calculation
+  if (headingData.quaternion && Array.isArray(headingData.quaternion)) {
+    detection.quaternion = {
+      q0: headingData.quaternion[0] || 0,
+      q1: headingData.quaternion[1] || 0,
+      q2: headingData.quaternion[2] || 0,
+      q3: headingData.quaternion[3] || 0
+    }
+  }
+
+  // ROI information for color coding
+  if (detectionItem.roi_id !== undefined) {
+    detection.roi_id = detectionItem.roi_id
+  }
+
+  return detection
+}
+
+// --- MAIN DETECTION PROCESSING ---
 function processRawDetection(rawJsonString) {
+  const currentTime = Date.now()
+  
+  // Sampling rate control - drop samples if too frequent
+  if (currentTime - lastSampleTime < samplingRate) {
+    stats.totalDropped++
+    return
+  }
+  lastSampleTime = currentTime
+
+  let parsedData
   try {
-    const parsed = JSON.parse(rawJsonString)
+    // Handle different input formats
+    parsedData = typeof rawJsonString === 'string' ? JSON.parse(rawJsonString) : rawJsonString
 
-    // UAV ID auto-assign optimalizálva
-    if (!assignedUavId && parsed.uav_id) {
-      assignedUavId = parsed.uav_id
-      self.postMessage({
-        type: 'uavIdAssigned',
-        uavId: assignedUavId
-      })
+    // Handle double-encoded JSON
+    if (typeof parsedData === 'string') {
+      parsedData = JSON.parse(parsedData)
     }
-
-    // Csak saját UAV detekciók feldolgozása
-    if (parsed.uav_id !== assignedUavId) return
-
-    // Kötelező koordináták gyors ellenőrzése
-    if (parsed.uav_pos_lat == null || parsed.uav_pos_lon == null) return
-
-    // Objektum létrehozás optimalizálva - csak szükséges mezők
-    const detection = {
-      coordinate: [parsed.uav_pos_lat, parsed.uav_pos_lon],
-      azimuth: parsed.lob_azim_deg || 0,
-      uavId: parsed.uav_id,
-      roi_id: parsed.roi_id || null,
-      timestamp: Date.now(),
-
-      // Opcionális mezők csak ha léteznek
-      ...(parsed.lob_elev_deg != null && { elevation: parsed.lob_elev_deg }),
-      ...(parsed.signal_strength != null && { signal_strength: parsed.signal_strength }),
-      ...(parsed.frequency != null && { frequency: parsed.frequency }),
-      ...(parsed.bandwidth != null && { bandwidth: parsed.bandwidth }),
-      ...(parsed.snr != null && { snr: parsed.snr }),
-      ...(parsed.precision != null && { precision: parsed.precision }),
-      ...(parsed.uav_pos_altitude != null && { altitude: parsed.uav_pos_altitude }),
-
-      // Quaternion csak ha van érték
-      ...((parsed.uav_pos_q0 != null || parsed.uav_pos_q1 != null ||
-           parsed.uav_pos_q2 != null || parsed.uav_pos_q3 != null) && {
-        quaternion: {
-          q0: parsed.uav_pos_q0,
-          q1: parsed.uav_pos_q1,
-          q2: parsed.uav_pos_q2,
-          q3: parsed.uav_pos_q3
-        }
-      })
-    }
-
-    // Buffer-be helyezés
-    detectionBuffer.push(detection)
-    stats.totalReceived++
-
-    // Azonnali feldolgozás scheduling
-    const now = Date.now()
-    if (now - lastProcessTime >= processThrottle) {
-      processDetectionBuffer()
-      lastProcessTime = now
-    } else {
-      // Kis késleltetéssel schedule-eljük
-      scheduleProcessing()
-    }
-
   } catch (e) {
     console.error('JSON parsing error:', e)
     self.postMessage({
       type: 'error',
       message: 'JSON parsing error: ' + e.message
     })
+    return
+  }
+
+  // Validate parsed data structure
+  if (!parsedData || typeof parsedData !== 'object') {
+    console.warn('Invalid detection format: not an object')
+    return
+  }
+
+  if (!parsedData.headingData) {
+    console.warn('Invalid detection format: missing headingData')
+    return
+  }
+
+  if (!parsedData.detection || !Array.isArray(parsedData.detection)) {
+    console.warn('Invalid detection format: missing or invalid detection array')
+    return
+  }
+
+  const headingData = parsedData.headingData
+
+  // Validate GPS coordinates
+  if (headingData.gpsLat == null || headingData.gpsLon == null) {
+    console.warn('Missing GPS coordinates')
+    return
+  }
+
+  // Auto-assign UAV ID if not set
+  if (!assignedUavId) {
+    assignedUavId = 1 // Default UAV ID
+    self.postMessage({
+      type: 'uavIdAssigned',
+      uavId: assignedUavId
+    })
+  }
+
+  // Process all detections in the batch
+  const currentTimestamp = currentTime
+  
+  parsedData.detection.forEach((detectionItem, index) => {
+    const detection = createOptimizedDetection(
+      detectionItem, 
+      headingData, 
+      index, 
+      currentTimestamp
+    )
+    
+    detectionBuffer.push(detection)
+    stats.totalReceived++
+  })
+
+  // Memory management - prevent buffer overflow
+  if (detectionBuffer.length > MEMORY_CLEANUP_THRESHOLD) {
+    const excessCount = detectionBuffer.length - MAX_BUFFER_SIZE
+    const removed = detectionBuffer.splice(0, excessCount)
+    
+    // Return removed detections to pool
+    removed.forEach(returnToPool)
+    stats.totalDropped += excessCount
+  }
+
+  // Schedule processing
+  if (!isProcessing) {
+    scheduleNextBatch()
   }
 }
 
-// Optimalizált message handler
+// --- MESSAGE HANDLER ---
 self.onmessage = function(e) {
   const message = e.data
 
@@ -167,39 +263,41 @@ self.onmessage = function(e) {
       break
 
     case 'updateSettings':
-      // UAV ID beállítása
+      // Update UAV ID
       if (message.uavId !== undefined) {
         assignedUavId = message.uavId
       }
 
-      // Sampling rate beállítása
+      // Update sampling rate
       if (message.samplingRate !== undefined) {
-        samplingRate = Math.max(1, message.samplingRate) // Minimum 1ms
+        samplingRate = Math.max(10, message.samplingRate) // Minimum 10ms
       }
 
-      // Process throttle beállítása
-      if (message.processThrottle !== undefined) {
-        processThrottle = Math.max(1, message.processThrottle) // Minimum 1ms
-      }
-
-      // Visszaigazolás
+      // Confirm settings update
       self.postMessage({
         type: 'settingsUpdated',
         settings: {
           uavId: assignedUavId,
           samplingRate,
-          processThrottle
+          bufferSize: detectionBuffer.length
         }
       })
       break
 
     case 'clearDetections':
-      // Gyors törlés
+      // Return all detections to pool
+      detectionBuffer.forEach(returnToPool)
       detectionBuffer.length = 0
+      
+      // Reset statistics
       stats = {
         totalReceived: 0,
         totalProcessed: 0,
-        lastProcessingTime: 0
+        totalDropped: 0,
+        lastProcessingTime: 0,
+        averageProcessingTime: 0,
+        bufferSize: 0,
+        memoryUsage: 0
       }
 
       self.postMessage({
@@ -209,24 +307,54 @@ self.onmessage = function(e) {
       break
 
     case 'getStats':
+      stats.bufferSize = detectionBuffer.length
+      stats.memoryUsage = detectionBuffer.length + detectionPool.length
+      
       self.postMessage({
         type: 'statsUpdated',
         stats: { ...stats }
       })
       break
 
+    case 'pause':
+      // Stop processing without clearing data
+      if (processingTimer) {
+        clearTimeout(processingTimer)
+        processingTimer = null
+      }
+      isProcessing = false
+      break
+
+    case 'resume':
+      // Resume processing
+      if (detectionBuffer.length > 0 && !isProcessing) {
+        scheduleNextBatch()
+      }
+      break
+
     case 'terminate':
-      // Gyors cleanup
+      // Clean shutdown
+      if (processingTimer) {
+        clearTimeout(processingTimer)
+      }
+      
+      detectionBuffer.forEach(returnToPool)
       detectionBuffer.length = 0
+      detectionPool.length = 0
+      
       self.close()
       break
+
+    default:
+      console.warn('Unknown message type:', message.type)
   }
 }
 
-// Worker indítás üzenet
+// --- INITIALIZATION ---
 self.postMessage({
   type: 'workerStarted',
-  timestamp: Date.now()
+  timestamp: Date.now(),
+  version: '2.0-optimized'
 })
 
-console.log('Optimized detection worker initialized for real-time performance')
+console.log('Optimized detection worker v2.0 initialized for real-time UAV tracking')

@@ -2,26 +2,21 @@
 defineProps({
   isMenuOpen: Boolean
 })
-
 </script>
+
 <template>
   <div
-    class="z-999 sticky top-0 px-4 py-6 w-full h-20 bg-slate-500 border-b-cyan-950
-         text-center border-b-4 font-mono uppercase text-2xl text-black font-[1000] tracking-wide
-         shadow-inset-red transition-all duration-300 overflow-hidden"
-    :class="{ 'shadow-left-inset': isMenuOpen }"
-
-    style="background-image: url('https://www.transparenttextures.com/patterns/asfalt-dark.png');
-           text-shadow: -1px -1px 0 rgb(70, 70, 70), 1px -1px 0 rgb(70, 70, 70),
-                        -1px 1px 0 rgb(70, 70, 70), 1px 1px 0 rgb(70, 70, 70);"
+    class="sticky top-0 px-6 py-5 w-full h-20 bg-slate-950 border-b border-cyan-700
+         text-center font-mono uppercase text-2xl text-cyan-400 font-bold tracking-widest
+         shadow-md transition-all duration-300 backdrop-blur-sm"
+    :class="{ 'shadow-inner': isMenuOpen }"
   >
     <h1>CLIENT SOFTWARE</h1>
   </div>
 </template>
 
-
 <style scoped>
-.shadow-left-inset {
-  box-shadow: inset 10px 0 10px -5px rgba(0, 0, 0, 0.8);
+.shadow-inner {
+  box-shadow: inset 8px 0 15px -6px rgba(0, 255, 200, 0.4);
 }
 </style>

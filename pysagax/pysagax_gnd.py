@@ -70,7 +70,7 @@ class Commander:
             self._db.initialize_db(self._db.get_app_instance())
             return
         self._telemetry_for_monitoring_q = self._manager.Queue(maxsize=8)
-        self._to_stream_queue = self._manager.Queue(maxsize=8)
+        self._to_stream_q = self._manager.Queue(maxsize=8)
         self._api_to_command_engine_commands_q = self._manager.Queue(maxsize=8)
         self._command_engine_to_api_responses_q = self._manager.Queue(maxsize=8)
         self._uavs_to_measurement_processor_q = self._manager.Queue(maxsize=8)
@@ -82,7 +82,7 @@ class Commander:
             level=level,
             db=self._db,
             db_commit_frequency=db_commit_frequency,
-            to_stream_q=self._to_stream_queue,
+            to_stream_q=self._to_stream_q,
         )
         # self._commandengine = CommandEngine(level=level)
         self._monitoring = Monitoring(level=level)
@@ -101,7 +101,7 @@ class Commander:
             run_api,
             self._api_to_command_engine_commands_q,
             self._command_engine_to_api_responses_q,
-            self._to_stream_queue,
+            self._to_stream_q,
         )
 
         cievents_future = self._pool.submit(self._cievents)

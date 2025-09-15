@@ -8,9 +8,6 @@ const config = ref({
   gain: '50',
   bin_count: '1024',
   burst_stride: '65536'
-  // roi_center: '446.065M',
-  // roi_span: '100k',
-  // roi_threshold: '-40'
 })
 
 const updateConfig = () => {
@@ -19,26 +16,28 @@ const updateConfig = () => {
 </script>
 
 <template>
-  <div class="p-6 bg-gray-100 rounded shadow-md w-80 mx-auto min-h-[60vh] overflow-y-auto">
-    <h1 class="text-lg font-bold mb-4">Configuration Settings</h1>
+  <div class="p-6 bg-slate-900 rounded-xl shadow-lg w-full h-full overflow-y-auto border border-slate-700">
+    <h1 class="text-lg font-semibold text-cyan-400 mb-6">Configuration Settings</h1>
 
-    <div v-for="(value, key) in config" :key="key" class="mb-2">
-      <label :for="key" class="block text-sm font-medium text-gray-700">
+    <div v-for="(value, key) in config" :key="key" class="mb-4">
+      <label :for="key" class="block text-sm font-medium text-gray-300 mb-1">
         {{ key.replace('_', ' ').toUpperCase() }}
       </label>
       <input
         :id="key"
         v-model="config[key]"
         type="text"
-        class="mt-1 p-2 w-full border rounded"
+        class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-gray-100 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
       />
     </div>
-    <config-component></config-component>
-    <button @click="updateConfig" class="mt-4 w-full bg-blue-500 text-white py-2 rounded">
+
+    <config-component class="mb-4"></config-component>
+
+    <button
+      @click="updateConfig"
+      class="w-full bg-cyan-600 hover:bg-cyan-500 text-white py-2 rounded-xl font-medium shadow transition"
+    >
       Save
     </button>
   </div>
 </template>
-
-<style scoped>
-</style>

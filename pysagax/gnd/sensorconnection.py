@@ -267,6 +267,7 @@ class UAVConnection(mp.Process):
             data_type_object = DataType(data_type)
             stream_packet = DataType.to_message(data_type_object)
             stream_packet.ParseFromString(data)
+            # print('ez itten az adat: ', stream_packet)
             queue_put(
                 self._stream_out_q,
                 (self.uav_db_id, stream_packet),

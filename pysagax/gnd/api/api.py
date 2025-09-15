@@ -10,7 +10,7 @@ from flask_marshmallow_openapi import open_api
 
 
 import pysagax.message.command_pb2 as proto_cmd
-from google.protobuf.json_format import Parse, MessageToDict, ParseDict
+from google.protobuf.json_format import Parse, MessageToDict, ParseDict, MessageToJson
 
 from pysagax.gnd.api.api_utils import (
     geojson_feature_from_detection,
@@ -455,6 +455,7 @@ def command(id, instruction):
 
 @api.route("/stream/comint_detection", methods=["GET", "OPTIONS"])
 def comint_detection_stream():
+    print("aktiválódik")
     if request.method == 'OPTIONS':
         return Response('', status=204, headers={
             "Access-Control-Allow-Origin": "http://localhost:5173",
@@ -463,10 +464,10 @@ def comint_detection_stream():
             "Access-Control-Allow-Credentials": "true"
         })
 
-    if not hasattr(current_app, 'measurement_to_stream_queue'):
+    if not hasattr(current_app, 'to_stream_q'):
         return make_response(jsonify({"error": "Stream queue not available"}), 503)
 
-    app_queue = current_app.to_stream_queue
+    app_queue = current_app.to_stream_q
     app_logger = current_app.logger
 
     default_batch_interval = 0.2
@@ -496,6 +497,8 @@ def comint_detection_stream():
                 if current_time - last_sent_time >= batch_interval and not app_queue.empty():
                     print("NOT EMPTY")
                     data = app_queue.get(block=False)
+                    data = MessageToJson(data)
+                    # print("adatooook:", data)
                     yield f"data: {json.dumps(data)}\n\n"
                     # print("Stream", end=" ")
                     last_sent_time = current_time

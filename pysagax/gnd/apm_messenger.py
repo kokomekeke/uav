@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from queue import Queue, Empty
 from typing import Any, Optional
 from time import sleep, time
@@ -6,11 +7,11 @@ from time import sleep, time
 import queue
 from pysagax.common.loop import Loop
 
+
 from pysagax.util.queue_put import queue_put
 
 import pysagax.message.command_pb2 as proto_cmd
 import pysagax.message.altiss_intra_uav_pb2 as proto_altiss
-
 
 class APMMessenger(Loop):
     """
@@ -32,7 +33,7 @@ class APMMessenger(Loop):
         self._latest_geolocations = {}
 
     def __call__(
-            self, queue_in: Queue[Any], cmd_queue: Queue[Any], rsp_queue: Queue[Any], *args, **kwargs
+        self, queue_in: Queue[Any], cmd_queue: Queue[Any], rsp_queue: Queue[Any], *args, **kwargs
     ) -> None:
         self._queue_in = queue_in
         self._command_q = cmd_queue
@@ -40,6 +41,19 @@ class APMMessenger(Loop):
 
         return super()._call(*args, **kwargs)
 
+    # def _get_new_data(self):
+    #     # get message from input queue
+    #     try:
+    #         roi, timestamp, lat, lon = self._queue_in.get(timeout=1)
+    #     except Empty:  # no message arrived
+    #         return
+    #
+    #     self._latest_geolocations[roi] = proto_altiss.EmitterData(
+    #         timestamp_unix=int(timestamp.timestamp()*1e6),
+    #         latitude=lat,
+    #         longitude=lon,
+    #         altitude=0,
+    #     )
     def _get_new_data(self):
         # get message from input queue
         try:
@@ -47,8 +61,17 @@ class APMMessenger(Loop):
         except Empty:  # no message arrived
             return
 
+        # TODO: commit elött kiszedni!! ne is legyen stagelve
+        if isinstance(timestamp, datetime):
+            timestamp_unix = int(timestamp.timestamp() * 1e6)
+        elif isinstance(timestamp, (int, float)):
+            timestamp_unix = int(timestamp * 1e6)
+        else:
+            self._logger.error(f"Unsupported timestamp type: {type(timestamp)}, value: {timestamp}")
+            return
+
         self._latest_geolocations[roi] = proto_altiss.EmitterData(
-            timestamp_unix=int(timestamp.timestamp() * 1e6),
+            timestamp_unix=timestamp_unix,
             latitude=lat,
             longitude=lon,
             altitude=0,
@@ -58,10 +81,10 @@ class APMMessenger(Loop):
         """
         Returns None if nothing to send. Else it returns a response.
         """
-        # send acqured data then delete the geoloc dict so we dont send non updated data again
+        #send acqured data then delete the geoloc dict so we dont send non updated data again
         # cutoff_time = current_time - self._message_frequency
         # for roi, emitter_data in self._latest_geolocations.items():
-        # if emitter_data.timestamp_unix * 1e6 < self._last_packet_sent - self._message_frequency:
+            # if emitter_data.timestamp_unix * 1e6 < self._last_packet_sent - self._message_frequency:
         if not self._latest_geolocations:
             # don't send empty packet
             self._logger.info("No geolocation data to be sent to APM")
@@ -78,7 +101,7 @@ class APMMessenger(Loop):
         )
         self._logger.trace(f"Data sent to Commagregate {cmd}")
 
-        target_uav_id = 0  # Forward to all connected UAVs
+        target_uav_id = 0 # Forward to all connected UAVs
         # TODO: should we not forward to all UAVs?
 
         try:
@@ -90,11 +113,12 @@ class APMMessenger(Loop):
 
         self._latest_geolocations = {}
         try:
-            response = self._response_q.get(timeout=self._message_frequency / 2)
+            response = self._response_q.get(timeout=self._message_frequency/2)
         except queue.Empty:
             response = proto_cmd.Response(success=False)
             response.error.description = f"No response for APM forward command"
         return response
+
 
     def _loop(self) -> None:
         # get message from input queue

@@ -1,6 +1,6 @@
 // sensor.js - Frissített verzió, JSON parsing workerben történik
 import { defineStore, storeToRefs } from 'pinia'
-import { computed, ref, watch, shallowRef, onUnmounted, onMounted, triggerRef } from 'vue'
+import { computed, ref, watch, shallowRef, onUnmounted, onMounted, triggerRef, nextTick } from 'vue'
 import axios from 'axios'
 import { useConnectionStore } from '@/stores/connection'
 import { Sensor } from '../types/sensor'
@@ -79,7 +79,7 @@ export const useSensorStore = defineStore('sensor', () => {
 
   const getSensors = computed(() => sensors.value)
 
-  async function fetchSensors() {
+  async function fetchSensors () {
     if (!isConnected.value) return
 
     isLoading.value = true
@@ -109,7 +109,6 @@ export const useSensorStore = defineStore('sensor', () => {
 
       sensors.value = newSensors
       triggerRef(sensors)
-
     } catch (error) {
       errorMessage.value = error.message || 'Hiba történt a szenzorok lekérésekor'
 
@@ -140,7 +139,7 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
-  async function addSensor(sensor) {
+  async function addSensor (sensor) {
     isLoading.value = true
     errorMessage.value = ''
     try {
@@ -161,7 +160,7 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
-  async function removeSensor() {
+  async function removeSensor () {
     if (!selectedSensor.value) return
 
     const id = selectedSensor.value.uav_id
@@ -191,7 +190,6 @@ export const useSensorStore = defineStore('sensor', () => {
           console.error('Background delete error:', error)
           fetchSensors() // Újra szinkronizálás hiba esetén
         })
-
     } catch (error) {
       errorMessage.value = 'Hiba történt a szenzor törlésekor'
       await fetchSensors()
@@ -200,7 +198,7 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
-  async function selectSensor(sensor: Sensor) {
+  async function selectSensor (sensor: Sensor) {
     selectedSensor.value = sensor
 
     // Előző stream azonnali leállítása
@@ -216,7 +214,7 @@ export const useSensorStore = defineStore('sensor', () => {
     await startDetectionStream()
   }
 
-  function initWorkerForUav(uavId) {
+  function initWorkerForUav (uavId) {
     if (!sensors.value[uavId]?.is_selected) return
 
     // Régi worker azonnali leállítása
@@ -242,9 +240,10 @@ export const useSensorStore = defineStore('sensor', () => {
             activeWorkers: Object.keys(detectionWorkers.value).length
           }
 
-          // Detekciók azonnali hozzáadása
-          if (detectionsByUavId[uavId]?.length > 0) {
-            addDetectionsToSensor(uavId, detectionsByUavId[uavId])
+          // Detekciók hozzáadása az aktuálisan kiválasztott szenzorhoz
+          // Az új formátumban nincs UAV ID, ezért használjuk a kiválasztott szenzor ID-t
+          if (selectedSensor.value && detectionsByUavId[selectedSensor.value.uav_id]?.length > 0) {
+            addDetectionsToSensor(selectedSensor.value.uav_id, detectionsByUavId[selectedSensor.value.uav_id])
           }
           break
         }
@@ -257,8 +256,12 @@ export const useSensorStore = defineStore('sensor', () => {
           }
           break
 
+        case 'uavIdAssigned':
+          console.log(`Worker assigned to UAV ID: ${message.uavId}`)
+          break
+
         case 'workerStarted':
-          // Beállítások azonnali küldése
+          // Beállítások azonnali küldése a kiválasztott szenzor ID-val
           updateWorkerSettings(uavId)
           break
 
@@ -288,7 +291,7 @@ export const useSensorStore = defineStore('sensor', () => {
     return worker
   }
 
-  async function startDetectionStream() {
+  async function startDetectionStream () {
     if (!selectedSensor.value) return
 
     try {
@@ -300,7 +303,7 @@ export const useSensorStore = defineStore('sensor', () => {
           autoReconnect: {
             retries: 5,
             delay: 50, // Gyorsabb újracsatlakozás
-            onFailed() {
+            onFailed () {
               errorMessage.value = 'Kapcsolat megszakadt'
             }
           }
@@ -309,10 +312,10 @@ export const useSensorStore = defineStore('sensor', () => {
 
       eventSourceStop = close
 
-      // Optimalizált data watcher - közvetlen továbbítás
+      // Optimalizált data watcher - közvetlen továbbítás a kiválasztott szenzor worker-éhez
       watch(data, (rawJsonString) => {
-        if (rawJsonString) {
-          routeRawDetectionToWorker(rawJsonString)
+        if (rawJsonString && selectedSensor.value) {
+          routeRawDetectionToWorker(rawJsonString, selectedSensor.value.uav_id)
         }
       }, { immediate: true })
 
@@ -323,7 +326,6 @@ export const useSensorStore = defineStore('sensor', () => {
           close()
         }
       }, { immediate: true })
-
     } catch (error) {
       console.error('Failed to start detection stream:', error)
       errorMessage.value = 'Stream indítási hiba'
@@ -331,7 +333,7 @@ export const useSensorStore = defineStore('sensor', () => {
   }
 
   // Optimalizált detekció hozzáadás - minimális objektum manipuláció
-  function addDetectionsToSensor(uavId: number, newDetections: any[]) {
+  function addDetectionsToSensor (uavId: number, newDetections: any[]) {
     const sensor = sensors.value[uavId]
     if (!sensor) return
 
@@ -351,7 +353,7 @@ export const useSensorStore = defineStore('sensor', () => {
     triggerRef(sensors)
   }
 
-  function updateSensorReactive(uavId: number, updates: Partial<Sensor>) {
+  function updateSensorReactive (uavId: number, updates: Partial<Sensor>) {
     const sensor = sensors.value[uavId]
     if (!sensor) return
 
@@ -360,7 +362,7 @@ export const useSensorStore = defineStore('sensor', () => {
     triggerRef(sensors)
   }
 
-  function updateWorkerSettings(uavId) {
+  function updateWorkerSettings (uavId) {
     const worker = detectionWorkers.value[uavId]
     if (!worker) return
 
@@ -372,17 +374,17 @@ export const useSensorStore = defineStore('sensor', () => {
     })
   }
 
-  function updateAllWorkerSettings() {
+  function updateAllWorkerSettings () {
     Object.keys(detectionWorkers.value).forEach(uavId => {
       updateWorkerSettings(parseInt(uavId))
     })
   }
 
-  function getSensorsList() {
+  function getSensorsList () {
     return Object.values(sensors.value)
   }
 
-  function toggleSensorSelection(sensorId: number) {
+  function toggleSensorSelection (sensorId: number) {
     const sensor = sensors.value[sensorId]
     if (!sensor) return
 
@@ -390,22 +392,16 @@ export const useSensorStore = defineStore('sensor', () => {
     triggerRef(sensors)
   }
 
-  // Optimalizált routing - minimális regex használat
-  function routeRawDetectionToWorker(rawJsonString) {
+  // Frissített routing - nem keres UAV ID-t az új formátumban
+  function routeRawDetectionToWorker (rawJsonString, targetUavId) {
     try {
-      // Gyors UAV ID kinyerés
-      const uavIdMatch = rawJsonString.match(/"uav_id"\s*:\s*(\d+)/)
-      if (!uavIdMatch) return
-
-      const uavId = parseInt(uavIdMatch[1])
-
       // Worker létrehozása ha nem létezik
-      if (!detectionWorkers.value[uavId]) {
-        initWorkerForUav(uavId)
+      if (!detectionWorkers.value[targetUavId]) {
+        initWorkerForUav(targetUavId)
       }
 
-      // Közvetlen továbbítás
-      const worker = detectionWorkers.value[uavId]
+      // Közvetlen továbbítás a megadott UAV worker-éhez
+      const worker = detectionWorkers.value[targetUavId]
       if (worker) {
         worker.postMessage({
           type: 'newDetection',
@@ -420,7 +416,7 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
-  function clearDetections() {
+  function clearDetections () {
     // Minden szenzor detekciójának azonnali törlése
     Object.values(sensors.value).forEach(sensor => {
       sensor.detections = []
@@ -444,7 +440,7 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
-  function terminateAllWorkers() {
+  function terminateAllWorkers () {
     Object.entries(detectionWorkers.value).forEach(([uavId, worker]) => {
       if (worker?.terminate) {
         worker.terminate()
@@ -455,7 +451,7 @@ export const useSensorStore = defineStore('sensor', () => {
     stats.value.activeWorkers = 0
   }
 
-  function debugReactivity() {
+  function debugReactivity () {
     console.log('=== Sensor Store Debug ===')
     console.log('Total sensors:', Object.keys(sensors.value).length)
     console.log('Selected sensor:', selectedSensor.value?.uav_id || 'none')

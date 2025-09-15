@@ -6,12 +6,10 @@ from queue import Queue
 import time
 
 import sqlalchemy
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
-from flask import current_app, Flask
+from flask import current_app
 
-from pysagax.gnd.database import ComIntDatabase, ComIntDetectionEntity, UAVEntity
-from pysagax.pysagax_gnd_api import app
 from pysagax.util.queue_put import queue_put
 
 from pysagax.util.run_once import run_once
@@ -47,7 +45,7 @@ class MeasurementProcessor(Loop):
         self._measurements_to_add = []
         self._uavs_to_update = {}
         self.db_commit_frequency = db_commit_frequency
-        self._to_stream_queue: Optional[Queue] = to_stream_q
+        self._to_stream_q: Optional[Queue] = to_stream_q
 
         # Stream throttling
         self._default_batch_interval = 0.2
@@ -66,15 +64,15 @@ class MeasurementProcessor(Loop):
         self._db_app = self._db.get_app_instance()
         return super()._call(*args, **kwargs)
 
-    def get_batch_interval(self) -> float:
-        """Batch interval lekérése current_app-ból vagy default érték visszaadása"""
-        try:
-            if hasattr(current_app, 'batch_interval'):
-                return current_app.batch_interval
-        except RuntimeError:
-            # Nincs app context
-            pass
-        return self._default_batch_interval
+    # def get_batch_interval(self) -> float:
+    #     """Batch interval lekérése current_app-ból vagy default érték visszaadása"""
+    #     try:
+    #         if hasattr(current_app, 'batch_interval'):
+    #             return current_app.batch_interval
+    #     except RuntimeError:
+    #         # Nincs app context
+    #         pass
+    #     return self._default_batch_interval
 
 
     def _receive_telemetry(
@@ -209,10 +207,9 @@ class MeasurementProcessor(Loop):
             # Get  from the queue with a timeout
             id, packet = self._in_queue.get(timeout=1.0)
             self._receive_packet(id, packet)
-            # TODO: ellenőrizni, hogy kell e a batch interval
-            # TODO: kell a _measurement_to_stream_queue vagy lehet- e flask current_app contextben megvalósítani ezt?
 
-            queue_put(self._to_stream_queue, packet, 8, self._logger, "Measurement to stream")
+            queue_put(self._to_stream_q, packet, 8, self._logger, "Measurement to stream")
+
             in_q_size = self._in_queue.qsize()
             if  in_q_size > 10:
                 self._log_queue_filled(in_q_size)
