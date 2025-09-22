@@ -468,7 +468,6 @@ def comint_detection_stream():
         return make_response(jsonify({"error": "Stream queue not available"}), 503)
 
     app_queue = current_app.to_stream_q
-    app_logger = current_app.logger
 
     default_batch_interval = 0.2
     min_batch_interval = 0.01
@@ -482,7 +481,7 @@ def comint_detection_stream():
         current_app.batch_interval = batch_interval
     except ValueError:
         batch_interval = default_batch_interval
-        app_logger.warning(f"Invalid interval parameter, using default: {default_batch_interval}")
+        logger.warning(f"Invalid interval parameter, using default: {default_batch_interval}")
 
     def generate():
         start_time = time.perf_counter()
@@ -491,7 +490,7 @@ def comint_detection_stream():
             while True:
                 current_time = time.perf_counter()
                 if current_time - start_time >= max_connection_time:
-                    app_logger.info("Max connection time reached")
+                    logger.info("Max connection time reached")
                     yield f"data: {json.dumps({'info': 'Connection timeout reached'})}\n\n"
                     break
 
@@ -506,12 +505,12 @@ def comint_detection_stream():
 
                 time.sleep(0.05)
         except GeneratorExit:
-            app_logger.info("Client disconnected from stream")
+            logger.info("Client disconnected from stream")
         except Exception as e:
-            app_logger.error(f"Error in stream: {str(e)}")
+            logger.error(f"Error in stream: {str(e)}")
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
-    app_logger.info(
+    logger.info(
         f"Starting comint_detection stream with interval: {batch_interval}s, max time: {max_connection_time}s")
 
     return Response(
