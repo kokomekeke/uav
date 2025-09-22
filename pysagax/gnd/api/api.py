@@ -497,13 +497,11 @@ def comint_detection_stream():
 
                 if current_time - last_sent_time >= batch_interval:
                     try:
-                        # Ez atomic -> nincs race condition az empty() miatt
                         raw = app_queue.get_nowait()
                         data = MessageToJson(raw)
                         yield f"data: {json.dumps(data)}\n\n"
                         last_sent_time = current_time
                     except Empty:
-                        # nincs adat a queue-ban, várunk
                         pass
 
                 time.sleep(0.05)

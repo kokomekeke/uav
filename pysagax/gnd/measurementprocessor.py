@@ -8,8 +8,6 @@ import time
 import sqlalchemy
 from typing import Any, Optional
 
-from flask import current_app
-
 from pysagax.util.queue_put import queue_put
 
 from pysagax.util.run_once import run_once
@@ -47,11 +45,6 @@ class MeasurementProcessor(Loop):
         self.db_commit_frequency = db_commit_frequency
         self._to_stream_q: Optional[Queue] = to_stream_q
 
-        # Stream throttling
-        self._default_batch_interval = 0.2
-        self._last_stream_time_per_uav = {}
-
-
     def __call__(
         self,
         in_queue: Queue, 
@@ -63,16 +56,6 @@ class MeasurementProcessor(Loop):
         self._to_monitoring_queue = to_monitoring_queue
         self._db_app = self._db.get_app_instance()
         return super()._call(*args, **kwargs)
-
-    # def get_batch_interval(self) -> float:
-    #     """Batch interval lekérése current_app-ból vagy default érték visszaadása"""
-    #     try:
-    #         if hasattr(current_app, 'batch_interval'):
-    #             return current_app.batch_interval
-    #     except RuntimeError:
-    #         # Nincs app context
-    #         pass
-    #     return self._default_batch_interval
 
 
     def _receive_telemetry(
