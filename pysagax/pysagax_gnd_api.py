@@ -67,7 +67,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-logger.info(f"ASDFASDFASDFplatform is {platform}")
+logger.info(f"platform is {platform}")
 
 
 @socketio.on("connect")

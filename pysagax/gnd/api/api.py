@@ -2,6 +2,7 @@ import logging
 # TODO: felváltható e JSONIFY-al?
 import json
 import time
+from queue import Empty
 
 import flask
 from flask import jsonify, make_response, current_app, Response, request, stream_with_context
@@ -455,7 +456,6 @@ def command(id, instruction):
 
 @api.route("/stream/comint_detection", methods=["GET", "OPTIONS"])
 def comint_detection_stream():
-    print("aktiválódik")
     if request.method == 'OPTIONS':
         return Response('', status=204, headers={
             "Access-Control-Allow-Origin": "http://localhost:5173",
@@ -494,18 +494,19 @@ def comint_detection_stream():
                     app_logger.info("Max connection time reached")
                     yield f"data: {json.dumps({'info': 'Connection timeout reached'})}\n\n"
                     break
-                if current_time - last_sent_time >= batch_interval and not app_queue.empty():
-                    print("NOT EMPTY")
-                    data = app_queue.get(block=False)
-                    data = MessageToJson(data)
-                    # print("adatooook:", data)
-                    yield f"data: {json.dumps(data)}\n\n"
-                    # print("Stream", end=" ")
-                    last_sent_time = current_time
-                else:
-                    print("QUEUE IS EMPTY")
+
+                if current_time - last_sent_time >= batch_interval:
+                    try:
+                        # Ez atomic -> nincs race condition az empty() miatt
+                        raw = app_queue.get_nowait()
+                        data = MessageToJson(raw)
+                        yield f"data: {json.dumps(data)}\n\n"
+                        last_sent_time = current_time
+                    except Empty:
+                        # nincs adat a queue-ban, várunk
+                        pass
+
                 time.sleep(0.05)
-                print("Queue size:", app_queue.qsize())
         except GeneratorExit:
             app_logger.info("Client disconnected from stream")
         except Exception as e:
