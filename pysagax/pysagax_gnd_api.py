@@ -23,7 +23,6 @@ except ImportError:
     platform = "LINUX"
 
 from pysagax.gnd.database import db
-# from pysagax.gnd.api.api_utils import _set_queues
 
 # TODO: rework this file so that
 #           - logger level should come from pysagax_gnd.py
@@ -133,8 +132,6 @@ def run_api(
 ):
     logger.setLevel(level.upper())
 
-    # TODO: egységes queue átadási módszerek
-    # _set_queues(q_to_command_engine, q_from_command_engine)
     app.q_to_command_engine = q_to_command_engine
     app.q_from_command_engine = q_from_command_engine
     app.to_stream_q = to_stream_q

@@ -10,8 +10,6 @@ import traceback
 from concurrent.futures import ProcessPoolExecutor, wait
 from logging import Handler, StreamHandler, getLogger, DEBUG
 
-from flask import current_app
-
 from pysagax.util.add_logging_level import addLoggingLevel
 from os import getpid
 from signal import SIGINT, SIGTERM, signal
@@ -20,7 +18,6 @@ from typing import Any, Optional
 import click
 from pysagax.util.load_click_options_from_file import load_click_options_from_file
 from coloredlogs import install
-# from flask import Flask, current_app
 from rich.logging import RichHandler
 
 from pysagax.field.scanengine import ScanEngine
