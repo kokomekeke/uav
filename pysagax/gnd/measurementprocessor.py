@@ -28,7 +28,6 @@ class MeasurementProcessor(Loop):
             self,
             db: ComIntDatabase,
             db_commit_frequency: float,
-            to_stream_q,
             *args,
             **kwargs,
     ) -> None:
@@ -39,21 +38,23 @@ class MeasurementProcessor(Loop):
 
         self._in_queue: Optional[Queue] = None
         self._to_monitoring_queue: Optional[Queue] = None
+        self._to_stream_queue: Optional[Queue] = None
         self._last_commit = time.time()
         self._measurements_to_add = []
         self._uavs_to_update = {}
         self.db_commit_frequency = db_commit_frequency
-        self._to_stream_q: Optional[Queue] = to_stream_q
 
     def __call__(
         self,
         in_queue: Queue, 
         to_monitoring_queue: Queue,
+        to_stream_queue: Queue,
         *args,
         **kwargs,
     ) -> None:
         self._in_queue = in_queue
         self._to_monitoring_queue = to_monitoring_queue
+        self._to_stream_queue = to_stream_queue
         self._db_app = self._db.get_app_instance()
         return super()._call(*args, **kwargs)
 

@@ -79,7 +79,6 @@ class Commander:
             level=level,
             db=self._db,
             db_commit_frequency=db_commit_frequency,
-            to_stream_q=self._to_stream_q,
         )
         # self._commandengine = CommandEngine(level=level)
         self._monitoring = Monitoring(level=level)
@@ -112,6 +111,7 @@ class Commander:
             self._measurement_processor,
             self._uavs_to_measurement_processor_q,
             self._telemetry_for_monitoring_q,
+            self._to_stream_q,
         )
         # commandengine_future = self._pool.submit(self._commandengine)
         monitoring_future = self._pool.submit(
