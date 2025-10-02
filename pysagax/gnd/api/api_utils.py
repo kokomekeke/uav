@@ -8,15 +8,6 @@ import queue
 
 from math import isfinite
 
-# queue_to_command_engine = None
-# queue_from_command_engine = None
-#
-# def _set_queues(to_command_enginge, from_command_engine):
-#     """Used by pysagax_gnd_api.py to pass queue object to this file"""
-#     global queue_to_command_engine, queue_from_command_engine
-#     queue_to_command_engine = to_command_enginge
-#     queue_from_command_engine = from_command_engine
-
 def geojson_feature_from_uav(
     uav: UAVEntity,
 ) -> dict[str, str | dict[str, int | float | str | list[float]]]:
@@ -151,7 +142,6 @@ def send_to_command_engine(target_id: int, cmd: proto_cmd.Command) -> proto_cmd.
 
     current_app.q_to_command_engine.put((target_id, cmd))
     try:
-        # response = queue_from_command_engine.get(timeout=1)
         response = current_app.q_to_command_engine.get(timeout=1)
     except queue.Empty:
         print ("No response from CommAggregate")
