@@ -493,15 +493,14 @@ def comint_detection_stream():
                     logger.info("Max connection time reached")
                     yield f"data: {json.dumps({'info': 'Connection timeout reached'})}\n\n"
                     break
-
-                if current_time - last_sent_time >= batch_interval:
-                    try:
-                        raw = app_queue.get_nowait()
+                try:
+                    raw = app_queue.get_nowait()
+                    if current_time - last_sent_time >= batch_interval:
                         data = MessageToJson(raw)
                         yield f"data: {json.dumps(data)}\n\n"
                         last_sent_time = current_time
-                    except Empty:
-                        pass
+                except Empty:
+                    pass
 
                 time.sleep(0.05)
         except GeneratorExit:
