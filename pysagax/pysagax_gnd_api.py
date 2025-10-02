@@ -130,6 +130,7 @@ def run_api(
     to_stream_q: Optional[Queue] = None,
     level: str = "INFO",
 ):
+
     logger.setLevel(level.upper())
 
     app.q_to_command_engine = q_to_command_engine

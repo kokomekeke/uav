@@ -135,6 +135,7 @@ def geojson_feature_from_geoloc(
 
 def send_to_command_engine(target_id: int, cmd: proto_cmd.Command) -> proto_cmd.Response:
     # queue_to_command_engine.put((target_id, cmd))
+    # TODO: create error log messages instead of those sad faces :,))
     if not hasattr(current_app, 'q_to_command_engine'):
         print(":(((")
     if not hasattr(current_app, 'q_from_command_engine'):
