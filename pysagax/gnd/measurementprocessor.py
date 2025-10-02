@@ -188,7 +188,6 @@ class MeasurementProcessor(Loop):
 
     def _loop(self) -> None:
         try:
-            # TODO: packet-hez
             id, packet = self._in_queue.get(timeout=1.0)
             self._receive_packet(id, packet)
 

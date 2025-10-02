@@ -494,7 +494,7 @@ def comint_detection_stream():
                     yield f"data: {json.dumps({'info': 'Connection timeout reached'})}\n\n"
                     break
                 try:
-                    raw = app_queue.get_nowait()
+                    raw = app_queue.get(timeout=0.01)
                     if current_time - last_sent_time >= batch_interval:
                         data = MessageToJson(raw)
                         yield f"data: {json.dumps(data)}\n\n"
@@ -502,7 +502,6 @@ def comint_detection_stream():
                 except Empty:
                     pass
 
-                time.sleep(0.05)
         except GeneratorExit:
             logger.info("Client disconnected from stream")
         except Exception as e:
