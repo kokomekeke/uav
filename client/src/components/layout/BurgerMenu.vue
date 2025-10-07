@@ -73,18 +73,20 @@ const toggleMenu = () => {
 
 <template>
   <div class="flex min-h-screen transition-all duration-300">
-    <div v-if="isMenuOpen" class="w-72"></div>
     <div class="flex-1">
-      <!-- Hamburger button -->
       <button
         @click="toggleMenu"
-        class="fixed top-5 left-5 z-50 h-10 w-10 p-2 bg-slate-800 flex flex-col items-center justify-center gap-1 rounded border border-cyan-600 hover:bg-slate-700 transition"
         v-if="!isMenuOpen"
+        class="fixed top-1/2 left-0 -translate-y-1/2 -translate-x-10 h-full w-32 z-50 flex items-center justify-center
+               hover:bg-blue-500/80
+               rounded-r-[800px]
+               transform transition-all duration-300 ease-in-out
+               hover:-translate-x-2 hover:scale-105 hover:shadow-2xl"
       >
-        <span class="h-0.5 rounded bg-cyan-400 w-6"></span>
-        <span class="h-0.5 rounded bg-cyan-400 w-6"></span>
-        <span class="h-0.5 rounded bg-cyan-400 w-6"></span>
+        <div class="arrow right transition-transform duration-300 ease-in-out hover:translate-x-2"></div>
       </button>
+
+
 
       <!-- Sidebar -->
       <div
@@ -185,4 +187,19 @@ const toggleMenu = () => {
 .translate-x-0 {
   transform: translateX(0);
 }
+
+.arrow {
+  border: solid #a6ecfa;
+  border-width: 0 3px 3px 0;
+  border-radius: 3px;
+  display: inline-block;
+  padding: 15px;
+}
+
+.right {
+  margin-top: 100px;
+  transform: rotate(-45deg);
+  -webkit-transform: rotate(-45deg);
+}
+
 </style>

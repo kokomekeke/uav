@@ -1,7 +1,7 @@
 <script setup>
 import { ref, defineProps } from 'vue'
 import ConnectionView from '@/views/ConnectionView.vue'
-import { useConnectionStore } from '@/stores/connection';
+import { useConnectionStore } from '@/stores/connection'
 
 const connectionStore = useConnectionStore()
 // const showModal = defineModel('showModal', { default: true })
@@ -9,7 +9,8 @@ const connectionStore = useConnectionStore()
 // const connectionMessage = defineModel('connectionMessage')
 
 const props = defineProps({
-  ipPort: String
+  ipPort: String,
+  isMenuOpen: Boolean
 })
 
 const port = ref(props.ipPort)
@@ -17,7 +18,11 @@ const port = ref(props.ipPort)
 
 <template>
   <div class="relative max-h-screen">
-    <button id="show-modal" @click="connectionStore.showModal = !connectionStore.showModal" class="fixed inset-80 flex items-center justify-center font-mono uppercase text-lg ">
+    <button
+        id="show-modal"
+        @click="connectionStore.showModal = !connectionStore.showModal"
+        class="fixed inset-80 flex items-center justify-center font-mono uppercase text-lg "
+    >
       Show Modal
     </button>
 

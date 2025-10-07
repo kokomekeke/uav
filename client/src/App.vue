@@ -1,20 +1,25 @@
 <template>
-  <main class="bg-slate-900 min-h-screen flex flex-col font-mono text-gray-200">
+  <div class="flex md:flex-col font-mono bg-gradient-to-tr from-sgx-accent-light-blue to-sgx-accent-blue">
     <Header
       @click="toHome"
       :isMenuOpen="isMenuOpen"
-      class="z-50 transition-all duration-300"
+      class="basis-24"
     />
-    <div class="flex flex-row flex-1">
-      <BurgerMenu class="burger-menu max-h-screen overflow-auto z-[9999]" :isMenuOpen="isMenuOpen" />
-      <Content
-        :isMenuOpen="isMenuOpen"
-        @update:isMenuOpen="isMenuOpen = $event"
-        class="transition-all duration-300 flex-1"
-        :class="isMenuOpen ? 'ml-72' : 'ml-0'"
+    <main class="min-h-screen flex md:flex-row text-gray-200">
+      <BurgerMenu
+        :class="[
+          'h-full overflow-auto transition-all duration-300',
+          isMenuOpen ? 'fixed top-0 left-0 w-72 z-[9999]' : 'relative w-1'
+        ]"
       />
-    </div>
-  </main>
+      <Content
+          :isMenuOpen="isMenuOpen"
+          @update:isMenuOpen="isMenuOpen = $event"
+          class="transition-all duration-300 flex-1"
+          :class="isMenuOpen ? 'ml-72' : 'ml-0'"
+        />
+    </main>
+  </div>
 </template>
 
 <script setup>
@@ -24,10 +29,12 @@ import router from '@/routes'
 import Header from '@/components/layout/Header.vue'
 import Content from '@/components/layout/Content.vue'
 import 'leaflet/dist/leaflet.css'
+import { useDark } from '@vueuse/core'
 
 const packageVer = '0'
 const gitHash = '0'
 const isMenuOpen = ref(false)
+const isDark = useDark()
 
 onMounted(() => {
   console.log(`SGX-PC-1 client loaded v${packageVer} (${gitHash})`)
@@ -43,10 +50,5 @@ const toHome = () => {
 </script>
 
 <style src="./assets/tailwind.css">
-.burger-menu {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 1000;
-}
+
 </style>
