@@ -481,8 +481,6 @@ def comint_detection_stream():
     max_batch_interval = 2.0
     max_connection_time = 3600
 
-    buffer = []
-
     try:
         if current_app.batch_interval:
             batch_interval = current_app.batch_interval
@@ -506,8 +504,11 @@ def comint_detection_stream():
         logger.warning(f"Invalid flag parameter, using default: {buffer_all_flag}")
 
     def generate():
+        # TODO: tovább optimalizálható erőforráshiány esetén a bufferezés rlsz így konkrétan
         start_time = time.perf_counter()
         last_sent_time = start_time
+        buffer = []
+        id_buff = {}
         try:
             while True:
                 current_time = time.perf_counter()
@@ -516,18 +517,24 @@ def comint_detection_stream():
                     yield f"data: {json.dumps({'info': 'Connection timeout reached'})}\n\n"
                     break
                 try:
-                    raw = app_queue.get(timeout=0.01)
+                    id, raw = app_queue.get(timeout=0.01)
+                    pb_type = raw.DESCRIPTOR.name
+                    data = json.dumps({
+                        "id": id,
+                        pb_type: MessageToDict(raw)
+                    })
                     if buffer_all_flag:
+                        buffer.append(data)
                         if current_time - last_sent_time >= batch_interval:
-                            data = MessageToJson(raw)
-                            buffer.append(data)
                             yield f"data: {json.dumps(buffer)}\n\n"
                             last_sent_time = current_time
-                        else:
-                            data = MessageToJson(raw)
-                            buffer.append(data)
+                            buffer = []
                     else:
-                        print("uav id ág")
+                        id_buff[f"{id}, {pb_type}"] = data
+                        if current_time - last_sent_time >= batch_interval:
+                            yield f"data: {json.dumps(id_buff.values())}\n\n"
+                            last_sent_time = current_time
+                            id_buff = {}
                 except Empty:
                     pass
 

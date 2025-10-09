@@ -191,7 +191,7 @@ class MeasurementProcessor(Loop):
             id, packet = self._in_queue.get(timeout=1.0)
             self._receive_packet(id, packet)
 
-            queue_put(self._to_stream_queue, packet, 0, self._logger, "Measurement to stream")
+            queue_put(self._to_stream_queue, (id, packet), 0, self._logger, "Measurement to stream")
 
             in_q_size = self._in_queue.qsize()
             if  in_q_size > 10:
