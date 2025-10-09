@@ -456,6 +456,13 @@ def command(id, instruction):
 
 @api.route("/stream/comint_detection", methods=["GET", "OPTIONS"])
 def comint_detection_stream():
+    """
+    params:
+    batch_interval: the interval in sec units between processing iterations
+    buffer_all_flag: a boolean variable that can change the behaviour of processing. The default mode is the buffer_all mode,
+    which stands for buffering all data while the batch_interval time dont timeout, while the second mode only buffers 1 data/uav in a batch_interval
+
+    """
     if request.method == 'OPTIONS':
         return Response('', status=204, headers={
             "Access-Control-Allow-Origin": "http://localhost:5173",
