@@ -1,7 +1,12 @@
 <script setup>
-defineProps({
-  isMenuOpen: Boolean
+import SgxSwitchButton from '@/components/common/SgxSwitchButton.vue'
+
+const props = defineProps({
+  isMenuOpen: Boolean,
+  isDark: Boolean
 })
+
+const emit = defineEmits(['toggle-dark'])
 </script>
 
 <template>
@@ -11,9 +16,24 @@ defineProps({
     :class="{ 'shadow-inner': isMenuOpen }"
     v-bind="$attrs"
   >
-    <h1 class="p-5 font-bold tracking-widest text-cyan-300 select-none">
-      LENA_ALTISS
-    </h1>
+    <div class="flex flex-row items-center justify-between w-full">
+      <!-- Bal oldal (üres hely a balanszhoz) -->
+      <div class="w-32"></div>
+
+      <!-- Középen a cím -->
+      <h1 class="p-5 font-bold tracking-widest text-cyan-300 select-none text-center">
+        LENA_ALTISS
+      </h1>
+
+      <!-- Jobb oldalon a gomb -->
+      <SgxSwitchButton
+        class="mr-4"
+        :modelValue="props.isDark"
+        @update:modelValue="emit('toggle-dark')"
+      />
+    </div>
+
+    <!-- Alsó díszcsík -->
     <div
       class="absolute bottom-0 left-1/2 -translate-x-1/2 w-1/2 border-b-2 border-blue-300"
     ></div>

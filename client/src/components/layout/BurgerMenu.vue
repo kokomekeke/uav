@@ -86,8 +86,6 @@ const toggleMenu = () => {
         <div class="arrow right transition-transform duration-300 ease-in-out hover:translate-x-2"></div>
       </button>
 
-
-
       <!-- Sidebar -->
       <div
         class="fixed top-0 left-0 min-h-screen w-72 bg-slate-950 p-5 z-40 transition-transform duration-300 border-r border-cyan-700"

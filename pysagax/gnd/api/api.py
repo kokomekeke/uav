@@ -474,14 +474,29 @@ def comint_detection_stream():
     max_batch_interval = 2.0
     max_connection_time = 3600
 
+    buffer = []
+
     try:
-        requested_interval = request.args.get('interval', default_batch_interval, type=float)
-        batch_interval = max(min_batch_interval, min(requested_interval, max_batch_interval))
-        # with current_app.app_context():
-        current_app.batch_interval = batch_interval
+        if current_app.batch_interval:
+            batch_interval = current_app.batch_interval
+        else:
+            requested_interval = request.args.get('interval', default_batch_interval, type=float)
+            batch_interval = max(min_batch_interval, min(requested_interval, max_batch_interval))
+            # with current_app.app_context():
+            current_app.batch_interval = batch_interval
     except ValueError:
         batch_interval = default_batch_interval
         logger.warning(f"Invalid interval parameter, using default: {default_batch_interval}")
+
+    try:
+        if current_app.buffer_all_flag:
+            buffer_all_flag = current_app.buffer_all_flag
+        else:
+            buffer_all_flag = request.args.get('buffer_all_flag', True, type=bool)
+            current_app.buffer_all_flag = buffer_all_flag
+    except ValueError:
+        buffer_all_flag = True
+        logger.warning(f"Invalid flag parameter, using default: {buffer_all_flag}")
 
     def generate():
         start_time = time.perf_counter()
@@ -495,10 +510,17 @@ def comint_detection_stream():
                     break
                 try:
                     raw = app_queue.get(timeout=0.01)
-                    if current_time - last_sent_time >= batch_interval:
-                        data = MessageToJson(raw)
-                        yield f"data: {json.dumps(data)}\n\n"
-                        last_sent_time = current_time
+                    if buffer_all_flag:
+                        if current_time - last_sent_time >= batch_interval:
+                            data = MessageToJson(raw)
+                            buffer.append(data)
+                            yield f"data: {json.dumps(buffer)}\n\n"
+                            last_sent_time = current_time
+                        else:
+                            data = MessageToJson(raw)
+                            buffer.append(data)
+                    else:
+                        print("uav id ág")
                 except Empty:
                     pass
 
