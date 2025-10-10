@@ -6,6 +6,7 @@ import { useConnectionStore } from '@/stores/connection'
 import { Sensor } from '../types/sensor'
 import { useEventSource } from '@vueuse/core'
 import DetectionWorker from '../workers/detectionWorker?worker'
+import {Measurement, SensorItem} from "@/types/Measurement";
 
 // Memória-hatékony interface a detekciókhoz
 // interface Comint {
@@ -313,10 +314,21 @@ export const useSensorStore = defineStore('sensor', () => {
       eventSourceStop = close
 
       // Optimalizált data watcher - közvetlen továbbítás a kiválasztott szenzor worker-éhez
-      watch(data, (rawJsonString) => {
-        if (rawJsonString && selectedSensor.value) {
-          routeRawDetectionToWorker(rawJsonString, selectedSensor.value.uav_id)
+      watch(data, (rawJson) => {
+        if (rawJson) {
+          const parsed: SensorItem[] = JSON.parse(rawJson)
+          for (const item of parsed) {
+            if ('Measurement' in item) {
+              const measurement: Measurement = item.Measurement
+              const id = item.id
+              routeRawDetectionToWorker(measurement, id)
+            }
+          }
         }
+
+        // if (rawJsonString && selectedSensor.value) {
+        //   routeRawDetectionToWorker(rawJsonString, selectedSensor.value.uav_id)
+        // }
       }, { immediate: true })
 
       watch(error, (err) => {
@@ -393,7 +405,7 @@ export const useSensorStore = defineStore('sensor', () => {
   }
 
   // Frissített routing - nem keres UAV ID-t az új formátumban
-  function routeRawDetectionToWorker (rawJsonString, targetUavId) {
+  function routeRawDetectionToWorker (rawJsonString: Measurement, targetUavId) {
     try {
       // Worker létrehozása ha nem létezik
       if (!detectionWorkers.value[targetUavId]) {

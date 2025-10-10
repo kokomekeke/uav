@@ -1,5 +1,4 @@
 export interface UAV {
-<<<<<<< HEAD
   uav_id: number; // Primary Key
   uav_label?: string | null;
   uav_address?: string | null;
@@ -10,7 +9,6 @@ export interface UAV {
   last_pos_lon?: number | null; // Precision (10,6) -> Floating-point
   last_pos_altitude?: number | null; // Precision (10,3) -> Floating-point
   last_pos_q0?: number | null; // Quaternion component
-=======
   uav_id: number;
   uav_label?: string | null;
   uav_address?: string | null;
@@ -21,7 +19,6 @@ export interface UAV {
   last_pos_lon?: number | null;
   last_pos_altitude?: number | null;
   last_pos_q0?: number | null;
->>>>>>> 06177841dc990ecf06c3149f2016954ac503b0fb
   last_pos_q1?: number | null;
   last_pos_q2?: number | null;
   last_pos_q3?: number | null;

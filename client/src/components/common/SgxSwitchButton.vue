@@ -18,7 +18,7 @@ const handleCheckboxChange = () => {
 </script>
 
 <template>
-  <label class="flex items-center cursor-pointer select-none text-dark dark:text-white">
+  <label class="flex items-center cursor-pointer select-none text-black dark:text-white">
     <div class="relative">
       <input
         type="checkbox"

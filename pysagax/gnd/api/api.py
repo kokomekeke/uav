@@ -456,13 +456,7 @@ def command(id, instruction):
 
 @api.route("/stream/comint_detection", methods=["GET", "OPTIONS"])
 def comint_detection_stream():
-    """
-    params:
-    batch_interval: the interval in sec units between processing iterations
-    buffer_all_flag: a boolean variable that can change the behaviour of processing. The default mode is the buffer_all mode,
-    which stands for buffering all data while the batch_interval time dont timeout, while the second mode only buffers 1 data/uav in a batch_interval
-
-    """
+    """Stream ComInt detection data with batch_interval and buffer_all_flag query params"""
     if request.method == 'OPTIONS':
         return Response('', status=204, headers={
             "Access-Control-Allow-Origin": "http://localhost:5173",
@@ -482,21 +476,20 @@ def comint_detection_stream():
     max_connection_time = 3600
 
     try:
-        if current_app.batch_interval:
-            batch_interval = current_app.batch_interval
-        else:
+        # Use getattr with default value instead of direct attribute access
+        batch_interval = getattr(current_app, 'batch_interval', None)
+        if batch_interval is None:
             requested_interval = request.args.get('interval', default_batch_interval, type=float)
             batch_interval = max(min_batch_interval, min(requested_interval, max_batch_interval))
-            # with current_app.app_context():
             current_app.batch_interval = batch_interval
     except ValueError:
         batch_interval = default_batch_interval
         logger.warning(f"Invalid interval parameter, using default: {default_batch_interval}")
 
     try:
-        if current_app.buffer_all_flag:
-            buffer_all_flag = current_app.buffer_all_flag
-        else:
+        # Same fix for buffer_all_flag
+        buffer_all_flag = getattr(current_app, 'buffer_all_flag', None)
+        if buffer_all_flag is None:
             buffer_all_flag = request.args.get('buffer_all_flag', True, type=bool)
             current_app.buffer_all_flag = buffer_all_flag
     except ValueError:
@@ -519,10 +512,10 @@ def comint_detection_stream():
                 try:
                     id, raw = app_queue.get(timeout=0.01)
                     pb_type = raw.DESCRIPTOR.name
-                    data = json.dumps({
+                    data = {
                         "id": id,
                         pb_type: MessageToDict(raw)
-                    })
+                    }
                     if buffer_all_flag:
                         buffer.append(data)
                         if current_time - last_sent_time >= batch_interval:

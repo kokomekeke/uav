@@ -8,8 +8,8 @@ const PROCESSING_INTERVAL = 100 // ms - fast processing for real-time feel
 const MEMORY_CLEANUP_THRESHOLD = 1000
 
 // --- STATE MANAGEMENT ---
-let detectionBuffer = []
-let processedCount = 0
+const detectionBuffer = []
+const processedCount = 0
 let assignedUavId = null
 let isProcessing = false
 let processingTimer = null
@@ -31,11 +31,11 @@ let stats = {
 const detectionPool = []
 const POOL_SIZE = 100
 
-function getPooledDetection() {
+function getPooledDetection () {
   return detectionPool.pop() || {}
 }
 
-function returnToPool(detection) {
+function returnToPool (detection) {
   if (detectionPool.length < POOL_SIZE) {
     // Clear all properties efficiently
     for (const key in detection) {
@@ -46,7 +46,7 @@ function returnToPool(detection) {
 }
 
 // --- OPTIMIZED BATCH PROCESSING ---
-function processBatch() {
+function processBatch () {
   if (isProcessing || detectionBuffer.length === 0) return
 
   isProcessing = true
@@ -56,10 +56,10 @@ function processBatch() {
     // Process smaller batches for smoother performance
     const batchSize = Math.min(BATCH_SIZE, detectionBuffer.length)
     const batch = detectionBuffer.splice(0, batchSize)
-    
+
     // Group by UAV ID for efficient processing
     const detectionsByUavId = {}
-    
+
     if (assignedUavId && batch.length > 0) {
       detectionsByUavId[assignedUavId] = batch
     }
@@ -82,12 +82,11 @@ function processBatch() {
     // Performance tracking
     const processingTime = performance.now() - startTime
     stats.lastProcessingTime = processingTime
-    
-    // Exponential moving average for smoother performance metrics
-    stats.averageProcessingTime = stats.averageProcessingTime === 0 
-      ? processingTime 
-      : (stats.averageProcessingTime * 0.8) + (processingTime * 0.2)
 
+    // Exponential moving average for smoother performance metrics
+    stats.averageProcessingTime = stats.averageProcessingTime === 0
+      ? processingTime
+      : (stats.averageProcessingTime * 0.8) + (processingTime * 0.2)
   } catch (error) {
     console.error('Batch processing error:', error)
     self.postMessage({
@@ -97,7 +96,7 @@ function processBatch() {
     })
   } finally {
     isProcessing = false
-    
+
     // Schedule next batch if buffer has data
     if (detectionBuffer.length > 0) {
       scheduleNextBatch()
@@ -106,7 +105,7 @@ function processBatch() {
 }
 
 // --- INTELLIGENT SCHEDULING ---
-function scheduleNextBatch() {
+function scheduleNextBatch () {
   if (processingTimer) return
 
   // Immediate processing for critical buffer size
@@ -120,7 +119,7 @@ function scheduleNextBatch() {
 }
 
 // --- OPTIMIZED DETECTION CREATION ---
-function createOptimizedDetection(detectionItem, headingData, index, currentTimestamp) {
+function createOptimizedDetection (detectionItem, headingData, index, currentTimestamp) {
   const detection = getPooledDetection()
 
   // Only essential properties for performance
@@ -154,9 +153,9 @@ function createOptimizedDetection(detectionItem, headingData, index, currentTime
 }
 
 // --- MAIN DETECTION PROCESSING ---
-function processRawDetection(rawJsonString) {
+function processRawDetection (rawJsonString) {
   const currentTime = Date.now()
-  
+
   // Sampling rate control - drop samples if too frequent
   if (currentTime - lastSampleTime < samplingRate) {
     stats.totalDropped++
@@ -217,15 +216,15 @@ function processRawDetection(rawJsonString) {
 
   // Process all detections in the batch
   const currentTimestamp = currentTime
-  
+
   parsedData.detection.forEach((detectionItem, index) => {
     const detection = createOptimizedDetection(
-      detectionItem, 
-      headingData, 
-      index, 
+      detectionItem,
+      headingData,
+      index,
       currentTimestamp
     )
-    
+
     detectionBuffer.push(detection)
     stats.totalReceived++
   })
@@ -234,7 +233,7 @@ function processRawDetection(rawJsonString) {
   if (detectionBuffer.length > MEMORY_CLEANUP_THRESHOLD) {
     const excessCount = detectionBuffer.length - MAX_BUFFER_SIZE
     const removed = detectionBuffer.splice(0, excessCount)
-    
+
     // Return removed detections to pool
     removed.forEach(returnToPool)
     stats.totalDropped += excessCount
@@ -247,17 +246,19 @@ function processRawDetection(rawJsonString) {
 }
 
 // --- MESSAGE HANDLER ---
-self.onmessage = function(e) {
+self.onmessage = function (e) {
   const message = e.data
 
   switch (message.type) {
     case 'newDetection':
       if (typeof message.value === 'string') {
+        processRawDetection(JSON.parse(message.value))
+      } else if (typeof message.value === 'object') {
         processRawDetection(message.value)
       } else {
         self.postMessage({
           type: 'error',
-          message: 'Invalid data format: expected string'
+          message: 'Invalid data format: expected object or string'
         })
       }
       break
@@ -288,7 +289,7 @@ self.onmessage = function(e) {
       // Return all detections to pool
       detectionBuffer.forEach(returnToPool)
       detectionBuffer.length = 0
-      
+
       // Reset statistics
       stats = {
         totalReceived: 0,
@@ -309,7 +310,7 @@ self.onmessage = function(e) {
     case 'getStats':
       stats.bufferSize = detectionBuffer.length
       stats.memoryUsage = detectionBuffer.length + detectionPool.length
-      
+
       self.postMessage({
         type: 'statsUpdated',
         stats: { ...stats }
@@ -337,11 +338,11 @@ self.onmessage = function(e) {
       if (processingTimer) {
         clearTimeout(processingTimer)
       }
-      
+
       detectionBuffer.forEach(returnToPool)
       detectionBuffer.length = 0
       detectionPool.length = 0
-      
+
       self.close()
       break
 
