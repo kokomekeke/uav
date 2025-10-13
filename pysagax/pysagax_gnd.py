@@ -9,6 +9,7 @@ import sys
 import traceback
 from concurrent.futures import ProcessPoolExecutor, wait
 from logging import Handler, StreamHandler, getLogger, DEBUG
+
 from pysagax.util.add_logging_level import addLoggingLevel
 from os import getpid
 from signal import SIGINT, SIGTERM, signal
@@ -17,7 +18,6 @@ from typing import Any, Optional
 import click
 from pysagax.util.load_click_options_from_file import load_click_options_from_file
 from coloredlogs import install
-from flask import Flask, current_app
 from rich.logging import RichHandler
 
 from pysagax.field.scanengine import ScanEngine
@@ -67,7 +67,7 @@ class Commander:
             self._db.initialize_db(self._db.get_app_instance())
             return
         self._telemetry_for_monitoring_q = self._manager.Queue(maxsize=8)
-        self._measurement_to_stream_queue = self._manager.Queue(maxsize=8)
+        self._to_stream_q = self._manager.Queue(maxsize=8)
         self._api_to_command_engine_commands_q = self._manager.Queue(maxsize=8)
         self._command_engine_to_api_responses_q = self._manager.Queue(maxsize=8)
         self._uavs_to_measurement_processor_q = self._manager.Queue(maxsize=8)
@@ -79,7 +79,6 @@ class Commander:
             level=level,
             db=self._db,
             db_commit_frequency=db_commit_frequency,
-            measurement_to_stream_queue=self._measurement_to_stream_queue,
         )
         # self._commandengine = CommandEngine(level=level)
         self._monitoring = Monitoring(level=level)
@@ -98,7 +97,7 @@ class Commander:
             run_api,
             self._api_to_command_engine_commands_q,
             self._command_engine_to_api_responses_q,
-            self._measurement_to_stream_queue,
+            self._to_stream_q,
         )
 
         cievents_future = self._pool.submit(self._cievents)
@@ -112,6 +111,7 @@ class Commander:
             self._measurement_processor,
             self._uavs_to_measurement_processor_q,
             self._telemetry_for_monitoring_q,
+            self._to_stream_q,
         )
         # commandengine_future = self._pool.submit(self._commandengine)
         monitoring_future = self._pool.submit(

@@ -6,8 +6,8 @@ from queue import Queue
 import time
 
 import sqlalchemy
-from typing import Any, Callable, Optional
-from pysagax.gnd.database import ComIntDatabase, ComIntDetectionEntity, UAVEntity
+from typing import Any, Optional
+
 from pysagax.util.queue_put import queue_put
 
 from pysagax.util.run_once import run_once
@@ -25,39 +25,37 @@ class MeasurementProcessor(Loop):
     """Processes packets received from UAVs through the UDP stream connection"""
 
     def __init__(
-        self,
-        db: ComIntDatabase,
-        db_commit_frequency: float,
-        measurement_to_stream_queue=None,
-        *args,
-        **kwargs,
+            self,
+            db: ComIntDatabase,
+            db_commit_frequency: float,
+            *args,
+            **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
 
         self._db: ComIntDatabase = db
-        self._app: Optional[Any] = None
+        self._db_app: Optional[Any] = None
 
         self._in_queue: Optional[Queue] = None
         self._to_monitoring_queue: Optional[Queue] = None
+        self._to_stream_queue: Optional[Queue] = None
         self._last_commit = time.time()
         self._measurements_to_add = []
         self._uavs_to_update = {}
         self.db_commit_frequency = db_commit_frequency
 
-        self._logger.critical("Measurement packet streaming is not yet implemented")
-        self._measurement_to_stream_queue: Optional[Queue] = measurement_to_stream_queue
-
-
     def __call__(
         self,
         in_queue: Queue, 
         to_monitoring_queue: Queue,
+        to_stream_queue: Queue,
         *args,
         **kwargs,
     ) -> None:
         self._in_queue = in_queue
         self._to_monitoring_queue = to_monitoring_queue
-        self._app = self._db.get_app_instance()
+        self._to_stream_queue = to_stream_queue
+        self._db_app = self._db.get_app_instance()
         return super()._call(*args, **kwargs)
 
 
@@ -143,6 +141,7 @@ class MeasurementProcessor(Loop):
                 f"Received quaternion length is {len(packet.heading_data.quaternion)}"
             )
         return uav_entity
+
     def _receive_event(self, uav_entity: UAVEntity, packet: proto_data.Event) -> None:
         self._logger.info(
             f"Got a Event from {uav_entity.uav_label}! Event id is {packet.event_id}"
@@ -165,8 +164,8 @@ class MeasurementProcessor(Loop):
             | proto_data.OperationalError
         ),
     ) -> None:
-        assert self._app
-        with self._app.app_context():
+        assert self._db_app
+        with self._db_app.app_context():
             uav_entity: UAVEntity | None = UAVEntity.query.get(uav_id)
             if uav_entity is None:
                 self._logger.error(f"UAVEntity {uav_id} not found in DB!")
@@ -180,10 +179,6 @@ class MeasurementProcessor(Loop):
             uav_entity.last_seen = sqlalchemy.func.now()
 
             self._uavs_to_update[uav_entity.uav_id] = uav_entity
-        
-        if self._measurement_to_stream_queue is not None:
-            pass # streaming is not yet implemented
-            # queue_put(self._measurement_to_stream_queue, packet, 0)
 
     @run_once(timeout=1)
     def _log_queue_filled(self, size):
@@ -193,9 +188,11 @@ class MeasurementProcessor(Loop):
 
     def _loop(self) -> None:
         try:
-            # Get  from the queue with a timeout
             id, packet = self._in_queue.get(timeout=1.0)
             self._receive_packet(id, packet)
+
+            queue_put(self._to_stream_queue, (id, packet), 0, self._logger, "Measurement to stream")
+
             in_q_size = self._in_queue.qsize()
             if  in_q_size > 10:
                 self._log_queue_filled(in_q_size)
@@ -204,7 +201,7 @@ class MeasurementProcessor(Loop):
                 # TODO: we should use a DB technology where transactions are cheap
                 #       we might want to remove this and commit every update instantly 
                 #       when we have the new db
-                with self._app.app_context():
+                with self._db_app.app_context():
                     self._logger.trace(f"Adding {len(self._measurements_to_add)} detections to DB")
                     self._logger.trace(f"Updating {len(self._uavs_to_update)} uavs in DB")
                     self._db.bulk_insert(self._measurements_to_add)

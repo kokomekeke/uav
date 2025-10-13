@@ -1,27 +1,47 @@
 <script setup>
-defineProps({
-  isMenuOpen: Boolean
+import SgxSwitchButton from '@/components/common/SgxSwitchButton.vue'
+
+const props = defineProps({
+  isMenuOpen: Boolean,
+  isDark: Boolean
 })
 
+const emit = defineEmits(['toggle-dark'])
 </script>
+
 <template>
   <div
-    class="z-999 sticky top-0 px-4 py-6 w-full h-20 bg-slate-500 border-b-cyan-950
-         text-center border-b-4 font-mono uppercase text-2xl text-black font-[1000] tracking-wide
-         shadow-inset-red transition-all duration-300 overflow-hidden"
-    :class="{ 'shadow-left-inset': isMenuOpen }"
-
-    style="background-image: url('https://www.transparenttextures.com/patterns/asfalt-dark.png');
-           text-shadow: -1px -1px 0 rgb(70, 70, 70), 1px -1px 0 rgb(70, 70, 70),
-                        -1px 1px 0 rgb(70, 70, 70), 1px 1px 0 rgb(70, 70, 70);"
+    class="sticky top-0 px-6 py-5 w-full h-20
+           text-center text-2xl bg-inherit transition-all duration-300"
+    :class="{ 'shadow-inner': isMenuOpen }"
+    v-bind="$attrs"
   >
-    <h1>CLIENT SOFTWARE</h1>
+    <div class="flex flex-row items-center justify-between w-full">
+      <!-- Bal oldal (üres hely a balanszhoz) -->
+      <div class="w-32"></div>
+
+      <!-- Középen a cím -->
+      <h1 class="p-5 font-bold tracking-widest text-cyan-300 select-none text-center">
+        LENA_ALTISS
+      </h1>
+
+      <!-- Jobb oldalon a gomb -->
+      <SgxSwitchButton
+        class="mr-4"
+        :modelValue="props.isDark"
+        @update:modelValue="emit('toggle-dark')"
+      />
+    </div>
+
+    <!-- Alsó díszcsík -->
+    <div
+      class="absolute bottom-0 left-1/2 -translate-x-1/2 w-1/2 border-b-2 border-blue-300"
+    ></div>
   </div>
 </template>
 
-
 <style scoped>
-.shadow-left-inset {
-  box-shadow: inset 10px 0 10px -5px rgba(0, 0, 0, 0.8);
+.shadow-inner {
+  box-shadow: inset 8px 0 15px -6px rgba(0, 255, 200, 0.4);
 }
 </style>

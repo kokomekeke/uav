@@ -23,7 +23,6 @@ except ImportError:
     platform = "LINUX"
 
 from pysagax.gnd.database import db
-from pysagax.gnd.api.api_utils import _set_queues
 
 # TODO: rework this file so that
 #           - logger level should come from pysagax_gnd.py
@@ -67,7 +66,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-logger.info(f"ASDFASDFASDFplatform is {platform}")
+logger.info(f"platform is {platform}")
 
 
 @socketio.on("connect")
@@ -128,14 +127,15 @@ if "PYSAGAX_GND_PROXY_FIX" in os.environ:
 def run_api(
     q_to_command_engine: Optional[Queue] = None,
     q_from_command_engine: Optional[Queue] = None,
-    measurement_to_stream_queue: Optional[Queue] = None,
+    to_stream_q: Optional[Queue] = None,
     level: str = "INFO",
 ):
+
     logger.setLevel(level.upper())
 
-    # TODO: egységes queue átadási módszerek
-    _set_queues(q_to_command_engine, q_from_command_engine)
-    app.measurement_to_stream_queue = measurement_to_stream_queue
+    app.q_to_command_engine = q_to_command_engine
+    app.q_from_command_engine = q_from_command_engine
+    app.to_stream_q = to_stream_q
 
     host = "0.0.0.0"
     port = 5000

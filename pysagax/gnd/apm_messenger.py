@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from queue import Queue, Empty
 from typing import Any, Optional
 from time import sleep, time
@@ -39,7 +40,20 @@ class APMMessenger(Loop):
         self._response_q = rsp_queue
 
         return super()._call(*args, **kwargs)
-    
+
+    # def _get_new_data(self):
+    #     # get message from input queue
+    #     try:
+    #         roi, timestamp, lat, lon = self._queue_in.get(timeout=1)
+    #     except Empty:  # no message arrived
+    #         return
+    #
+    #     self._latest_geolocations[roi] = proto_altiss.EmitterData(
+    #         timestamp_unix=int(timestamp.timestamp()*1e6),
+    #         latitude=lat,
+    #         longitude=lon,
+    #         altitude=0,
+    #     )
     def _get_new_data(self):
         # get message from input queue
         try:
@@ -47,8 +61,17 @@ class APMMessenger(Loop):
         except Empty:  # no message arrived
             return
 
+        # TODO: commit elött kiszedni!! ne is legyen stagelve
+        if isinstance(timestamp, datetime):
+            timestamp_unix = int(timestamp.timestamp() * 1e6)
+        elif isinstance(timestamp, (int, float)):
+            timestamp_unix = int(timestamp * 1e6)
+        else:
+            self._logger.error(f"Unsupported timestamp type: {type(timestamp)}, value: {timestamp}")
+            return
+
         self._latest_geolocations[roi] = proto_altiss.EmitterData(
-            timestamp_unix=int(timestamp.timestamp()*1e6),
+            timestamp_unix=timestamp_unix,
             latitude=lat,
             longitude=lon,
             altitude=0,
@@ -77,7 +100,7 @@ class APMMessenger(Loop):
             self._latest_geolocations.values()
         )
         self._logger.trace(f"Data sent to Commagregate {cmd}")
-        
+
         target_uav_id = 0 # Forward to all connected UAVs
         # TODO: should we not forward to all UAVs?
 
@@ -87,7 +110,7 @@ class APMMessenger(Loop):
             response = proto_cmd.Response(success=False)
             response.error.description = f"Cant forward message to Commagregate: {e}"
             return response
-        
+
         self._latest_geolocations = {}
         try:
             response = self._response_q.get(timeout=self._message_frequency/2)
@@ -100,7 +123,7 @@ class APMMessenger(Loop):
     def _loop(self) -> None:
         # get message from input queue
         self._get_new_data()
-        
+
         current_time = time()
         if current_time > self._last_packet_sent + self._message_frequency:
             response = self._send_to_apm()
@@ -109,5 +132,4 @@ class APMMessenger(Loop):
                 return
             if not response.success:
                 self._logger.critical(response.error.description)
-        
-        
+

@@ -1,12 +1,17 @@
 import logging
+# TODO: felváltható e JSONIFY-al?
+import json
+import time
+from queue import Empty
+
 import flask
-from flask import jsonify, make_response, current_app
+from flask import jsonify, make_response, current_app, Response, request, stream_with_context
 from sqlalchemy.sql import text
 from flask_marshmallow_openapi import open_api
 
 
 import pysagax.message.command_pb2 as proto_cmd
-from google.protobuf.json_format import Parse, MessageToDict, ParseDict
+from google.protobuf.json_format import Parse, MessageToDict, ParseDict, MessageToJson
 
 from pysagax.gnd.api.api_utils import (
     geojson_feature_from_detection,
@@ -451,6 +456,98 @@ def command(id, instruction):
 
 @api.route("/stream/comint_detection", methods=["GET", "OPTIONS"])
 def comint_detection_stream():
-    return make_response(jsonify({"error": "Stream endpoint not implemented yet"}), 503)
+    """Stream ComInt detection data with batch_interval and buffer_all_flag query params"""
+    if request.method == 'OPTIONS':
+        return Response('', status=204, headers={
+            "Access-Control-Allow-Origin": "http://localhost:5173",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Allow-Credentials": "true"
+        })
 
-    app_queue = current_app.measurement_to_stream_queue
+    if not hasattr(current_app, 'to_stream_q'):
+        return make_response(jsonify({"error": "Stream queue not available"}), 503)
+
+    app_queue = current_app.to_stream_q
+
+    default_batch_interval = 0.2
+    min_batch_interval = 0.01
+    max_batch_interval = 2.0
+    max_connection_time = 3600
+
+    try:
+        # Use getattr with default value instead of direct attribute access
+        batch_interval = getattr(current_app, 'batch_interval', None)
+        if batch_interval is None:
+            requested_interval = request.args.get('interval', default_batch_interval, type=float)
+            batch_interval = max(min_batch_interval, min(requested_interval, max_batch_interval))
+            current_app.batch_interval = batch_interval
+    except ValueError:
+        batch_interval = default_batch_interval
+        logger.warning(f"Invalid interval parameter, using default: {default_batch_interval}")
+
+    try:
+        # Same fix for buffer_all_flag
+        buffer_all_flag = getattr(current_app, 'buffer_all_flag', None)
+        if buffer_all_flag is None:
+            buffer_all_flag = request.args.get('buffer_all_flag', True, type=bool)
+            current_app.buffer_all_flag = buffer_all_flag
+    except ValueError:
+        buffer_all_flag = True
+        logger.warning(f"Invalid flag parameter, using default: {buffer_all_flag}")
+
+    def generate():
+        # TODO: tovább optimalizálható erőforráshiány esetén a bufferezés rlsz így konkrétan
+        start_time = time.perf_counter()
+        last_sent_time = start_time
+        buffer = []
+        id_buff = {}
+        try:
+            while True:
+                current_time = time.perf_counter()
+                if current_time - start_time >= max_connection_time:
+                    logger.info("Max connection time reached")
+                    yield f"data: {json.dumps({'info': 'Connection timeout reached'})}\n\n"
+                    break
+                try:
+                    id, raw = app_queue.get(timeout=0.01)
+                    pb_type = raw.DESCRIPTOR.name
+                    data = {
+                        "id": id,
+                        pb_type: MessageToDict(raw)
+                    }
+                    if buffer_all_flag:
+                        buffer.append(data)
+                        if current_time - last_sent_time >= batch_interval:
+                            yield f"data: {json.dumps(buffer)}\n\n"
+                            last_sent_time = current_time
+                            buffer = []
+                    else:
+                        id_buff[f"{id}, {pb_type}"] = data
+                        if current_time - last_sent_time >= batch_interval:
+                            yield f"data: {json.dumps(id_buff.values())}\n\n"
+                            last_sent_time = current_time
+                            id_buff = {}
+                except Empty:
+                    pass
+
+        except GeneratorExit:
+            logger.info("Client disconnected from stream")
+        except Exception as e:
+            logger.error(f"Error in stream: {str(e)}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    logger.info(
+        f"Starting comint_detection stream with interval: {batch_interval}s, max time: {max_connection_time}s")
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "Access-Control-Allow-Origin": "http://localhost:5173",
+            "Access-Control-Allow-Credentials": "true",
+        }
+    )

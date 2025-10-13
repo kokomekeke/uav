@@ -27,7 +27,6 @@ watch(() => props.isMenuOpen, (newValue) => {
 })
 
 const removeSensor = () => {
-  console.log('remove sensor')
   sensorStore.removeSensor()
   isRemoveDialogOpen.value = false
 }
@@ -35,7 +34,6 @@ const removeSensor = () => {
 const openModifyPanel = (sensor) => {
   isModifyPanelOpen.value = !isModifyPanelOpen.value
   selectedSensorForModify.value = sensor
-  console.log('open modify panel for sensor:', selectedSensorForModify.value)
 }
 
 const selectSensor = (sensor) => {
@@ -47,14 +45,10 @@ const handleMouseOver = (sensor) => {
 }
 
 const addSensor = () => {
-  console.log('add sensor')
-  // sensorStore.addSensor()
   isModalOpen.value = true
 }
 
-const confirm = async () => { // 🛠️ async kell, hogy használhassuk az await-et
-  console.log('confirm changes')
-
+const confirm = async () => {
   if (address.value && label.value) {
     try {
       await axios.patch(`http://localhost:5000/v1/uav/${selectedSensorForModify.value.uav_id}`, {
@@ -64,15 +58,10 @@ const confirm = async () => { // 🛠️ async kell, hogy használhassuk az awai
       },
       { headers: { 'Content-Type': 'application/json' } })
 
-      console.log('✅ Sikeres módosítás!')
-
-      // Most már biztos, hogy a PATCH lefutott, frissíthetjük az adatokat
       await sensorStore.fetchSensors()
     } catch (error) {
-      console.error('❌ Hiba az API hívás során:', error.response ? error.response.data : error.message)
+      console.error('API error:', error.response ? error.response.data : error.message)
     }
-  } else {
-    console.log('❌ Hiányzó adatok, nem lehet menteni!')
   }
 }
 
@@ -84,44 +73,46 @@ const toggleMenu = () => {
 
 <template>
   <div class="flex min-h-screen transition-all duration-300">
-    <div v-if="isMenuOpen" class="w-64"></div>
     <div class="flex-1">
       <button
         @click="toggleMenu"
-        class="fixed top-4 left-4 z-50 h-10 w-10 p-2 bg-cyan-950 flex flex-col items-center justify-center gap-1 rounded"
         v-if="!isMenuOpen"
+        class="fixed top-1/2 left-0 -translate-y-1/2 -translate-x-10 h-full w-32 z-50 flex items-center justify-center
+               hover:bg-blue-500/80
+               rounded-r-[800px]
+               transform transition-all duration-300 ease-in-out
+               hover:-translate-x-2 hover:scale-105 hover:shadow-2xl"
       >
-        <span class="h-0.5 rounded bg-gray-400 w-6"></span>
-        <span class="h-0.5 rounded bg-gray-400 w-6"></span>
-        <span class="h-0.5 rounded bg-gray-400 w-6"></span>
+        <div class="arrow right transition-transform duration-300 ease-in-out hover:translate-x-2"></div>
       </button>
 
+      <!-- Sidebar -->
       <div
-        class="fixed top-0 left-0 min-h-screen w-64 bg-gray-800 p-5 z-40 transition-transform duration-300"
+        class="fixed top-0 left-0 min-h-screen w-72 bg-slate-950 p-5 z-40 transition-transform duration-300 border-r border-cyan-700"
         :class="{ '-translate-x-full': !isMenuOpen, 'translate-x-0': isMenuOpen }"
       >
         <button
           @click="toggleMenu"
-          class="text-white text-2xl mb-4 scale-x-150 font-bold z-[9999] relative"
+          class="text-cyan-400 text-2xl mb-6 font-bold z-[9999] relative hover:text-cyan-300 transition"
         >
-          X
+          ✕
         </button>
 
-        <div class="bg-blue-500 flex-grow my-4 text-white p-4 text-center overflow-y-auto rounded-lg">
-          <p v-if="sensorStore.isLoading" class="text-yellow-300">Betöltés...</p>
+        <div class="flex-grow text-gray-200 text-sm overflow-y-auto">
+          <p v-if="sensorStore.isLoading" class="text-yellow-400">Loading...</p>
           <p v-if="sensorStore.errorMessage" class="text-red-500">{{ sensorStore.errorMessage }}</p>
 
-          <ul class="max-h-90">
+          <ul>
             <li
               v-for="sensor in sensorList"
               :key="sensor.uav_label"
               @click="selectSensor(sensor)"
               @mouseover="handleMouseOver(sensor)"
               :class="{
-                'bg-gray-700': sensorStore.selectedSensor === sensor,
-                'bg-gray-700 hover:bg-gray-600': sensorStore.selectedSensor !== sensor
+                'bg-slate-800': sensorStore.selectedSensor === sensor,
+                'hover:bg-slate-700': sensorStore.selectedSensor !== sensor
               }"
-              class="p-2 rounded cursor-pointer mb-1"
+              class="p-2 rounded cursor-pointer mb-2 transition"
             >
               <div class="flex justify-between items-center">
                 <input
@@ -131,47 +122,49 @@ const toggleMenu = () => {
                   @change="sensorStore.toggleSensorSelection(sensor.uav_id)"
                   @click.stop
                 >
-                <router-link :to="`/sensor/${sensor['uav_label']}`" class="pl-2 text-white hover:underline flex-grow text-left">
+                <router-link :to="`/sensor/${sensor['uav_label']}`" class="pl-2 flex-grow text-left hover:underline">
                   {{ sensor['uav_label'] }}
                 </router-link>
-                <button @click.stop="openModifyPanel(sensor)" class="text-white p-2 rounded">⚙️</button>
-                <button @click.stop="isRemoveDialogOpen = true" class="text-red-400 hover:text-red-600 ml-2">❌</button>
+                <button @click.stop="openModifyPanel(sensor)" class="text-cyan-400 hover:text-cyan-300 px-2">⚙️</button>
+                <button @click.stop="isRemoveDialogOpen = true" class="text-red-400 hover:text-red-600 ml-2">✕</button>
               </div>
-              <div v-if="selectedSensorForModify === sensor && isModifyPanelOpen" class="mt-2 h-40 bg-gray-800 rounded">
+
+              <!-- Modify panel -->
+              <div v-if="selectedSensorForModify === sensor && isModifyPanelOpen" class="mt-2 p-3 bg-slate-800 rounded border border-cyan-600">
                 <div>
-                  <p>Host ip:</p>
-                  <input v-model="address" class="max-w-40 text-black">
-                  <p>Host label:</p>
-                  <input v-model="label" class="max-w-40 text-black">
-                  <div class="flex ml-12">
+                  <p>Host IP:</p>
+                  <input v-model="address" class="max-w-40 text-black px-1 rounded">
+                  <p class="mt-2">Label:</p>
+                  <input v-model="label" class="max-w-40 text-black px-1 rounded">
+                  <div class="flex items-center gap-2 mt-2">
                       <p>Active:</p>
                       <input v-model="active" type="checkbox">
                   </div>
-                  <button @click="confirm" class="bg-green-700 m-1 rounded">Confirm</button>
+                  <button @click="confirm" class="bg-green-700 mt-2 px-3 py-1 rounded hover:bg-green-600">Confirm</button>
                 </div>
               </div>
             </li>
           </ul>
           <new-sensor-modal></new-sensor-modal>
+
+          <!-- Delete confirmation modal -->
           <teleport to="body">
             <div
               v-if="isRemoveDialogOpen"
-              class="fixed inset-0 z-[999] grid place-items-center bg-black bg-opacity-60 backdrop-blur-sm transition-opacity duration-300"
+              class="fixed inset-0 z-[999] grid place-items-center bg-black bg-opacity-70 backdrop-blur-sm"
             >
-              <div class="relative m-4 p-4 w-2/5 min-w-[40%] max-w-[40%] rounded-lg bg-red-100 shadow-sm">
-                <div class="relative border-t border-slate-200 py-4 leading-normal text-slate-600 font-bold">
-                  Are you sure you want to delete the sensor?
-                </div>
-                <div class="flex shrink-0 flex-wrap items-center pt-4 justify-end">
+              <div class="relative m-4 p-6 w-2/5 min-w-[40%] max-w-[40%] rounded-lg bg-slate-900 border border-red-600 shadow-lg text-gray-200">
+                <div class="font-bold mb-4 text-lg text-red-400">Delete sensor?</div>
+                <div class="flex justify-end gap-3">
                   <button
                     @click="isRemoveDialogOpen = false"
-                    class="rounded-md border border-transparent py-2 px-4 text-center text-sm transition-all text-slate-600 hover:bg-slate-100"
+                    class="px-4 py-2 rounded-md bg-slate-700 hover:bg-slate-600"
                   >
                     Cancel
                   </button>
                   <button
                     @click="removeSensor()"
-                    class="rounded-md bg-red-600 py-2 px-4 border border-transparent text-center text-sm text-white transition-all shadow-md hover:shadow-lg ml-2"
+                    class="px-4 py-2 rounded-md bg-red-600 hover:bg-red-500"
                   >
                     Confirm
                   </button>
@@ -189,8 +182,22 @@ const toggleMenu = () => {
 .-translate-x-full {
   transform: translateX(-100%);
 }
-
 .translate-x-0 {
   transform: translateX(0);
 }
+
+.arrow {
+  border: solid #a6ecfa;
+  border-width: 0 3px 3px 0;
+  border-radius: 3px;
+  display: inline-block;
+  padding: 15px;
+}
+
+.right {
+  margin-top: 100px;
+  transform: rotate(-45deg);
+  -webkit-transform: rotate(-45deg);
+}
+
 </style>

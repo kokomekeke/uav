@@ -1,123 +1,132 @@
-<script setup>
-import { ref } from 'vue'
-import { useSensorStore } from '@/stores/sensor'
+<template>
+  <div>
+    <button
+      @click="addSensor"
+      class="w-full bg-green-500 hover:bg-green-600 text-white font-medium px-4 py-2 rounded-xl shadow transition-all"
+    >
+      + Add Sensor
+    </button>
 
-const sensorStore = useSensorStore()
+    <CenteredModal :show="isModalOpen" @close="isModalOpen = false">
+      <!-- HEADER -->
+      <template #header>
+        <h3 class="text-lg font-semibold text-cyan-400">Add Sensor</h3>
+      </template>
+
+      <!-- BODY -->
+      <template #body>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-200">Sensor Label *</label>
+            <input
+              v-model="label"
+              class="w-full p-2 bg-slate-800 border border-slate-600 rounded-lg text-gray-100 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+            />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-200">Sensor Address *</label>
+            <input
+              v-model="address"
+              class="w-full p-2 bg-slate-800 border border-slate-600 rounded-lg text-gray-100 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+            />
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-200">Latitude</label>
+              <input v-model="lastPosLat" class="w-full p-2 bg-slate-800 border border-slate-600 rounded-lg text-gray-100"/>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-200">Longitude</label>
+              <input v-model="lastPosLon" class="w-full p-2 bg-slate-800 border border-slate-600 rounded-lg text-gray-100"/>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-200">Altitude</label>
+              <input v-model="lastPosAlt" class="w-full p-2 bg-slate-800 border border-slate-600 rounded-lg text-gray-100"/>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-200">Q0</label>
+              <input v-model="lastPosQ0" class="w-full p-2 bg-slate-800 border border-slate-600 rounded-lg text-gray-100"/>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-200">Q1</label>
+              <input v-model="lastPosQ1" class="w-full p-2 bg-slate-800 border border-slate-600 rounded-lg text-gray-100"/>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-200">Q2</label>
+              <input v-model="lastPosQ2" class="w-full p-2 bg-slate-800 border border-slate-600 rounded-lg text-gray-100"/>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-200">Q3</label>
+              <input v-model="lastPosQ3" class="w-full p-2 bg-slate-800 border border-slate-600 rounded-lg text-gray-100"/>
+            </div>
+          </div>
+
+          <div class="flex items-center space-x-2">
+            <input
+              v-model="isActive"
+              type="checkbox"
+              class="h-4 w-4 text-green-500 focus:ring-green-400 border-slate-600 rounded"
+            />
+            <label class="text-sm text-gray-200">Active</label>
+          </div>
+        </div>
+      </template>
+
+      <!-- FOOTER -->
+      <template #submit>
+        <button
+          class="bg-gray-600 hover:bg-gray-500 px-4 py-2 rounded-xl text-white font-medium"
+          @click="isModalOpen = false"
+        >
+          Cancel
+        </button>
+        <button
+          class="bg-green-600 hover:bg-green-500 px-4 py-2 rounded-xl text-white font-medium"
+          @click="submit"
+        >
+          Submit
+        </button>
+      </template>
+    </CenteredModal>
+  </div>
+</template>
+
+<script setup>
+import CenteredModal from '@/components/common/CenteredModal.vue'
+import { ref } from 'vue'
 
 const isModalOpen = ref(false)
-
 const label = ref('')
 const address = ref('')
+const lastPosLat = ref('')
+const lastPosLon = ref('')
+const lastPosAlt = ref('')
+const lastPosQ0 = ref('')
+const lastPosQ1 = ref('')
+const lastPosQ2 = ref('')
+const lastPosQ3 = ref('')
 const isActive = ref(false)
-const lastPosLat = ref(null)
-const lastPosLon = ref(null)
-const lastPosAlt = ref(null)
-const lastPosQ0 = ref(null)
-const lastPosQ1 = ref(null)
-const lastPosQ2 = ref(null)
-const lastPosQ3 = ref(null)
 
 const addSensor = () => {
   isModalOpen.value = true
 }
 
 const submit = () => {
-  console.log('ACTIVEEE: ', isActive.value)
-  console.log(11111)
-  if (label.value && address.value) {
-    console.log(22222)
-    const data = {
-      uav_label: label.value,
-      uav_address: address.value,
-      active: isActive.value,
-      last_pos_lat: lastPosLat,
-      last_pos_lon: lastPosLon,
-      last_pos_alt: lastPosAlt,
-      last_pos_q0: lastPosQ0,
-      last_pos_q1: lastPosQ1,
-      last_pos_q2: lastPosQ2,
-      last_pos_q3: lastPosQ3
-    }
-    console.log('DATA: ', data)
-    console.log(33333)
-    sensorStore.addSensor(data)
-    isModalOpen.value = false
-  } else {
-    console.log('fill the form!!!')
-  }
+  console.log('Submitting sensor:', {
+    label: label.value,
+    address: address.value,
+    lat: lastPosLat.value,
+    lon: lastPosLon.value,
+    alt: lastPosAlt.value,
+    q0: lastPosQ0.value,
+    q1: lastPosQ1.value,
+    q2: lastPosQ2.value,
+    q3: lastPosQ3.value,
+    active: isActive.value
+  })
+  isModalOpen.value = false
 }
-
 </script>
 
-<template>
-  <div>
-    <div class="mt-4">
-      <button
-        @click="addSensor"
-        class="mt-2 w-full bg-green-500 text-white p-2 rounded hover:bg-green-700"
-      >
-        + Add Sensor
-      </button>
-    </div>
-
-    <div
-      v-if="isModalOpen"
-      class="fixed inset-0 z-[999] grid h-screen w-screen place-items-center bg-black bg-opacity-60 backdrop-blur-sm transition-opacity duration-300"
-    >
-      <div class="bg-slate-500 min-w-72 rounded-lg p-4">
-        <div class="m-2 text-black">
-          <p class="m-2 font-bold">Add Sensor</p>
-
-          <label class="block">Sensor Label:*</label>
-          <input v-model="label" class="w-full p-1 border rounded" />
-
-          <label class="block mt-2">Sensor Address:*</label>
-          <input v-model="address" class="w-full p-1 border rounded" />
-
-          <label class="block mt-2">Last position latitude:</label>
-          <input v-model="lastPosLat" class="w-full p-1 border rounded" />
-
-          <label class="block mt-2">Last position longitude:</label>
-          <input v-model="lastPosLon" class="w-full p-1 border rounded" />
-
-          <label class="block mt-2">Last position altitude:</label>
-          <input v-model="lastPosAlt" class="w-full p-1 border rounded" />
-
-          <label class="block mt-2">Last position q0:</label>
-          <input v-model="lastPosQ0" class="w-full p-1 border rounded" />
-
-          <label class="block mt-2">Last position q1:</label>
-          <input v-model="lastPosQ1" class="w-full p-1 border rounded" />
-
-          <label class="block mt-2">Last position q2:</label>
-          <input v-model="lastPosQ2" class="w-full p-1 border rounded" />
-
-          <label class="block mt-2">Last position q3:</label>
-          <input v-model="lastPosQ3" class="w-full p-1 border rounded" />
-
-          <label class="block mt-2">Active:*</label>
-          <input v-model="isActive" type="checkbox" class="ml-2" />
-        </div>
-
-        <div class="py-4 flex flex-row">
-          <button
-            class="basis-1/2 bg-green-700 text-white m-2 h-10 rounded"
-            @click="submit"
-          >
-            Submit
-          </button>
-          <button
-            class="basis-1/2 bg-red-700 text-white m-2 h-10 rounded"
-            @click="isModalOpen = false"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-</template>
-
-<style scoped>
-
-</style>
