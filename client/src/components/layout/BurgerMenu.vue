@@ -78,7 +78,8 @@ const toggleMenu = () => {
         @click="toggleMenu"
         v-if="!isMenuOpen"
         class="fixed top-1/2 left-0 -translate-y-1/2 -translate-x-10 h-full w-32 z-50 flex items-center justify-center
-               hover:bg-blue-500/80
+               hover:bg-blue-600/40
+               dark:hover:bg-red-800/40
                rounded-r-[800px]
                transform transition-all duration-300 ease-in-out
                hover:-translate-x-2 hover:scale-105 hover:shadow-2xl"
@@ -87,15 +88,22 @@ const toggleMenu = () => {
       </button>
 
       <!-- Sidebar -->
+      <!-- Módosított Sidebar rész enyhe világosító filterrel -->
       <div
-        class="fixed top-0 left-0 min-h-screen w-72 bg-slate-950 p-5 z-40 transition-transform duration-300 border-r border-cyan-700"
+        class="fixed top-0 left-0 min-h-screen w-72 p-5 z-40 transition-transform duration-300 border-r
+               bg-white/10 backdrop-blur-md
+               border-emerald-400/60 shadow-2xl shadow-emerald-500/30
+               rounded-r-[2.5rem]
+               dark:bg-gradient-to-b dark:from-[#0b1a27]/40 dark:via-[#102b3f]/40 dark:to-red-800/40
+               dark:border-red-900/60 dark:shadow-[0_0_40px_-10px_rgba(255,0,0,0.25)]"
         :class="{ '-translate-x-full': !isMenuOpen, 'translate-x-0': isMenuOpen }"
       >
+
         <button
           @click="toggleMenu"
-          class="text-cyan-400 text-2xl mb-6 font-bold z-[9999] relative hover:text-cyan-300 transition"
+          class=" text-cyan-800 dark:text-cyan-400 text-2xl mb-6 font-bold z-[9999] relative hover:text-cyan-300 transition"
         >
-          ✕
+          x
         </button>
 
         <div class="flex-grow text-gray-200 text-sm overflow-y-auto">
@@ -112,7 +120,7 @@ const toggleMenu = () => {
                 'bg-slate-800': sensorStore.selectedSensor === sensor,
                 'hover:bg-slate-700': sensorStore.selectedSensor !== sensor
               }"
-              class="p-2 rounded cursor-pointer mb-2 transition"
+              class="p-2 rounded cursor-pointer mb-2 transition text-slate-800 dark:text-white bg-slate-100/30 dark:bg-slate-100/20"
             >
               <div class="flex justify-between items-center">
                 <input

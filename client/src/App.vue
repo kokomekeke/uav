@@ -1,10 +1,10 @@
 <template>
-  <div class="flex md:flex-col font-mono bg-gradient-to-tr from-sgx-accent-light-blue to-sgx-accent-blue">
-    <Header
-      @click="toHome"
+  <div class="flex md:flex-col font-mono bg-gradient-to-tr from-emerald-300 to-sgx-accent-blue
+  dark:bg-gradient-to-tr dark:from-sgx-dark-blue dark:via-sgx-dark-blue dark:to-red-500">
+    <SgxHeader
       :isMenuOpen="isMenuOpen"
       :isDark="isDark"
-      @toggle-dark="toggleDark"
+      @toggle-dark="handleToggleDark"
       class="basis-24"
     />
     <main class="min-h-screen flex md:flex-row text-gray-200">
@@ -27,11 +27,10 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import BurgerMenu from '@/components/layout/BurgerMenu.vue'
-import router from '@/routes'
-import Header from '@/components/layout/Header.vue'
+import SgxHeader from '@/components/layout/SgxHeader.vue'
 import Content from '@/components/layout/Content.vue'
 import 'leaflet/dist/leaflet.css'
-import { useDark, useToggle } from '@vueuse/core'
+import { useDark } from '@vueuse/core'
 
 const packageVer = '0'
 const gitHash = '0'
@@ -39,7 +38,11 @@ const isMenuOpen = ref(false)
 
 // useDark inicializálása
 const isDark = useDark()
-const toggleDark = useToggle(isDark)
+
+// Toggle függvény
+const handleToggleDark = () => {
+  isDark.value = !isDark.value
+}
 
 // Opcionális: dark mode változás figyelése
 watch(isDark, (newVal) => {
@@ -54,9 +57,7 @@ onBeforeUnmount(() => {
   console.log('Component unmounted')
 })
 
-const toHome = () => {
-  router.push({ path: '/' })
-}
 </script>
 
-<style src="./assets/tailwind.css"></style>
+<style>
+</style>
