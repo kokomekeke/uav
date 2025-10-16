@@ -204,7 +204,6 @@ const {
 const sensorStore = useSensorStore()
 
 const props = defineProps({
-  isMenuOpen: Boolean,
   isModalVisible: Boolean
 })
 

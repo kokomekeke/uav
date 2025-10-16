@@ -9,6 +9,8 @@
     />
     <main class="min-h-screen flex md:flex-row text-gray-200">
       <BurgerMenu
+        :isMenuOpen="isMenuOpen"
+        @update:isMenuOpen="isMenuOpen = $event"
         :class="[
           'h-full overflow-auto transition-all duration-300',
           isMenuOpen ? 'fixed top-0 left-0 w-72 z-[9999]' : 'relative w-1'
@@ -47,6 +49,10 @@ const handleToggleDark = () => {
 // Opcionális: dark mode változás figyelése
 watch(isDark, (newVal) => {
   console.log('Dark mode:', newVal)
+})
+
+watch(isMenuOpen, (n) => {
+  console.log('side menu new value: ', n)
 })
 
 onMounted(() => {

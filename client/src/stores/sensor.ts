@@ -215,17 +215,16 @@ export const useSensorStore = defineStore('sensor', () => {
     await startDetectionStream()
   }
 
-  function initWorkerForUav (uavId) {
+  function initWorkerForUav(uavId: number) {
     if (!sensors.value[uavId]?.is_selected) return
 
-    // Régi worker azonnali leállítása
+    // Régi worker leállítása
     if (detectionWorkers.value[uavId]) {
       detectionWorkers.value[uavId].terminate()
     }
 
     const worker = new DetectionWorker()
 
-    // Optimalizált message handler
     worker.onmessage = (e) => {
       const message = e.data
 
@@ -233,7 +232,7 @@ export const useSensorStore = defineStore('sensor', () => {
         case 'processedDetections': {
           const { detectionsByUavId, stats: workerStats } = message
 
-          // Statisztikák batch frissítése
+          // Statisztikák frissítése
           stats.value = {
             totalReceived: stats.value.totalReceived + (workerStats.totalReceived || 0),
             totalProcessed: stats.value.totalProcessed + (workerStats.totalProcessed || 0),
@@ -241,11 +240,16 @@ export const useSensorStore = defineStore('sensor', () => {
             activeWorkers: Object.keys(detectionWorkers.value).length
           }
 
-          // Detekciók hozzáadása az aktuálisan kiválasztott szenzorhoz
-          // Az új formátumban nincs UAV ID, ezért használjuk a kiválasztott szenzor ID-t
-          if (selectedSensor.value && detectionsByUavId[selectedSensor.value.uav_id]?.length > 0) {
-            addDetectionsToSensor(selectedSensor.value.uav_id, detectionsByUavId[selectedSensor.value.uav_id])
-          }
+          // JAVÍTÁS: Ellenőrizd MINDEN UAV ID-t a válaszban
+          Object.entries(detectionsByUavId).forEach(([uavIdStr, detections]) => {
+            const uavIdNum = Number(uavIdStr)
+
+            // Ha ez a szenzor létezik és ki van választva
+            if (sensors.value[uavIdNum]?.is_selected && Array.isArray(detections)) {
+              console.log(`Adding ${detections.length} detections to sensor ${uavIdNum}`)
+              addDetectionsToSensor(uavIdNum, detections)
+            }
+          })
           break
         }
 
@@ -262,7 +266,7 @@ export const useSensorStore = defineStore('sensor', () => {
           break
 
         case 'workerStarted':
-          // Beállítások azonnali küldése a kiválasztott szenzor ID-val
+          // Worker inicializálva, küldd el a beállításokat
           updateWorkerSettings(uavId)
           break
 
@@ -276,14 +280,13 @@ export const useSensorStore = defineStore('sensor', () => {
     worker.onerror = (error) => {
       console.error(`Worker error for UAV ${uavId}:`, error)
       worker.terminate()
-
       const updatedWorkers = { ...detectionWorkers.value }
       delete updatedWorkers[uavId]
       detectionWorkers.value = updatedWorkers
       stats.value.activeWorkers = Object.keys(updatedWorkers).length
     }
 
-    // Worker azonnali regisztrálása
+    // Worker regisztrálása
     const updatedWorkers = { ...detectionWorkers.value }
     updatedWorkers[uavId] = worker
     detectionWorkers.value = updatedWorkers
@@ -291,8 +294,29 @@ export const useSensorStore = defineStore('sensor', () => {
 
     return worker
   }
+  // --- DEBUG SEGÍTSÉG ---
+  function debugStream() {
+    console.log('=== STREAM DEBUG ===')
+    console.log('Selected sensor:', {
+      uav_id: selectedSensor.value?.uav_id,
+      uav_label: selectedSensor.value?.uav_label,
+      is_selected: selectedSensor.value?.is_selected,
+      detectionsCount: selectedSensor.value?.detections?.length || 0
+    })
+    console.log('Active workers:', Object.keys(detectionWorkers.value))
+    console.log('Stats:', stats.value)
 
-  async function startDetectionStream () {
+    Object.entries(sensors.value).forEach(([id, sensor]) => {
+      console.log(`Sensor ${id}:`, {
+        label: sensor.uav_label,
+        selected: sensor.is_selected,
+        detections: sensor.detections?.length || 0,
+        hasWorker: !!detectionWorkers.value[id]
+      })
+    })
+  }
+
+  async function startDetectionStream() {
     if (!selectedSensor.value) return
 
     try {
@@ -303,8 +327,8 @@ export const useSensorStore = defineStore('sensor', () => {
           withCredentials: true,
           autoReconnect: {
             retries: 5,
-            delay: 50, // Gyorsabb újracsatlakozás
-            onFailed () {
+            delay: 10,
+            onFailed() {
               errorMessage.value = 'Kapcsolat megszakadt'
             }
           }
@@ -313,23 +337,35 @@ export const useSensorStore = defineStore('sensor', () => {
 
       eventSourceStop = close
 
-      // Optimalizált data watcher - közvetlen továbbítás a kiválasztott szenzor worker-éhez
       watch(data, (rawJson) => {
-        if (rawJson) {
+        if (!rawJson || !selectedSensor.value) return
+
+        try {
           const parsed: SensorItem[] = JSON.parse(rawJson)
+
           for (const item of parsed) {
-            if ('Measurement' in item) {
+            if ('Measurement' in item && item.Measurement) {
               const measurement: Measurement = item.Measurement
-              const id = item.id
-              routeRawDetectionToWorker(measurement, id)
+              const backendUavId = item.id  // Backend UAV ID (pl. 3)
+
+              // KRITIKUS JAVÍTÁS #1: Ellenőrizd, hogy ez a mérés a kiválasztott szenzorhoz tartozik-e
+              if (backendUavId === selectedSensor.value.uav_id) {
+                // Használd a kiválasztott szenzor ID-ját!
+                routeRawDetectionToWorker(measurement, selectedSensor.value.uav_id)
+              }
+
+              // VAGY KRITIKUS JAVÍTÁS #2: Ha minden szenzortól akarod fogadni:
+              // (Csak akkor, ha több szenzor van kiválasztva!)
+              // const targetSensor = sensors.value[backendUavId]
+              // if (targetSensor?.is_selected) {
+              //   routeRawDetectionToWorker(measurement, backendUavId)
+              // }
             }
           }
+        } catch (parseError) {
+          console.error('Stream parsing error:', parseError, rawJson?.substring(0, 200))
         }
-
-        // if (rawJsonString && selectedSensor.value) {
-        //   routeRawDetectionToWorker(rawJsonString, selectedSensor.value.uav_id)
-        // }
-      }, { immediate: true })
+      }, { immediate: true, flush: 'sync' })
 
       watch(error, (err) => {
         if (err) {
@@ -405,23 +441,24 @@ export const useSensorStore = defineStore('sensor', () => {
   }
 
   // Frissített routing - nem keres UAV ID-t az új formátumban
-  function routeRawDetectionToWorker (rawJsonString: Measurement, targetUavId) {
+  function routeRawDetectionToWorker(measurement: Measurement, targetUavId: number) {
     try {
       // Worker létrehozása ha nem létezik
       if (!detectionWorkers.value[targetUavId]) {
         initWorkerForUav(targetUavId)
       }
 
-      // Közvetlen továbbítás a megadott UAV worker-éhez
       const worker = detectionWorkers.value[targetUavId]
       if (worker) {
         worker.postMessage({
           type: 'newDetection',
-          value: rawJsonString
+          value: measurement,
+          uavId: targetUavId
         })
 
-        // Statisztikák gyors frissítése
         stats.value.totalReceived++
+      } else {
+        console.warn(`No worker found for UAV ${targetUavId}`)
       }
     } catch (error) {
       console.error('Routing error:', error)
@@ -522,6 +559,7 @@ export const useSensorStore = defineStore('sensor', () => {
     startDetectionStream,
     debugReactivity,
     terminateAllWorkers,
-    updateAllWorkerSettings
+    updateAllWorkerSettings,
+    debugStream
   }
 })

@@ -195,6 +195,7 @@ export const useConnectionStore = defineStore('connection', () => {
         transports: ['websocket', 'polling'],
         upgrade: true,
         rememberUpgrade: true,
+        // @ts-expect-error not in type definition
         pingTimeout: 60000,
         pingInterval: 25000,
         maxHttpBufferSize: 1e6,

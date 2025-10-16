@@ -1,5 +1,5 @@
 <script setup>
-const props = defineProps({
+const { isMenuOpen } = defineProps({
   isMenuOpen: Boolean
 })
 </script>

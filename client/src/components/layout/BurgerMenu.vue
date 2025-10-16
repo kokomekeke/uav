@@ -138,7 +138,8 @@ const toggleMenu = () => {
               </div>
 
               <!-- Modify panel -->
-              <div v-if="selectedSensorForModify === sensor && isModifyPanelOpen" class="mt-2 p-3 bg-slate-800 rounded border border-cyan-600">
+              <div v-if="selectedSensorForModify === sensor && isModifyPanelOpen" class="mt-2 p-3 rounded border-cyan-700 bg-slate-700/10
+                dark:border-cyan-600 dark:bg-slate-800 ">
                 <div>
                   <p>Host IP:</p>
                   <input v-model="address" class="max-w-40 text-black px-1 rounded">

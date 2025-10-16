@@ -1,4 +1,3 @@
-
 import { ComintDetection } from './comintDetection'
 
 interface Comint {
