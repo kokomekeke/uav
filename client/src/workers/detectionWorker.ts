@@ -1,317 +1,174 @@
-// detectionWorker.js - TELJES, JAVÍTOTT VERZIÓ
-// Optimized detection worker for real-time UAV tracking
+// detectionWorker.js - Real-time verzió (TELJES KÓD)
+// Batch feldolgozás nélkül, azonnali detekció küldés
 
-// --- CONFIGURATION ---
-const BATCH_SIZE = 1;
-const MAX_BUFFER_SIZE = 20;
-const PROCESSING_INTERVAL = 10;
-const MEMORY_CLEANUP_THRESHOLD = 100;
+let assignedUavId = null
+let samplingRate = 0
+let lastSampleTime = 0
 
-// --- STATE MANAGEMENT ---
-const detectionBuffer = [];
-let assignedUavId = null;
-let isProcessing = false;
-let processingTimer = null;
-let samplingRate = 0;
-let lastSampleTime = 0;
-
-// --- PERFORMANCE TRACKING ---
+// Statisztikák
 let stats = {
   totalReceived: 0,
   totalProcessed: 0,
-  totalDropped: 0,
-  lastProcessingTime: 0,
-  averageProcessingTime: 0,
-  bufferSize: 0,
-  memoryUsage: 0
-};
-
-// --- OBJECT POOLING ---
-const detectionPool = [];
-const POOL_SIZE = 100;
-
-function getPooledDetection() {
-  return detectionPool.pop() || {};
+  lastProcessingTime: 0
 }
 
-function returnToPool(detection) {
-  if (detectionPool.length < POOL_SIZE) {
-    for (const key in detection) {
-      delete detection[key];
-    }
-    detectionPool.push(detection);
+// Optimalizált detekció létrehozás
+function createOptimizedDetection(detectionItem, headingData, timestamp) {
+  const detection = {
+    coordinate: [headingData.gpsLat, headingData.gpsLon],
+    azimuth: detectionItem.azimuth || 0,
+    elevation: detectionItem.elevation || 0,
+    uavId: assignedUavId,
+    timestamp
   }
-}
 
-// --- BATCH PROCESSING ---
-function processBatch() {
-  if (isProcessing || detectionBuffer.length === 0) return;
+  if (detectionItem.frequency) detection.frequency = detectionItem.frequency
+  if (headingData.altitude) detection.altitude = headingData.altitude
+  if (headingData.gpsTime) detection.gpsTime = headingData.gpsTime
 
-  isProcessing = true;
-  const startTime = performance.now();
-
-  try {
-    const batchSize = Math.min(BATCH_SIZE, detectionBuffer.length);
-    const batch = detectionBuffer.splice(0, batchSize);
-
-    // Group by UAV ID
-    const detectionsByUavId = {};
-    if (assignedUavId && batch.length > 0) {
-      detectionsByUavId[assignedUavId] = batch;
-    }
-
-    // Update statistics
-    stats.totalProcessed += batch.length;
-    stats.bufferSize = detectionBuffer.length;
-    stats.memoryUsage = detectionBuffer.length + detectionPool.length;
-
-    // Send processed batch
-    if (batch.length > 0) {
-      self.postMessage({
-        type: 'processedDetections',
-        detectionsByUavId,
-        stats: { ...stats },
-        timestamp: Date.now()
-      });
-    }
-
-    // Performance tracking
-    const processingTime = performance.now() - startTime;
-    stats.lastProcessingTime = processingTime;
-    stats.averageProcessingTime =
-      stats.averageProcessingTime === 0
-        ? processingTime
-        : (stats.averageProcessingTime * 0.8) + (processingTime * 0.2);
-
-  } catch (error) {
-    console.error('Batch processing error:', error);
-    self.postMessage({
-      type: 'error',
-      message: 'Processing error: ' + error.message,
-      timestamp: Date.now()
-    });
-  } finally {
-    isProcessing = false;
-    if (detectionBuffer.length > 0) {
-      scheduleNextBatch();
-    }
-  }
-}
-
-function scheduleNextBatch() {
-  if (processingTimer) return;
-
-  const urgentProcessing = detectionBuffer.length >= MAX_BUFFER_SIZE;
-  const delay = urgentProcessing ? 0 : PROCESSING_INTERVAL;
-
-  processingTimer = setTimeout(() => {
-    processingTimer = null;
-    processBatch();
-  }, delay);
-}
-
-// --- OPTIMIZED DETECTION CREATION ---
-function createOptimizedDetection(detectionItem, headingData, index, currentTimestamp) {
-  const detection = getPooledDetection();
-
-  // GPS coordinates
-  detection.coordinate = [headingData.gpsLat, headingData.gpsLon];
-  detection.azimuth = detectionItem.azimuth || 0;
-  detection.elevation = detectionItem.elevation || 0;
-  detection.uavId = assignedUavId;
-  detection.timestamp = currentTimestamp + index;
-
-  // Optional properties
-  if (detectionItem.frequency) detection.frequency = detectionItem.frequency;
-  if (headingData.altitude) detection.altitude = headingData.altitude;
-  if (headingData.gpsTime) detection.gpsTime = headingData.gpsTime;
-
-  // Quaternion data from new format
+  // Quaternion
   if (headingData.quaternion && Array.isArray(headingData.quaternion)) {
     detection.quaternion = {
       q0: headingData.quaternion[0] || 0,
       q1: headingData.quaternion[1] || 0,
       q2: headingData.quaternion[2] || 0,
       q3: headingData.quaternion[3] || 0
-    };
+    }
   }
 
-  // ROI information
-  if (detectionItem.roi_id !== undefined) {
-    detection.roi_id = detectionItem.roi_id;
-  } else {
-    detection.roi_id = null;
-  }
+  detection.roi_id = detectionItem.roi_id !== undefined ? detectionItem.roi_id : null
 
-  return detection;
+  return detection
 }
 
-// --- MAIN DETECTION PROCESSING ---
+// Azonnali feldolgozás - NINCS BATCH!
 function processRawDetection(measurementData) {
-  const currentTime = Date.now();
+  const startTime = performance.now()
+  const currentTime = Date.now()
 
-  // Sampling rate control
-  if (currentTime - lastSampleTime < samplingRate) {
-    stats.totalDropped++;
-    return;
+  // Sampling rate ellenőrzés (opcionális)
+  if (samplingRate > 0 && currentTime - lastSampleTime < samplingRate) {
+    return
   }
-  lastSampleTime = currentTime;
+  lastSampleTime = currentTime
 
-  // Validation
+  // Validáció
   if (!measurementData || typeof measurementData !== 'object') {
-    console.warn('Invalid detection format: not an object');
-    return;
+    console.warn('Invalid detection format')
+    return
   }
 
-  // NEW FORMAT: Measurement object
   if (!measurementData.headingData) {
-    console.warn('Invalid detection format: missing headingData', measurementData);
-    return;
+    console.warn('Missing headingData')
+    return
   }
 
   if (!measurementData.detection || !Array.isArray(measurementData.detection)) {
-    console.warn('Invalid detection format: missing or invalid detection array');
-    return;
+    console.warn('Missing or invalid detection array')
+    return
   }
 
-  const headingData = measurementData.headingData;
+  const headingData = measurementData.headingData
 
-  // GPS validation
+  // GPS fallback
   if (headingData.gpsLat == null || headingData.gpsLon == null) {
-    console.warn('Missing GPS coordinates');
-    return;
+    headingData.gpsLat = 47.355520
+    headingData.gpsLon = 19.268900
   }
 
-  // Auto-assign UAV ID if not set
+  // UAV ID auto-assign
   if (!assignedUavId) {
-    assignedUavId = 1; // Default
+    assignedUavId = 1
     self.postMessage({
       type: 'uavIdAssigned',
       uavId: assignedUavId
-    });
+    })
   }
 
-  // Process all detections in the batch
-  const currentTimestamp = currentTime;
-  measurementData.detection.forEach((detectionItem, index) => {
-    const detection = createOptimizedDetection(
-      detectionItem,
-      headingData,
-      index,
-      currentTimestamp
-    );
+  const timestamp = currentTime
 
-    detectionBuffer.push(detection);
-    stats.totalReceived++;
-  });
+  // ⚡ KRITIKUS: Minden detekciót AZONNAL feldolgozunk és AZONNAL küldünk
+  measurementData.detection.forEach((detectionItem) => {
+    const detection = createOptimizedDetection(detectionItem, headingData, timestamp)
 
-  // Memory management
-  if (detectionBuffer.length > MEMORY_CLEANUP_THRESHOLD) {
-    const excessCount = detectionBuffer.length - MAX_BUFFER_SIZE;
-    const removed = detectionBuffer.splice(0, excessCount);
-    removed.forEach(returnToPool);
-    stats.totalDropped += excessCount;
-  }
+    stats.totalReceived++
+    stats.totalProcessed++
 
-  // Schedule processing
-  if (!isProcessing) {
-    scheduleNextBatch();
-  }
+    // ⚡ AZONNAL küldjük vissza - NINCS BUFFER, NINCS VÁRAKOZÁS
+    self.postMessage({
+      type: 'processedDetection',
+      detection,
+      uavId: assignedUavId,
+      timestamp: Date.now()
+    })
+  })
+
+  stats.lastProcessingTime = performance.now() - startTime
 }
 
-// --- MESSAGE HANDLER ---
+// Message handler
 self.onmessage = function(e) {
-  const message = e.data;
+  const message = e.data
 
   switch (message.type) {
     case 'newDetection':
-      // JAVÍTÁS: Ha explicit UAV ID van, használd azt
       if (message.uavId !== undefined && !assignedUavId) {
-        assignedUavId = message.uavId;
-        console.log(`Worker auto-assigned to UAV ${assignedUavId}`);
+        assignedUavId = message.uavId
       }
-      // A value már Measurement object, nem kell parse-olni
-      processRawDetection(message.value);
-      break;
+      // ⚡ AZONNAL feldolgozzuk
+      processRawDetection(message.measurement)
+      break
 
     case 'updateSettings':
       if (message.uavId !== undefined) {
-        assignedUavId = message.uavId;
+        assignedUavId = message.uavId
       }
       if (message.samplingRate !== undefined) {
-        samplingRate = Math.max(10, message.samplingRate);
+        samplingRate = Math.max(0, message.samplingRate)
       }
       self.postMessage({
         type: 'settingsUpdated',
         settings: {
           uavId: assignedUavId,
-          samplingRate,
-          bufferSize: detectionBuffer.length
+          samplingRate
         }
-      });
-      break;
+      })
+      break
 
     case 'clearDetections':
-      detectionBuffer.forEach(returnToPool);
-      detectionBuffer.length = 0;
       stats = {
         totalReceived: 0,
         totalProcessed: 0,
-        totalDropped: 0,
-        lastProcessingTime: 0,
-        averageProcessingTime: 0,
-        bufferSize: 0,
-        memoryUsage: 0
-      };
+        lastProcessingTime: 0
+      }
       self.postMessage({
         type: 'statsUpdated',
         stats: { ...stats }
-      });
-      break;
+      })
+      break
 
     case 'getStats':
-      stats.bufferSize = detectionBuffer.length;
-      stats.memoryUsage = detectionBuffer.length + detectionPool.length;
       self.postMessage({
         type: 'statsUpdated',
         stats: { ...stats }
-      });
-      break;
-
-    case 'pause':
-      if (processingTimer) {
-        clearTimeout(processingTimer);
-        processingTimer = null;
-      }
-      isProcessing = false;
-      break;
-
-    case 'resume':
-      if (detectionBuffer.length > 0 && !isProcessing) {
-        scheduleNextBatch();
-      }
-      break;
+      })
+      break
 
     case 'terminate':
-      if (processingTimer) {
-        clearTimeout(processingTimer);
-      }
-      detectionBuffer.forEach(returnToPool);
-      detectionBuffer.length = 0;
-      detectionPool.length = 0;
-      self.close();
-      break;
+      self.postMessage({ type: 'terminated' })
+      self.close()
+      break
 
     default:
-      console.warn('Unknown message type:', message.type);
+      console.warn('Unknown message type:', message.type)
   }
-};
+}
 
-// --- INITIALIZATION ---
+// Inicializálás
 self.postMessage({
   type: 'workerStarted',
   timestamp: Date.now(),
-  version: '2.1-measurement-complete'
-});
+  version: '3.0-realtime'
+})
 
-console.log('Detection worker v2.1 initialized - TELJES VERZIÓ');
+console.log('Detection worker v3.0 initialized - REAL-TIME MODE (NO BATCH)')

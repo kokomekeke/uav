@@ -12,18 +12,18 @@ const isActiveTab = (mode: string) => viewMode.value === mode
 </script>
 
 <template>
-  <div class="flex flex-row gap-6 w-full min-h-screen pt-20 px-6 pb-6 bg-slate-900 text-gray-100">
+  <div class="flex flex-row gap-6 w-full min-h-screen pt-20 px-6 pb-6 z-999 bg-transparent dark:bg-slate-900 text-gray-100">
 
     <!-- Left panel: Configuration -->
-    <div class="flex-1 bg-slate-800 rounded-2xl shadow-lg p-4 border border-slate-700 overflow-auto">
+    <div class="flex-1 bg-sgx-accent-light-blue/30 dark:bg-slate-800 rounded-2xl shadow-lg p-4 border border-slate-100 dark:border-slate-700 overflow-auto">
       <configuration-view class="w-full"></configuration-view>
     </div>
 
     <!-- Right panel: Map/Heatmap with tabs -->
-    <div class="flex-[2] bg-slate-800 rounded-2xl shadow-lg border border-slate-700 overflow-hidden flex flex-col">
+    <div class="flex-[2] bg-slate-400/20 dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-700 overflow-hidden flex flex-col">
 
       <!-- Tab Header -->
-      <div class="flex items-center gap-2 px-4 py-3 border-b border-slate-700 bg-slate-800/50">
+      <div class="flex items-center gap-2 px-4 py-3 border-b border-slate-700 bg-slate-400/20 dark:bg-slate-800/50">
         <!-- Map Tab -->
         <button
           @click="viewMode = 'map'"
