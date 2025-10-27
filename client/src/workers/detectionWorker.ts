@@ -17,6 +17,7 @@ import type {
 let samplingRate = 0
 let uavIds: number[] = []
 let lastSampleTime = 0
+let maxLatencyMs = 900 // ✨ ÚJ CONFIG
 
 let stats: WorkerStats = {
   totalReceived: 0,
@@ -49,7 +50,7 @@ function calculateCoordinate (
   gpsLon: number,
   altitude: number
 ): [number, number] {
-  const R = 6371000 // Föld sugara méterben
+  const R = 6371000
   const elevationRad = elevation
   const azimuthRad = azimuth
 
@@ -166,9 +167,6 @@ function detectDataType (item: StreamPacket): DataTypeValue | null {
 // MAIN PROCESSING FUNCTION
 // ============================================================================
 
-/**
- * Nyers detekció feldolgozása
- */
 function processRawDetection (detectionData: string): void {
   const t0_processStart = performance.now()
   const currentTime = Date.now()
@@ -179,7 +177,6 @@ function processRawDetection (detectionData: string): void {
   }
   lastSampleTime = currentTime
 
-  // Validáció
   if (!detectionData) {
     console.warn('[Worker] No detection data received')
     return
@@ -200,41 +197,31 @@ function processRawDetection (detectionData: string): void {
 
   let processedCount = 0
 
-  // Feldolgozás
   for (const item of parsed) {
     const backendUavId = item.id
-
-    // ✅ FILTERING: Csak a kiválasztott UAV-ok
-    if (!uavIds.includes(backendUavId)) {
-      continue
-    }
+    if (!uavIds.includes(backendUavId)) continue
 
     const dataType = detectDataType(item)
-
-    if (!dataType) {
-      console.warn(`[Worker] Unknown data type for UAV ${backendUavId}`)
-      continue
-    }
+    if (!dataType) continue
 
     switch (dataType) {
       case DataType.MEASUREMENT: {
         const measurement = item.Measurement
-
-        if (!measurement || !measurement.detection) {
-          console.warn(`[Worker] Invalid measurement data for UAV ${backendUavId}`)
-          break
-        }
+        if (!measurement || !measurement.detection) break
 
         const headingData: HeadingData = measurement.headingData || {}
-
-        // Default GPS koordináták
         headingData.gpsLat = headingData.gpsLat ?? 47.355520
         headingData.gpsLon = headingData.gpsLon ?? 19.268900
         headingData.altitude = headingData.altitude ?? 100.0
 
         const timestamp = performance.now()
 
-        // Detekciók feldolgozása
+        // ✅ Latency ellenőrzés már itt a worker-ben
+        const processingLatency = timestamp - t0_processStart
+        if (processingLatency > maxLatencyMs) {
+          console.warn(`[Worker] ⚠️ Processing too slow: ${processingLatency.toFixed(2)}ms`)
+        }
+
         measurement.detection.forEach((detectionItem: DetectionItem) => {
           try {
             const detection = createOptimizedDetection(
@@ -247,7 +234,6 @@ function processRawDetection (detectionData: string): void {
             stats.totalProcessed++
             processedCount++
 
-            // Küldés vissza a main thread-nek
             const message: WorkerOutgoingMessage = {
               type: 'processedDetection',
               detection,
@@ -268,29 +254,18 @@ function processRawDetection (detectionData: string): void {
         break
       }
 
-      case DataType.TELEMETRY: {
-        // Telemetria kezelés (későbbre)
+      case DataType.TELEMETRY:
+      case DataType.EVENT:
+      case DataType.ERROR:
+        // későbbi implementáció
         break
-      }
-
-      case DataType.EVENT: {
-        // Event kezelés (későbbre)
-        break
-      }
-
-      case DataType.ERROR: {
-        console.error(`[Worker] Error data received for UAV ${backendUavId}:`, item.Error)
-        break
-      }
     }
   }
 
-  // Teljesítmény mérés
   const processingTime = performance.now() - t0_processStart
   stats.lastProcessingTime = processingTime
   stats.avgProcessingTime = (stats.avgProcessingTime * 0.9) + (processingTime * 0.1)
 
-  // Debug log (csak ha voltak feldolgozott detekciók)
   if (processedCount > 0) {
     console.log(
       `[Worker] Processed ${processedCount} detections in ${processingTime.toFixed(2)}ms ` +
@@ -298,7 +273,6 @@ function processRawDetection (detectionData: string): void {
     )
   }
 
-  // Periodikus statisztika update
   if (stats.totalProcessed % 100 === 0) {
     const statsMessage: WorkerOutgoingMessage = {
       type: 'statsUpdated',
@@ -318,18 +292,10 @@ self.onmessage = function (e: MessageEvent<WorkerIncomingMessage>) {
   try {
     switch (message.type) {
       case 'uavIds': {
-        if (!message.uavIds || !Array.isArray(message.uavIds)) {
-          console.warn('[Worker] Invalid UAV IDs received')
-          return
-        }
+        if (!message.uavIds || !Array.isArray(message.uavIds)) return
         uavIds = message.uavIds
         console.log('[Worker] ✅ UAV IDs updated:', uavIds)
-
-        const response: WorkerOutgoingMessage = {
-          type: 'uavIdsUpdated',
-          uavIds
-        }
-        self.postMessage(response)
+        self.postMessage({ type: 'uavIdsUpdated', uavIds })
         break
       }
 
@@ -341,12 +307,15 @@ self.onmessage = function (e: MessageEvent<WorkerIncomingMessage>) {
       case 'updateSettings': {
         if (message.samplingRate !== undefined) {
           samplingRate = Math.max(0, message.samplingRate)
-          console.log(`[Worker] Sampling rate updated: ${samplingRate}ms`)
         }
-
+        // ✨ ÚJ: Max latency config
+        if (message.maxLatencyMs !== undefined) {
+          maxLatencyMs = message.maxLatencyMs
+          console.log(`[Worker] Max latency updated: ${maxLatencyMs}ms`)
+        }
         const response: WorkerOutgoingMessage = {
           type: 'settingsUpdated',
-          settings: { samplingRate }
+          settings: { samplingRate, maxLatencyMs }
         }
         self.postMessage(response)
         break
@@ -360,50 +329,36 @@ self.onmessage = function (e: MessageEvent<WorkerIncomingMessage>) {
           avgProcessingTime: 0
         }
         console.log('[Worker] Statistics cleared')
-
-        const response: WorkerOutgoingMessage = {
-          type: 'statsUpdated',
-          stats: { ...stats }
-        }
-        self.postMessage(response)
+        self.postMessage({ type: 'statsUpdated', stats: { ...stats } })
         break
       }
 
       case 'getStats': {
-        const response: WorkerOutgoingMessage = {
-          type: 'statsUpdated',
-          stats: { ...stats }
-        }
-        self.postMessage(response)
+        self.postMessage({ type: 'statsUpdated', stats: { ...stats } })
         break
       }
 
       case 'terminate': {
         console.log('[Worker] Terminating...')
-        const response: WorkerOutgoingMessage = {
-          type: 'terminated'
-        }
-        self.postMessage(response)
+        self.postMessage({ type: 'terminated' })
         self.close()
         break
       }
 
       default: {
         console.warn('[Worker] Unknown message type:', (message as any).type)
-        const errorResponse: WorkerOutgoingMessage = {
+        self.postMessage({
           type: 'error',
           message: `Unknown message type: ${(message as any).type}`
-        }
-        self.postMessage(errorResponse)
+        })
       }
     }
   } catch (error) {
     console.error('[Worker] Message handling error:', error)
-    const errorResponse: WorkerOutgoingMessage = {
+    self.postMessage({
       type: 'error',
       message: `Message handling failed: ${(error as Error).message}`
-    }
-    self.postMessage(errorResponse)
+    })
   }
 }
 
@@ -417,7 +372,6 @@ const initMessage: WorkerOutgoingMessage = {
   version: '4.0-typescript-unified'
 }
 self.postMessage(initMessage)
-
 console.log('✅ Detection Worker v4.0 initialized - TypeScript Unified Mode')
 
 // ============================================================================
@@ -426,11 +380,10 @@ console.log('✅ Detection Worker v4.0 initialized - TypeScript Unified Mode')
 
 self.onerror = function (error: ErrorEvent) {
   console.error('[Worker] Uncaught error:', error)
-  const errorMessage: WorkerOutgoingMessage = {
+  self.postMessage({
     type: 'error',
     message: `Worker uncaught error: ${error.message}`
-  }
-  self.postMessage(errorMessage)
+  })
 }
 
 // ============================================================================
@@ -440,14 +393,13 @@ self.onerror = function (error: ErrorEvent) {
 if (typeof performance !== 'undefined' && (performance as any).memory) {
   setInterval(() => {
     const memory = (performance as any).memory
-    const memoryMessage: WorkerOutgoingMessage = {
+    self.postMessage({
       type: 'memoryStats',
       memory: {
         usedJSHeapSize: memory.usedJSHeapSize,
         totalJSHeapSize: memory.totalJSHeapSize,
         limit: memory.jsHeapSizeLimit
       }
-    }
-    self.postMessage(memoryMessage)
-  }, 30000) // 30 másodpercenként
+    })
+  }, 30000)
 }

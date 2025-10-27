@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { useDetectionWorker } from '@/composables/useDetectionWorker'
 import type { Sensor } from '@/types/sensor'
+import type { RealtimeConfig } from '@/types/config'
 import type {
   ProcessedDetectionMessage,
   StatsUpdatedMessage,
@@ -29,6 +30,13 @@ export const useSensorStore = defineStore('sensor', () => {
   const eventSource = ref<EventSource | null>(null)
   const isStreamConnected = ref(false)
   const streamUrl = ref('http://localhost:5000/v1/stream/comint_detection')
+
+  const realtimeConfig = ref<RealtimeConfig>({
+    maxLatencyMs: 500,
+    detectionTTL: 500,
+    enableStrictRealtime: true,
+    circularBufferSize: 50
+  })
 
   // ============================================================================
   // WORKER SETUP
@@ -59,26 +67,51 @@ export const useSensorStore = defineStore('sensor', () => {
       'processedDetection',
       (data) => {
         const { detection, uavId } = data
+        const now = performance.now()
+
+        // ✅ 1. Latency ellenőrzés
         if (typeof detection.timestamp === 'number') {
-          const diff = performance.now() - detection.timestamp
-          console.log(`⏱️ Latency (now - detection.timestamp): ${diff.toFixed(2)} ms`)
-        }
-        console.log('[Store] 📥 Detection received from worker:', { uavId, coordinate: detection.coordinate })
+          const latency = now - detection.timestamp
 
-        if (sensors.value[uavId]) {
-          // Detekció hozzáadása
-          sensors.value[uavId].detections.push(detection)
+          console.log(`⏱️ Latency: ${latency.toFixed(2)} ms`)
 
-          // Limit detections (memória optimalizálás)
-          const maxDetections = detectionSize.value
-          if (sensors.value[uavId].detections.length > maxDetections) {
-            sensors.value[uavId].detections.shift()
+          // ⚠️ STRICT MODE: Eldobjuk a túl késői adatokat
+          if (realtimeConfig.value.enableStrictRealtime &&
+              latency > realtimeConfig.value.maxLatencyMs) {
+            console.warn(
+              `[Store] ❌ Dropped detection due to high latency: ${latency.toFixed(2)}ms > ${realtimeConfig.value.maxLatencyMs}ms`
+            )
+            return  // 🚫 ADAT ELDOBÁSA
           }
-
-          console.log(`[Store] Sensor ${uavId} now has ${sensors.value[uavId].detections.length} detections`)
-        } else {
-          console.warn(`[Store] ⚠️ Received detection for unknown sensor: ${uavId}`)
         }
+
+        if (!sensors.value[uavId]) {
+          console.warn(`[Store] ⚠️ Received detection for unknown sensor: ${uavId}`)
+          return
+        }
+
+        // ✅ 2. TTL alapú tisztítás (régi detekciók törlése)
+        if (realtimeConfig.value.detectionTTL > 0) {
+          sensors.value[uavId].detections = sensors.value[uavId].detections.filter(d => {
+            const age = now - (d.timestamp || 0)
+            return age <= realtimeConfig.value.detectionTTL
+          })
+        }
+
+        // ✅ 3. Circular buffer (FIFO, nincs shift())
+        const buffer = sensors.value[uavId].detections
+        const maxSize = realtimeConfig.value.circularBufferSize
+
+        if (buffer.length >= maxSize) {
+          // Régi módszer: buffer.shift() <- O(n) költség
+          // ÚJ módszer: slice az első elem törlésére
+          sensors.value[uavId].detections = buffer.slice(1)
+        }
+
+        // ✅ 4. Detekció hozzáadása
+        sensors.value[uavId].detections.push(detection)
+
+        console.log(`[Store] ✅ Sensor ${uavId} detections: ${sensors.value[uavId].detections.length}`)
       }
     )
 
@@ -279,6 +312,18 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
+  // const clearDetections = (): void => {
+  //   Object.values(sensors.value).forEach(sensor => {
+  //     sensor.detections = []
+  //   })
+  //   console.log('[Store] ✅ All detections cleared')
+  // }
+
+  const updateRealtimeConfig = (config: Partial<RealtimeConfig>): void => {
+    realtimeConfig.value = { ...realtimeConfig.value, ...config }
+    console.log('[Store] Realtime config updated:', realtimeConfig.value)
+  }
+
   /**
    * Stream adat kezelése (workernek továbbítás)
    */
@@ -435,6 +480,8 @@ export const useSensorStore = defineStore('sensor', () => {
     handleMouseOver,
     clearDetections: clearAllDetections,
     debugReactivity,
-    isWorkerReady
+    isWorkerReady,
+    realtimeConfig,
+    updateRealtimeConfig
   }
 })
