@@ -137,16 +137,28 @@ function getColorByRoiOrSensor(detection: any, sensorId: number): string {
   return lineColors[sensorId % lineColors.length]
 }
 
-// --- DETECTION BUFFER ---
-const detectionBuffer = ref<any[]>([])
+// --- DETECTION BUFFER (OPTIMIZED) ---
+const detectionBuffer = shallowRef<Map<string, any>>(new Map())
+let renderThrottle: number | null = null
 
 function renderDetections() {
+  // Throttle render to max 60 FPS
+  if (renderThrottle) return
+  renderThrottle = setTimeout(() => {
+    renderThrottle = null
+    _doRenderDetections()
+  }, 16) // ~60 FPS
+}
+
+function _doRenderDetections() {
   if (!leafletMap.value || !mapBounds.value) return
   const renderStart = performance.now()
-  const visible: any[] = []
+
+  const newBuffer = new Map<string, any>()
   const bounds = mapBounds.value
+
   if (!hasSelectedSensors.value) {
-    detectionBuffer.value = []
+    detectionBuffer.value = new Map()
     debugInfo.value.detectionsCount = 0
     debugInfo.value.selectedSensorsCount = 0
     return
@@ -156,32 +168,54 @@ function renderDetections() {
     if (!sensor?.detections) return
     const recentDetections = sensor.detections.slice(-maxVisiblePoints.value)
     const sensorId = sensor.uav_id
+
     recentDetections.forEach((detection, idx) => {
       if (!Array.isArray(detection.coordinate)) return
       if (bounds && !bounds.contains(L.latLng(detection.coordinate[0], detection.coordinate[1]))) return
-      const showPlane = idx % planeDisplayPeriod.value === 0
-      const hasAzimuth = detection.azimuth != null
-      const item: any = {
-        key: `${sensorId}-${idx}-${detection.timestamp || idx}`,
-        coordinate: detection.coordinate,
-        showPlane,
-        dotIcon: dotIcons[sensorId % dotIcons.length],
-        color: getColorByRoiOrSensor(detection, sensorId)
+
+      // ✅ STABLE KEY: használjuk a timestamp-et vagy egy unique ID-t
+      const stableKey = `${sensorId}-${detection.timestamp || `idx-${idx}`}`
+
+      // Ha már van ilyen elem a bufferben, újra felhasználjuk
+      const existingItem = detectionBuffer.value.get(stableKey)
+
+      if (existingItem) {
+        // Újra felhasználjuk a meglévő objektumot (nincs újra renderelés!)
+        newBuffer.set(stableKey, existingItem)
+      } else {
+        // Csak új elemeket hozunk létre
+        const showPlane = idx % planeDisplayPeriod.value === 0
+        const hasAzimuth = detection.azimuth != null
+
+        const item: any = {
+          key: stableKey,
+          coordinate: detection.coordinate,
+          showPlane,
+          dotIcon: dotIcons[sensorId % dotIcons.length],
+          color: getColorByRoiOrSensor(detection, sensorId)
+        }
+
+        if (showPlane) item.planeIcon = getPlaneIconById(sensorId)
+        if (hasAzimuth && showAzimuthLines.value) {
+          item.azimuthLine = computeAzimuthLine(detection.coordinate, detection.azimuth, true)
+          item.hasAzimuth = true
+        }
+
+        newBuffer.set(stableKey, item)
       }
-      if (showPlane) item.planeIcon = getPlaneIconById(sensorId)
-      if (hasAzimuth && showAzimuthLines.value) {
-        item.azimuthLine = computeAzimuthLine(detection.coordinate, detection.azimuth, true)
-        item.hasAzimuth = true
-      }
-      visible.push(item)
     })
   })
 
-  detectionBuffer.value = visible
-  debugInfo.value.detectionsCount = visible.length
+  // ✅ Inkrementális frissítés helyett teljes csere, de Map-pel
+  detectionBuffer.value = newBuffer
+
+  debugInfo.value.detectionsCount = newBuffer.size
   debugInfo.value.selectedSensorsCount = selectedSensors.value.length
   debugInfo.value.renderTime = performance.now() - renderStart
 }
+
+// Computed property a template számára
+const detectionBufferArray = computed(() => Array.from(detectionBuffer.value.values()))
 
 // --- SETTINGS HANDLING ---
 function updateBatchInterval() {
@@ -201,7 +235,7 @@ function clearMapData() {
   sensorStore.clearDetections()
   planeIconsCache.clear()
   azimuthLinesCache.clear()
-  detectionBuffer.value = []
+  detectionBuffer.value = new Map()
   debugInfo.value.cacheSize = 0
 }
 
@@ -233,9 +267,18 @@ function onMapReady(mapInstance: any) {
   renderDetections()
 }
 
-// --- WATCHERS ---
-watch(sensors, () => hasSelectedSensors.value && renderDetections(), { deep: true })
-watch(selectedSensors, renderDetections, { deep: true })
+// --- WATCHERS (OPTIMIZED) ---
+// ✅ Shallow watch helyett deep watch-ot használunk, de throttle-lel
+watch(sensors, () => {
+  if (hasSelectedSensors.value) {
+    renderDetections() // throttled
+  }
+}, { deep: true })
+
+watch(selectedSensors, () => {
+  renderDetections()
+}, { deep: false }) // shallow watch elegendő
+
 watch(batchInterval, val => (batchIntervalLocal.value = val), { immediate: true })
 
 onMounted(async () => {
@@ -246,6 +289,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  if (renderThrottle) clearTimeout(renderThrottle)
   leafletMap.value?.off('moveend', updateMapView)
   leafletMap.value?.off('zoomend', updateMapView)
   planeIconsCache.clear()
@@ -269,11 +313,24 @@ onBeforeUnmount(() => {
           <div>Cache: {{ debugInfo.cacheSize }}</div>
         </div>
 
-        <!-- Detection markers -->
-        <template v-for="detection in detectionBuffer" :key="detection.key">
-          <l-marker v-if="detection.showPlane && detection.planeIcon" :lat-lng="detection.coordinate" :icon="detection.planeIcon" />
-          <l-polyline v-if="detection.hasAzimuth && detection.azimuthLine" :lat-lngs="detection.azimuthLine" :color="detection.color" :weight="2" :opacity="0.7" />
-          <l-marker :lat-lng="detection.coordinate" :icon="detection.dotIcon" />
+        <!-- Detection markers - OPTIMIZED -->
+        <template v-for="detection in detectionBufferArray" :key="detection.key">
+          <l-marker
+            v-if="detection.showPlane && detection.planeIcon"
+            :lat-lng="detection.coordinate"
+            :icon="detection.planeIcon"
+          />
+          <l-polyline
+            v-if="detection.hasAzimuth && detection.azimuthLine"
+            :lat-lngs="detection.azimuthLine"
+            :color="detection.color"
+            :weight="2"
+            :opacity="0.7"
+          />
+          <l-marker
+            :lat-lng="detection.coordinate"
+            :icon="detection.dotIcon"
+          />
         </template>
       </l-map>
     </div>
@@ -306,7 +363,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <!-- ✨ NEW: REAL-TIME SETTINGS PANEL -->
+      <!-- ✨ REAL-TIME SETTINGS PANEL -->
       <div class="mt-4 bg-slate-800 p-4 rounded-xl border border-slate-700">
         <h3 class="text-lg font-bold mb-3 text-gray-100">Real-time Settings</h3>
 
@@ -336,7 +393,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="mt-4 flex justify-end">
             <button
-              @click="sensorStore.clearDetections"
+              @click="clearMapData"
               class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg shadow border border-red-800 transition"
             >
               🧹 Clear All Detections

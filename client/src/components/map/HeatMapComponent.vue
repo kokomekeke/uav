@@ -68,19 +68,30 @@ const showControlPanel = ref(false)
 // --- COMPUTED HEATMAP DATA ---
 const heatmapPoints = computed(() => {
   const points: [number, number, number][] = []
-  const now = Date.now()
+  const now = performance.now()
   const timeWindowMs = dataSettings.value.timeWindow * 1000
   const locationMap = new Map<string, { count: number, intensity: number }>()
+
+  console.log('[Heatmap] Computing points, now:', now)
 
   Object.values(sensors.value).forEach(sensor => {
     if (!sensor.is_selected || !sensor.detections) return
 
+    console.log(`[Heatmap] Sensor ${sensor.uav_id}: ${sensor.detections.length} detections`)
+
     sensor.detections.forEach(detection => {
       const detectionTime = detection.timestamp || 0
-      if (now - detectionTime > timeWindowMs) return
+      const age = now - detectionTime
+
+      if (age > timeWindowMs) {
+        return
+      }
 
       const [lat, lon] = detection.coordinate
-      if (!lat || !lon) return
+      if (!lat || !lon) {
+        console.warn('[Heatmap] Invalid coordinates:', detection.coordinate)
+        return
+      }
 
       const gridKey = `${lat.toFixed(4)},${lon.toFixed(4)}`
 
@@ -111,10 +122,12 @@ const heatmapPoints = computed(() => {
   let maxIntensity = 0
   locationMap.forEach((data, key) => {
     const [lat, lon] = key.split(',').map(Number)
-    const normalizedIntensity = Math.min(data.intensity / 10, 1.0)
+    const normalizedIntensity = Math.min(data.intensity / 5, 1.0)
     maxIntensity = Math.max(maxIntensity, normalizedIntensity)
     points.push([lat, lon, normalizedIntensity])
   })
+
+  console.log('[Heatmap] Total points:', points.length)
 
   stats.value = {
     totalPoints: points.length,
@@ -129,38 +142,106 @@ const heatmapPoints = computed(() => {
 })
 
 // --- HEATMAP RENDERING ---
-function updateHeatmap() {
-  if (!leafletMap.value) return
+function updateHeatmap(forceRecreate = false) {
+  console.log('[Heatmap] updateHeatmap called, forceRecreate:', forceRecreate)
 
-  if (heatLayer.value) {
-    leafletMap.value.removeLayer(heatLayer.value)
-    heatLayer.value = null
+  if (!leafletMap.value) {
+    console.warn('[Heatmap] ⚠️ leafletMap not ready yet')
+    return
   }
 
   const points = heatmapPoints.value
-  if (points.length === 0) return
+  console.log('[Heatmap] Points to render:', points.length)
 
-  heatLayer.value = (L as any).heatLayer(points, {
-    radius: heatmapSettings.value.radius,
-    blur: heatmapSettings.value.blur,
-    maxZoom: heatmapSettings.value.maxZoom,
-    max: heatmapSettings.value.max,
-    minOpacity: heatmapSettings.value.minOpacity,
-    gradient: heatmapSettings.value.gradient,
-    pane: 'overlayPane' // FONTOS: overlayPane-re tesszük, hogy látszódjon
-  }).addTo(leafletMap.value)
+  // Ha nincs adat, töröljük a layer-t
+  if (points.length === 0) {
+    if (heatLayer.value) {
+      console.log('[Heatmap] No points, removing layer')
+      leafletMap.value.removeLayer(heatLayer.value)
+      heatLayer.value = null
+    }
+    return
+  }
+
+  try {
+    // Ha van layer és nem kell újra létrehozni, csak frissítjük az adatokat
+    if (heatLayer.value && !forceRecreate) {
+      console.log('[Heatmap] 🔄 Updating existing heat layer data')
+      heatLayer.value.setLatLngs(points)
+      heatLayer.value.redraw()
+    } else {
+      // Töröljük a régi layer-t ha van
+      if (heatLayer.value) {
+        console.log('[Heatmap] Removing old heat layer')
+        leafletMap.value.removeLayer(heatLayer.value)
+        heatLayer.value = null
+      }
+
+      // Új layer létrehozása
+      console.log('[Heatmap] Creating new heat layer with settings:', {
+        radius: heatmapSettings.value.radius,
+        blur: heatmapSettings.value.blur,
+        maxZoom: heatmapSettings.value.maxZoom,
+        max: heatmapSettings.value.max,
+        minOpacity: heatmapSettings.value.minOpacity
+      })
+
+      heatLayer.value = (L as any).heatLayer(points, {
+        radius: heatmapSettings.value.radius,
+        blur: heatmapSettings.value.blur,
+        maxZoom: heatmapSettings.value.maxZoom,
+        max: heatmapSettings.value.max,
+        minOpacity: heatmapSettings.value.minOpacity,
+        gradient: heatmapSettings.value.gradient
+      }).addTo(leafletMap.value)
+
+      console.log('[Heatmap] ✅ Heat layer created and added to map')
+    }
+  } catch (error) {
+    console.error('[Heatmap] ❌ Error creating/updating heat layer:', error)
+  }
+}
+
+// --- MAP READY EVENT ---
+function onMapReady() {
+  console.log('[Heatmap] 🗺️ Map ready event fired')
+  if (mapRef.value?.leafletObject) {
+    leafletMap.value = mapRef.value.leafletObject
+    console.log('[Heatmap] ✅ leafletMap reference set')
+
+    // Kis késleltetés után frissítjük
+    setTimeout(() => {
+      updateHeatmap(true) // Első betöltéskor létrehozzuk
+    }, 500)
+  }
 }
 
 // --- WATCHERS ---
-watch(heatmapPoints, () => {
+// Adatok változásakor csak frissítjük a layer-t (nem hozzuk létre újra)
+watch(heatmapPoints, (newPoints) => {
+  console.log('[Heatmap] heatmapPoints changed, count:', newPoints.length)
   if (dataSettings.value.showRealtime) {
-    updateHeatmap()
+    updateHeatmap(false) // NEM force recreate
   }
 }, { deep: false })
 
+// Settings változásakor újra létrehozzuk a layer-t
 watch(() => heatmapSettings.value, () => {
-  updateHeatmap()
+  console.log('[Heatmap] heatmapSettings changed - recreating layer')
+  updateHeatmap(true) // FORCE recreate
 }, { deep: true })
+
+// Intensity mode változásakor frissítjük (nem recreate, mert csak az adatok változnak)
+watch(() => dataSettings.value.intensityMode, () => {
+  console.log('[Heatmap] intensityMode changed')
+  updateHeatmap(false)
+})
+
+// Time window változásakor frissítjük (nem recreate)
+watch(() => dataSettings.value.timeWindow, () => {
+  console.log('[Heatmap] timeWindow changed')
+  updateHeatmap(false)
+})
 
 // --- AUTO UPDATE ---
 let updateTimer: number | null = null
@@ -169,9 +250,10 @@ function startAutoUpdate() {
   if (updateTimer) clearInterval(updateTimer)
   updateTimer = setInterval(() => {
     if (dataSettings.value.showRealtime) {
-      updateHeatmap()
+      updateHeatmap(false) // Automatikus frissítés, nem recreate
     }
   }, dataSettings.value.updateInterval)
+  console.log('[Heatmap] ⏱️ Auto-update started, interval:', dataSettings.value.updateInterval)
 }
 
 function clearHeatmap() {
@@ -179,18 +261,23 @@ function clearHeatmap() {
     leafletMap.value.removeLayer(heatLayer.value)
     heatLayer.value = null
   }
+  console.log('[Heatmap] 🧹 Heatmap cleared')
+}
+
+// Manual update button
+function manualUpdate() {
+  console.log('[Heatmap] Manual update triggered')
+  updateHeatmap(true) // Force recreate on manual update
 }
 
 // --- LIFECYCLE ---
 onMounted(() => {
-  if (mapRef.value?.leafletObject) {
-    leafletMap.value = mapRef.value.leafletObject
-  }
+  console.log('[Heatmap] 🚀 Component mounted')
   startAutoUpdate()
-  updateHeatmap()
 })
 
 onBeforeUnmount(() => {
+  console.log('[Heatmap] 🛑 Component unmounting')
   if (updateTimer) clearInterval(updateTimer)
   clearHeatmap()
 })
@@ -198,12 +285,13 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex flex-col w-full h-full">
-    <div class="flex-1 relative rounded-xl overflow-visible"> <!-- overflow-visible javítva -->
+    <div class="flex-1 relative rounded-xl overflow-visible">
       <l-map
         ref="mapRef"
         :zoom="zoom"
         :center="center"
         class="w-full h-full z-0"
+        @ready="onMapReady"
       >
         <l-tile-layer :url="url" :attribution="attribution" />
       </l-map>
@@ -320,10 +408,10 @@ onBeforeUnmount(() => {
 
           <div class="pt-2 border-t border-slate-700">
             <button
-              @click="updateHeatmap"
+              @click="manualUpdate"
               class="w-full bg-cyan-600 hover:bg-cyan-500 text-white px-3 py-1 rounded text-xs transition-colors"
             >
-              🔄 Update
+              🔄 Force Refresh
             </button>
           </div>
         </div>

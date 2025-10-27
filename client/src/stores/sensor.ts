@@ -32,8 +32,8 @@ export const useSensorStore = defineStore('sensor', () => {
   const streamUrl = ref('http://localhost:5000/v1/stream/comint_detection')
 
   const realtimeConfig = ref<RealtimeConfig>({
-    maxLatencyMs: 500,
-    detectionTTL: 500,
+    maxLatencyMs: 1000,
+    detectionTTL: 1000,
     enableStrictRealtime: true,
     circularBufferSize: 50
   })
