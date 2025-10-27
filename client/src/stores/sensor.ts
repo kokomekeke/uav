@@ -38,6 +38,66 @@ export const useSensorStore = defineStore('sensor', () => {
     circularBufferSize: 50
   })
 
+  // Cleanup interval reference
+  let cleanupIntervalId: number | null = null
+
+  // ============================================================================
+  // PERIODIKUS CLEANUP
+  // ============================================================================
+
+  /**
+   * Periodikus cleanup mechanizmus indítása
+   * Minden 100ms-ban végigmegy a szenzorokon és kitörli a lejárt detectionöket
+   */
+  const startPeriodicCleanup = (): void => {
+    if (cleanupIntervalId !== null) {
+      console.log('[Store] ⚠️ Periodic cleanup already running')
+      return
+    }
+
+    console.log('[Store] 🧹 Starting periodic detection cleanup (every 100ms)')
+
+    cleanupIntervalId = window.setInterval(() => {
+      const now = performance.now()
+      const ttl = realtimeConfig.value.detectionTTL
+
+      if (ttl <= 0) return // Ha TTL nincs engedélyezve, nem csinálunk semmit
+
+      let totalCleaned = 0
+
+      Object.entries(sensors.value).forEach(([uavId, sensor]) => {
+        const beforeCount = sensor.detections.length
+
+        sensor.detections = sensor.detections.filter(detection => {
+          const age = now - (detection.timestamp || 0)
+          return age <= ttl
+        })
+
+        const cleaned = beforeCount - sensor.detections.length
+        totalCleaned += cleaned
+
+        if (cleaned > 0) {
+          console.log(`[Store] 🧹 Cleaned ${cleaned} expired detections from sensor ${uavId}`)
+        }
+      })
+
+      if (totalCleaned > 0) {
+        console.log(`[Store] 🧹 Total cleaned: ${totalCleaned} detections`)
+      }
+    }, 100) // Minden 100ms-ban fut
+  }
+
+  /**
+   * Periodikus cleanup leállítása
+   */
+  const stopPeriodicCleanup = (): void => {
+    if (cleanupIntervalId !== null) {
+      console.log('[Store] 🛑 Stopping periodic cleanup')
+      window.clearInterval(cleanupIntervalId)
+      cleanupIntervalId = null
+    }
+  }
+
   // ============================================================================
   // WORKER SETUP
   // ============================================================================
@@ -69,33 +129,49 @@ export const useSensorStore = defineStore('sensor', () => {
         const { detection, uavId } = data
         const now = performance.now()
 
-        // ✅ 1. Latency ellenőrzés
+        if (!sensors.value[uavId]) {
+          console.warn(`[Store] ⚠️ Received detection for unknown sensor: ${uavId}`)
+          return
+        }
+
+        // ✅ 1. Latency ellenőrzés - DE csak ha már van adat a bufferben
         if (typeof detection.timestamp === 'number') {
           const latency = now - detection.timestamp
+          const hasDetections = sensors.value[uavId].detections.length > 0
 
-          console.log(`⏱️ Latency: ${latency.toFixed(2)} ms`)
+          console.log(`⏱️ Latency: ${latency.toFixed(2)} ms (buffer: ${sensors.value[uavId].detections.length} items)`)
 
-          // ⚠️ STRICT MODE: Eldobjuk a túl késői adatokat
+          // ⚠️ STRICT MODE: Eldobjuk a túl késői adatokat, DE csak ha már van adat a bufferben
           if (realtimeConfig.value.enableStrictRealtime &&
+              hasDetections &&
               latency > realtimeConfig.value.maxLatencyMs) {
             console.warn(
               `[Store] ❌ Dropped detection due to high latency: ${latency.toFixed(2)}ms > ${realtimeConfig.value.maxLatencyMs}ms`
             )
             return  // 🚫 ADAT ELDOBÁSA
           }
+
+          // Ha üres a buffer és magas a latency, figyelmeztetünk, de beengedjük
+          if (!hasDetections && latency > realtimeConfig.value.maxLatencyMs) {
+            console.warn(
+              `[Store] ⚠️ High latency on first detection: ${latency.toFixed(2)}ms > ${realtimeConfig.value.maxLatencyMs}ms, but allowing (empty buffer)`
+            )
+          }
         }
 
-        if (!sensors.value[uavId]) {
-          console.warn(`[Store] ⚠️ Received detection for unknown sensor: ${uavId}`)
-          return
-        }
-
-        // ✅ 2. TTL alapú tisztítás (régi detekciók törlése)
+        // ✅ 2. TTL alapú tisztítás (régi detekciók törlése) - MINDEN új detection érkezésekor
         if (realtimeConfig.value.detectionTTL > 0) {
+          const beforeCount = sensors.value[uavId].detections.length
+
           sensors.value[uavId].detections = sensors.value[uavId].detections.filter(d => {
             const age = now - (d.timestamp || 0)
             return age <= realtimeConfig.value.detectionTTL
           })
+
+          const cleaned = beforeCount - sensors.value[uavId].detections.length
+          if (cleaned > 0) {
+            console.log(`[Store] 🧹 Cleaned ${cleaned} expired detections during insert (sensor ${uavId})`)
+          }
         }
 
         // ✅ 3. Circular buffer (FIFO, nincs shift())
@@ -168,6 +244,9 @@ export const useSensorStore = defineStore('sensor', () => {
     )
 
     console.log('[Store] ✅ Worker initialized and handlers registered')
+
+    // 🧹 Periodikus cleanup indítása a worker inicializálása után
+    startPeriodicCleanup()
   }
 
   // ============================================================================
@@ -312,13 +391,6 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
-  // const clearDetections = (): void => {
-  //   Object.values(sensors.value).forEach(sensor => {
-  //     sensor.detections = []
-  //   })
-  //   console.log('[Store] ✅ All detections cleared')
-  // }
-
   const updateRealtimeConfig = (config: Partial<RealtimeConfig>): void => {
     realtimeConfig.value = { ...realtimeConfig.value, ...config }
     console.log('[Store] Realtime config updated:', realtimeConfig.value)
@@ -418,11 +490,13 @@ export const useSensorStore = defineStore('sensor', () => {
     console.log('Has selections:', hasSelectedSensors.value)
     console.log('Worker ready:', isWorkerReady())
     console.log('Stream connected:', isStreamConnected.value)
+    console.log('Cleanup interval active:', cleanupIntervalId !== null)
     console.log('Settings:', {
       batchInterval: batchInterval.value,
       detectionSize: detectionSize.value,
       streamUrl: streamUrl.value
     })
+    console.log('Realtime config:', realtimeConfig.value)
 
     selectedSensors.value.forEach(sensor => {
       console.log(`Sensor ${sensor.uav_id}:`, {
@@ -439,6 +513,9 @@ export const useSensorStore = defineStore('sensor', () => {
   // Cleanup on unmount
   onUnmounted(() => {
     console.log('[Store] 🧹 Cleaning up...')
+
+    // Stop periodic cleanup
+    stopPeriodicCleanup()
 
     // Disconnect stream
     disconnectStream()
@@ -482,6 +559,8 @@ export const useSensorStore = defineStore('sensor', () => {
     debugReactivity,
     isWorkerReady,
     realtimeConfig,
-    updateRealtimeConfig
+    updateRealtimeConfig,
+    startPeriodicCleanup,
+    stopPeriodicCleanup
   }
 })
