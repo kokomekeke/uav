@@ -1,604 +1,408 @@
-// sensor.js - Real-time optimalizált verzió
-import { defineStore, storeToRefs } from 'pinia'
-import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, triggerRef, watch } from 'vue'
-import axios from 'axios'
-import { useConnectionStore } from '@/stores/connection'
-import { Sensor } from '../types/sensor'
-import DetectionWorker from '../workers/detectionWorker?worker'
+// stores/sensor.ts
+import { defineStore } from 'pinia'
+import { ref, computed, watch, onUnmounted } from 'vue'
+import { useDetectionWorker } from '@/composables/useDetectionWorker'
+import type { Sensor } from '@/types/sensor'
+import type {
+  ProcessedDetectionMessage,
+  StatsUpdatedMessage,
+  ErrorMessage,
+  WorkerStartedMessage,
+  MemoryStatsMessage
+} from '@/types/worker'
 
 export const useSensorStore = defineStore('sensor', () => {
   // ============================================================================
-  // REAKTÍV ÁLLAPOTOK
+  // STATE
   // ============================================================================
 
-  const sensors = ref<{ [id: number]: Sensor }>({})
-  const hoveredSensor = shallowRef(null)
-  const selectedSensors = ref<number[]>([])
-  const hasSelectedSensors = computed(() => selectedSensors.value.length > 0)
-  const isLoading = ref<boolean>(false)
+  const sensors = ref<Record<number, Sensor>>({})
+  const selectedSensor = ref<Sensor | null>(null)
+  const isLoading = ref(false)
   const errorMessage = ref('')
 
-  const connectionStore = useConnectionStore()
-  const { ipPort, isConnected } = storeToRefs(connectionStore)
+  // Settings
+  const batchInterval = ref(0.05)
+  const detectionSize = ref(100)
 
-  const batchInterval = ref(0.01)
-  const detectionSize = ref(50)
-  const samplingRate = ref(0)
-
-  // ============================================================================
-  // STATISZTIKÁK
-  // ============================================================================
-
-  const stats = ref({
-    totalReceived: 0,
-    totalProcessed: 0,
-    activeWorkers: 0
-  })
+  // SSE Connection
+  const eventSource = ref<EventSource | null>(null)
+  const isStreamConnected = ref(false)
+  const streamUrl = ref('http://localhost:5000/v1/stream/comint_detection')
 
   // ============================================================================
-  // WORKER ÉS STREAM KEZELÉS
+  // WORKER SETUP
   // ============================================================================
 
-  const detectionWorkers = shallowRef<Record<string, Worker>>({})
-  let eventSource = null
-  let cleanupFunctions = []
-  let pendingUpdate = false
+  const {
+    initWorker,
+    onWorkerMessage,
+    updateSelectedUavIds,
+    sendDetection,
+    clearDetections,
+    terminateWorker,
+    isWorkerReady
+  } = useDetectionWorker()
 
-  // ============================================================================
-  // CLEANUP HELPER
-  // ============================================================================
+  const workerMessageCleanups: Array<() => void> = []
 
-  async function stopDetectionStream() {
-    await Promise.all(cleanupFunctions.map(fn => {
-      try {
-        return fn()
-      } catch (error) {
-        console.error('Cleanup error:', error)
-      }
-    }))
+  /**
+   * Worker inicializálása és message handlerek regisztrálása
+   */
+  const initializeWorker = (): void => {
+    console.log('[Store] 🚀 Initializing detection worker...')
 
-    cleanupFunctions = []
-    eventSource = null
-  }
+    initWorker()
 
-  // ============================================================================
-  // WATCHES
-  // ============================================================================
-
-  watch(isConnected, async (newValue) => {
-    if (newValue) {
-      await fetchSensors()
-    } else {
-      await stopDetectionStream()
-      terminateAllWorkers()
-    }
-  }, { immediate: true })
-
-  watch(samplingRate, () => {
-    updateAllWorkerSettings()
-  }, { immediate: true })
-
-  watch(batchInterval, async () => {
-    if (eventSource) {
-      await stopDetectionStream()
-    }
-
-    if (hasSelectedSensors.value) {
-      await nextTick()
-      await startDetectionStream()
-    }
-  })
-
-  // ============================================================================
-  // SENSOR CRUD MŰVELETEK
-  // ============================================================================
-
-  const handleMouseOver = (sensor) => {
-    hoveredSensor.value = sensor
-  }
-
-  const getSensors = computed(() => sensors.value)
-
-  async function fetchSensors() {
-    if (!isConnected.value) return
-
-    isLoading.value = true
-    errorMessage.value = ''
-
-    try {
-      const url = `${ipPort.value}/v1/uav/`
-      const response = await axios.get(url)
-
-      if (!response?.data || response.status !== 200) {
-        throw new Error(`API hiba: ${response.status}`)
-      }
-
-      const newSensors = {}
-      const sensorArray = Array.isArray(response.data) ? response.data : response.data.sensors || []
-
-      sensorArray.forEach((sensor: Sensor) => {
-        const existingDetections = sensors.value[sensor.uav_id]?.detections || []
-        const existingSelection = selectedSensors.value.includes(sensor.uav_id)
-
-        newSensors[sensor.uav_id] = {
-          ...sensor,
-          is_selected: existingSelection,
-          detections: existingDetections
+    // Processed detection handler
+    const cleanupProcessed = onWorkerMessage<ProcessedDetectionMessage>(
+      'processedDetection',
+      (data) => {
+        const { detection, uavId } = data
+        if (typeof detection.timestamp === 'number') {
+          const diff = performance.now() - detection.timestamp
+          console.log(`⏱️ Latency (now - detection.timestamp): ${diff.toFixed(2)} ms`)
         }
-      })
+        console.log('[Store] 📥 Detection received from worker:', { uavId, coordinate: detection.coordinate })
 
-      sensors.value = newSensors
-      triggerRef(sensors)
-    } catch (error) {
-      errorMessage.value = error.message || 'Hiba történt a szenzorok lekérésekor'
+        if (sensors.value[uavId]) {
+          // Detekció hozzáadása
+          sensors.value[uavId].detections.push(detection)
 
-      if (process.env.NODE_ENV === 'development') {
-        sensors.value = {
-          1: {
-            uav_id: 1,
-            uav_label: 'test001',
-            uav_address: '10.1.1.113',
-            active: true,
-            is_selected: false,
-            detections: []
-          },
-          2: {
-            uav_id: 2,
-            uav_label: 'test002',
-            uav_address: '10.1.1.119',
-            active: true,
-            is_selected: false,
-            detections: []
-          }
-        }
-        triggerRef(sensors)
-      }
-    } finally {
-      isLoading.value = false
-    }
-  }
-
-  async function addSensor(sensor) {
-    isLoading.value = true
-    errorMessage.value = ''
-    try {
-      await axios.post(`${ipPort.value}/v1/uav`, {
-        uav_label: sensor.uav_label,
-        uav_address: sensor.uav_address,
-        active: sensor.active
-      }, {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 5000
-      })
-
-      await fetchSensors()
-    } catch (error) {
-      errorMessage.value = 'Hiba történt a szenzor hozzáadásakor'
-    } finally {
-      isLoading.value = false
-    }
-  }
-
-  async function removeSensor() {
-    if (!hoveredSensor.value) return
-
-    const id = hoveredSensor.value.uav_id
-    isLoading.value = true
-    errorMessage.value = ''
-
-    try {
-      if (detectionWorkers.value[id]) {
-        await terminateWorker(id)
-      }
-
-      const updatedSensors = { ...sensors.value }
-      delete updatedSensors[id]
-      sensors.value = updatedSensors
-
-      selectedSensors.value = selectedSensors.value.filter(sid => sid !== id)
-      triggerRef(sensors)
-      hoveredSensor.value = null
-
-      axios.delete(`${ipPort.value}/v1/uav/${id}`, { timeout: 5000 })
-        .catch(error => {
-          console.error('Background delete error:', error)
-          fetchSensors()
-        })
-    } catch (error) {
-      errorMessage.value = 'Hiba történt a szenzor törlésekor'
-      await fetchSensors()
-    } finally {
-      isLoading.value = false
-    }
-  }
-
-  function toggleSensorSelection(sensorId: number) {
-    const sensor = sensors.value[sensorId]
-    if (!sensor) return
-
-    sensor.is_selected = !sensor.is_selected
-
-    if (sensor.is_selected) {
-      if (!selectedSensors.value.includes(sensorId)) {
-        selectedSensors.value = [...selectedSensors.value, sensorId]
-      }
-    } else {
-      selectedSensors.value = selectedSensors.value.filter(id => id !== sensorId)
-    }
-
-    triggerRef(sensors)
-
-    if (sensor.is_selected) {
-      initWorkerForUav(sensorId)
-    } else {
-      terminateWorker(sensorId)
-    }
-
-    if (eventSource) {
-      stopDetectionStream().then(() => {
-        if (hasSelectedSensors.value) {
-          startDetectionStream()
-        }
-      })
-    }
-  }
-
-  async function selectSensor(sensor: Sensor) {
-    if (!selectedSensors.value.includes(sensor.uav_id)) {
-      selectedSensors.value = [...selectedSensors.value, sensor.uav_id]
-    }
-
-    if (sensors.value[sensor.uav_id]) {
-      sensors.value[sensor.uav_id].is_selected = true
-    }
-
-    if (eventSource) {
-      await stopDetectionStream()
-    }
-
-    for (const uavId of selectedSensors.value) {
-      if (!detectionWorkers.value[uavId]) {
-        await initWorkerForUav(uavId)
-      }
-    }
-
-    await startDetectionStream()
-  }
-
-  // ============================================================================
-  // WORKER KEZELÉS
-  // ============================================================================
-
-  async function initWorkerForUav(uavId: number) {
-    if (!sensors.value[uavId]?.is_selected) return
-
-    if (detectionWorkers.value[uavId]) {
-      await terminateWorker(uavId)
-    }
-
-    const worker = new DetectionWorker()
-
-    worker.onmessage = (e) => {
-      const message = e.data
-      const processTime = Date.now()
-
-      switch (message.type) {
-        case 'processedDetection': {
-          const { detection, uavId } = message
-
-          stats.value.totalReceived++
-          stats.value.totalProcessed++
-
-          // Real-time processing monitoring
-          if (process.env.NODE_ENV === 'development') {
-            const workerLatency = processTime - (message.timestamp || processTime)
-            console.log(
-              `[REAL-TIME] Detection processed | ` +
-              `UAV: ${uavId} | ` +
-              `Worker latency: ${workerLatency}ms | ` +
-              `Total processed: ${stats.value.totalProcessed}`
-            )
+          // Limit detections (memória optimalizálás)
+          const maxDetections = detectionSize.value
+          if (sensors.value[uavId].detections.length > maxDetections) {
+            sensors.value[uavId].detections.shift()
           }
 
-          if (sensors.value[uavId]?.is_selected) {
-            addDetectionToSensor(uavId, detection)
-          }
-          break
-        }
-
-        case 'statsUpdated':
-          stats.value = {
-            ...stats.value,
-            ...message.stats,
-            activeWorkers: Object.keys(detectionWorkers.value).length
-          }
-          break
-
-        case 'workerStarted':
-          updateWorkerSettings(uavId)
-          break
-
-        case 'error':
-          console.error(`Worker error for UAV ${uavId}:`, message.message)
-          errorMessage.value = `Worker error: ${message.message}`
-          break
-      }
-    }
-
-    worker.onerror = (error) => {
-      console.error(`Worker error for UAV ${uavId}:`, error)
-      terminateWorker(uavId)
-    }
-
-    const updatedWorkers = { ...detectionWorkers.value }
-    updatedWorkers[uavId] = worker
-    detectionWorkers.value = updatedWorkers
-    stats.value.activeWorkers = Object.keys(updatedWorkers).length
-
-    return worker
-  }
-
-  async function terminateWorker(uavId: number): Promise<void> {
-    return new Promise<void>((resolve) => {
-      const worker = detectionWorkers.value[uavId]
-      if (!worker) {
-        resolve()
-        return
-      }
-
-      const timeout = setTimeout(() => {
-        worker.terminate()
-        resolve()
-      }, 100)
-
-      worker.postMessage({ type: 'terminate' })
-
-      const cleanupHandler = (e: MessageEvent) => {
-        if (e.data.type === 'terminated') {
-          clearTimeout(timeout)
-          worker.terminate()
-          worker.removeEventListener('message', cleanupHandler)
-          resolve()
+          console.log(`[Store] Sensor ${uavId} now has ${sensors.value[uavId].detections.length} detections`)
+        } else {
+          console.warn(`[Store] ⚠️ Received detection for unknown sensor: ${uavId}`)
         }
       }
-
-      worker.addEventListener('message', cleanupHandler)
-    }).then(() => {
-      const updatedWorkers = { ...detectionWorkers.value }
-      delete updatedWorkers[uavId]
-      detectionWorkers.value = updatedWorkers
-      stats.value.activeWorkers = Object.keys(updatedWorkers).length
-    })
-  }
-
-  function terminateAllWorkers() {
-    const promises = Object.keys(detectionWorkers.value).map(uavId =>
-      terminateWorker(parseInt(uavId))
     )
-    return Promise.all(promises)
-  }
 
-  function updateWorkerSettings(uavId) {
-    const worker = detectionWorkers.value[uavId]
-    if (!worker) return
+    // Stats handler
+    const cleanupStats = onWorkerMessage<StatsUpdatedMessage>(
+      'statsUpdated',
+      (data) => {
+        console.log('[Store] Worker stats:', data.stats)
+      }
+    )
 
-    worker.postMessage({
-      type: 'updateSettings',
-      uavId,
-      samplingRate: samplingRate.value
-    })
-  }
+    // Error handler
+    const cleanupError = onWorkerMessage<ErrorMessage>(
+      'error',
+      (data) => {
+        console.error('[Store] Worker error:', data.message)
+        errorMessage.value = data.message
+      }
+    )
 
-  function updateAllWorkerSettings() {
-    Object.keys(detectionWorkers.value).forEach(uavId => {
-      updateWorkerSettings(parseInt(uavId))
-    })
+    // Worker started handler
+    const cleanupStarted = onWorkerMessage<WorkerStartedMessage>(
+      'workerStarted',
+      (data) => {
+        console.log(`[Store] ✅ Worker started - version: ${data.version}`)
+      }
+    )
+
+    // UAV IDs updated handler
+    const cleanupUavIds = onWorkerMessage<{ uavIds: number[] }>(
+      'uavIdsUpdated',
+      (data) => {
+        console.log('[Store] Worker confirmed UAV IDs:', data.uavIds)
+      }
+    )
+
+    // Memory stats handler
+    const cleanupMemory = onWorkerMessage<MemoryStatsMessage>(
+      'memoryStats',
+      (data) => {
+        const usedMB = (data.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)
+        const totalMB = (data.memory.totalJSHeapSize / 1024 / 1024).toFixed(2)
+        console.log(`[Store] Worker memory: ${usedMB}MB / ${totalMB}MB`)
+      }
+    )
+
+    workerMessageCleanups.push(
+      cleanupProcessed,
+      cleanupStats,
+      cleanupError,
+      cleanupStarted,
+      cleanupUavIds,
+      cleanupMemory
+    )
+
+    console.log('[Store] ✅ Worker initialized and handlers registered')
   }
 
   // ============================================================================
-  // STREAM KEZELÉS
+  // SSE STREAM CONNECTION
   // ============================================================================
 
-  async function startDetectionStream() {
-    if (!hasSelectedSensors.value) {
-      console.warn('Nincs kiválasztott szenzor, stream nem indul.')
+  /**
+   * SSE stream kapcsolat inicializálása
+   */
+  const initializeStream = (): void => {
+    if (eventSource.value) {
+      console.log('[Store] 📡 Stream already connected')
       return
     }
 
+    console.log('[Store] 📡 Initializing SSE stream connection to:', streamUrl.value)
+
     try {
-      const url = `${ipPort.value}/v1/stream/comint_detection?interval=${batchInterval.value}&buffer_all_flag=false`
-      eventSource = new EventSource(url, { withCredentials: true })
+      eventSource.value = new EventSource(streamUrl.value)
 
-      cleanupFunctions.push(() => {
-        if (eventSource) {
-          eventSource.close()
-          eventSource = null
-        }
-      })
-
-      eventSource.onmessage = (event) => {
-        if (!hasSelectedSensors.value || !event.data) return
-
-        const receiveTime = Date.now()
-
-        try {
-          const parsed = JSON.parse(event.data)
-          if (!Array.isArray(parsed)) return
-
-          for (const item of parsed) {
-            const measurement = item.Measurement
-            if (!measurement) continue
-
-            const backendUavId = item.id
-
-            if (!selectedSensors.value.includes(backendUavId)) continue
-
-            const measurementTime = new Date(measurement.time).getTime()
-            const now = Date.now()
-
-            // Real-time delay monitoring
-            if (process.env.NODE_ENV === 'development') {
-              console.log(
-                `[REAL-TIME] UAV ${backendUavId} | ` +
-                `Measurement delay: ${now - measurementTime}ms | ` +
-                `Server delay: ${now - item.server_time * 1000}ms | ` +
-                `Network delay: ${receiveTime - item.server_time * 1000}ms`
-              )
-            }
-
-            const normalizedMeasurement = {
-              ...measurement,
-              headingData: measurement.headingData || measurement.heading_data
-            }
-
-            // Azonnal továbbítjuk a workernek
-            const worker = detectionWorkers.value[backendUavId]
-            if (worker) {
-              const sendTime = Date.now()
-              worker.postMessage({
-                type: 'newDetection',
-                measurement: normalizedMeasurement,
-                uavId: backendUavId
-              })
-
-              if (process.env.NODE_ENV === 'development') {
-                console.log(`[REAL-TIME] Worker send time: ${Date.now() - sendTime}ms`)
-              }
-            }
-          }
-        } catch (err) {
-          console.error('Stream parsing error:', err)
-        }
+      // Connection opened
+      eventSource.value.onopen = () => {
+        console.log('[Store] 📡 ✅ SSE Stream connected')
+        isStreamConnected.value = true
       }
 
-      eventSource.onerror = async (err) => {
-        console.error('Stream error:', err)
-        errorMessage.value = 'Stream hiba'
+      // Message received
+      eventSource.value.onmessage = (event: MessageEvent) => {
+        console.log('[Store] 📥 SSE message received, data length:', event.data?.length)
 
-        await stopDetectionStream()
+        if (!event.data) {
+          console.warn('[Store] ⚠️ Empty SSE message received')
+          return
+        }
 
-        if (eventSource?.readyState === EventSource.CLOSED) {
+        // Ensure worker is initialized
+        if (!isWorkerReady()) {
+          console.warn('[Store] ⚠️ Worker not ready when stream data arrived, initializing...')
+          initializeWorker()
+        }
+
+        // Send to worker
+        handleStreamData(event.data)
+      }
+
+      // Error handling
+      eventSource.value.onerror = (error: Event) => {
+        console.error('[Store] 📡 ❌ SSE Stream error:', error)
+        isStreamConnected.value = false
+
+        // Reconnect logic
+        if (eventSource.value?.readyState === EventSource.CLOSED) {
+          console.log('[Store] 📡 Stream closed, attempting to reconnect in 5 seconds...')
           setTimeout(() => {
-            if (hasSelectedSensors.value) {
-              startDetectionStream()
+            if (!isStreamConnected.value) {
+              console.log('[Store] 📡 Reconnecting...')
+              disconnectStream()
+              initializeStream()
             }
           }, 5000)
         }
       }
+
+      console.log('[Store] 📡 SSE Stream listener registered')
+
     } catch (error) {
-      console.error('Failed to start detection stream:', error)
-      errorMessage.value = 'Stream indítási hiba'
+      console.error('[Store] 📡 Failed to initialize SSE stream:', error)
+      errorMessage.value = 'Failed to connect to stream'
+    }
+  }
+
+  /**
+   * SSE stream kapcsolat bontása
+   */
+  const disconnectStream = (): void => {
+    if (eventSource.value) {
+      console.log('[Store] 📡 Disconnecting SSE stream...')
+      eventSource.value.close()
+      eventSource.value = null
+      isStreamConnected.value = false
+      console.log('[Store] 📡 ✅ SSE Stream disconnected')
     }
   }
 
   // ============================================================================
-  // DETEKCIÓ KEZELÉS
+  // COMPUTED
   // ============================================================================
 
-  function addDetectionToSensor(uavId: number, detection: any) {
-    const sensor = sensors.value[uavId]
-    if (!sensor) return
+  const selectedSensors = computed(() => {
+    return Object.values(sensors.value).filter(sensor => sensor.is_selected)
+  })
 
-    const addTime = Date.now()
-    const maxSize = Math.abs(detectionSize.value)
+  const hasSelectedSensors = computed(() => {
+    return selectedSensors.value.length > 0
+  })
 
-    if (!sensor.detections) sensor.detections = []
+  // ============================================================================
+  // WATCH
+  // ============================================================================
 
-    sensor.detections.push(detection)
+  // Watch selectedSensors és automatikusan inicializál mindent
+  watch(
+    selectedSensors,
+    (newSelected) => {
+      const selectedIds = newSelected.map(s => s.uav_id)
+      console.log('[Store] 📤 Selected sensors changed:', selectedIds)
 
-    if (sensor.detections.length > maxSize) {
-      sensor.detections = sensor.detections.slice(-maxSize)
-    }
-
-    // Real-time UI update monitoring
-    if (process.env.NODE_ENV === 'development') {
-      console.log(
-        `[REAL-TIME] Detection added to sensor | ` +
-        `UAV: ${uavId} | ` +
-        `Total detections: ${sensor.detections.length} | ` +
-        `Add time: ${Date.now() - addTime}ms`
-      )
-    }
-
-    // requestAnimationFrame debounce
-    if (!pendingUpdate) {
-      pendingUpdate = true
-      requestAnimationFrame(() => {
-        const triggerTime = Date.now()
-        triggerRef(sensors)
-
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`[REAL-TIME] UI trigger time: ${Date.now() - triggerTime}ms`)
+      // Ha van kiválasztott szenzor
+      if (selectedIds.length > 0) {
+        // 1. Worker inicializálása ha szükséges
+        if (!isWorkerReady()) {
+          console.warn('[Store] ⚠️ Sensors selected but worker not ready, initializing...')
+          initializeWorker()
         }
 
-        pendingUpdate = false
-      })
+        // 2. Stream inicializálása ha szükséges
+        if (!isStreamConnected.value && !eventSource.value) {
+          console.log('[Store] 📡 Sensors selected, initializing stream...')
+          initializeStream()
+        }
+
+        // 3. Worker ID-k frissítése
+        updateSelectedUavIds(selectedIds)
+      } else {
+        console.log('[Store] No sensors selected')
+      }
+    },
+    { immediate: true, deep: true }
+  )
+
+  // ============================================================================
+  // ACTIONS
+  // ============================================================================
+
+  /**
+   * Szenzor kiválasztása/deselect
+   */
+  const selectSensor = (uavId: number): void => {
+    if (sensors.value[uavId]) {
+      sensors.value[uavId].is_selected = !sensors.value[uavId].is_selected
+      console.log(`[Store] Sensor ${uavId} ${sensors.value[uavId].is_selected ? 'selected' : 'deselected'}`)
     }
   }
 
-  async function clearDetections() {
+  /**
+   * Stream adat kezelése (workernek továbbítás)
+   */
+  const handleStreamData = (rawData: string): void => {
+    console.log('[Store] 📥 handleStreamData called, data length:', rawData?.length)
+
+    // Lazy initialization
+    if (!isWorkerReady()) {
+      console.warn('[Store] ⚠️ Worker not initialized when stream data arrived, initializing now...')
+      initializeWorker()
+    }
+
+    console.log('[Store] 📤 Sending to worker...')
+    sendDetection(rawData)
+  }
+
+  /**
+   * Szenzorok lekérése API-ból
+   */
+  const fetchSensors = async (): Promise<void> => {
+    isLoading.value = true
+    errorMessage.value = ''
+
+    try {
+      const response = await fetch('http://localhost:5000/v1/uav')
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+
+      // Transform data - megtartjuk a meglévő is_selected és detections értékeket
+      const sensorsMap: Record<number, Sensor> = {}
+
+      data.forEach((sensorData: any) => {
+        sensorsMap[sensorData.uav_id] = {
+          ...sensorData,
+          is_selected: sensors.value[sensorData.uav_id]?.is_selected || false,
+          detections: sensors.value[sensorData.uav_id]?.detections || []
+        }
+      })
+
+      sensors.value = sensorsMap
+      console.log('[Store] ✅ Sensors fetched:', Object.keys(sensorsMap).length)
+
+    } catch (error) {
+      console.error('[Store] Failed to fetch sensors:', error)
+      errorMessage.value = 'Failed to load sensors'
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * Szenzor eltávolítása
+   */
+  const removeSensor = (): void => {
+    if (selectedSensor.value) {
+      const uavId = selectedSensor.value.uav_id
+      delete sensors.value[uavId]
+      selectedSensor.value = null
+      console.log(`[Store] Sensor ${uavId} removed`)
+    }
+  }
+
+  /**
+   * Mouse hover handler
+   */
+  const handleMouseOver = (sensor: Sensor): void => {
+    selectedSensor.value = sensor
+  }
+
+  /**
+   * Detekciók törlése
+   */
+  const clearAllDetections = (): void => {
     Object.values(sensors.value).forEach(sensor => {
       sensor.detections = []
     })
-
-    triggerRef(sensors)
-
-    Object.values(detectionWorkers.value).forEach(worker => {
-      if (worker?.postMessage) {
-        worker.postMessage({ type: 'clearDetections' })
-      }
-    })
-
-    stats.value = {
-      totalReceived: 0,
-      totalProcessed: 0,
-      activeWorkers: Object.keys(detectionWorkers.value).length
-    }
+    clearDetections()
+    console.log('[Store] All detections cleared')
   }
 
-  // ============================================================================
-  // DEBUG FUNKCIÓK
-  // ============================================================================
-
-  function debugReactivity() {
-    console.log('=== Sensor Store Debug ===')
+  /**
+   * Debug reaktivitás
+   */
+  const debugReactivity = (): void => {
+    console.log('=== SENSOR STORE DEBUG ===')
     console.log('Total sensors:', Object.keys(sensors.value).length)
-    console.log('Selected sensor IDs:', Array.from(selectedSensors.value))
-    console.log('Active workers:', Object.keys(detectionWorkers.value).length)
-    console.log('Stats:', stats.value)
+    console.log('Selected sensors:', selectedSensors.value.length)
+    console.log('Has selections:', hasSelectedSensors.value)
+    console.log('Worker ready:', isWorkerReady())
+    console.log('Stream connected:', isStreamConnected.value)
+    console.log('Settings:', {
+      batchInterval: batchInterval.value,
+      detectionSize: detectionSize.value,
+      streamUrl: streamUrl.value
+    })
 
-    Object.entries(sensors.value).forEach(([id, sensor]) => {
-      console.log(`Sensor ${id}:`, {
+    selectedSensors.value.forEach(sensor => {
+      console.log(`Sensor ${sensor.uav_id}:`, {
         label: sensor.uav_label,
-        selected: sensor.is_selected,
-        detectionsCount: sensor.detections?.length || 0,
-        active: sensor.active
+        detections: sensor.detections.length
       })
     })
-  }
-
-  // ============================================================================
-  // HELPER FÜGGVÉNYEK
-  // ============================================================================
-
-  function getSensorsList() {
-    return Object.values(sensors.value)
   }
 
   // ============================================================================
   // LIFECYCLE
   // ============================================================================
 
-  onUnmounted(async () => {
-    await stopDetectionStream()
-    await terminateAllWorkers()
-    selectedSensors.value = []
-  })
+  // Cleanup on unmount
+  onUnmounted(() => {
+    console.log('[Store] 🧹 Cleaning up...')
 
-  onMounted(() => {
-    if (isConnected.value) {
-      fetchSensors()
-    }
+    // Disconnect stream
+    disconnectStream()
+
+    // Cleanup worker
+    workerMessageCleanups.forEach(cleanup => cleanup())
+    terminateWorker()
+
+    console.log('[Store] ✅ Cleanup complete')
   })
 
   // ============================================================================
@@ -606,28 +410,31 @@ export const useSensorStore = defineStore('sensor', () => {
   // ============================================================================
 
   return {
+    // State
     sensors,
-    selectedSensors,
-    hoveredSensor,
-    hasSelectedSensors,
+    selectedSensor,
     isLoading,
     errorMessage,
-    detectionSize,
-    stats,
-    samplingRate,
     batchInterval,
-    getSensors,
-    getSensorsList,
-    fetchSensors,
-    addSensor,
-    removeSensor,
+    detectionSize,
+    isStreamConnected,
+    streamUrl,
+
+    // Computed
+    selectedSensors,
+    hasSelectedSensors,
+
+    // Actions
+    initializeWorker,
+    initializeStream,
+    disconnectStream,
     selectSensor,
+    handleStreamData,
+    fetchSensors,
+    removeSensor,
     handleMouseOver,
-    toggleSensorSelection,
-    clearDetections,
-    startDetectionStream,
+    clearDetections: clearAllDetections,
     debugReactivity,
-    terminateAllWorkers,
-    updateAllWorkerSettings
+    isWorkerReady
   }
 })

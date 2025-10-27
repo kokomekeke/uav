@@ -29,7 +29,7 @@ const attribution = ref('&copy; <a href="https://www.openstreetmap.org/copyright
 const newDetectionSize = ref(Math.abs(sensorStore.detectionSize))
 const batchIntervalLocal = ref(sensorStore.batchInterval)
 const autoZoom = ref(false)
-const maxVisiblePoints = ref(100)
+const maxVisiblePoints = ref(50)
 const lineLength = ref(0.05)
 const planeDisplayPeriod = ref(4)
 const showAzimuthLines = ref(true)
@@ -64,7 +64,7 @@ const lineColors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'cyan',
 const selectedSensorCount = computed(() => selectedSensors.value.length)
 
 // --- OPTIMIZED FUNCTIONS ---
-function getHeadingFromQuaternion([q0, q1, q2, q3]: number[]): number {
+function getHeadingFromQuaternion ([q0, q1, q2, q3]: number[]): number {
   if (q0 === undefined || q1 === undefined || q2 === undefined || q3 === undefined) return 0
 
   const headingRad = Math.atan2(2 * (q0 * q3 + q1 * q2), q0 * q0 + q1 * q1 - q2 * q2 - q3 * q3)
@@ -72,7 +72,7 @@ function getHeadingFromQuaternion([q0, q1, q2, q3]: number[]): number {
   return deg < 0 ? deg + 360 : deg
 }
 
-function getHeading(sensor: Sensor): number {
+function getHeading (sensor: Sensor): number {
   const lastDetection = sensor.detections?.at(-1)
   if (lastDetection?.quaternion) {
     return getHeadingFromQuaternion([
@@ -92,7 +92,7 @@ function getHeading(sensor: Sensor): number {
   return 0
 }
 
-function getPlaneIconById(id: number): any {
+function getPlaneIconById (id: number): any {
   const sensor = sensors.value[id]
   if (!sensor) return dotIcons[0]
 
@@ -121,7 +121,7 @@ function getPlaneIconById(id: number): any {
   return icon
 }
 
-function computeAzimuthLine(coord: [number, number], azimuth: number, isRadians: boolean = false): number[][] {
+function computeAzimuthLine (coord: [number, number], azimuth: number, isRadians: boolean = false): number[][] {
   const cacheKey = `${coord[0].toFixed(4)}_${coord[1].toFixed(4)}_${azimuth.toFixed(3)}_${lineLength.value}`
 
   if (azimuthLinesCache.has(cacheKey)) {
@@ -146,7 +146,7 @@ function computeAzimuthLine(coord: [number, number], azimuth: number, isRadians:
   return result
 }
 
-function getColorByRoiOrSensor(detection: any, sensorId: number): string {
+function getColorByRoiOrSensor (detection: any, sensorId: number): string {
   if (detection.roi_id !== null && detection.roi_id !== undefined) {
     return lineColors[detection.roi_id % lineColors.length]
   }
@@ -156,7 +156,11 @@ function getColorByRoiOrSensor(detection: any, sensorId: number): string {
 // --- MAIN DETECTION BUFFER ---
 const detectionBuffer = ref<any[]>([])
 
-function renderDetections() {
+function renderDetections () {
+  if (!leafletMap.value || !mapBounds.value) {
+    console.warn('[MAP] renderDetections skipped — map not ready')
+    return
+  }
   const renderStart = performance.now()
   const visible: any[] = []
   const bounds = mapBounds.value
@@ -169,13 +173,13 @@ function renderDetections() {
   }
 
   // Iterálj csak a kiválasztott szenzorokon
-  selectedSensors.value.forEach((sensorId) => {
-    const sensor = sensors.value[sensorId]
+  selectedSensors.value.forEach((sensor) => {
+    // console.log('SZENZÓÓÓR: ', sensor)
     if (!sensor || !Array.isArray(sensor.detections)) return
-
     const recentDetections = sensor.detections.slice(-maxVisiblePoints.value)
-
+    const sensorId = sensor.uav_id
     recentDetections.forEach((detection, idx) => {
+      // console.log('detekcioooo: ', detection)
       if (!detection?.coordinate || !Array.isArray(detection.coordinate) || detection.coordinate.length !== 2) return
 
       // Viewport culling
@@ -200,7 +204,7 @@ function renderDetections() {
         item.azimuthLine = computeAzimuthLine(detection.coordinate, detection.azimuth, true)
         item.hasAzimuth = true
       }
-
+      // console.log('item:::', item)
       visible.push(item)
     })
   })
@@ -216,7 +220,7 @@ watch(batchInterval, (newVal) => {
   batchIntervalLocal.value = newVal
 }, { immediate: true })
 
-function updateBatchInterval() {
+function updateBatchInterval () {
   const newInterval = typeof batchIntervalLocal.value === 'string'
     ? parseFloat(batchIntervalLocal.value)
     : Number(batchIntervalLocal.value)
@@ -230,7 +234,7 @@ function updateBatchInterval() {
   sensorStore.$patch({ batchInterval: newInterval })
 }
 
-function updateSettings() {
+function updateSettings () {
   const size = newDetectionSize.value
   if (!isNaN(size) && size > 0) {
     sensorStore.$patch({ detectionSize: size })
@@ -239,7 +243,7 @@ function updateSettings() {
   renderDetections()
 }
 
-function clearMapData() {
+function clearMapData () {
   sensorStore.clearDetections()
   planeIconsCache.clear()
   azimuthLinesCache.clear()
@@ -247,7 +251,7 @@ function clearMapData() {
   debugInfo.value.cacheSize = 0
 }
 
-function debugStore() {
+function debugStore () {
   console.log('=== MAP COMPONENT DEBUG ===')
   console.log('Performance:', {
     renderTime: debugInfo.value.renderTime,
@@ -268,7 +272,7 @@ function debugStore() {
 }
 
 // --- MAP MANAGEMENT ---
-function updateMapView() {
+function updateMapView () {
   if (mapRef.value?.leafletObject) {
     leafletMap.value = mapRef.value.leafletObject
     mapBounds.value = leafletMap.value.getBounds()
@@ -276,7 +280,7 @@ function updateMapView() {
   }
 }
 
-function goFullscreen() {
+function goFullscreen () {
   if (!mapContainer.value) {
     console.warn('Fullscreen not available')
     return
@@ -300,6 +304,15 @@ function goFullscreen() {
     console.error('Fullscreen error:', e)
   }
 }
+
+function onMapReady(mapInstance: any) {
+  leafletMap.value = mapInstance
+  mapBounds.value = mapInstance.getBounds()
+  debugInfo.value.mapInitialized = true
+  console.log('[MAP] Leaflet map is ready ✅')
+  renderDetections() // most már biztonságos
+}
+
 
 // --- AUTO ZOOM ---
 watch(() => detectionBuffer.value, (newBuffer) => {
@@ -349,7 +362,7 @@ onBeforeUnmount(() => {
   <div class="flex flex-col w-full h-[calc(100vh-5rem)] rounded-xl overflow-hidden">
     <!-- Map Container -->
     <div ref="mapContainer" class="flex-[3] border border-slate-700 rounded-xl overflow-hidden relative">
-      <l-map ref="mapRef" :zoom="zoom" :center="center" class="w-full h-full">
+      <l-map ref="mapRef" :zoom="zoom" :center="center" @ready="onMapReady" class="w-full h-full">
         <l-tile-layer :url="url" :attribution="attribution" />
 
         <!-- Debug Info -->
