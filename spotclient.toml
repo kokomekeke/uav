@@ -1,5 +1,5 @@
 [defaults]
-host = 'localhost'
+host = ['localhost', '10.1.1.114']
 center_freq = '446M'
 bandwith = '1M'
 gain = '50'
