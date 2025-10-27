@@ -9,7 +9,7 @@ from time import sleep
 import numpy as np
 
 from pysagax.util.read_from_conf import read_from_conf
-from pysagax.ui.custom_widgets import EntryWithLabel
+from pysagax.ui.custom_widgets import EntryWithLabel, ComboboxWithLabel
 
 
 class ConnectFrame(tkinter.Frame):
@@ -31,12 +31,17 @@ class ConnectFrame(tkinter.Frame):
         self.columnconfigure(3, weight=1)
         self.columnconfigure(3, weight=1)
 
-        self.host_entry = EntryWithLabel(
+        default_host_ips = read_from_conf(conf, ["defaults", "host"], "")
+        if not isinstance(default_host_ips, list):
+            default_host_ips = [default_host_ips, ]
+            
+        self.host_entry = ComboboxWithLabel(
             self,
             "Host:",
             0,
             0,
-            default_value=read_from_conf(conf, ["defaults", "host"], ""),
+            default_value=default_host_ips[0],
+            value_options=default_host_ips,
         )
 
         self.icon_frame = tkinter.Frame(self, width=32, height=32)

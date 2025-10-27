@@ -41,11 +41,11 @@ class PlaybackTab(ttk.Frame):
         )
 
         cpu_temp_str = (
-            f"      {'⚠️' if telem.hardware.cpu_temperature >= 90 else '   '} CPU temp: "
+            f"      {'⚠️' if telem.hardware.cpu_temperature >= 85 else '   '} CPU temp: "
             f"{telem.hardware.cpu_temperature:5.0f}°C"
         )
         radio_temp_str = (
-            f"      {'⚠️' if max(telem.hardware.radio_temperature, default=-1) >= 90 else '   '} Radio temp: "
+            f"      {'⚠️' if max(telem.hardware.radio_temperature, default=-1) >= 85 else '   '} Radio temp: "
             f"{', '.join([f'{temp:4.0f}°C' for temp in telem.hardware.radio_temperature])}"
         )
 
