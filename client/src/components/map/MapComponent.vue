@@ -150,16 +150,15 @@ function renderDetections() {
   }, 16) // ~60 FPS
 }
 
-function _doRenderDetections() {
+function _doRenderDetections () {
   if (!leafletMap.value || !mapBounds.value) return
   const renderStart = performance.now()
-
-  const newBuffer = new Map<string, any>()
   const bounds = mapBounds.value
+  const oldBuffer = detectionBuffer.value
+  const updatedBuffer = new Map(oldBuffer)
 
   if (!hasSelectedSensors.value) {
-    detectionBuffer.value = new Map()
-    debugInfo.value.detectionsCount = 0
+    // Ne töröld azonnal, csak ha explicit clear van
     debugInfo.value.selectedSensorsCount = 0
     return
   }
@@ -173,46 +172,57 @@ function _doRenderDetections() {
       if (!Array.isArray(detection.coordinate)) return
       if (bounds && !bounds.contains(L.latLng(detection.coordinate[0], detection.coordinate[1]))) return
 
-      // ✅ STABLE KEY: használjuk a timestamp-et vagy egy unique ID-t
       const stableKey = `${sensorId}-${detection.timestamp || `idx-${idx}`}`
+      const existingItem = oldBuffer.get(stableKey)
 
-      // Ha már van ilyen elem a bufferben, újra felhasználjuk
-      const existingItem = detectionBuffer.value.get(stableKey)
-
+      // már létező pont → csak pozíciófrissítés
       if (existingItem) {
-        // Újra felhasználjuk a meglévő objektumot (nincs újra renderelés!)
-        newBuffer.set(stableKey, existingItem)
-      } else {
-        // Csak új elemeket hozunk létre
-        const showPlane = idx % planeDisplayPeriod.value === 0
-        const hasAzimuth = detection.azimuth != null
-
-        const item: any = {
-          key: stableKey,
-          coordinate: detection.coordinate,
-          showPlane,
-          dotIcon: dotIcons[sensorId % dotIcons.length],
-          color: getColorByRoiOrSensor(detection, sensorId)
-        }
-
-        if (showPlane) item.planeIcon = getPlaneIconById(sensorId)
-        if (hasAzimuth && showAzimuthLines.value) {
-          item.azimuthLine = computeAzimuthLine(detection.coordinate, detection.azimuth, true)
-          item.hasAzimuth = true
-        }
-
-        newBuffer.set(stableKey, item)
+        existingItem.coordinate = detection.coordinate
+        updatedBuffer.set(stableKey, existingItem)
+        return
       }
+
+      // új pont
+      const showPlane = idx % planeDisplayPeriod.value === 0
+      const hasAzimuth = detection.azimuth != null
+      const color = getColorByRoiOrSensor(detection, sensorId)
+      const dotIcon = dotIcons[sensorId % dotIcons.length]
+
+      const item: any = {
+        key: stableKey,
+        coordinate: detection.coordinate,
+        showPlane,
+        dotIcon,
+        color,
+        lastUpdate: Date.now()
+      }
+
+      if (showPlane) item.planeIcon = getPlaneIconById(sensorId)
+      if (hasAzimuth && showAzimuthLines.value) {
+        item.azimuthLine = computeAzimuthLine(detection.coordinate, detection.azimuth, true)
+        item.hasAzimuth = true
+      }
+
+      updatedBuffer.set(stableKey, item)
     })
   })
 
-  // ✅ Inkrementális frissítés helyett teljes csere, de Map-pel
-  detectionBuffer.value = newBuffer
+  // opcionális TTL (régi detekciók eltávolítása)
+  const ttlMs = realtimeConfig.value.detectionTTL || 10000
+  const now = Date.now()
+  for (const [key, item] of updatedBuffer.entries()) {
+    if (now - (item.lastUpdate ?? 0) > ttlMs) {
+      updatedBuffer.delete(key)
+    }
+  }
 
-  debugInfo.value.detectionsCount = newBuffer.size
+  detectionBuffer.value = updatedBuffer
+
+  debugInfo.value.detectionsCount = updatedBuffer.size
   debugInfo.value.selectedSensorsCount = selectedSensors.value.length
   debugInfo.value.renderTime = performance.now() - renderStart
 }
+
 
 // Computed property a template számára
 const detectionBufferArray = computed(() => Array.from(detectionBuffer.value.values()))
@@ -260,7 +270,7 @@ function goFullscreen() {
   else document.exitFullscreen?.()
 }
 
-function onMapReady(mapInstance: any) {
+function onMapReady (mapInstance: any) {
   leafletMap.value = mapInstance
   mapBounds.value = mapInstance.getBounds()
   debugInfo.value.mapInitialized = true
