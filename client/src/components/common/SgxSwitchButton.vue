@@ -18,22 +18,38 @@ const handleCheckboxChange = () => {
 </script>
 
 <template>
-  <label class="flex items-center cursor-pointer select-none text-black dark:text-white">
-    <div class="relative">
-      <input
-        type="checkbox"
-        class="sr-only"
-        @change="handleCheckboxChange"
-      />
-      <div
-        :class="{ 'bg-slate-700': isChecked }"
-        class="block h-8 rounded-full box bg-dark dark:bg-dark-2 w-14"
-      ></div>
-      <div
-        :class="{ 'translate-x-full !bg-white dark:!bg-white': isChecked }"
-        class="absolute flex items-center justify-center w-6 h-6 transition bg-white border-4 border-black rounded-full dot left-1 top-1 dark:bg-dark-5"
-      ></div>
-    </div>
+  <label
+    class="relative inline-flex items-center cursor-pointer select-none"
+  >
+    <input
+      type="checkbox"
+      class="sr-only peer"
+      @change="handleCheckboxChange"
+      :checked="isChecked"
+    />
+
+    <!-- háttér -->
+    <div
+      class="
+        w-14 h-8 rounded-full
+        transition-colors duration-300 ease-in-out
+        bg-emerald-300 dark:bg-dark-3
+        peer-checked:bg-sgx-deep-blue
+        shadow-inner
+      "
+    ></div>
+
+    <!-- pötty -->
+    <div
+      class="
+        absolute left-1 top-1 w-6 h-6
+        bg-sgx-accent-blue dark:bg-dark-5
+        border border-gray-400 dark:border-gray-700
+        rounded-full shadow-md
+        transition-all duration-300 ease-in-out
+        peer-checked:translate-x-6
+      "
+    ></div>
   </label>
 </template>
 

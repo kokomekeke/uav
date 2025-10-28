@@ -1,5 +1,6 @@
 <script setup>
 import SgxSwitchButton from '@/components/common/SgxSwitchButton.vue'
+import router from '@/routes'
 
 const props = defineProps({
   isMenuOpen: Boolean,
@@ -7,6 +8,10 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['toggle-dark'])
+
+const toHome = () => {
+  router.push({ path: '/' })
+}
 </script>
 
 <template>
@@ -17,23 +22,19 @@ const emit = defineEmits(['toggle-dark'])
     v-bind="$attrs"
   >
     <div class="flex flex-row items-center justify-between w-full">
-      <!-- Bal oldal (üres hely a balanszhoz) -->
       <div class="w-32"></div>
-
-      <!-- Középen a cím -->
-      <h1 class="p-5 font-bold tracking-widest text-cyan-300 select-none text-center">
+      <h1 class="p-5 font-bold tracking-widest text-cyan-300 select-none text-center" @click="toHome">
         LENA_ALTISS
       </h1>
-
-      <!-- Jobb oldalon a gomb -->
-      <SgxSwitchButton
-        class="mr-4"
-        :modelValue="props.isDark"
-        @update:modelValue="emit('toggle-dark')"
-      />
+      <div class="w-32 flex justify-end">
+        <SgxSwitchButton
+          class="mr-4"
+          :modelValue="props.isDark"
+          @update:modelValue="emit('toggle-dark')"
+        />
+      </div>
     </div>
 
-    <!-- Alsó díszcsík -->
     <div
       class="absolute bottom-0 left-1/2 -translate-x-1/2 w-1/2 border-b-2 border-blue-300"
     ></div>

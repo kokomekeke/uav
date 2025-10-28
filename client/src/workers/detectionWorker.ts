@@ -1,361 +1,405 @@
-// Optimized detection worker for real-time UAV tracking
-// Works with the hybrid Vue component approach
+// workers/detectionWorker.ts
+import type {
+  WorkerStats,
+  Detection,
+  HeadingData,
+  DetectionItem,
+  MeasurementData,
+  StreamPacket,
+  WorkerIncomingMessage,
+  WorkerOutgoingMessage
+} from '@/types/worker'
 
-// --- CONFIGURATION ---
-const BATCH_SIZE = 5 // Smaller batches for smoother real-time updates
-const MAX_BUFFER_SIZE = 50 // Prevent memory buildup
-const PROCESSING_INTERVAL = 100 // ms - fast processing for real-time feel
-const MEMORY_CLEANUP_THRESHOLD = 1000
+// ============================================================================
+// GLOBALS
+// ============================================================================
 
-// --- STATE MANAGEMENT ---
-const detectionBuffer = []
-const processedCount = 0
-let assignedUavId = null
-let isProcessing = false
-let processingTimer = null
-let samplingRate = 50 // ms between samples
+let samplingRate = 0
+let uavIds: number[] = []
 let lastSampleTime = 0
+let maxLatencyMs = 900 // ✨ ÚJ CONFIG
 
-// --- PERFORMANCE TRACKING ---
-let stats = {
+let stats: WorkerStats = {
   totalReceived: 0,
   totalProcessed: 0,
-  totalDropped: 0,
   lastProcessingTime: 0,
-  averageProcessingTime: 0,
-  bufferSize: 0,
-  memoryUsage: 0
+  avgProcessingTime: 0
 }
 
-// --- OBJECT POOLING FOR MEMORY EFFICIENCY ---
-const detectionPool = []
-const POOL_SIZE = 100
+// Data type constants
+const DataType = {
+  TELEMETRY: 't',
+  MEASUREMENT: 'm',
+  EVENT: 'v',
+  ERROR: 'e'
+} as const
 
-function getPooledDetection () {
-  return detectionPool.pop() || {}
+type DataTypeValue = typeof DataType[keyof typeof DataType]
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Koordináta számítás azimut és elevációból
+ */
+function calculateCoordinate (
+  azimuth: number,
+  elevation: number,
+  gpsLat: number,
+  gpsLon: number,
+  altitude: number
+): [number, number] {
+  const R = 6371000
+  const elevationRad = elevation
+  const azimuthRad = azimuth
+
+  const distance = altitude / Math.tan(Math.abs(elevationRad))
+  const clampedDistance = Math.max(0, Math.min(distance, 100000))
+
+  const latRad = (gpsLat * Math.PI) / 180
+  const lonRad = (gpsLon * Math.PI) / 180
+
+  const newLatRad = Math.asin(
+    Math.sin(latRad) * Math.cos(clampedDistance / R) +
+    Math.cos(latRad) * Math.sin(clampedDistance / R) * Math.cos(azimuthRad)
+  )
+
+  const newLonRad = lonRad + Math.atan2(
+    Math.sin(azimuthRad) * Math.sin(clampedDistance / R) * Math.cos(latRad),
+    Math.cos(clampedDistance / R) - Math.sin(latRad) * Math.sin(newLatRad)
+  )
+
+  const newLat = (newLatRad * 180) / Math.PI
+  const newLon = (newLonRad * 180) / Math.PI
+
+  return [newLat, newLon]
 }
 
-function returnToPool (detection) {
-  if (detectionPool.length < POOL_SIZE) {
-    // Clear all properties efficiently
-    for (const key in detection) {
-      delete detection[key]
-    }
-    detectionPool.push(detection)
+/**
+ * Quaternion alapú heading számítás
+ */
+function getHeadingFromQuaternion (
+  q0: number,
+  q1: number,
+  q2: number,
+  q3: number
+): number {
+  if (q0 === undefined || q1 === undefined || q2 === undefined || q3 === undefined) {
+    return 0
+  }
+
+  const headingRad = Math.atan2(
+    2 * (q0 * q3 + q1 * q2),
+    q0 * q0 + q1 * q1 - q2 * q2 - q3 * q3
+  )
+
+  const deg = headingRad * (180 / Math.PI)
+  return deg < 0 ? deg + 360 : deg
+}
+
+/**
+ * Optimalizált detekció objektum létrehozása
+ */
+function createOptimizedDetection (
+  detectionItem: DetectionItem,
+  headingData: HeadingData,
+  timestamp: number
+): Detection {
+  const { gpsLat = 47.355520, gpsLon = 19.268900, altitude = 100, quaternion } = headingData
+
+  // Quaternion parse
+  let q0 = 1; let q1 = 0; let q2 = 0; let q3 = 0
+
+  if (Array.isArray(quaternion) && quaternion.length === 4) {
+    [q0, q1, q2, q3] = quaternion
+  } else if (quaternion && typeof quaternion === 'object') {
+    q0 = quaternion.q0 ?? quaternion[0] ?? 1
+    q1 = quaternion.q1 ?? quaternion[1] ?? 0
+    q2 = quaternion.q2 ?? quaternion[2] ?? 0
+    q3 = quaternion.q3 ?? quaternion[3] ?? 0
+  }
+
+  const heading = getHeadingFromQuaternion(q0, q1, q2, q3)
+
+  const coordinate = calculateCoordinate(
+    detectionItem.azimuth ?? detectionItem.meanAzimuth ?? 0,
+    detectionItem.elevation ?? detectionItem.meanElevation ?? 0,
+    gpsLat,
+    gpsLon,
+    altitude
+  )
+
+  return {
+    timestamp,
+    frequency: detectionItem.frequency,
+    azimuth: detectionItem.azimuth,
+    elevation: detectionItem.elevation,
+    meanAzimuth: detectionItem.meanAzimuth,
+    meanElevation: detectionItem.meanElevation,
+    coordinate,
+    quaternion: { q0, q1, q2, q3 },
+    heading,
+    gpsLat,
+    gpsLon,
+    altitude,
+    roi_id: detectionItem.roi_id ?? null
   }
 }
 
-// --- OPTIMIZED BATCH PROCESSING ---
-function processBatch () {
-  if (isProcessing || detectionBuffer.length === 0) return
-
-  isProcessing = true
-  const startTime = performance.now()
-
-  try {
-    // Process smaller batches for smoother performance
-    const batchSize = Math.min(BATCH_SIZE, detectionBuffer.length)
-    const batch = detectionBuffer.splice(0, batchSize)
-
-    // Group by UAV ID for efficient processing
-    const detectionsByUavId = {}
-
-    if (assignedUavId && batch.length > 0) {
-      detectionsByUavId[assignedUavId] = batch
-    }
-
-    // Update statistics
-    stats.totalProcessed += batch.length
-    stats.bufferSize = detectionBuffer.length
-    stats.memoryUsage = detectionBuffer.length + detectionPool.length
-
-    // Send processed batch immediately for real-time updates
-    if (batch.length > 0) {
-      self.postMessage({
-        type: 'processedDetections',
-        detectionsByUavId,
-        stats: { ...stats },
-        timestamp: Date.now()
-      })
-    }
-
-    // Performance tracking
-    const processingTime = performance.now() - startTime
-    stats.lastProcessingTime = processingTime
-
-    // Exponential moving average for smoother performance metrics
-    stats.averageProcessingTime = stats.averageProcessingTime === 0
-      ? processingTime
-      : (stats.averageProcessingTime * 0.8) + (processingTime * 0.2)
-  } catch (error) {
-    console.error('Batch processing error:', error)
-    self.postMessage({
-      type: 'error',
-      message: 'Processing error: ' + error.message,
-      timestamp: Date.now()
-    })
-  } finally {
-    isProcessing = false
-
-    // Schedule next batch if buffer has data
-    if (detectionBuffer.length > 0) {
-      scheduleNextBatch()
-    }
-  }
-}
-
-// --- INTELLIGENT SCHEDULING ---
-function scheduleNextBatch () {
-  if (processingTimer) return
-
-  // Immediate processing for critical buffer size
-  const urgentProcessing = detectionBuffer.length >= MAX_BUFFER_SIZE
-  const delay = urgentProcessing ? 0 : PROCESSING_INTERVAL
-
-  processingTimer = setTimeout(() => {
-    processingTimer = null
-    processBatch()
-  }, delay)
-}
-
-// --- OPTIMIZED DETECTION CREATION ---
-function createOptimizedDetection (detectionItem, headingData, index, currentTimestamp) {
-  const detection = getPooledDetection()
-
-  // Only essential properties for performance
-  detection.coordinate = [headingData.gpsLat, headingData.gpsLon]
-  detection.azimuth = detectionItem.azimuth || 0
-  detection.elevation = detectionItem.elevation || 0
-  detection.uavId = assignedUavId
-  detection.timestamp = currentTimestamp + index
-
-  // Optional properties (only if available)
-  if (detectionItem.frequency) detection.frequency = detectionItem.frequency
-  if (headingData.altitude) detection.altitude = headingData.altitude
-  if (headingData.gpsTime) detection.gpsTime = headingData.gpsTime
-
-  // Quaternion data for heading calculation
-  if (headingData.quaternion && Array.isArray(headingData.quaternion)) {
-    detection.quaternion = {
-      q0: headingData.quaternion[0] || 0,
-      q1: headingData.quaternion[1] || 0,
-      q2: headingData.quaternion[2] || 0,
-      q3: headingData.quaternion[3] || 0
-    }
+/**
+ * Data type detektálása
+ */
+function detectDataType (item: StreamPacket): DataTypeValue | null {
+  if (item.type) {
+    return item.type as DataTypeValue
   }
 
-  // ROI information for color coding
-  if (detectionItem.roi_id !== undefined) {
-    detection.roi_id = detectionItem.roi_id
-  }
+  if (item.Measurement) return DataType.MEASUREMENT
+  if (item.Telemetry) return DataType.TELEMETRY
+  if (item.Event) return DataType.EVENT
+  if (item.Error) return DataType.ERROR
 
-  return detection
+  return null
 }
 
-// --- MAIN DETECTION PROCESSING ---
-function processRawDetection (rawJsonString) {
+// ============================================================================
+// MAIN PROCESSING FUNCTION
+// ============================================================================
+
+function processRawDetection (detectionData: string): void {
+  const t0_processStart = performance.now()
   const currentTime = Date.now()
 
-  // Sampling rate control - drop samples if too frequent
-  if (currentTime - lastSampleTime < samplingRate) {
-    stats.totalDropped++
+  // Sampling rate ellenőrzés
+  if (samplingRate > 0 && currentTime - lastSampleTime < samplingRate) {
     return
   }
   lastSampleTime = currentTime
 
-  let parsedData
+  if (!detectionData) {
+    console.warn('[Worker] No detection data received')
+    return
+  }
+
+  let parsed: StreamPacket[]
   try {
-    // Handle different input formats
-    parsedData = typeof rawJsonString === 'string' ? JSON.parse(rawJsonString) : rawJsonString
+    parsed = JSON.parse(detectionData) as StreamPacket[]
+  } catch (error) {
+    console.error('[Worker] JSON parse error:', error)
+    return
+  }
 
-    // Handle double-encoded JSON
-    if (typeof parsedData === 'string') {
-      parsedData = JSON.parse(parsedData)
+  if (!Array.isArray(parsed)) {
+    console.warn('[Worker] Data is not an array')
+    return
+  }
+
+  let processedCount = 0
+
+  for (const item of parsed) {
+    const backendUavId = item.id
+    if (!uavIds.includes(backendUavId)) continue
+
+    const dataType = detectDataType(item)
+    if (!dataType) continue
+
+    switch (dataType) {
+      case DataType.MEASUREMENT: {
+        const measurement = item.Measurement
+        if (!measurement || !measurement.detection) break
+
+        const headingData: HeadingData = measurement.headingData || {}
+        headingData.gpsLat = headingData.gpsLat ?? 47.355520
+        headingData.gpsLon = headingData.gpsLon ?? 19.268900
+        headingData.altitude = headingData.altitude ?? 100.0
+
+        const timestamp = performance.now()
+
+        // ✅ Latency ellenőrzés már itt a worker-ben
+        const processingLatency = timestamp - t0_processStart
+        if (processingLatency > maxLatencyMs) {
+          console.warn(`[Worker] ⚠️ Processing too slow: ${processingLatency.toFixed(2)}ms`)
+        }
+
+        measurement.detection.forEach((detectionItem: DetectionItem) => {
+          try {
+            const detection = createOptimizedDetection(
+              detectionItem,
+              headingData,
+              timestamp
+            )
+
+            stats.totalReceived++
+            stats.totalProcessed++
+            processedCount++
+
+            const message: WorkerOutgoingMessage = {
+              type: 'processedDetection',
+              detection,
+              uavId: backendUavId,
+              timestamp: measurement.time || currentTime
+            }
+            self.postMessage(message)
+          } catch (error) {
+            console.error('[Worker] Detection processing error:', error)
+            const errorMessage: WorkerOutgoingMessage = {
+              type: 'error',
+              message: `Detection processing failed: ${(error as Error).message}`,
+              uavId: backendUavId
+            }
+            self.postMessage(errorMessage)
+          }
+        })
+        break
+      }
+
+      case DataType.TELEMETRY:
+      case DataType.EVENT:
+      case DataType.ERROR:
+        // későbbi implementáció
+        break
     }
-  } catch (e) {
-    console.error('JSON parsing error:', e)
-    self.postMessage({
-      type: 'error',
-      message: 'JSON parsing error: ' + e.message
-    })
-    return
   }
 
-  // Validate parsed data structure
-  if (!parsedData || typeof parsedData !== 'object') {
-    console.warn('Invalid detection format: not an object')
-    return
-  }
+  const processingTime = performance.now() - t0_processStart
+  stats.lastProcessingTime = processingTime
+  stats.avgProcessingTime = (stats.avgProcessingTime * 0.9) + (processingTime * 0.1)
 
-  if (!parsedData.headingData) {
-    console.warn('Invalid detection format: missing headingData')
-    return
-  }
-
-  if (!parsedData.detection || !Array.isArray(parsedData.detection)) {
-    console.warn('Invalid detection format: missing or invalid detection array')
-    return
-  }
-
-  const headingData = parsedData.headingData
-
-  // Validate GPS coordinates
-  if (headingData.gpsLat == null || headingData.gpsLon == null) {
-    console.warn('Missing GPS coordinates')
-    return
-  }
-
-  // Auto-assign UAV ID if not set
-  if (!assignedUavId) {
-    assignedUavId = 1 // Default UAV ID
-    self.postMessage({
-      type: 'uavIdAssigned',
-      uavId: assignedUavId
-    })
-  }
-
-  // Process all detections in the batch
-  const currentTimestamp = currentTime
-
-  parsedData.detection.forEach((detectionItem, index) => {
-    const detection = createOptimizedDetection(
-      detectionItem,
-      headingData,
-      index,
-      currentTimestamp
+  if (processedCount > 0) {
+    console.log(
+      `[Worker] Processed ${processedCount} detections in ${processingTime.toFixed(2)}ms ` +
+      `(avg: ${stats.avgProcessingTime.toFixed(2)}ms)`
     )
-
-    detectionBuffer.push(detection)
-    stats.totalReceived++
-  })
-
-  // Memory management - prevent buffer overflow
-  if (detectionBuffer.length > MEMORY_CLEANUP_THRESHOLD) {
-    const excessCount = detectionBuffer.length - MAX_BUFFER_SIZE
-    const removed = detectionBuffer.splice(0, excessCount)
-
-    // Return removed detections to pool
-    removed.forEach(returnToPool)
-    stats.totalDropped += excessCount
   }
 
-  // Schedule processing
-  if (!isProcessing) {
-    scheduleNextBatch()
+  if (stats.totalProcessed % 100 === 0) {
+    const statsMessage: WorkerOutgoingMessage = {
+      type: 'statsUpdated',
+      stats: { ...stats }
+    }
+    self.postMessage(statsMessage)
   }
 }
 
-// --- MESSAGE HANDLER ---
-self.onmessage = function (e) {
+// ============================================================================
+// MESSAGE HANDLER
+// ============================================================================
+
+self.onmessage = function (e: MessageEvent<WorkerIncomingMessage>) {
   const message = e.data
 
-  switch (message.type) {
-    case 'newDetection':
-      if (typeof message.value === 'string') {
-        processRawDetection(JSON.parse(message.value))
-      } else if (typeof message.value === 'object') {
-        processRawDetection(message.value)
-      } else {
+  try {
+    switch (message.type) {
+      case 'uavIds': {
+        if (!message.uavIds || !Array.isArray(message.uavIds)) return
+        uavIds = message.uavIds
+        console.log('[Worker] ✅ UAV IDs updated:', uavIds)
+        self.postMessage({ type: 'uavIdsUpdated', uavIds })
+        break
+      }
+
+      case 'newDetection': {
+        processRawDetection(message.detection)
+        break
+      }
+
+      case 'updateSettings': {
+        if (message.samplingRate !== undefined) {
+          samplingRate = Math.max(0, message.samplingRate)
+        }
+        // ✨ ÚJ: Max latency config
+        if (message.maxLatencyMs !== undefined) {
+          maxLatencyMs = message.maxLatencyMs
+          console.log(`[Worker] Max latency updated: ${maxLatencyMs}ms`)
+        }
+        const response: WorkerOutgoingMessage = {
+          type: 'settingsUpdated',
+          settings: { samplingRate, maxLatencyMs }
+        }
+        self.postMessage(response)
+        break
+      }
+
+      case 'clearDetections': {
+        stats = {
+          totalReceived: 0,
+          totalProcessed: 0,
+          lastProcessingTime: 0,
+          avgProcessingTime: 0
+        }
+        console.log('[Worker] Statistics cleared')
+        self.postMessage({ type: 'statsUpdated', stats: { ...stats } })
+        break
+      }
+
+      case 'getStats': {
+        self.postMessage({ type: 'statsUpdated', stats: { ...stats } })
+        break
+      }
+
+      case 'terminate': {
+        console.log('[Worker] Terminating...')
+        self.postMessage({ type: 'terminated' })
+        self.close()
+        break
+      }
+
+      default: {
+        console.warn('[Worker] Unknown message type:', (message as any).type)
         self.postMessage({
           type: 'error',
-          message: 'Invalid data format: expected object or string'
+          message: `Unknown message type: ${(message as any).type}`
         })
       }
-      break
-
-    case 'updateSettings':
-      // Update UAV ID
-      if (message.uavId !== undefined) {
-        assignedUavId = message.uavId
-      }
-
-      // Update sampling rate
-      if (message.samplingRate !== undefined) {
-        samplingRate = Math.max(10, message.samplingRate) // Minimum 10ms
-      }
-
-      // Confirm settings update
-      self.postMessage({
-        type: 'settingsUpdated',
-        settings: {
-          uavId: assignedUavId,
-          samplingRate,
-          bufferSize: detectionBuffer.length
-        }
-      })
-      break
-
-    case 'clearDetections':
-      // Return all detections to pool
-      detectionBuffer.forEach(returnToPool)
-      detectionBuffer.length = 0
-
-      // Reset statistics
-      stats = {
-        totalReceived: 0,
-        totalProcessed: 0,
-        totalDropped: 0,
-        lastProcessingTime: 0,
-        averageProcessingTime: 0,
-        bufferSize: 0,
-        memoryUsage: 0
-      }
-
-      self.postMessage({
-        type: 'statsUpdated',
-        stats: { ...stats }
-      })
-      break
-
-    case 'getStats':
-      stats.bufferSize = detectionBuffer.length
-      stats.memoryUsage = detectionBuffer.length + detectionPool.length
-
-      self.postMessage({
-        type: 'statsUpdated',
-        stats: { ...stats }
-      })
-      break
-
-    case 'pause':
-      // Stop processing without clearing data
-      if (processingTimer) {
-        clearTimeout(processingTimer)
-        processingTimer = null
-      }
-      isProcessing = false
-      break
-
-    case 'resume':
-      // Resume processing
-      if (detectionBuffer.length > 0 && !isProcessing) {
-        scheduleNextBatch()
-      }
-      break
-
-    case 'terminate':
-      // Clean shutdown
-      if (processingTimer) {
-        clearTimeout(processingTimer)
-      }
-
-      detectionBuffer.forEach(returnToPool)
-      detectionBuffer.length = 0
-      detectionPool.length = 0
-
-      self.close()
-      break
-
-    default:
-      console.warn('Unknown message type:', message.type)
+    }
+  } catch (error) {
+    console.error('[Worker] Message handling error:', error)
+    self.postMessage({
+      type: 'error',
+      message: `Message handling failed: ${(error as Error).message}`
+    })
   }
 }
 
-// --- INITIALIZATION ---
-self.postMessage({
+// ============================================================================
+// WORKER INITIALIZATION
+// ============================================================================
+
+const initMessage: WorkerOutgoingMessage = {
   type: 'workerStarted',
   timestamp: Date.now(),
-  version: '2.0-optimized'
-})
+  version: '4.0-typescript-unified'
+}
+self.postMessage(initMessage)
+console.log('✅ Detection Worker v4.0 initialized - TypeScript Unified Mode')
 
-console.log('Optimized detection worker v2.0 initialized for real-time UAV tracking')
+// ============================================================================
+// ERROR HANDLER
+// ============================================================================
+
+self.onerror = function (error: ErrorEvent) {
+  console.error('[Worker] Uncaught error:', error)
+  self.postMessage({
+    type: 'error',
+    message: `Worker uncaught error: ${error.message}`
+  })
+}
+
+// ============================================================================
+// PERFORMANCE MONITORING
+// ============================================================================
+
+if (typeof performance !== 'undefined' && (performance as any).memory) {
+  setInterval(() => {
+    const memory = (performance as any).memory
+    self.postMessage({
+      type: 'memoryStats',
+      memory: {
+        usedJSHeapSize: memory.usedJSHeapSize,
+        totalJSHeapSize: memory.totalJSHeapSize,
+        limit: memory.jsHeapSizeLimit
+      }
+    })
+  }, 30000)
+}

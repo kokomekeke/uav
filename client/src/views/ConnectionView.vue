@@ -4,8 +4,8 @@
       <!-- HEADER -->
       <template #header>
         <div class="flex items-center space-x-3">
-          <img src="/sgxlogo.jpg" class="w-12 h-12 border-2 border-cyan-400 rounded-lg" alt="sgx-logo"/>
-          <h3 class="text-xl font-bold text-cyan-400 tracking-widest">Connect to Ground Server</h3>
+          <img src="/sgxlogo.jpg" class="w-12 h-12 border-2 rounded-lg border-cyan-700 dark:border-cyan-400 " alt="sgx-logo"/>
+          <h3 class="text-xl font-bold text-cyan-900 dark:text-cyan-400 tracking-widest">Connect to Ground Server</h3>
         </div>
       </template>
 
@@ -14,15 +14,16 @@
         <div class="space-y-6">
           <!-- IP Address Input -->
           <div>
-            <label class="block text-sm font-semibold mb-2 text-cyan-300">Enter IP Address and Port:</label>
+            <label class="block text-sm font-semibold mb-2 text-cyan-900 dark:text-cyan-400">Enter IP Address and Port:</label>
             <input
               v-model="ipPort"
               placeholder="http://192.168.0.82:5000"
-              class="w-full p-2 bg-slate-800 border border-slate-600 rounded focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 text-gray-200"
+              class="w-full p-2 border border-slate-600 rounded focus:ring-2 focus:ring-cyan-600 focus:border-cyan-600 bg-gray-50 text-gray-700
+              dark:focus:ring-cyan-500 dark:focus:border-cyan-500 dark:bg-slate-800 dark:text-gray-200"
               :disabled="isConnecting || isReconnecting || isConnected"
               @keyup.enter="connect"
             >
-            <p class="text-xs text-slate-400 mt-1">
+            <p class="text-xs text-slate-500 mt-1">
               Example: http://localhost:5000 or http://192.168.1.100:5000
             </p>
           </div>
@@ -203,7 +204,6 @@ const {
 const sensorStore = useSensorStore()
 
 const props = defineProps({
-  isMenuOpen: Boolean,
   isModalVisible: Boolean
 })
 

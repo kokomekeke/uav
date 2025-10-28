@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, shallowRef, onBeforeUnmount, nextTick, watch } from 'vue'
+import { ref, onMounted, shallowRef, onBeforeUnmount, nextTick, watch, computed } from 'vue'
 import { LMap, LTileLayer, LMarker, LPolyline } from '@vue-leaflet/vue-leaflet'
 import L from 'leaflet'
 import pW from '@/assets/dir1.png'
@@ -12,7 +12,7 @@ import { Sensor } from '@/types/sensor'
 
 // --- STORE ---
 const sensorStore = useSensorStore()
-const { sensors, batchInterval } = storeToRefs(sensorStore)
+const { sensors, batchInterval, selectedSensors, hasSelectedSensors } = storeToRefs(sensorStore)
 
 // --- MAP STATE ---
 const zoom = ref(10)
@@ -29,11 +29,19 @@ const attribution = ref('&copy; <a href="https://www.openstreetmap.org/copyright
 const newDetectionSize = ref(Math.abs(sensorStore.detectionSize))
 const batchIntervalLocal = ref(sensorStore.batchInterval)
 const autoZoom = ref(false)
-const maxVisiblePoints = ref(100)
-const lineLength = ref(0.1)
-const planeDisplayPeriod = ref(2) // Show every 2nd point
+const maxVisiblePoints = ref(50)
+const lineLength = ref(0.05)
+const planeDisplayPeriod = ref(4)
 const showAzimuthLines = ref(true)
-const renderInterval = ref(150) // ms between renders
+
+// --- REAL-TIME CONFIG (új) ---
+const realtimeConfig = ref({
+  ...sensorStore.realtimeConfig
+})
+
+const updateRealtimeConfig = () => {
+  sensorStore.updateRealtimeConfig(realtimeConfig.value)
+}
 
 // --- DEBUG ---
 const debugInfo = ref({
@@ -47,10 +55,10 @@ const debugInfo = ref({
 // --- PERFORMANCE CACHES ---
 const planeIconsCache = new Map<string, any>()
 const azimuthLinesCache = new Map<string, number[][]>()
-const CACHE_CLEANUP_INTERVAL = 500 // Clean cache every 500 entries
+const CACHE_CLEANUP_THRESHOLD = 500
 
-// Pre-generate dot icons with better performance
-const dotIcons = ["blue","red","orange","green","cyan","magenta","yellow","purple"].map(color =>
+// --- ICONS, COLORS ---
+const dotIcons = ['blue', 'red', 'orange', 'green', 'cyan', 'magenta', 'yellow', 'purple'].map(color =>
   L.divIcon({
     className: '',
     html: `<div style="background-color:${color};width:12px;height:12px;border-radius:50%;border:1px solid white;box-shadow:0 0 2px rgba(0,0,0,0.5);"></div>`,
@@ -58,15 +66,16 @@ const dotIcons = ["blue","red","orange","green","cyan","magenta","yellow","purpl
     iconAnchor: [6, 6]
   })
 )
+const lineColors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'cyan', 'magenta']
 
-const lineColors = ["red","blue","green","orange","purple","brown","cyan","magenta"]
+// --- COMPUTED ---
+const selectedSensorCount = computed(() => selectedSensors.value.length)
 
-// --- OPTIMIZED FUNCTIONS ---
+// --- FUNCTIONS (heading, icons, lines stb.) ---
 function getHeadingFromQuaternion([q0, q1, q2, q3]: number[]): number {
   if (q0 === undefined || q1 === undefined || q2 === undefined || q3 === undefined) return 0
-
   const headingRad = Math.atan2(2 * (q0 * q3 + q1 * q2), q0 * q0 + q1 * q1 - q2 * q2 - q3 * q3)
-  let deg = headingRad * (180 / Math.PI)
+  const deg = headingRad * (180 / Math.PI)
   return deg < 0 ? deg + 360 : deg
 }
 
@@ -80,29 +89,20 @@ function getHeading(sensor: Sensor): number {
       lastDetection.quaternion.q3
     ])
   }
-
-  // Fallback to sensor level quaternion
   const { last_pos_q0, last_pos_q1, last_pos_q2, last_pos_q3 } = sensor
-  if (last_pos_q0 !== undefined && last_pos_q1 !== undefined &&
-      last_pos_q2 !== undefined && last_pos_q3 !== undefined) {
+  if ([last_pos_q0, last_pos_q1, last_pos_q2, last_pos_q3].every(v => v !== undefined)) {
     return getHeadingFromQuaternion([last_pos_q0, last_pos_q1, last_pos_q2, last_pos_q3])
   }
-
   return 0
 }
 
 function getPlaneIconById(id: number): any {
   const sensor = sensors.value[id]
   if (!sensor) return dotIcons[0]
-
   const heading = getHeading(sensor)
-  // Round to 10-degree precision for better caching
   const roundedHeading = Math.round(heading / 10) * 10
   const cacheKey = `${id}_${roundedHeading}`
-
-  if (planeIconsCache.has(cacheKey)) {
-    return planeIconsCache.get(cacheKey)
-  }
+  if (planeIconsCache.has(cacheKey)) return planeIconsCache.get(cacheKey)
 
   const icon = L.divIcon({
     className: '',
@@ -110,168 +110,151 @@ function getPlaneIconById(id: number): any {
     iconSize: [48, 48],
     iconAnchor: [24, 24]
   })
-
-  // Cache management
-  if (planeIconsCache.size > CACHE_CLEANUP_INTERVAL) {
-    const firstKey = planeIconsCache.keys().next().value
-    planeIconsCache.delete(firstKey)
+  if (planeIconsCache.size > CACHE_CLEANUP_THRESHOLD) {
+    planeIconsCache.delete(planeIconsCache.keys().next().value)
   }
-
   planeIconsCache.set(cacheKey, icon)
   debugInfo.value.cacheSize = planeIconsCache.size + azimuthLinesCache.size
   return icon
 }
 
-function computeAzimuthLine(coord: [number, number], azimuth: number, isRadians: boolean = false): number[][] {
+function computeAzimuthLine(coord: [number, number], azimuth: number, isRadians = false): number[][] {
   const cacheKey = `${coord[0].toFixed(4)}_${coord[1].toFixed(4)}_${azimuth.toFixed(3)}_${lineLength.value}`
-
-  if (azimuthLinesCache.has(cacheKey)) {
-    return azimuthLinesCache.get(cacheKey)!
-  }
-
+  if (azimuthLinesCache.has(cacheKey)) return azimuthLinesCache.get(cacheKey)!
   const [lat, lon] = coord
   const distance = lineLength.value
   const azimuthRad = isRadians ? azimuth : azimuth * (Math.PI / 180)
-
   const endLat = lat + distance * Math.cos(azimuthRad)
   const endLon = lon + distance * Math.sin(azimuthRad)
-
   const result = [[lat, lon], [endLat, endLon]]
-
-  // Cache management
-  if (azimuthLinesCache.size > CACHE_CLEANUP_INTERVAL) {
-    const firstKey = azimuthLinesCache.keys().next().value
-    azimuthLinesCache.delete(firstKey)
-  }
-
+  if (azimuthLinesCache.size > CACHE_CLEANUP_THRESHOLD) azimuthLinesCache.delete(azimuthLinesCache.keys().next().value)
   azimuthLinesCache.set(cacheKey, result)
   return result
 }
 
 function getColorByRoiOrSensor(detection: any, sensorId: number): string {
-  if (detection.roi_id !== null && detection.roi_id !== undefined) {
-    return lineColors[detection.roi_id % lineColors.length]
-  }
+  if (detection.roi_id != null) return lineColors[detection.roi_id % lineColors.length]
   return lineColors[sensorId % lineColors.length]
 }
 
-// --- MAIN DETECTION BUFFER ---
-const detectionBuffer = ref<any[]>([])
-let animFrame: number | null = null
-let lastRenderTime = 0
-
-function scheduleRender() {
-  if (animFrame) cancelAnimationFrame(animFrame)
-  animFrame = requestAnimationFrame(renderDetections)
-}
+// --- DETECTION BUFFER (OPTIMIZED) ---
+const detectionBuffer = shallowRef<Map<string, any>>(new Map())
+let renderThrottle: number | null = null
 
 function renderDetections() {
+  // Throttle render to max 60 FPS
+  if (renderThrottle) return
+  renderThrottle = setTimeout(() => {
+    renderThrottle = null
+    _doRenderDetections()
+  }, 16) // ~60 FPS
+}
+
+function _doRenderDetections () {
+  if (!leafletMap.value || !mapBounds.value) return
   const renderStart = performance.now()
-  const visible: any[] = []
-  let selectedCount = 0
-
-  // Check viewport bounds for optimization
   const bounds = mapBounds.value
+  const oldBuffer = detectionBuffer.value
+  const updatedBuffer = new Map(oldBuffer)
 
-  Object.entries(sensors.value).forEach(([id, sensor]) => {
-    if (!sensor?.is_selected || !Array.isArray(sensor.detections)) return
+  if (!hasSelectedSensors.value) {
+    // Ne töröld azonnal, csak ha explicit clear van
+    debugInfo.value.selectedSensorsCount = 0
+    return
+  }
 
-    selectedCount++
-    const sensorId = Number(id)
+  selectedSensors.value.forEach(sensor => {
+    if (!sensor?.detections) return
     const recentDetections = sensor.detections.slice(-maxVisiblePoints.value)
+    const sensorId = sensor.uav_id
 
     recentDetections.forEach((detection, idx) => {
-      if (!detection?.coordinate || !Array.isArray(detection.coordinate) || detection.coordinate.length !== 2) return
-
-      // Viewport culling for performance
+      if (!Array.isArray(detection.coordinate)) return
       if (bounds && !bounds.contains(L.latLng(detection.coordinate[0], detection.coordinate[1]))) return
 
+      const stableKey = `${sensorId}-${detection.timestamp || `idx-${idx}`}`
+      const existingItem = oldBuffer.get(stableKey)
+
+      // már létező pont → csak pozíciófrissítés
+      if (existingItem) {
+        existingItem.coordinate = detection.coordinate
+        updatedBuffer.set(stableKey, existingItem)
+        return
+      }
+
+      // új pont
       const showPlane = idx % planeDisplayPeriod.value === 0
-      const hasAzimuth = detection.azimuth !== undefined && detection.azimuth !== null
+      const hasAzimuth = detection.azimuth != null
+      const color = getColorByRoiOrSensor(detection, sensorId)
+      const dotIcon = dotIcons[sensorId % dotIcons.length]
 
       const item: any = {
-        key: `${id}-${idx}`,
+        key: stableKey,
         coordinate: detection.coordinate,
         showPlane,
-        dotIcon: dotIcons[sensorId % dotIcons.length],
-        color: getColorByRoiOrSensor(detection, sensorId)
+        dotIcon,
+        color,
+        lastUpdate: Date.now()
       }
 
-      if (showPlane) {
-        item.planeIcon = getPlaneIconById(sensorId)
-      }
-
+      if (showPlane) item.planeIcon = getPlaneIconById(sensorId)
       if (hasAzimuth && showAzimuthLines.value) {
         item.azimuthLine = computeAzimuthLine(detection.coordinate, detection.azimuth, true)
         item.hasAzimuth = true
       }
 
-      visible.push(item)
+      updatedBuffer.set(stableKey, item)
     })
   })
 
-  detectionBuffer.value = visible
-  debugInfo.value.detectionsCount = visible.length
-  debugInfo.value.selectedSensorsCount = selectedCount
-  debugInfo.value.renderTime = performance.now() - renderStart
-  lastRenderTime = performance.now()
-}
-
-// --- SETTINGS MANAGEMENT ---
-watch(batchInterval, (newVal) => {
-  batchIntervalLocal.value = newVal
-}, { immediate: true })
-
-function updateBatchInterval() {
-  const newInterval = typeof batchIntervalLocal.value === 'string'
-    ? parseFloat(batchIntervalLocal.value)
-    : Number(batchIntervalLocal.value)
-
-  if (isNaN(newInterval) || newInterval < 0.1 || newInterval > 10) {
-    console.warn('Invalid batch interval value:', batchIntervalLocal.value)
-    batchIntervalLocal.value = sensorStore.batchInterval
-    return
+  // opcionális TTL (régi detekciók eltávolítása)
+  const ttlMs = realtimeConfig.value.detectionTTL || 10000
+  const now = Date.now()
+  for (const [key, item] of updatedBuffer.entries()) {
+    if (now - (item.lastUpdate ?? 0) > ttlMs) {
+      updatedBuffer.delete(key)
+    }
   }
 
+  detectionBuffer.value = updatedBuffer
+
+  debugInfo.value.detectionsCount = updatedBuffer.size
+  debugInfo.value.selectedSensorsCount = selectedSensors.value.length
+  debugInfo.value.renderTime = performance.now() - renderStart
+}
+
+
+// Computed property a template számára
+const detectionBufferArray = computed(() => Array.from(detectionBuffer.value.values()))
+
+// --- SETTINGS HANDLING ---
+function updateBatchInterval() {
+  const newInterval = Number(batchIntervalLocal.value)
+  if (isNaN(newInterval) || newInterval < 0.01 || newInterval > 10) return
   sensorStore.$patch({ batchInterval: newInterval })
 }
 
 function updateSettings() {
   const size = newDetectionSize.value
-  if (!isNaN(size) && size > 0) {
-    sensorStore.$patch({ detectionSize: size })
-  }
+  if (!isNaN(size) && size > 0) sensorStore.$patch({ detectionSize: size })
   updateBatchInterval()
-  scheduleRender()
+  renderDetections()
 }
 
 function clearMapData() {
   sensorStore.clearDetections()
   planeIconsCache.clear()
   azimuthLinesCache.clear()
-  detectionBuffer.value = []
+  detectionBuffer.value = new Map()
   debugInfo.value.cacheSize = 0
 }
 
 function debugStore() {
-  console.log('=== HYBRID OPTIMIZED DEBUG ===')
-  console.log('Performance:', {
-    renderTime: debugInfo.value.renderTime,
-    visibleDetections: debugInfo.value.detectionsCount,
-    cacheSize: debugInfo.value.cacheSize
-  })
-  console.log('Settings:', {
-    maxVisiblePoints: maxVisiblePoints.value,
-    planeDisplayPeriod: planeDisplayPeriod.value,
-    renderInterval: renderInterval.value
-  })
-  console.log('Cache stats:', {
-    planeIcons: planeIconsCache.size,
-    azimuthLines: azimuthLinesCache.size
-  })
+  console.log('=== MAP COMPONENT DEBUG ===', debugInfo.value)
+  sensorStore.debugReactivity()
 }
 
-// --- MAP MANAGEMENT ---
+// --- MAP SETUP ---
 function updateMapView() {
   if (mapRef.value?.leafletObject) {
     leafletMap.value = mapRef.value.leafletObject
@@ -281,72 +264,44 @@ function updateMapView() {
 }
 
 function goFullscreen() {
-  if (!mapContainer.value) {
-    console.warn('Fullscreen not available')
-    return
-  }
-
-  try {
-    if (!document.fullscreenElement) {
-      if (mapContainer.value.requestFullscreen) {
-        mapContainer.value.requestFullscreen()
-      } else if (mapContainer.value.webkitRequestFullscreen) {
-        mapContainer.value.webkitRequestFullscreen()
-      }
-    } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen()
-      } else if (document.webkitExitFullscreen) {
-        document.webkitExitFullscreen()
-      }
-    }
-  } catch (e) {
-    console.error('Fullscreen error:', e)
-  }
+  if (!mapContainer.value) return
+  const el: any = mapContainer.value
+  if (!document.fullscreenElement) el.requestFullscreen?.()
+  else document.exitFullscreen?.()
 }
 
-// --- AUTO ZOOM ---
-watch(() => detectionBuffer.value, (newBuffer) => {
-  if (autoZoom.value && newBuffer.length > 0 && leafletMap.value) {
-    const lastDetection = newBuffer[newBuffer.length - 1]
-    if (lastDetection?.coordinate) {
-      leafletMap.value.setView(lastDetection.coordinate, zoom.value)
-    }
-  }
-}, { deep: false })
+function onMapReady (mapInstance: any) {
+  leafletMap.value = mapInstance
+  mapBounds.value = mapInstance.getBounds()
+  debugInfo.value.mapInitialized = true
+  renderDetections()
+}
 
-// --- LIFECYCLE ---
+// --- WATCHERS (OPTIMIZED) ---
+// ✅ Shallow watch helyett deep watch-ot használunk, de throttle-lel
+watch(sensors, () => {
+  if (hasSelectedSensors.value) {
+    renderDetections() // throttled
+  }
+}, { deep: true })
+
+watch(selectedSensors, () => {
+  renderDetections()
+}, { deep: false }) // shallow watch elegendő
+
+watch(batchInterval, val => (batchIntervalLocal.value = val), { immediate: true })
+
 onMounted(async () => {
   await nextTick()
   updateMapView()
-
-  if (leafletMap.value) {
-    leafletMap.value.on('moveend', updateMapView)
-    leafletMap.value.on('zoomend', updateMapView)
-  }
-
-  // Intelligent render loop - only render when needed
-  const renderLoop = setInterval(() => {
-    const now = performance.now()
-    if (now - lastRenderTime > renderInterval.value) {
-      scheduleRender()
-    }
-  }, renderInterval.value)
-
-  onBeforeUnmount(() => {
-    clearInterval(renderLoop)
-  })
+  leafletMap.value?.on('moveend', updateMapView)
+  leafletMap.value?.on('zoomend', updateMapView)
 })
 
 onBeforeUnmount(() => {
-  if (animFrame) cancelAnimationFrame(animFrame)
-
-  if (leafletMap.value) {
-    leafletMap.value.off('moveend', updateMapView)
-    leafletMap.value.off('zoomend', updateMapView)
-  }
-
-  // Clear caches
+  if (renderThrottle) clearTimeout(renderThrottle)
+  leafletMap.value?.off('moveend', updateMapView)
+  leafletMap.value?.off('zoomend', updateMapView)
   planeIconsCache.clear()
   azimuthLinesCache.clear()
 })
@@ -356,11 +311,11 @@ onBeforeUnmount(() => {
   <div class="flex flex-col w-full h-[calc(100vh-5rem)] rounded-xl overflow-hidden">
     <!-- Map Container -->
     <div ref="mapContainer" class="flex-[3] border border-slate-700 rounded-xl overflow-hidden relative">
-      <l-map ref="mapRef" :zoom="zoom" :center="center" class="w-full h-full">
+      <l-map ref="mapRef" :zoom="zoom" :center="center" @ready="onMapReady" class="w-full h-full">
         <l-tile-layer :url="url" :attribution="attribution" />
 
-        <!-- Optimized Debug Info -->
-        <div class="absolute top-2 left-2 bg-slate-800/90 text-gray-200 p-2 rounded shadow z-10 text-xs border border-slate-600">
+        <!-- Debug Info -->
+        <div class="absolute top-2 left-2 bg-slate-800/90 text-gray-200 p-2 rounded shadow z-[1000] text-xs border border-slate-600">
           <div>Map: {{ debugInfo.mapInitialized ? '✅' : '❌' }}</div>
           <div>Sensors: {{ debugInfo.selectedSensorsCount }}</div>
           <div>Detections: {{ debugInfo.detectionsCount }}</div>
@@ -368,16 +323,13 @@ onBeforeUnmount(() => {
           <div>Cache: {{ debugInfo.cacheSize }}</div>
         </div>
 
-        <!-- Highly Optimized Marker Rendering -->
-        <template v-for="detection in detectionBuffer" :key="detection.key">
-          <!-- Plane markers (reduced frequency) -->
+        <!-- Detection markers - OPTIMIZED -->
+        <template v-for="detection in detectionBufferArray" :key="detection.key">
           <l-marker
             v-if="detection.showPlane && detection.planeIcon"
             :lat-lng="detection.coordinate"
             :icon="detection.planeIcon"
           />
-
-          <!-- Azimuth lines (conditional) -->
           <l-polyline
             v-if="detection.hasAzimuth && detection.azimuthLine"
             :lat-lngs="detection.azimuthLine"
@@ -385,8 +337,6 @@ onBeforeUnmount(() => {
             :weight="2"
             :opacity="0.7"
           />
-
-          <!-- Detection dots (always visible) -->
           <l-marker
             :lat-lng="detection.coordinate"
             :icon="detection.dotIcon"
@@ -395,122 +345,69 @@ onBeforeUnmount(() => {
       </l-map>
     </div>
 
-    <!-- Streamlined Controls -->
+    <!-- Controls -->
     <div class="flex-[1] mt-4 px-4 overflow-auto">
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-700">
-
+        <!-- existing controls -->
         <div>
-          <label class="font-semibold text-gray-300">Max points</label>
-          <input
-            type="number"
-            v-model="maxVisiblePoints"
-            @change="updateSettings"
-            min="10"
-            max="500"
-            class="w-full border border-slate-600 rounded px-2 py-1 mt-1 bg-slate-900 text-gray-100"
-          />
+          <label class="font-semibold text-gray-300 text-sm">Max points</label>
+          <input type="number" v-model.number="maxVisiblePoints" @change="updateSettings"
+                 class="w-full border border-slate-600 rounded px-2 py-1 mt-1 bg-slate-900 text-gray-100 text-sm" />
         </div>
-
         <div>
-          <label class="font-semibold text-gray-300">Plane period</label>
-          <input
-            type="number"
-            v-model="planeDisplayPeriod"
-            @change="updateSettings"
-            min="1"
-            max="10"
-            class="w-full border border-slate-600 rounded px-2 py-1 mt-1 bg-slate-900 text-gray-100"
-          />
+          <label class="font-semibold text-gray-300 text-sm">Plane period</label>
+          <input type="number" v-model.number="planeDisplayPeriod" @change="updateSettings"
+                 class="w-full border border-slate-600 rounded px-2 py-1 mt-1 bg-slate-900 text-gray-100 text-sm" />
         </div>
-
         <div>
-          <label class="font-semibold text-gray-300">Line length</label>
-          <input
-            type="number"
-            v-model="lineLength"
-            @change="updateSettings"
-            step="0.01"
-            min="0.01"
-            max="1"
-            class="w-full border border-slate-600 rounded px-2 py-1 mt-1 bg-slate-900 text-gray-100"
-          />
+          <label class="font-semibold text-gray-300 text-sm">Line length</label>
+          <input type="number" v-model.number="lineLength" @change="updateSettings"
+                 step="0.01" min="0.01" max="1"
+                 class="w-full border border-slate-600 rounded px-2 py-1 mt-1 bg-slate-900 text-gray-100 text-sm" />
         </div>
-
         <div>
-          <label class="font-semibold text-gray-300">Render interval (ms)</label>
-          <input
-            type="number"
-            v-model="renderInterval"
-            min="50"
-            max="1000"
-            step="50"
-            class="w-full border border-slate-600 rounded px-2 py-1 mt-1 bg-slate-900 text-gray-100"
-          />
+          <label class="font-semibold text-gray-300 text-sm">Batch interval (s)</label>
+          <input type="number" step="0.01" min="0.01" max="10"
+                 v-model.number="batchIntervalLocal" @change="updateBatchInterval"
+                 class="w-full border border-slate-600 rounded px-2 py-1 mt-1 bg-slate-900 text-gray-100 text-sm" />
         </div>
+      </div>
 
-        <div>
-          <label class="font-semibold text-gray-300">Batch interval (s)</label>
-          <input
-            type="number"
-            step="0.01"
-            min="0.05"
-            max="10"
-            v-model="batchIntervalLocal"
-            @change="updateBatchInterval"
-            class="w-full border border-slate-600 rounded px-2 py-1 mt-1 bg-slate-900 text-gray-100"
-          />
-        </div>
+      <!-- ✨ REAL-TIME SETTINGS PANEL -->
+      <div class="mt-4 bg-slate-800 p-4 rounded-xl border border-slate-700">
+        <h3 class="text-lg font-bold mb-3 text-gray-100">Real-time Settings</h3>
 
-        <div class="flex flex-col gap-2">
-          <div class="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="autoz"
-              v-model="autoZoom"
-              class="h-4 w-4 text-cyan-500 border-slate-600 bg-slate-800 rounded focus:ring-cyan-500"
-            />
-            <label for="autoz" class="text-sm text-gray-300">Auto zoom</label>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div>
+            <label class="block text-sm mb-1 text-gray-300">Max Latency (ms)</label>
+            <input v-model.number="realtimeConfig.maxLatencyMs" type="number" @change="updateRealtimeConfig"
+                   class="w-full px-2 py-1 bg-slate-700 rounded text-gray-100" />
           </div>
 
-          <div class="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="azlines"
-              v-model="showAzimuthLines"
-              class="h-4 w-4 text-cyan-500 border-slate-600 bg-slate-800 rounded focus:ring-cyan-500"
-            />
-            <label for="azlines" class="text-sm text-gray-300">Azimuth lines</label>
+          <div>
+            <label class="block text-sm mb-1 text-gray-300">Detection TTL (ms)</label>
+            <input v-model.number="realtimeConfig.detectionTTL" type="number" @change="updateRealtimeConfig"
+                   class="w-full px-2 py-1 bg-slate-700 rounded text-gray-100" />
           </div>
-        </div>
 
-        <div class="col-span-1 md:col-span-2 lg:col-span-3 grid grid-cols-3 gap-2">
-          <button
-            @click="clearMapData"
-            class="bg-red-600 hover:bg-red-500 text-white px-3 py-2 rounded-xl transition-colors text-sm"
-          >
-            Clear Map
-          </button>
+          <div>
+            <label class="block text-sm mb-1 text-gray-300">Buffer Size</label>
+            <input v-model.number="realtimeConfig.circularBufferSize" type="number" @change="updateRealtimeConfig"
+                   class="w-full px-2 py-1 bg-slate-700 rounded text-gray-100" />
+          </div>
 
-          <button
-            @click="debugStore"
-            class="bg-gray-600 hover:bg-gray-500 text-white px-3 py-2 rounded-xl transition-colors text-sm"
-          >
-            Debug
-          </button>
-
-          <button
-            @click="goFullscreen"
-            class="bg-cyan-600 hover:bg-cyan-500 text-white px-3 py-2 rounded-xl transition-colors text-sm"
-          >
-            Fullscreen
-          </button>
-        </div>
-
-        <div class="col-span-1 md:col-span-2 lg:col-span-3">
-          <div class="text-sm bg-slate-900 p-2 rounded border border-slate-700 text-gray-200">
-            <div>Stream: {{ sensorStore.selectedSensor ? '🟢 Active' : '🔴 Inactive' }}</div>
-            <div>Interval: {{ sensorStore.batchInterval }}s | Render: {{ renderInterval }}ms</div>
-            <div>Performance: {{ debugInfo.renderTime.toFixed(1) }}ms | Cache: {{ debugInfo.cacheSize }}</div>
+          <div class="flex items-center gap-2 mt-6">
+            <input v-model="realtimeConfig.enableStrictRealtime" type="checkbox" @change="updateRealtimeConfig"
+                   class="h-4 w-4 text-cyan-500 border-slate-600 bg-slate-800 rounded focus:ring-cyan-500" />
+            <span class="text-sm text-gray-300">Enable Strict Real-time Mode</span>
+          </div>
+          <div class="mt-4 flex justify-end">
+            <button
+              @click="clearMapData"
+              class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg shadow border border-red-800 transition"
+            >
+              🧹 Clear All Detections
+            </button>
           </div>
         </div>
       </div>

@@ -516,25 +516,25 @@ class ClientWindow(tkinter.Frame):
         styles = [
             (
                 r"^#[a-zA-Z\s\d\?\!\.]+$",
-                "Header 1",
+                "SgxHeader 1",
                 ("TkDefaultFont", 24, "bold"),
                 "#000066",
             ),
             (
                 r"^##[a-zA-Z\s\d\?\!\.]+$",
-                "Header 2",
+                "SgxHeader 2",
                 ("TkDefaultFont", 16, "bold"),
                 "#000066",
             ),
             (
                 r"^###[a-zA-Z\s\d\?\!\.]+$",
-                "Header 3",
+                "SgxHeader 3",
                 ("TkDefaultFont", 12, "bold"),
                 "#000066",
             ),
             (
                 r"^####[a-zA-Z\s\d\?\!\.]+$",
-                "Header 4",
+                "SgxHeader 4",
                 ("TkDefaultFont", 11, "bold"),
                 "#000066",
             ),

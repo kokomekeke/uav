@@ -25,4 +25,5 @@ export interface Measurement {
 export interface SensorItem {
   id: number
   Measurement: Measurement
+  server_time: number
 }

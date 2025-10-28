@@ -2,6 +2,7 @@
 const defaultTheme = require('tailwindcss/defaultTheme')
 
 module.exports = {
+  darkMode: 'class',
   content: [
     './index.html',
     './src/**/*.{js,ts,jsx,tsx,vue}'
@@ -34,7 +35,7 @@ module.exports = {
           '50%': { boxShadow: '0 0 20px #ff00ff' }
         }
       }
-    }
+    },
   },
   plugins: [
     require('@tailwindcss/typography'),
