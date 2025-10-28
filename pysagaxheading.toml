@@ -6,10 +6,17 @@
 # source="Static"
 # defaults=[["lat", 47.5226], ["lon", 19.0646], ["angle", 120]]
 
-
+# main dt46
 # source="FlightInfo"
 # defaults=[["address", "192.168.0.10"], ["port", 5558]]
 
+# m600 drone
+# source="FlightInfo"
+# defaults=[["address", "192.168.0.14"], ["port", 5558]]
+
+# rental dt46
+# source="FlightInfo"
+# defaults=[["address", "192.168.0.15"], ["port", 5558]]
 
 # source="Encoder"
 # defaults=[["port", "COM6"], ["lat", 47.5226], ["lon", 19.0646]]
