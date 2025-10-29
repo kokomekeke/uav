@@ -189,6 +189,61 @@ def comintdetection_detail(id):
     response_schema=GeoJSONSchema,
     has_id_in_path=True,
 )
+@api.route("/comintgeoloc/geojson/raw/list_last/<int:limit>", methods=["GET"])
+def comintevent_raw_geojson(limit):
+    """
+    Return a geojson of the most recent raw (unfiltered) geolocations.
+    limit sets the number of returned points.
+    roi URL parameter filters the points for the given roi_ids.
+    if stride URL parameter is specified it only returns every n-th row of the geolocation table.
+
+    Usage with limit=1000, roi=[10, 12, 15] and stride=5
+        .../geojson/list_last/1000?roi=10@&roi=12&roi=15&stride=5
+
+    """
+    stride = flask.request.args.get("stride", 1, type=int)
+    roi_ids = flask.request.args.getlist("roi_id", type=int)
+
+    sql = """
+    WITH ranked AS (
+        SELECT *
+        FROM comintgeoloc
+        {where_clause}
+    )
+    SELECT *
+    FROM ranked
+    WHERE geoloc_id % :stride = 0 
+    ORDER BY geoloc_id DESC
+    LIMIT :limit
+    """
+
+    where_clause = "WHERE roi_identifier IN :roi_ids" if roi_ids else ""
+
+    sql = sql.format(where_clause=where_clause)
+    query = db.session.query(ComIntGeoLocEntity).from_statement(text(sql))
+
+    params = {"stride": stride, "limit": limit}
+    if roi_ids:
+        params["roi_ids"] = tuple(roi_ids)
+
+    points = query.params(**params).all()
+
+    return jsonify(
+        {
+            "type": "FeatureCollection",
+            "name": "ComIntGeoLoc",
+            "crs": {
+                "type": "name",
+                "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"},
+            },
+            "features": [geojson_feature_from_geoloc(point) for point in points],
+        }
+    )
+
+@open_api.get(
+    response_schema=GeoJSONSchema,
+    has_id_in_path=True,
+)
 @api.route("/comintgeoloc/geojson/list_last/<int:limit>", methods=["GET"])
 def comintevent_geojson(limit):
     """
@@ -207,7 +262,7 @@ def comintevent_geojson(limit):
     sql = """
     WITH ranked AS (
         SELECT *
-        FROM comintgeoloc
+        FROM comintfilteredgeoloc
         {where_clause}
     )
     SELECT *

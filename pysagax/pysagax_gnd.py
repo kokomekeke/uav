@@ -51,6 +51,14 @@ class Commander:
         level: str,
         db_url: str,
         initialize_db: bool,
+        geoloc_filter_initial_uncertainty,
+        geoloc_filter_process_noise,
+        geoloc_filter_measurement_noise,
+        geoloc_filter_window_span,
+        geoloc_filter_to_use,
+        geoloc_apm_use_unfiltered,
+        single_source_geolocation,
+        single_source_geoloc_timeout,
     ) -> None:
 
         self._logger = getLogger("Commander")
@@ -82,7 +90,18 @@ class Commander:
         )
         # self._commandengine = CommandEngine(level=level)
         self._monitoring = Monitoring(level=level)
-        self._ppgeoloc = PPGeoLoc(level=level, db=self._db)
+        self._ppgeoloc = PPGeoLoc(
+            level=level,
+            db=self._db,
+            geoloc_filter_initial_uncertainty=geoloc_filter_initial_uncertainty,
+            geoloc_filter_process_noise=geoloc_filter_process_noise,
+            geoloc_filter_measurement_noise=geoloc_filter_measurement_noise,
+            geoloc_filter_window_span=geoloc_filter_window_span,
+            geoloc_filter_to_use=geoloc_filter_to_use,
+            geoloc_apm_use_unfiltered = geoloc_apm_use_unfiltered,
+            single_source_geolocation=single_source_geolocation,
+            single_source_geoloc_timeout=single_source_geoloc_timeout,
+        )
 
         self._apm_messenger = APMMessenger(
             level=level,
@@ -168,6 +187,16 @@ class Commander:
         sys.exit(0)
 
 
+def parse_vector(ctx, param, value):
+    """parse CLi argument vectors"""
+    return [float(x) for x in value.split(",")]
+
+
+def parse_matrix(ctx, param, value):
+    """parse CLi argument matrices"""
+    return [[float(x) for x in row.split(",")] for row in value.split(";")]
+
+
 @click.command()
 @click.version_option(version=__version__, prog_name="PysagaxGND")
 @click.option(
@@ -195,11 +224,62 @@ class Commander:
     show_default=True,
 )
 @click.option("--initialize-db", is_flag=True)
+@click.option(
+    "--geoloc-filter-initial-uncertainty",
+    callback=parse_matrix,
+    default="1,0,0,0;0,1,0,0;0,0,1,0;0,0,0,1",
+    show_default=True,
+    help="Geoloc: Kalman filter initial uncertainty matrix",
+)
+@click.option(
+    "--geoloc-filter-process-noise",
+    callback=parse_matrix,
+    default="0.1,0,0,0;0,0.1,0,0;0,0,0.01,0;0,0,0,0.01",
+    show_default=True,
+    help="Geoloc: Kalman filter process noisematrix",
+)
+@click.option(
+    "--geoloc-filter-measurement-noise",
+    callback=parse_matrix,
+    default="10,0;0,10",
+    show_default=True,
+    help="Geoloc: Kalman filter measurement noise matrix",
+)
+@click.option(
+    "--geoloc-filter-window-span",
+    default=10.0,
+    show_default=True,
+    help="Geoloc: window for average filters",
+)
+@click.option(
+    "--geoloc-filter-to-use",
+    default=1,
+    show_default=True,
+    help="Geoloc: which filter to use",
+)
+@click.option("--geoloc-apm-use-unfiltered", is_flag=True)
+@click.option("--single-source-geolocation",is_flag=True,
+    help="Geoloc: use single source",
+)
+@click.option(
+    "--single-source-geoloc-timeout",
+    default=30.0,
+    show_default=True,
+    help="Geoloc: timespan to wait between detections for single source geolocation",
+)
 def main(
     db_commit_frequency: float,
     level: str,
     db_url: str,
     initialize_db: bool,
+    geoloc_filter_initial_uncertainty,
+    geoloc_filter_process_noise,
+    geoloc_filter_measurement_noise,
+    geoloc_filter_window_span,
+    geoloc_filter_to_use,
+    geoloc_apm_use_unfiltered,
+    single_source_geolocation,
+    single_source_geoloc_timeout,
 ) -> None:
     """Root command of CLI"""
 
@@ -212,7 +292,21 @@ def main(
     # Configure logging format
     setup_logging(level=level)
 
-    commander = Commander(db_commit_frequency, level, db_url, initialize_db)
+    # TODO: Implement config file
+    commander = Commander(
+        db_commit_frequency,
+        level,
+        db_url,
+        initialize_db,
+        geoloc_filter_initial_uncertainty,
+        geoloc_filter_process_noise,
+        geoloc_filter_measurement_noise,
+        geoloc_filter_window_span,
+        geoloc_filter_to_use,
+        geoloc_apm_use_unfiltered,
+        single_source_geolocation,
+        single_source_geoloc_timeout,
+    )
     if initialize_db:
         return
     commander.start()

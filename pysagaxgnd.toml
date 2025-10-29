@@ -1,0 +1,12 @@
+
+#geoloc_filter_initial_uncertainty = 
+#geoloc_filter_process_noise = 
+#geoloc_filter_measurement_noise=
+#geoloc_filter_window_span =
+
+geoloc_filter_window_span = 30
+geoloc_filter_to_use = 1
+geoloc_apm_use_unfiltered = false
+
+#single_source_geolocation=true
+singe_source_geoloc_timeout=30
