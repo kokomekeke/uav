@@ -132,7 +132,11 @@ enum Instruction {
     AUTO_CALIBRATION_TRIGGER = 43;
     CS_RELOAD_CONFIG = 44;
     CS_WRITE_SAMPLE_SHIFT = 45;
-
+    CS_ACTIVATE_DEMODULATION = 46;
+    CS_DEACTIVATE_DEMODULATION = 47;
+    CS_START_DEMODULATION_RECORD = 48;
+    CS_STOP_DEMODULATION_RECORD = 49;
+    
     // Forward the message to the Aviation Processing Module in Altiss
     //   parameter: msg_to_apm [MessageToAPM]
     //   response:  success [bool]
