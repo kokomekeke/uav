@@ -10,7 +10,7 @@ import geographiclib.geodesic
 from pysagax.common.loop import Loop
 
 
-from pysagax.gnd.database import ComIntDatabase, ComIntDetectionEntity, UAVEntity, ComIntEventEntity, ComIntGeoLocEntity
+from pysagax.gnd.database import ComIntDatabase, ComIntDetectionEntity, UAVEntity, ComIntEventEntity, ComIntGeoLocEntity, ComIntFilteredGeoLocEntity
 
 
 from typing import Any, Callable, Optional
@@ -20,12 +20,32 @@ from pysagax.util.mat import normalize_angle
 import pysagax.message.data_pb2 as proto_data
 from pysagax.util.queue_put import queue_put
 
+from pysagax.gnd.ppgeolocfilter import *
+
+
+AVAILABLE_FILTERS = {
+    0: RecursiveAverageFilter,
+    1: MovingWindowAverage,
+    2: KalmanFilter1,
+    3: KalmanFilter1B,
+    4: KalmanFilter2,
+    5: KalmanFilter2B,
+    6: KalmanFilter3
+}
 class PPGeoLoc(Loop):
     """Background process for calculation the geolocation data for the ComInt events"""
 
     def __init__(
         self,
         db: ComIntDatabase,
+        geoloc_filter_initial_uncertainty,
+        geoloc_filter_process_noise,
+        geoloc_filter_measurement_noise,
+        geoloc_filter_window_span,
+        geoloc_filter_to_use,
+        geoloc_apm_use_unfiltered,
+        single_source_geolocation,
+        single_source_geoloc_timeout,
         *args,
         **kwargs,
     ) -> None:
@@ -36,6 +56,32 @@ class PPGeoLoc(Loop):
         self._app: Optional[Any] = None
 
         self._apm_queue: Optional[Queue]= None
+
+        self.geoloc_filter_initial_uncertainty=geoloc_filter_initial_uncertainty
+        self.geoloc_filter_process_noise=geoloc_filter_process_noise
+        self.geoloc_filter_measurement_noise=geoloc_filter_measurement_noise
+        self.geoloc_filter_window_span=geoloc_filter_window_span
+        self.geoloc_filter_to_use=geoloc_filter_to_use
+        self.use_unfiltered = geoloc_apm_use_unfiltered
+
+        self._geolocation_filters: dict[int, KalmanFilter1] = {} # dict of roi_id -> KalmanFilter instance
+
+        self.single_source_geolocation = single_source_geolocation
+        self.single_source_geoloc_timeout = single_source_geoloc_timeout # TODO: config file
+
+
+
+        self._logger.critical(
+            f"Geolocation initialized: \n"
+            f"\n\tgeoloc_filter_initial_uncertainty={self.geoloc_filter_initial_uncertainty}"
+            f"\n\tgeoloc_filter_process_noise={self.geoloc_filter_process_noise}"
+            f"\n\tgeoloc_filter_measurement_noise={self.geoloc_filter_measurement_noise}"
+            f"\n\tgeoloc_filter_window_span={self.geoloc_filter_window_span}"
+            f"\n\tgeoloc_filter_to_use={self.geoloc_filter_to_use}"
+            f"\n\tapm_use_unfiltered={self.use_unfiltered}"
+            f"\n\tsingle_source_geolocation={self.single_source_geolocation}"
+            f"\n\tsingle_source_geoloc_timeout={self.single_source_geoloc_timeout}"
+        )
 
     def __call__(
         self,
@@ -57,7 +103,8 @@ class PPGeoLoc(Loop):
         from sqlalchemy import and_, func
         from datetime import datetime, timedelta
 
-
+        if self.single_source_geoloc_timeout:
+            threshold_seconds = 10
         # print("PAIR")
             # Aliases for self-join
         start_time = time.time()
@@ -71,15 +118,27 @@ class PPGeoLoc(Loop):
         # Query to find pairs
         # query = self._db.session.query(A, B).filter(
         # print(1, time.time()-start_time)
-        query = self._db.query(A, B).filter(
-            and_(
-                A.uav_id != B.uav_id,         # Different uav_id
-                A.roi_identifier == B.roi_identifier,           # Same roi_id
-                func.abs(func.extract('epoch', A.timestamp) - func.extract('epoch', B.timestamp)) < 1,  # Time difference < 1 second
-                A.timestamp > threshold_time,              # A.time is more recent than threshold
-                B.timestamp > threshold_time,               # B.time is more recent than threshold
+        if not self.single_source_geolocation:
+            query = self._db.query(A, B).filter(
+                and_(
+                    A.uav_id != B.uav_id,         # Different uav_id
+                    A.roi_identifier == B.roi_identifier,           # Same roi_id
+                    func.abs(func.extract('epoch', A.timestamp) - func.extract('epoch', B.timestamp)) < 1,  # Time difference < 1 second
+                    A.timestamp > threshold_time,              # A.time is more recent than threshold
+                    B.timestamp > threshold_time,               # B.time is more recent than threshold
+                )
             )
-        )
+        else:
+            query = self._db.query(A, B).filter(
+                and_(
+                    A.uav_id == B.uav_id,         # Same uav_id
+                    A.roi_identifier == B.roi_identifier,           # Same roi_id
+                    func.abs(func.extract('epoch', A.timestamp) - func.extract('epoch', B.timestamp)) > self.single_source_geoloc_timeout,  # Time difference > single_source_geoloc_timeout
+                    A.timestamp > threshold_time,              # A.time is more recent than threshold
+                    B.timestamp > threshold_time - timedelta(seconds=self.single_source_geoloc_timeout),               # B.time is more recent than threshold - timeout
+                )
+            )
+
         # .order_by(A.detection_id).order_by(
         #     -func.abs(func.extract('epoch', A.timestamp) - func.extract('epoch', B.timestamp))
         # ).limit(200)
@@ -131,7 +190,10 @@ class PPGeoLoc(Loop):
                 self._logger.debug(f"NO INTERSECITÁON a1={azim1:2f}, a1'={azim1_back}, a2={azim2:2f}, a2'={azim2_back:2f}", )
                 return [float("nan")]*2 #the azimut lines dont intersect (needs to be geometrically checked)
 
-            error = nautipy.haversine(target, nautipy.Pos(lat_gt, lon_gt)) * 1000
+
+            distance = nautipy.haversine(target, p1) # distance from p1 to target geolocation
+            if distance > 20:
+                return [float("nan")]*2
             return target.lat, target.lon#, error #measured lat, lon, error in meters
         
         def triangulate_geographiclib(lat1, lon1, azim1, lat2, lon2, azim2):
@@ -380,6 +442,67 @@ class PPGeoLoc(Loop):
         
         self._db.add(new_geoloc)
         self._db.commit()
+
+    def _filter_geolocation(self, d1:ComIntDetectionEntity, d2:ComIntDetectionEntity, target_lat, target_lon):
+        """
+        Applies separate Kálmán filtering to the geolocation data by the roi_ids
+        Retruns (latitude, longitude, heading, speed, roi_id, timestamp) tuple 
+        where heading is in radians from North and speed is in meters/seconds
+        """
+        roi_id = d1.roi_identifier
+        time_diff = d1.timestamp - d2.timestamp
+        timestamp = d2.timestamp + time_diff /2
+
+        if (roi_id not in self._geolocation_filters.keys() 
+            or (self._geolocation_filters[roi_id].last_timestamp is not None and
+                timestamp.timestamp() - self._geolocation_filters[roi_id].last_timestamp.timestamp() > 30)
+        ):
+            # init filter if
+            #   no filter has been initialized for the given roi id
+            #   or the existing filter has not been updated for more than 30 seconds
+            # TODO: if two or more radios share the same frequency use separate filters 
+        
+            self._logger.info(f"New Kalman filter initialized for roi_id {roi_id}")
+
+            self._geolocation_filters[roi_id] = AVAILABLE_FILTERS[self.geoloc_filter_to_use]( 
+                initial_state = [target_lat, target_lon, 0, 0], 
+                initial_uncertainty = self.geoloc_filter_initial_uncertainty,
+                process_noise = self.geoloc_filter_process_noise, 
+                measurement_noise = self.geoloc_filter_measurement_noise,
+                initial_timestamp=timestamp,
+                window_span = self.geoloc_filter_window_span,
+
+            )
+
+            return[target_lat, target_lon, 0, 0, roi_id, timestamp]
+        
+        self._geolocation_filters[roi_id].update([target_lat, target_lon], timestamp)
+        flat, flon, fvlat, fvlon = self._geolocation_filters[roi_id].get_state()
+
+        # TODO: convert lattitude arch speeds [°/s] to m/s and heading from North
+        heading = 0
+        speed = 0
+        return flat, flon, heading, speed, roi_id, timestamp
+
+        
+
+    def _save_filtered_results(self, lat, lon, heading, speed, roi_id, timestamp):
+        """Save geolocation data to DB"""
+
+        new_geoloc = ComIntFilteredGeoLocEntity()
+        # TODO: define event_id, measurement_id, etc. in table definition and fill them here
+        
+
+        new_geoloc.roi_identifier = roi_id
+        new_geoloc.lat = lat
+        new_geoloc.lon = lon
+        new_geoloc.heading = heading
+        new_geoloc.speed = speed
+        new_geoloc.timestamp = timestamp
+        
+        self._db.add(new_geoloc)
+        self._db.commit()
+
    
     def _loop(self) -> None:
         time.sleep(0.1)
@@ -393,9 +516,17 @@ class PPGeoLoc(Loop):
                 target_lat, target_lon = self._triangulate(d1, d2)
                 self._save_results(d1, d2, target_lat, target_lon)
 
-                # TODO: provide proper data to APMcomm.
-                roi_id = 0 # TODO
-                ts = 0 # TODO : type=??
-                queue_put(self._apm_queue, (roi_id, ts, target_lat, target_lon),
-                            0, self._logger)
+                
+                if np.isnan(target_lat) or np.isnan(target_lon):
+                    continue
+                flat, flon, heading, speed, roi_id, ts = self._filter_geolocation(d1, d2, target_lat, target_lon)
+                self._save_filtered_results(flat, flon, heading, speed, roi_id, ts)
+    
+                if self.use_unfiltered:
+                    queue_put(self._apm_queue, (roi_id, ts, target_lat, target_lon),
+                              0, self._logger)
+                else:
+                    queue_put(self._apm_queue, (roi_id, ts, flat, flon),
+                              0, self._logger)
+
         
