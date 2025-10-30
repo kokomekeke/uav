@@ -22,7 +22,10 @@ const leafletMap = shallowRef(null)
 const mapBounds = shallowRef(null)
 const mapContainer = ref(null)
 
+//MAP SOURCE
 const url = ref('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
+// const url = "public/tiles/{z}/{x}/{y}.png"
+// const url = ref('/tiles/{z}/{x}/{y}.png')
 const attribution = ref('&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors')
 
 // --- SETTINGS ---

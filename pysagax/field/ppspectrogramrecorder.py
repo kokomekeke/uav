@@ -203,3 +203,6 @@ class PPSpectrogramRecorder(Loop):
             self._put_packet(packet)
         except queue.Empty:
             pass
+
+
+        # TODO: no space left on device
