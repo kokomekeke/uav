@@ -37,7 +37,7 @@ const lineLength = ref(0.05)
 const planeDisplayPeriod = ref(4)
 const showAzimuthLines = ref(true)
 
-// --- REAL-TIME CONFIG (új) ---
+// --- REAL-TIME CONFIG ---
 const realtimeConfig = ref({
   ...sensorStore.realtimeConfig
 })
@@ -75,6 +75,11 @@ const lineColors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'cyan',
 const selectedSensorCount = computed(() => selectedSensors.value.length)
 
 // --- FUNCTIONS (heading, icons, lines stb.) ---
+
+/**
+ * ✅ Heading számítás quaternion-ből
+ * A Measurement.quaternion egy repeated float (tömb)
+ */
 function getHeadingFromQuaternion([q0, q1, q2, q3]: number[]): number {
   if (q0 === undefined || q1 === undefined || q2 === undefined || q3 === undefined) return 0
   const headingRad = Math.atan2(2 * (q0 * q3 + q1 * q2), q0 * q0 + q1 * q1 - q2 * q2 - q3 * q3)
@@ -82,7 +87,13 @@ function getHeadingFromQuaternion([q0, q1, q2, q3]: number[]): number {
   return deg < 0 ? deg + 360 : deg
 }
 
+/**
+ * ✅ Szenzor heading lekérése
+ * 1. Először a legutóbbi detectionből próbálja (worker által feldolgozott quaternion)
+ * 2. Ha nincs, akkor a szenzor utolsó ismert quaternion-jéből
+ */
 function getHeading(sensor: Sensor): number {
+  // 1. Legutóbbi detection quaternion-ja (feldolgozott adat a workerből)
   const lastDetection = sensor.detections?.at(-1)
   if (lastDetection?.quaternion) {
     return getHeadingFromQuaternion([
@@ -92,10 +103,13 @@ function getHeading(sensor: Sensor): number {
       lastDetection.quaternion.q3
     ])
   }
+
+  // 2. Szenzor saját quaternion-ja (fallback)
   const { last_pos_q0, last_pos_q1, last_pos_q2, last_pos_q3 } = sensor
   if ([last_pos_q0, last_pos_q1, last_pos_q2, last_pos_q3].every(v => v !== undefined)) {
     return getHeadingFromQuaternion([last_pos_q0, last_pos_q1, last_pos_q2, last_pos_q3])
   }
+
   return 0
 }
 
@@ -121,16 +135,24 @@ function getPlaneIconById(id: number): any {
   return icon
 }
 
+/**
+ * ✅ Azimut vonal számítása
+ * Az azimuth már radiánban jön a detectionből (azimuth mező)
+ */
 function computeAzimuthLine(coord: [number, number], azimuth: number, isRadians = false): number[][] {
   const cacheKey = `${coord[0].toFixed(4)}_${coord[1].toFixed(4)}_${azimuth.toFixed(3)}_${lineLength.value}`
   if (azimuthLinesCache.has(cacheKey)) return azimuthLinesCache.get(cacheKey)!
+
   const [lat, lon] = coord
   const distance = lineLength.value
   const azimuthRad = isRadians ? azimuth : azimuth * (Math.PI / 180)
   const endLat = lat + distance * Math.cos(azimuthRad)
   const endLon = lon + distance * Math.sin(azimuthRad)
   const result = [[lat, lon], [endLat, endLon]]
-  if (azimuthLinesCache.size > CACHE_CLEANUP_THRESHOLD) azimuthLinesCache.delete(azimuthLinesCache.keys().next().value)
+
+  if (azimuthLinesCache.size > CACHE_CLEANUP_THRESHOLD) {
+    azimuthLinesCache.delete(azimuthLinesCache.keys().next().value)
+  }
   azimuthLinesCache.set(cacheKey, result)
   return result
 }
@@ -161,7 +183,6 @@ function _doRenderDetections () {
   const updatedBuffer = new Map(oldBuffer)
 
   if (!hasSelectedSensors.value) {
-    // Ne töröld azonnal, csak ha explicit clear van
     debugInfo.value.selectedSensorsCount = 0
     return
   }
@@ -172,20 +193,21 @@ function _doRenderDetections () {
     const sensorId = sensor.uav_id
 
     recentDetections.forEach((detection, idx) => {
+      // ✅ A coordinate már a workerben ki van számítva
       if (!Array.isArray(detection.coordinate)) return
       if (bounds && !bounds.contains(L.latLng(detection.coordinate[0], detection.coordinate[1]))) return
 
       const stableKey = `${sensorId}-${detection.timestamp || `idx-${idx}`}`
       const existingItem = oldBuffer.get(stableKey)
 
-      // már létező pont → csak pozíciófrissítés
+      // Már létező pont → csak pozíciófrissítés
       if (existingItem) {
         existingItem.coordinate = detection.coordinate
         updatedBuffer.set(stableKey, existingItem)
         return
       }
 
-      // új pont
+      // Új pont
       const showPlane = idx % planeDisplayPeriod.value === 0
       const hasAzimuth = detection.azimuth != null
       const color = getColorByRoiOrSensor(detection, sensorId)
@@ -201,6 +223,8 @@ function _doRenderDetections () {
       }
 
       if (showPlane) item.planeIcon = getPlaneIconById(sensorId)
+
+      // ✅ Az azimuth már radiánban van
       if (hasAzimuth && showAzimuthLines.value) {
         item.azimuthLine = computeAzimuthLine(detection.coordinate, detection.azimuth, true)
         item.hasAzimuth = true
@@ -210,7 +234,7 @@ function _doRenderDetections () {
     })
   })
 
-  // opcionális TTL (régi detekciók eltávolítása)
+  // Opcionális TTL (régi detekciók eltávolítása)
   const ttlMs = realtimeConfig.value.detectionTTL || 10000
   const now = Date.now()
   for (const [key, item] of updatedBuffer.entries()) {
@@ -225,7 +249,6 @@ function _doRenderDetections () {
   debugInfo.value.selectedSensorsCount = selectedSensors.value.length
   debugInfo.value.renderTime = performance.now() - renderStart
 }
-
 
 // Computed property a template számára
 const detectionBufferArray = computed(() => Array.from(detectionBuffer.value.values()))
@@ -281,7 +304,6 @@ function onMapReady (mapInstance: any) {
 }
 
 // --- WATCHERS (OPTIMIZED) ---
-// ✅ Shallow watch helyett deep watch-ot használunk, de throttle-lel
 watch(sensors, () => {
   if (hasSelectedSensors.value) {
     renderDetections() // throttled
@@ -290,7 +312,7 @@ watch(sensors, () => {
 
 watch(selectedSensors, () => {
   renderDetections()
-}, { deep: false }) // shallow watch elegendő
+}, { deep: false })
 
 watch(batchInterval, val => (batchIntervalLocal.value = val), { immediate: true })
 
@@ -374,9 +396,22 @@ onBeforeUnmount(() => {
                  v-model.number="batchIntervalLocal" @change="updateBatchInterval"
                  class="w-full border border-slate-600 rounded px-2 py-1 mt-1 bg-slate-900 text-gray-100 text-sm" />
         </div>
+        <div class="flex items-center gap-2">
+          <input v-model="showAzimuthLines" type="checkbox" @change="updateSettings"
+                 class="h-4 w-4 text-cyan-500 border-slate-600 bg-slate-800 rounded focus:ring-cyan-500" />
+          <span class="text-sm text-gray-300">Show Azimuth Lines</span>
+        </div>
+        <div>
+          <button
+            @click="debugStore"
+            class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow transition text-sm"
+          >
+            🔍 Debug
+          </button>
+        </div>
       </div>
 
-      <!-- ✨ REAL-TIME SETTINGS PANEL -->
+      <!-- REAL-TIME SETTINGS PANEL -->
       <div class="mt-4 bg-slate-800 p-4 rounded-xl border border-slate-700">
         <h3 class="text-lg font-bold mb-3 text-gray-100">Real-time Settings</h3>
 
@@ -404,14 +439,15 @@ onBeforeUnmount(() => {
                    class="h-4 w-4 text-cyan-500 border-slate-600 bg-slate-800 rounded focus:ring-cyan-500" />
             <span class="text-sm text-gray-300">Enable Strict Real-time Mode</span>
           </div>
-          <div class="mt-4 flex justify-end">
-            <button
-              @click="clearMapData"
-              class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg shadow border border-red-800 transition"
-            >
-              🧹 Clear All Detections
-            </button>
-          </div>
+        </div>
+
+        <div class="mt-4 flex justify-end">
+          <button
+            @click="clearMapData"
+            class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg shadow border border-red-800 transition"
+          >
+            🧹 Clear All Detections
+          </button>
         </div>
       </div>
     </div>

@@ -1,14 +1,99 @@
-// workers/detectionWorker.ts
-import type {
-  WorkerStats,
-  Detection,
-  HeadingData,
-  DetectionItem,
-  MeasurementData,
-  StreamPacket,
-  WorkerIncomingMessage,
-  WorkerOutgoingMessage
-} from '@/types/worker'
+// ============================================================================
+// TYPES
+// ============================================================================
+
+interface Quaternion {
+  q0: number
+  q1: number
+  q2: number
+  q3: number
+}
+
+interface Detection {
+  timestamp: number
+  frequency: number
+  azimuth: number
+  elevation: number
+  meanAzimuth: number
+  meanElevation: number
+  coordinate: [number, number]
+  quaternion: Quaternion
+  heading: number
+  gpsLat: number
+  gpsLon: number
+  altitude: number
+  roi_id: number | null
+}
+
+interface DetectionItem {
+  frequency: number
+  azimuth?: number
+  elevation?: number
+  mean_azimuth?: number  // ✅ snake_case
+  mean_elevation?: number // ✅ snake_case
+  roi_id?: number
+  bandwidth?: number
+  strength?: number
+  snr?: number
+}
+
+interface HeadingData {
+  latitude?: number    // ✅ GPS koordináták a heading_data-ból
+  longitude?: number
+  altitude?: number
+  heading?: number
+  // További mezők a heading.proto szerint
+}
+
+interface MeasurementData {
+  time?: number
+  stream_id?: number
+  config_id?: number
+  source_time?: number
+  packet_id?: number
+  position?: number
+  quaternion?: number[]  // ✅ repeated float = tömb
+  overflow?: boolean
+  peaks?: number[]
+  heading_data?: HeadingData  // ✅ snake_case
+  sampleIndex?: number
+  data?: any[]
+  detection?: DetectionItem[]  // ✅ repeated Detection
+}
+
+interface StreamPacket {
+  id: number
+  type?: string
+  Measurement?: MeasurementData
+  Telemetry?: any
+  Event?: any
+  Error?: any
+}
+
+interface WorkerStats {
+  totalReceived: number
+  totalProcessed: number
+  lastProcessingTime: number
+  avgProcessingTime: number
+}
+
+type WorkerIncomingMessage =
+  | { type: 'uavIds'; uavIds: number[] }
+  | { type: 'newDetection'; detection: string }
+  | { type: 'updateSettings'; samplingRate?: number; maxLatencyMs?: number }
+  | { type: 'clearDetections' }
+  | { type: 'getStats' }
+  | { type: 'terminate' }
+
+type WorkerOutgoingMessage =
+  | { type: 'processedDetection'; detection: Detection; uavId: number; timestamp: number }
+  | { type: 'statsUpdated'; stats: WorkerStats }
+  | { type: 'error'; message: string; uavId?: number }
+  | { type: 'workerStarted'; timestamp: number; version: string }
+  | { type: 'uavIdsUpdated'; uavIds: number[] }
+  | { type: 'settingsUpdated'; settings: { samplingRate: number; maxLatencyMs: number } }
+  | { type: 'terminated' }
+  | { type: 'memoryStats'; memory: { usedJSHeapSize: number; totalJSHeapSize: number; limit: number } }
 
 // ============================================================================
 // GLOBALS
@@ -17,7 +102,7 @@ import type {
 let samplingRate = 0
 let uavIds: number[] = []
 let lastSampleTime = 0
-let maxLatencyMs = 900 // ✨ ÚJ CONFIG
+let maxLatencyMs = 900
 
 let stats: WorkerStats = {
   totalReceived: 0,
@@ -103,28 +188,16 @@ function getHeadingFromQuaternion (
  */
 function createOptimizedDetection (
   detectionItem: DetectionItem,
-  headingData: HeadingData,
+  gpsLat: number,
+  gpsLon: number,
+  altitude: number,
+  quaternion: Quaternion,
+  heading: number,
   timestamp: number
 ): Detection {
-  const { gpsLat = 47.355520, gpsLon = 19.268900, altitude = 100, quaternion } = headingData
-
-  // Quaternion parse
-  let q0 = 1; let q1 = 0; let q2 = 0; let q3 = 0
-
-  if (Array.isArray(quaternion) && quaternion.length === 4) {
-    [q0, q1, q2, q3] = quaternion
-  } else if (quaternion && typeof quaternion === 'object') {
-    q0 = quaternion.q0 ?? quaternion[0] ?? 1
-    q1 = quaternion.q1 ?? quaternion[1] ?? 0
-    q2 = quaternion.q2 ?? quaternion[2] ?? 0
-    q3 = quaternion.q3 ?? quaternion[3] ?? 0
-  }
-
-  const heading = getHeadingFromQuaternion(q0, q1, q2, q3)
-
   const coordinate = calculateCoordinate(
-    detectionItem.azimuth ?? detectionItem.meanAzimuth ?? 0,
-    detectionItem.elevation ?? detectionItem.meanElevation ?? 0,
+    detectionItem.azimuth ?? detectionItem.mean_azimuth ?? 0,  // ✅ snake_case
+    detectionItem.elevation ?? detectionItem.mean_elevation ?? 0,  // ✅ snake_case
     gpsLat,
     gpsLon,
     altitude
@@ -133,12 +206,12 @@ function createOptimizedDetection (
   return {
     timestamp,
     frequency: detectionItem.frequency,
-    azimuth: detectionItem.azimuth,
-    elevation: detectionItem.elevation,
-    meanAzimuth: detectionItem.meanAzimuth,
-    meanElevation: detectionItem.meanElevation,
+    azimuth: detectionItem.azimuth ?? 0,
+    elevation: detectionItem.elevation ?? 0,
+    meanAzimuth: detectionItem.mean_azimuth ?? 0,  // ✅ snake_case -> camelCase (frontend)
+    meanElevation: detectionItem.mean_elevation ?? 0,  // ✅ snake_case -> camelCase (frontend)
     coordinate,
-    quaternion: { q0, q1, q2, q3 },
+    quaternion,
     heading,
     gpsLat,
     gpsLon,
@@ -202,64 +275,70 @@ function processRawDetection (detectionData: string): void {
     if (!uavIds.includes(backendUavId)) continue
 
     const dataType = detectDataType(item)
-    if (!dataType) continue
+    if (dataType !== DataType.MEASUREMENT) continue
 
-    switch (dataType) {
-      case DataType.MEASUREMENT: {
-        const measurement = item.Measurement
-        if (!measurement || !measurement.detection) break
+    const measurement = item.Measurement
+    if (!measurement || !measurement.detection || measurement.detection.length === 0) continue
 
-        const headingData: HeadingData = measurement.headingData || {}
-        headingData.gpsLat = headingData.gpsLat ?? 47.355520
-        headingData.gpsLon = headingData.gpsLon ?? 19.268900
-        headingData.altitude = headingData.altitude ?? 100.0
+    // ✅ GPS koordináták és altitude a heading_data-ból (snake_case!)
+    const headingData = measurement.heading_data || {}
+    const gpsLat = headingData.latitude ?? 47.355520  // fallback Budapest
+    const gpsLon = headingData.longitude ?? 19.268900
+    const altitude = headingData.altitude ?? 100.0
 
-        const timestamp = performance.now()
+    // ✅ Quaternion közvetlenül a Measurement-ből (repeated float = tömb)
+    const quaternionArray = measurement.quaternion || []
+    let q0 = 1, q1 = 0, q2 = 0, q3 = 0
 
-        // ✅ Latency ellenőrzés már itt a worker-ben
-        const processingLatency = timestamp - t0_processStart
-        if (processingLatency > maxLatencyMs) {
-          console.warn(`[Worker] ⚠️ Processing too slow: ${processingLatency.toFixed(2)}ms`)
-        }
-
-        measurement.detection.forEach((detectionItem: DetectionItem) => {
-          try {
-            const detection = createOptimizedDetection(
-              detectionItem,
-              headingData,
-              timestamp
-            )
-
-            stats.totalReceived++
-            stats.totalProcessed++
-            processedCount++
-
-            const message: WorkerOutgoingMessage = {
-              type: 'processedDetection',
-              detection,
-              uavId: backendUavId,
-              timestamp: measurement.time || currentTime
-            }
-            self.postMessage(message)
-          } catch (error) {
-            console.error('[Worker] Detection processing error:', error)
-            const errorMessage: WorkerOutgoingMessage = {
-              type: 'error',
-              message: `Detection processing failed: ${(error as Error).message}`,
-              uavId: backendUavId
-            }
-            self.postMessage(errorMessage)
-          }
-        })
-        break
-      }
-
-      case DataType.TELEMETRY:
-      case DataType.EVENT:
-      case DataType.ERROR:
-        // későbbi implementáció
-        break
+    if (Array.isArray(quaternionArray) && quaternionArray.length === 4) {
+      [q0, q1, q2, q3] = quaternionArray
     }
+
+    const quaternion: Quaternion = { q0, q1, q2, q3 }
+    const heading = getHeadingFromQuaternion(q0, q1, q2, q3)
+
+    const timestamp = performance.now()
+
+    // ✅ Latency ellenőrzés
+    const processingLatency = timestamp - t0_processStart
+    if (processingLatency > maxLatencyMs) {
+      console.warn(`[Worker] ⚠️ Processing too slow: ${processingLatency.toFixed(2)}ms`)
+    }
+
+    // ✅ Detection-ok feldolgozása (repeated Detection = tömb)
+    measurement.detection.forEach((detectionItem: DetectionItem) => {
+      try {
+        const detection = createOptimizedDetection(
+          detectionItem,
+          gpsLat,
+          gpsLon,
+          altitude,
+          quaternion,
+          heading,
+          timestamp
+        )
+
+        stats.totalReceived++
+        stats.totalProcessed++
+        processedCount++
+
+        const message: WorkerOutgoingMessage = {
+          type: 'processedDetection',
+          detection,
+          uavId: backendUavId,
+          timestamp: measurement.time || currentTime
+        }
+        self.postMessage(message)
+      } catch (error) {
+        console.error('[Worker] Detection processing error:', error)
+        const errorMessage: WorkerOutgoingMessage = {
+          type: 'error',
+          message: `Detection processing failed: ${(error as Error).message}`,
+          uavId: backendUavId
+        }
+        self.postMessage(errorMessage)
+      }
+    })
   }
 
   const processingTime = performance.now() - t0_processStart
@@ -268,7 +347,7 @@ function processRawDetection (detectionData: string): void {
 
   if (processedCount > 0) {
     console.log(
-      `[Worker] Processed ${processedCount} detections in ${processingTime.toFixed(2)}ms ` +
+      `[Worker] ✅ Processed ${processedCount} detections in ${processingTime.toFixed(2)}ms ` +
       `(avg: ${stats.avgProcessingTime.toFixed(2)}ms)`
     )
   }
@@ -308,7 +387,6 @@ self.onmessage = function (e: MessageEvent<WorkerIncomingMessage>) {
         if (message.samplingRate !== undefined) {
           samplingRate = Math.max(0, message.samplingRate)
         }
-        // ✨ ÚJ: Max latency config
         if (message.maxLatencyMs !== undefined) {
           maxLatencyMs = message.maxLatencyMs
           console.log(`[Worker] Max latency updated: ${maxLatencyMs}ms`)
@@ -369,10 +447,10 @@ self.onmessage = function (e: MessageEvent<WorkerIncomingMessage>) {
 const initMessage: WorkerOutgoingMessage = {
   type: 'workerStarted',
   timestamp: Date.now(),
-  version: '4.0-typescript-unified'
+  version: '5.0-protobuf-corrected'
 }
 self.postMessage(initMessage)
-console.log('✅ Detection Worker v4.0 initialized - TypeScript Unified Mode')
+console.log('✅ Detection Worker v5.0 initialized - Protobuf Corrected Mode')
 
 // ============================================================================
 // ERROR HANDLER

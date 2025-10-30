@@ -33,7 +33,7 @@ export const useSensorStore = defineStore('sensor', () => {
 
   const realtimeConfig = ref<RealtimeConfig>({
     maxLatencyMs: 1000,
-    detectionTTL: 1000,
+    detectionTTL: 10000,  // 10 másodperc TTL
     enableStrictRealtime: true,
     circularBufferSize: 50
   })
@@ -51,7 +51,6 @@ export const useSensorStore = defineStore('sensor', () => {
    */
   const startPeriodicCleanup = (): void => {
     if (cleanupIntervalId !== null) {
-      console.log('[Store] ⚠️ Periodic cleanup already running')
       return
     }
 
@@ -61,7 +60,7 @@ export const useSensorStore = defineStore('sensor', () => {
       const now = performance.now()
       const ttl = realtimeConfig.value.detectionTTL
 
-      if (ttl <= 0) return // Ha TTL nincs engedélyezve, nem csinálunk semmit
+      if (ttl <= 0) return
 
       let totalCleaned = 0
 
@@ -84,7 +83,7 @@ export const useSensorStore = defineStore('sensor', () => {
       if (totalCleaned > 0) {
         console.log(`[Store] 🧹 Total cleaned: ${totalCleaned} detections`)
       }
-    }, 100) // Minden 100ms-ban fut
+    }, 100)
   }
 
   /**
@@ -134,32 +133,32 @@ export const useSensorStore = defineStore('sensor', () => {
           return
         }
 
-        // ✅ 1. Latency ellenőrzés - DE csak ha már van adat a bufferben
+        // ✅ 1. Latency ellenőrzés
         if (typeof detection.timestamp === 'number') {
           const latency = now - detection.timestamp
           const hasDetections = sensors.value[uavId].detections.length > 0
 
-          console.log(`⏱️ Latency: ${latency.toFixed(2)} ms (buffer: ${sensors.value[uavId].detections.length} items)`)
+          console.log(`[Store] ⏱️ Sensor ${uavId} latency: ${latency.toFixed(2)}ms (buffer: ${sensors.value[uavId].detections.length})`)
 
-          // ⚠️ STRICT MODE: Eldobjuk a túl késői adatokat, DE csak ha már van adat a bufferben
+          // STRICT MODE: Eldobjuk a túl késői adatokat, de csak ha már van adat a bufferben
           if (realtimeConfig.value.enableStrictRealtime &&
               hasDetections &&
               latency > realtimeConfig.value.maxLatencyMs) {
             console.warn(
               `[Store] ❌ Dropped detection due to high latency: ${latency.toFixed(2)}ms > ${realtimeConfig.value.maxLatencyMs}ms`
             )
-            return  // 🚫 ADAT ELDOBÁSA
+            return
           }
 
           // Ha üres a buffer és magas a latency, figyelmeztetünk, de beengedjük
           if (!hasDetections && latency > realtimeConfig.value.maxLatencyMs) {
             console.warn(
-              `[Store] ⚠️ High latency on first detection: ${latency.toFixed(2)}ms > ${realtimeConfig.value.maxLatencyMs}ms, but allowing (empty buffer)`
+              `[Store] ⚠️ High latency on first detection: ${latency.toFixed(2)}ms, but allowing (empty buffer)`
             )
           }
         }
 
-        // ✅ 2. TTL alapú tisztítás (régi detekciók törlése) - MINDEN új detection érkezésekor
+        // ✅ 2. TTL alapú tisztítás (régi detekciók törlése)
         if (realtimeConfig.value.detectionTTL > 0) {
           const beforeCount = sensors.value[uavId].detections.length
 
@@ -174,13 +173,12 @@ export const useSensorStore = defineStore('sensor', () => {
           }
         }
 
-        // ✅ 3. Circular buffer (FIFO, nincs shift())
+        // ✅ 3. Circular buffer (FIFO)
         const buffer = sensors.value[uavId].detections
         const maxSize = realtimeConfig.value.circularBufferSize
 
         if (buffer.length >= maxSize) {
-          // Régi módszer: buffer.shift() <- O(n) költség
-          // ÚJ módszer: slice az első elem törlésére
+          // Slice az első elem törlésére (hatékonyabb mint shift)
           sensors.value[uavId].detections = buffer.slice(1)
         }
 
@@ -195,7 +193,7 @@ export const useSensorStore = defineStore('sensor', () => {
     const cleanupStats = onWorkerMessage<StatsUpdatedMessage>(
       'statsUpdated',
       (data) => {
-        console.log('[Store] Worker stats:', data.stats)
+        console.log('[Store] 📊 Worker stats:', data.stats)
       }
     )
 
@@ -203,7 +201,7 @@ export const useSensorStore = defineStore('sensor', () => {
     const cleanupError = onWorkerMessage<ErrorMessage>(
       'error',
       (data) => {
-        console.error('[Store] Worker error:', data.message)
+        console.error('[Store] ❌ Worker error:', data.message)
         errorMessage.value = data.message
       }
     )
@@ -220,7 +218,7 @@ export const useSensorStore = defineStore('sensor', () => {
     const cleanupUavIds = onWorkerMessage<{ uavIds: number[] }>(
       'uavIdsUpdated',
       (data) => {
-        console.log('[Store] Worker confirmed UAV IDs:', data.uavIds)
+        console.log('[Store] 📋 Worker confirmed UAV IDs:', data.uavIds)
       }
     )
 
@@ -230,7 +228,7 @@ export const useSensorStore = defineStore('sensor', () => {
       (data) => {
         const usedMB = (data.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)
         const totalMB = (data.memory.totalJSHeapSize / 1024 / 1024).toFixed(2)
-        console.log(`[Store] Worker memory: ${usedMB}MB / ${totalMB}MB`)
+        console.log(`[Store] 💾 Worker memory: ${usedMB}MB / ${totalMB}MB`)
       }
     )
 
@@ -245,7 +243,7 @@ export const useSensorStore = defineStore('sensor', () => {
 
     console.log('[Store] ✅ Worker initialized and handlers registered')
 
-    // 🧹 Periodikus cleanup indítása a worker inicializálása után
+    // 🧹 Periodikus cleanup indítása
     startPeriodicCleanup()
   }
 
@@ -393,7 +391,7 @@ export const useSensorStore = defineStore('sensor', () => {
 
   const updateRealtimeConfig = (config: Partial<RealtimeConfig>): void => {
     realtimeConfig.value = { ...realtimeConfig.value, ...config }
-    console.log('[Store] Realtime config updated:', realtimeConfig.value)
+    console.log('[Store] ⚙️ Realtime config updated:', realtimeConfig.value)
   }
 
   /**
@@ -443,7 +441,7 @@ export const useSensorStore = defineStore('sensor', () => {
       console.log('[Store] ✅ Sensors fetched:', Object.keys(sensorsMap).length)
 
     } catch (error) {
-      console.error('[Store] Failed to fetch sensors:', error)
+      console.error('[Store] ❌ Failed to fetch sensors:', error)
       errorMessage.value = 'Failed to load sensors'
     } finally {
       isLoading.value = false
@@ -477,7 +475,7 @@ export const useSensorStore = defineStore('sensor', () => {
       sensor.detections = []
     })
     clearDetections()
-    console.log('[Store] All detections cleared')
+    console.log('[Store] 🧹 All detections cleared')
   }
 
   /**
