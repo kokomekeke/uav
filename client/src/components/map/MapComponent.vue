@@ -136,7 +136,7 @@ function getPlaneIconById(id: number): any {
  * ✅ Azimut vonal számítása
  * Az azimuth már radiánban jön a detectionből (azimuth mező)
  */
-function computeAzimuthLine(coord: [number, number], azimuth: number, isRadians = false): number[][] {
+function computeAzimuthLine (coord: [number, number], azimuth: number, isRadians = false): number[][] {
   const cacheKey = `${coord[0].toFixed(4)}_${coord[1].toFixed(4)}_${azimuth.toFixed(3)}_${lineLength.value}`
   if (azimuthLinesCache.has(cacheKey)) return azimuthLinesCache.get(cacheKey)!
 
@@ -226,7 +226,6 @@ function _doRenderDetections () {
         item.azimuthLine = computeAzimuthLine(detection.coordinate, detection.azimuth, true)
         item.hasAzimuth = true
       }
-
       updatedBuffer.set(stableKey, item)
     })
   })

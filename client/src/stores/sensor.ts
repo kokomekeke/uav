@@ -33,7 +33,7 @@ export const useSensorStore = defineStore('sensor', () => {
 
   const realtimeConfig = ref<RealtimeConfig>({
     maxLatencyMs: 1000,
-    detectionTTL: 10000,  // 10 másodperc TTL
+    detectionTTL: 10000, // 10 másodperc TTL
     enableStrictRealtime: true,
     circularBufferSize: 50
   })
@@ -273,6 +273,7 @@ export const useSensorStore = defineStore('sensor', () => {
 
       // Message received
       eventSource.value.onmessage = (event: MessageEvent) => {
+        console.log('data: ', event.data)
         console.log('[Store] 📥 SSE message received, data length:', event.data?.length)
 
         if (!event.data) {

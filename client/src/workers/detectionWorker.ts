@@ -278,11 +278,11 @@ function processRawDetection (detectionData: string): void {
     if (dataType !== DataType.MEASUREMENT) continue
 
     const measurement = item.Measurement
+    console.log('measurement: ', item.Measurement)
     if (!measurement || !measurement.detection || measurement.detection.length === 0) continue
 
-    // ✅ GPS koordináták és altitude a heading_data-ból (snake_case!)
-    const headingData = measurement.heading_data || {}
-    const gpsLat = headingData.latitude ?? 47.355520  // fallback Budapest
+    const headingData = measurement.headingData || {}
+    const gpsLat = headingData.altitude ?? 47.355520// ✅
     const gpsLon = headingData.longitude ?? 19.268900
     const altitude = headingData.altitude ?? 100.0
 
