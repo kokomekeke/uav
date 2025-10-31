@@ -29,7 +29,7 @@ interface DetectionItem {
   frequency: number
   azimuth?: number
   elevation?: number
-  mean_azimuth?: number  // ✅ snake_case
+  mean_azimuth?: number // ✅ snake_case
   mean_elevation?: number // ✅ snake_case
   roi_id?: number
   bandwidth?: number
@@ -38,7 +38,7 @@ interface DetectionItem {
 }
 
 interface HeadingData {
-  latitude?: number    // ✅ GPS koordináták a heading_data-ból
+  latitude?: number // ✅ GPS koordináták a heading_data-ból
   longitude?: number
   altitude?: number
   heading?: number
@@ -52,13 +52,13 @@ interface MeasurementData {
   source_time?: number
   packet_id?: number
   position?: number
-  quaternion?: number[]  // ✅ repeated float = tömb
+  quaternion?: number[] // ✅ repeated float = tömb
   overflow?: boolean
   peaks?: number[]
-  heading_data?: HeadingData  // ✅ snake_case
+  heading_data?: HeadingData // ✅ snake_case
   sampleIndex?: number
   data?: any[]
-  detection?: DetectionItem[]  // ✅ repeated Detection
+  detection?: DetectionItem[] // ✅ repeated Detection
 }
 
 interface StreamPacket {
@@ -135,30 +135,32 @@ function calculateCoordinate (
   gpsLon: number,
   altitude: number
 ): [number, number] {
-  const R = 6371000
-  const elevationRad = elevation
-  const azimuthRad = azimuth
+  // A matematikailag korrigált verzió
+  //
+  // const R = 6371000
+  // const elevationRad = elevation
+  // const azimuthRad = azimuth
+  //
+  // const distance = altitude / Math.tan(Math.abs(elevationRad))
+  // const clampedDistance = Math.max(0, Math.min(distance, 100000))
+  //
+  // const latRad = (gpsLat * Math.PI) / 180
+  // const lonRad = (gpsLon * Math.PI) / 180
+  //
+  // const newLatRad = Math.asin(
+  //   Math.sin(latRad) * Math.cos(clampedDistance / R) +
+  //   Math.cos(latRad) * Math.sin(clampedDistance / R) * Math.cos(azimuthRad)
+  // )
+  //
+  // const newLonRad = lonRad + Math.atan2(
+  //   Math.sin(azimuthRad) * Math.sin(clampedDistance / R) * Math.cos(latRad),
+  //   Math.cos(clampedDistance / R) - Math.sin(latRad) * Math.sin(newLatRad)
+  // )
+  //
+  // const newLat = (newLatRad * 180) / Math.PI
+  // const newLon = (newLonRad * 180) / Math.PI
 
-  const distance = altitude / Math.tan(Math.abs(elevationRad))
-  const clampedDistance = Math.max(0, Math.min(distance, 100000))
-
-  const latRad = (gpsLat * Math.PI) / 180
-  const lonRad = (gpsLon * Math.PI) / 180
-
-  const newLatRad = Math.asin(
-    Math.sin(latRad) * Math.cos(clampedDistance / R) +
-    Math.cos(latRad) * Math.sin(clampedDistance / R) * Math.cos(azimuthRad)
-  )
-
-  const newLonRad = lonRad + Math.atan2(
-    Math.sin(azimuthRad) * Math.sin(clampedDistance / R) * Math.cos(latRad),
-    Math.cos(clampedDistance / R) - Math.sin(latRad) * Math.sin(newLatRad)
-  )
-
-  const newLat = (newLatRad * 180) / Math.PI
-  const newLon = (newLonRad * 180) / Math.PI
-
-  return [newLat, newLon]
+  return [gpsLat, gpsLon]
 }
 
 /**
@@ -196,8 +198,8 @@ function createOptimizedDetection (
   timestamp: number
 ): Detection {
   const coordinate = calculateCoordinate(
-    detectionItem.azimuth ?? detectionItem.mean_azimuth ?? 0,  // ✅ snake_case
-    detectionItem.elevation ?? detectionItem.mean_elevation ?? 0,  // ✅ snake_case
+    detectionItem.azimuth ?? detectionItem.mean_azimuth ?? 0, // ✅ snake_case
+    detectionItem.elevation ?? detectionItem.mean_elevation ?? 0, // ✅ snake_case
     gpsLat,
     gpsLon,
     altitude
@@ -208,8 +210,8 @@ function createOptimizedDetection (
     frequency: detectionItem.frequency,
     azimuth: detectionItem.azimuth ?? 0,
     elevation: detectionItem.elevation ?? 0,
-    meanAzimuth: detectionItem.mean_azimuth ?? 0,  // ✅ snake_case -> camelCase (frontend)
-    meanElevation: detectionItem.mean_elevation ?? 0,  // ✅ snake_case -> camelCase (frontend)
+    meanAzimuth: detectionItem.mean_azimuth ?? 0, // ✅ snake_case -> camelCase (frontend)
+    meanElevation: detectionItem.mean_elevation ?? 0, // ✅ snake_case -> camelCase (frontend)
     coordinate,
     quaternion,
     heading,
@@ -280,15 +282,29 @@ function processRawDetection (detectionData: string): void {
     const measurement = item.Measurement
     console.log('measurement: ', item.Measurement)
     if (!measurement || !measurement.detection || measurement.detection.length === 0) continue
+    console.log('...')
+    // const headingData = measurement.headingData || {}
+    const headingData = typeof measurement.headingData === 'string'
+      ? JSON.parse(measurement.headingData)
+      : measurement.headingData || {}
 
-    const headingData = measurement.headingData || {}
-    const gpsLat = headingData.altitude ?? 47.355520// ✅
-    const gpsLon = headingData.longitude ?? 19.268900
+    console.log('heading Data: ', headingData)
+    console.log('pozi: ', item.Measurement.position)
+    if (
+      headingData.gpsLat === undefined ||
+      headingData.gpsLon === undefined
+    ) {
+      console.warn('[Worker] ❌ Missing GPS coordinates in headingData — skipping UAV position')
+      continue
+    }
+
+    const gpsLat = headingData.gpsLat // az utolsó érték átírása szükség szerint
+    const gpsLon = headingData.gpsLon // same here
     const altitude = headingData.altitude ?? 100.0
 
     // ✅ Quaternion közvetlenül a Measurement-ből (repeated float = tömb)
     const quaternionArray = measurement.quaternion || []
-    let q0 = 1, q1 = 0, q2 = 0, q3 = 0
+    let q0 = 1; let q1 = 0; let q2 = 0; let q3 = 0
 
     if (Array.isArray(quaternionArray) && quaternionArray.length === 4) {
       [q0, q1, q2, q3] = quaternionArray

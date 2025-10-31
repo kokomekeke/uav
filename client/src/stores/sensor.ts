@@ -126,6 +126,7 @@ export const useSensorStore = defineStore('sensor', () => {
       'processedDetection',
       (data) => {
         const { detection, uavId } = data
+        console.log('naittvan: ', detection)
         const now = performance.now()
 
         if (!sensors.value[uavId]) {
