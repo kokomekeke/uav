@@ -8,6 +8,8 @@ from datetime import datetime
 import os
 import sys
 
+from collections import deque
+
 from typing import Any, Optional
 
 import pysagax.message.data_pb2 as proto_data
@@ -47,10 +49,15 @@ class PPStreamPreparation(Loop):
     ) -> None:
         super().__init__(*args, **kwargs)
         self._queue_in: Optional[Queue] = None
+        self._audio_queue_in: Optional[Queue] = None
         self._queue_out_streamer: Optional[Queue] = None  # Queue to streamer
         self._queue_out_rec: Optional[Queue] = None  # Queue to DetectionRecorder
         self._data_type: proto_data.Spectrum.DataType.ValueType = data_type
         self._udp_max_size = udp_max_size
+
+        self._packets: deque[proto_data.Measurement] = deque()
+        self._audio_packets: deque[list[proto_data.SoundSignal]] = deque()
+        self._audio_packets_per_stream_packets = 1  # if audio queue back up, increase the number of audio packets per outgoing stream packet
 
         self._spectrum_interval = spectrum_interval
         self._logger.info(
@@ -64,12 +71,14 @@ class PPStreamPreparation(Loop):
     def __call__(
         self,
         queue_in: Queue[Any],
+        audio_queue_in: Queue[Any],
         queue_out_streamer: Queue[Any],
         queue_out_rec: Queue[Any],
         *args,
         **kwargs,
     ) -> None:
         self._queue_in = queue_in
+        self._audio_queue_in = audio_queue_in
         self._queue_out_streamer = queue_out_streamer
         self._queue_out_rec = queue_out_rec
 
@@ -159,13 +168,37 @@ class PPStreamPreparation(Loop):
             message="[StreamPrep to DetectionRecorder]",
         )
 
-    def _stream_packet(self, packet):
+    def _add_audio_packet_to_measurement(self, packet: proto_data.Measurement):
+        """
+        Removes an audio packet from the buffer and inserts it to the given measurement packet
+        If the buffer is empty, than the measurement packet is not modified
+        """
+        try:
+            for i in range(self._audio_packets_per_stream_packets):
+                audio_packet: proto_data.SoundSignal = self._audio_packets.popleft()
+                packet.sound_signal.append(audio_packet)
+        except IndexError:
+            # audio in queue not backed up, reset to one per packet
+            self._audio_packets_per_stream_packets = 1
+
+    def _stream_packet(self, packet: proto_data.Measurement):
         """
         Prepares the packet based on the settings and puts it in the queue to Streamer.
         """
 
         current_time = time()
         if current_time - self._last_spectrum_sent > self._spectrum_interval:
+            # not pruning spectrum data from measurement packets
+            if self._spectrum_interval == 0 or len(self._audio_packets) > 10:
+                # if the audio packet queue is not backed up too much
+                # and we don't spend spectrum with every packet
+                # then send audio data in a packet that doesn't have spectrum
+                # otherwise send it here
+                if len(self._audio_packets > 40):
+                    # if audio queue is very backed up, increase the throughput
+                    self._audio_packets_per_stream_packets += 1
+                self._add_audio_packet_to_measurement(packet)
+
             # Prepare spectrum for streaming
             packet = self._convert_spectrums(packet)
             packet = self._shrink_measurement_packet(
@@ -176,6 +209,11 @@ class PPStreamPreparation(Loop):
         else:
             # delete spectrum if not needed
             del packet.data[:]
+
+            # try to add audio data
+            self._add_audio_packet_to_measurement(packet)
+
+        # TODO: if packet size is too big bc of audio stream, than remove it
 
         packet = self._convert_spectrums(packet)
         packet = self._shrink_measurement_packet(
@@ -194,18 +232,39 @@ class PPStreamPreparation(Loop):
         assert self._queue_out_streamer is not None
         assert self._queue_out_rec is not None
 
+        self._logger.trace(
+            f"measurement buffer len = {len(self._packets)}, audio buffer len = {len(self._audio_packets)}"
+        )
+        # empty measurement packet queue
         try:
-            packet = self._queue_in.get(block=True, timeout=1)
-            assert isinstance(packet, proto_data.Measurement)
-
-            self._stream_packet(packet)
-
-            self._logger.trace(
-                f"PostProcessing/Stream preparation finished on packet {packet.packet_id}"
-            )
-
-            # saving post processing results to file
-            self._record_packet(packet)
-
+            while True:
+                packet = self._queue_in.get(block=True, timeout=0)
+                self._packets.append(packet)
         except queue.Empty:
             pass
+
+        # empty audio packet queue
+        try:
+            while True:
+                audio_packet = self._audio_queue_in.get(block=True, timeout=0)
+                self._audio_packets.append(audio_packet)
+        except queue.Empty:
+            pass
+
+        # get next earliest measurement packet in buffer
+        try:
+            packet = self._packets.popleft()
+        except IndexError:
+            sleep(0.1)
+            return  # empty buffer
+
+        assert isinstance(packet, proto_data.Measurement)
+
+        self._stream_packet(packet)
+
+        self._logger.trace(
+            f"PostProcessing/Stream preparation finished on packet {packet.packet_id}"
+        )
+
+        # saving post processing results to file
+        self._record_packet(packet)

@@ -26,6 +26,7 @@ from pysagax import __version__
 from pysagax.field.communicator import Communicator
 from pysagax.field.cscommand import CSCommand
 from pysagax.field.csstreamer import CSStreamer
+from pysagax.field.audiostreamprocessor import AudioStreamProcessor
 from pysagax.field.heading import Heading
 from pysagax.field.interpreter import Interpreter
 from pysagax.field.ppdetection import PPDetection
@@ -103,6 +104,8 @@ class Commander:
         # self._pp_events_input_q = self._manager.Queue(maxsize=48)
         self._pp_streamprep_input_q = self._manager.Queue(maxsize=10)
         # self._raw_cs_stream_q = self._manager.Queue()
+        self._cs_streamer_to_audio_proc_q = self._manager.Queue(maxsize=100)
+        self._audio_proc_to_streamprep_q = self._manager.Queue(maxsize=100)
         self._telemetry_in_q = self._manager.Queue(maxsize=10)
         self._apm_communicator_messages_q = self._manager.Queue(maxsize=1)
         self._apm_communicator_responses_q = self._manager.Queue(maxsize=1)
@@ -168,6 +171,10 @@ class Commander:
         )
         self._cs_streamer = CSStreamer(
             level=level, address=cs_host, port=cs_stream_port
+        )
+
+        self._audio_stream_processor = AudioStreamProcessor(
+            level=level,
         )
 
         self._telemetry = Telemetry(level=level, data_partition_path=disk_path)
@@ -251,6 +258,7 @@ class Commander:
         pp_streamprep_future = self._pool.submit(
             self._pp_streamprep,
             self._pp_streamprep_input_q,
+            self._audio_proc_to_streamprep_q,
             self._stream_packets_q,
             self._pp_detection_recorder_input_q,
         )
@@ -260,7 +268,15 @@ class Commander:
             self._latest_telemetry_proxy,
         )
         cs_streamer_future = self._pool.submit(
-            self._cs_streamer, self._pp_heading_sync_input_q, self._telemetry_in_q
+            self._cs_streamer,
+            self._pp_heading_sync_input_q,
+            self._cs_streamer_to_audio_proc_q,
+            self._telemetry_in_q,
+        )
+        audio_stream_processor_future = self._pool.submit(
+            self._audio_stream_processor,
+            self._cs_streamer_to_audio_proc_q,
+            self._audio_proc_to_streamprep_q,
         )
         telemetry_future = self._pool.submit(
             self._telemetry,
@@ -300,6 +316,7 @@ class Commander:
                     pp_streamprep_future,
                     pp_detection_recorder_future,
                     cs_streamer_future,
+                    audio_stream_processor_future,
                     telemetry_future,
                     heading_future,
                     apm_communicator_future,
