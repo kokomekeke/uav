@@ -12,6 +12,16 @@ import type {
   MemoryStatsMessage
 } from '@/types/worker'
 
+// GeoJSON típusok
+interface GeoJsonPoint {
+  id: number
+  coordinate: [number, number]
+  timestamp: number
+  type: 'raw' | 'filtered'
+  roi_id?: number
+  properties?: any
+}
+
 export const useSensorStore = defineStore('sensor', () => {
   // ============================================================================
   // STATE
@@ -19,6 +29,7 @@ export const useSensorStore = defineStore('sensor', () => {
 
   const sensors = ref<Record<number, Sensor>>({})
   const selectedSensor = ref<Sensor | null>(null)
+  const selectedSensorIds = ref<number[]>([])
   const isLoading = ref(false)
   const errorMessage = ref('')
 
@@ -33,10 +44,23 @@ export const useSensorStore = defineStore('sensor', () => {
 
   const realtimeConfig = ref<RealtimeConfig>({
     maxLatencyMs: 1000,
-    detectionTTL: 10000, // 10 másodperc TTL
+    detectionTTL: 10000,
     enableStrictRealtime: true,
     circularBufferSize: 50
   })
+
+  // GeoJSON State
+  const geoJsonData = ref<GeoJsonPoint[]>([])
+  const geoJsonSettings = ref({
+    limit: 20,
+    stride: 1,
+    fetchPeriodSec: 1,
+    showRaw: true,
+    showFiltered: true,
+    ttl: 10000
+  })
+  const isGeoJsonEnabled = ref(false)
+  let geoJsonIntervalId: number | null = null
 
   // Cleanup interval reference
   let cleanupIntervalId: number | null = null
@@ -45,10 +69,6 @@ export const useSensorStore = defineStore('sensor', () => {
   // PERIODIKUS CLEANUP
   // ============================================================================
 
-  /**
-   * Periodikus cleanup mechanizmus indítása
-   * Minden 100ms-ban végigmegy a szenzorokon és kitörli a lejárt detectionöket
-   */
   const startPeriodicCleanup = (): void => {
     if (cleanupIntervalId !== null) {
       return
@@ -86,14 +106,130 @@ export const useSensorStore = defineStore('sensor', () => {
     }, 100)
   }
 
-  /**
-   * Periodikus cleanup leállítása
-   */
   const stopPeriodicCleanup = (): void => {
     if (cleanupIntervalId !== null) {
       console.log('[Store] 🛑 Stopping periodic cleanup')
       window.clearInterval(cleanupIntervalId)
       cleanupIntervalId = null
+    }
+  }
+
+  // ============================================================================
+  // GEOJSON FETCH
+  // ============================================================================
+
+  const fetchGeoJsonData = async (): Promise<void> => {
+    if (!isGeoJsonEnabled.value) return
+
+    const { limit, stride, showRaw, showFiltered } = geoJsonSettings.value
+    const roiParam = selectedSensorIds.value.length > 0
+      ? `?${selectedSensorIds.value.map(id => `roi_id=${id}`).join('&')}&stride=${stride}`
+      : `?stride=${stride}`
+
+    const now = Date.now()
+    const newPoints: GeoJsonPoint[] = []
+
+    try {
+      // Fetch RAW data
+      if (showRaw) {
+        const rawUrl = `http://localhost:5000/v1/comintgeoloc/geojson/raw/list_last/${limit}${roiParam}`
+        console.log('[Store] 🌍 Fetching RAW GeoJSON:', rawUrl)
+
+        const rawResponse = await fetch(rawUrl)
+        if (rawResponse.ok) {
+          const rawData = await rawResponse.json()
+
+          rawData.features?.forEach((feature: any) => {
+            const coords = feature.geometry?.coordinates
+            if (!coords || coords.length !== 2) return
+
+            const [lon, lat] = coords
+            if (isNaN(lat) || isNaN(lon)) return
+
+            newPoints.push({
+              id: feature.properties?.geoloc_id || Math.random(),
+              coordinate: [lat, lon],
+              timestamp: now,
+              type: 'raw',
+              roi_id: feature.properties?.roi_identifier,
+              properties: feature.properties
+            })
+          })
+          console.log('[Store] ✅ RAW GeoJSON fetched:', newPoints.filter(p => p.type === 'raw').length, 'points')
+        }
+      }
+
+      // Fetch FILTERED data
+      if (showFiltered) {
+        const filteredUrl = `http://localhost:5000/v1/comintgeoloc/geojson/list_last/${limit}${roiParam}`
+        console.log('[Store] 🌍 Fetching FILTERED GeoJSON:', filteredUrl)
+
+        const filteredResponse = await fetch(filteredUrl)
+        if (filteredResponse.ok) {
+          const filteredData = await filteredResponse.json()
+
+          filteredData.features?.forEach((feature: any) => {
+            const coords = feature.geometry?.coordinates
+            if (!coords || coords.length !== 2) return
+
+            const [lon, lat] = coords
+            if (isNaN(lat) || isNaN(lon)) return
+
+            newPoints.push({
+              id: feature.properties?.geoloc_id || Math.random(),
+              coordinate: [lat, lon],
+              timestamp: now,
+              type: 'filtered',
+              roi_id: feature.properties?.roi_identifier,
+              properties: feature.properties
+            })
+          })
+          console.log('[Store] ✅ FILTERED GeoJSON fetched:', newPoints.filter(p => p.type === 'filtered').length, 'points')
+        }
+      }
+
+      // Replace old data with new
+      geoJsonData.value = newPoints
+      console.log('[Store] 📊 Total GeoJSON points:', geoJsonData.value.length)
+
+    } catch (error) {
+      console.error('[Store] ❌ Failed to fetch GeoJSON:', error)
+    }
+  }
+
+  const startGeoJsonFetch = (): void => {
+    if (geoJsonIntervalId !== null) return
+
+    console.log('[Store] 🌍 Starting GeoJSON periodic fetch')
+    isGeoJsonEnabled.value = true
+
+    // Initial fetch
+    fetchGeoJsonData()
+
+    // Periodic fetch
+    geoJsonIntervalId = window.setInterval(() => {
+      fetchGeoJsonData()
+    }, geoJsonSettings.value.fetchPeriodSec * 1000)
+  }
+
+  const stopGeoJsonFetch = (): void => {
+    if (geoJsonIntervalId !== null) {
+      console.log('[Store] 🛑 Stopping GeoJSON fetch')
+      window.clearInterval(geoJsonIntervalId)
+      geoJsonIntervalId = null
+    }
+    isGeoJsonEnabled.value = false
+    geoJsonData.value = []
+  }
+
+  const updateGeoJsonSettings = (settings: Partial<typeof geoJsonSettings.value>): void => {
+    geoJsonSettings.value = { ...geoJsonSettings.value, ...settings }
+    console.log('[Store] ⚙️ GeoJSON settings updated:', geoJsonSettings.value)
+
+    // Restart if active
+    if (isGeoJsonEnabled.value) {
+      stopGeoJsonFetch()
+      startGeoJsonFetch()
     }
   }
 
@@ -113,20 +249,15 @@ export const useSensorStore = defineStore('sensor', () => {
 
   const workerMessageCleanups: Array<() => void> = []
 
-  /**
-   * Worker inicializálása és message handlerek regisztrálása
-   */
   const initializeWorker = (): void => {
     console.log('[Store] 🚀 Initializing detection worker...')
 
     initWorker()
 
-    // Processed detection handler
     const cleanupProcessed = onWorkerMessage<ProcessedDetectionMessage>(
       'processedDetection',
       (data) => {
         const { detection, uavId } = data
-        console.log('naittvan: ', detection)
         const now = performance.now()
 
         if (!sensors.value[uavId]) {
@@ -134,14 +265,12 @@ export const useSensorStore = defineStore('sensor', () => {
           return
         }
 
-        // ✅ 1. Latency ellenőrzés
         if (typeof detection.timestamp === 'number') {
           const latency = now - detection.timestamp
           const hasDetections = sensors.value[uavId].detections.length > 0
 
           console.log(`[Store] ⏱️ Sensor ${uavId} latency: ${latency.toFixed(2)}ms (buffer: ${sensors.value[uavId].detections.length})`)
 
-          // STRICT MODE: Eldobjuk a túl késői adatokat, de csak ha már van adat a bufferben
           if (realtimeConfig.value.enableStrictRealtime &&
               hasDetections &&
               latency > realtimeConfig.value.maxLatencyMs) {
@@ -151,7 +280,6 @@ export const useSensorStore = defineStore('sensor', () => {
             return
           }
 
-          // Ha üres a buffer és magas a latency, figyelmeztetünk, de beengedjük
           if (!hasDetections && latency > realtimeConfig.value.maxLatencyMs) {
             console.warn(
               `[Store] ⚠️ High latency on first detection: ${latency.toFixed(2)}ms, but allowing (empty buffer)`
@@ -159,7 +287,6 @@ export const useSensorStore = defineStore('sensor', () => {
           }
         }
 
-        // ✅ 2. TTL alapú tisztítás (régi detekciók törlése)
         if (realtimeConfig.value.detectionTTL > 0) {
           const beforeCount = sensors.value[uavId].detections.length
 
@@ -174,23 +301,19 @@ export const useSensorStore = defineStore('sensor', () => {
           }
         }
 
-        // ✅ 3. Circular buffer (FIFO)
         const buffer = sensors.value[uavId].detections
         const maxSize = realtimeConfig.value.circularBufferSize
 
         if (buffer.length >= maxSize) {
-          // Slice az első elem törlésére (hatékonyabb mint shift)
           sensors.value[uavId].detections = buffer.slice(1)
         }
 
-        // ✅ 4. Detekció hozzáadása
         sensors.value[uavId].detections.push(detection)
 
         console.log(`[Store] ✅ Sensor ${uavId} detections: ${sensors.value[uavId].detections.length}`)
       }
     )
 
-    // Stats handler
     const cleanupStats = onWorkerMessage<StatsUpdatedMessage>(
       'statsUpdated',
       (data) => {
@@ -198,7 +321,6 @@ export const useSensorStore = defineStore('sensor', () => {
       }
     )
 
-    // Error handler
     const cleanupError = onWorkerMessage<ErrorMessage>(
       'error',
       (data) => {
@@ -207,7 +329,6 @@ export const useSensorStore = defineStore('sensor', () => {
       }
     )
 
-    // Worker started handler
     const cleanupStarted = onWorkerMessage<WorkerStartedMessage>(
       'workerStarted',
       (data) => {
@@ -215,7 +336,6 @@ export const useSensorStore = defineStore('sensor', () => {
       }
     )
 
-    // UAV IDs updated handler
     const cleanupUavIds = onWorkerMessage<{ uavIds: number[] }>(
       'uavIdsUpdated',
       (data) => {
@@ -223,7 +343,6 @@ export const useSensorStore = defineStore('sensor', () => {
       }
     )
 
-    // Memory stats handler
     const cleanupMemory = onWorkerMessage<MemoryStatsMessage>(
       'memoryStats',
       (data) => {
@@ -243,8 +362,6 @@ export const useSensorStore = defineStore('sensor', () => {
     )
 
     console.log('[Store] ✅ Worker initialized and handlers registered')
-
-    // 🧹 Periodikus cleanup indítása
     startPeriodicCleanup()
   }
 
@@ -252,9 +369,6 @@ export const useSensorStore = defineStore('sensor', () => {
   // SSE STREAM CONNECTION
   // ============================================================================
 
-  /**
-   * SSE stream kapcsolat inicializálása
-   */
   const initializeStream = (): void => {
     if (eventSource.value) {
       console.log('[Store] 📡 Stream already connected')
@@ -266,15 +380,12 @@ export const useSensorStore = defineStore('sensor', () => {
     try {
       eventSource.value = new EventSource(streamUrl.value)
 
-      // Connection opened
       eventSource.value.onopen = () => {
         console.log('[Store] 📡 ✅ SSE Stream connected')
         isStreamConnected.value = true
       }
 
-      // Message received
       eventSource.value.onmessage = (event: MessageEvent) => {
-        console.log('data: ', event.data)
         console.log('[Store] 📥 SSE message received, data length:', event.data?.length)
 
         if (!event.data) {
@@ -282,22 +393,18 @@ export const useSensorStore = defineStore('sensor', () => {
           return
         }
 
-        // Ensure worker is initialized
         if (!isWorkerReady()) {
           console.warn('[Store] ⚠️ Worker not ready when stream data arrived, initializing...')
           initializeWorker()
         }
 
-        // Send to worker
         handleStreamData(event.data)
       }
 
-      // Error handling
       eventSource.value.onerror = (error: Event) => {
         console.error('[Store] 📡 ❌ SSE Stream error:', error)
         isStreamConnected.value = false
 
-        // Reconnect logic
         if (eventSource.value?.readyState === EventSource.CLOSED) {
           console.log('[Store] 📡 Stream closed, attempting to reconnect in 5 seconds...')
           setTimeout(() => {
@@ -318,9 +425,6 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
-  /**
-   * SSE stream kapcsolat bontása
-   */
   const disconnectStream = (): void => {
     if (eventSource.value) {
       console.log('[Store] 📡 Disconnecting SSE stream...')
@@ -347,28 +451,32 @@ export const useSensorStore = defineStore('sensor', () => {
   // WATCH
   // ============================================================================
 
-  // Watch selectedSensors és automatikusan inicializál mindent
+  watch(
+    selectedSensors,
+    (newSelected) => {
+      selectedSensorIds.value = newSelected.map(s => s.uav_id)
+      console.log('[Store] 📋 Selected sensor IDs updated:', selectedSensorIds.value)
+    },
+    { immediate: true, deep: true }
+  )
+
   watch(
     selectedSensors,
     (newSelected) => {
       const selectedIds = newSelected.map(s => s.uav_id)
       console.log('[Store] 📤 Selected sensors changed:', selectedIds)
 
-      // Ha van kiválasztott szenzor
       if (selectedIds.length > 0) {
-        // 1. Worker inicializálása ha szükséges
         if (!isWorkerReady()) {
           console.warn('[Store] ⚠️ Sensors selected but worker not ready, initializing...')
           initializeWorker()
         }
 
-        // 2. Stream inicializálása ha szükséges
         if (!isStreamConnected.value && !eventSource.value) {
           console.log('[Store] 📡 Sensors selected, initializing stream...')
           initializeStream()
         }
 
-        // 3. Worker ID-k frissítése
         updateSelectedUavIds(selectedIds)
       } else {
         console.log('[Store] No sensors selected')
@@ -381,9 +489,6 @@ export const useSensorStore = defineStore('sensor', () => {
   // ACTIONS
   // ============================================================================
 
-  /**
-   * Szenzor kiválasztása/deselect
-   */
   const selectSensor = (uavId: number): void => {
     if (sensors.value[uavId]) {
       sensors.value[uavId].is_selected = !sensors.value[uavId].is_selected
@@ -396,13 +501,9 @@ export const useSensorStore = defineStore('sensor', () => {
     console.log('[Store] ⚙️ Realtime config updated:', realtimeConfig.value)
   }
 
-  /**
-   * Stream adat kezelése (workernek továbbítás)
-   */
   const handleStreamData = (rawData: string): void => {
     console.log('[Store] 📥 handleStreamData called, data length:', rawData?.length)
 
-    // Lazy initialization
     if (!isWorkerReady()) {
       console.warn('[Store] ⚠️ Worker not initialized when stream data arrived, initializing now...')
       initializeWorker()
@@ -412,9 +513,6 @@ export const useSensorStore = defineStore('sensor', () => {
     sendDetection(rawData)
   }
 
-  /**
-   * Szenzorok lekérése API-ból
-   */
   const fetchSensors = async (): Promise<void> => {
     isLoading.value = true
     errorMessage.value = ''
@@ -428,7 +526,6 @@ export const useSensorStore = defineStore('sensor', () => {
 
       const data = await response.json()
 
-      // Transform data - megtartjuk a meglévő is_selected és detections értékeket
       const sensorsMap: Record<number, Sensor> = {}
 
       data.forEach((sensorData: any) => {
@@ -450,9 +547,6 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
-  /**
-   * Szenzor eltávolítása
-   */
   const removeSensor = (): void => {
     if (selectedSensor.value) {
       const uavId = selectedSensor.value.uav_id
@@ -462,16 +556,10 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
-  /**
-   * Mouse hover handler
-   */
   const handleMouseOver = (sensor: Sensor): void => {
     selectedSensor.value = sensor
   }
 
-  /**
-   * Detekciók törlése
-   */
   const clearAllDetections = (): void => {
     Object.values(sensors.value).forEach(sensor => {
       sensor.detections = []
@@ -480,9 +568,6 @@ export const useSensorStore = defineStore('sensor', () => {
     console.log('[Store] 🧹 All detections cleared')
   }
 
-  /**
-   * Debug reaktivitás
-   */
   const debugReactivity = (): void => {
     console.log('=== SENSOR STORE DEBUG ===')
     console.log('Total sensors:', Object.keys(sensors.value).length)
@@ -491,12 +576,15 @@ export const useSensorStore = defineStore('sensor', () => {
     console.log('Worker ready:', isWorkerReady())
     console.log('Stream connected:', isStreamConnected.value)
     console.log('Cleanup interval active:', cleanupIntervalId !== null)
+    console.log('GeoJSON enabled:', isGeoJsonEnabled.value)
+    console.log('GeoJSON points:', geoJsonData.value.length)
     console.log('Settings:', {
       batchInterval: batchInterval.value,
       detectionSize: detectionSize.value,
       streamUrl: streamUrl.value
     })
     console.log('Realtime config:', realtimeConfig.value)
+    console.log('GeoJSON settings:', geoJsonSettings.value)
 
     selectedSensors.value.forEach(sensor => {
       console.log(`Sensor ${sensor.uav_id}:`, {
@@ -510,20 +598,13 @@ export const useSensorStore = defineStore('sensor', () => {
   // LIFECYCLE
   // ============================================================================
 
-  // Cleanup on unmount
   onUnmounted(() => {
     console.log('[Store] 🧹 Cleaning up...')
-
-    // Stop periodic cleanup
     stopPeriodicCleanup()
-
-    // Disconnect stream
+    stopGeoJsonFetch()
     disconnectStream()
-
-    // Cleanup worker
     workerMessageCleanups.forEach(cleanup => cleanup())
     terminateWorker()
-
     console.log('[Store] ✅ Cleanup complete')
   })
 
@@ -541,6 +622,9 @@ export const useSensorStore = defineStore('sensor', () => {
     detectionSize,
     isStreamConnected,
     streamUrl,
+    geoJsonData,
+    geoJsonSettings,
+    isGeoJsonEnabled,
 
     // Computed
     selectedSensors,
@@ -561,6 +645,11 @@ export const useSensorStore = defineStore('sensor', () => {
     realtimeConfig,
     updateRealtimeConfig,
     startPeriodicCleanup,
-    stopPeriodicCleanup
+    stopPeriodicCleanup,
+    selectedSensorIds,
+    startGeoJsonFetch,
+    stopGeoJsonFetch,
+    updateGeoJsonSettings,
+    fetchGeoJsonData
   }
 })

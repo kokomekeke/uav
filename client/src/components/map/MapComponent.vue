@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, shallowRef, onBeforeUnmount, nextTick, watch, computed } from 'vue'
-import { LMap, LTileLayer, LMarker, LPolyline } from '@vue-leaflet/vue-leaflet'
+import { LMap, LTileLayer, LMarker, LPolyline, LCircleMarker } from '@vue-leaflet/vue-leaflet'
 import L from 'leaflet'
 import pW from '@/assets/dir1.png'
 import { useSensorStore } from '@/stores/sensor'
@@ -12,7 +12,16 @@ import { Sensor } from '@/types/sensor'
 
 // --- STORE ---
 const sensorStore = useSensorStore()
-const { sensors, batchInterval, selectedSensors, hasSelectedSensors } = storeToRefs(sensorStore)
+const {
+  sensors,
+  batchInterval,
+  selectedSensors,
+  selectedSensorIds,
+  hasSelectedSensors,
+  geoJsonData,
+  geoJsonSettings,
+  isGeoJsonEnabled
+} = storeToRefs(sensorStore)
 
 // --- MAP STATE ---
 const zoom = ref(10)
@@ -34,6 +43,16 @@ const lineLength = ref(0.05)
 const planeDisplayPeriod = ref(4)
 const showAzimuthLines = ref(true)
 
+// --- GEOJSON SETTINGS (LOCAL) ---
+const localGeoJsonSettings = ref({
+  limit: 20,
+  stride: 1,
+  fetchPeriodSec: 1,
+  showRaw: true,
+  showFiltered: true,
+  ttl: 10000
+})
+
 // --- REAL-TIME CONFIG ---
 const realtimeConfig = ref({
   ...sensorStore.realtimeConfig
@@ -49,7 +68,8 @@ const debugInfo = ref({
   detectionsCount: 0,
   selectedSensorsCount: 0,
   renderTime: 0,
-  cacheSize: 0
+  cacheSize: 0,
+  geoJsonCount: 0
 })
 
 // --- PERFORMANCE CACHES ---
@@ -71,12 +91,28 @@ const lineColors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'cyan',
 // --- COMPUTED ---
 const selectedSensorCount = computed(() => selectedSensors.value.length)
 
+// --- GEOJSON COMPUTED ---
+const geoJsonPointsWithOpacity = computed(() => {
+  const now = Date.now()
+  const ttl = localGeoJsonSettings.value.ttl
+
+  return geoJsonData.value.map(point => {
+    const age = now - point.timestamp
+    const opacity = Math.max(0.3, 1 - (age / ttl))
+
+    return {
+      ...point,
+      opacity: isNaN(opacity) ? 1 : opacity
+    }
+  }).filter(point => {
+    // Filter out NaN coordinates
+    const [lat, lon] = point.coordinate
+    return !isNaN(lat) && !isNaN(lon)
+  })
+})
+
 // --- FUNCTIONS (heading, icons, lines stb.) ---
 
-/**
- * ✅ Heading számítás quaternion-ből
- * A Measurement.quaternion egy repeated float (tömb)
- */
 function getHeadingFromQuaternion([q0, q1, q2, q3]: number[]): number {
   if (q0 === undefined || q1 === undefined || q2 === undefined || q3 === undefined) return 0
   const headingRad = Math.atan2(2 * (q0 * q3 + q1 * q2), q0 * q0 + q1 * q1 - q2 * q2 - q3 * q3)
@@ -84,13 +120,7 @@ function getHeadingFromQuaternion([q0, q1, q2, q3]: number[]): number {
   return deg < 0 ? deg + 360 : deg
 }
 
-/**
- * ✅ Szenzor heading lekérése
- * 1. Először a legutóbbi detectionből próbálja (worker által feldolgozott quaternion)
- * 2. Ha nincs, akkor a szenzor utolsó ismert quaternion-jéből
- */
 function getHeading(sensor: Sensor): number {
-  // 1. Legutóbbi detection quaternion-ja (feldolgozott adat a workerből)
   const lastDetection = sensor.detections?.at(-1)
   if (lastDetection?.quaternion) {
     return getHeadingFromQuaternion([
@@ -101,7 +131,6 @@ function getHeading(sensor: Sensor): number {
     ])
   }
 
-  // 2. Szenzor saját quaternion-ja (fallback)
   const { last_pos_q0, last_pos_q1, last_pos_q2, last_pos_q3 } = sensor
   if ([last_pos_q0, last_pos_q1, last_pos_q2, last_pos_q3].every(v => v !== undefined)) {
     return getHeadingFromQuaternion([last_pos_q0, last_pos_q1, last_pos_q2, last_pos_q3])
@@ -132,10 +161,6 @@ function getPlaneIconById(id: number): any {
   return icon
 }
 
-/**
- * ✅ Azimut vonal számítása
- * Az azimuth már radiánban jön a detectionből (azimuth mező)
- */
 function computeAzimuthLine (coord: [number, number], azimuth: number, isRadians = false): number[][] {
   const cacheKey = `${coord[0].toFixed(4)}_${coord[1].toFixed(4)}_${azimuth.toFixed(3)}_${lineLength.value}`
   if (azimuthLinesCache.has(cacheKey)) return azimuthLinesCache.get(cacheKey)!
@@ -164,12 +189,11 @@ const detectionBuffer = shallowRef<Map<string, any>>(new Map())
 let renderThrottle: number | null = null
 
 function renderDetections() {
-  // Throttle render to max 60 FPS
   if (renderThrottle) return
   renderThrottle = setTimeout(() => {
     renderThrottle = null
     _doRenderDetections()
-  }, 16) // ~60 FPS
+  }, 16)
 }
 
 function _doRenderDetections () {
@@ -190,21 +214,18 @@ function _doRenderDetections () {
     const sensorId = sensor.uav_id
 
     recentDetections.forEach((detection, idx) => {
-      // ✅ A coordinate már a workerben ki van számítva
       if (!Array.isArray(detection.coordinate)) return
       if (bounds && !bounds.contains(L.latLng(detection.coordinate[0], detection.coordinate[1]))) return
 
       const stableKey = `${sensorId}-${detection.timestamp || `idx-${idx}`}`
       const existingItem = oldBuffer.get(stableKey)
 
-      // Már létező pont → csak pozíciófrissítés
       if (existingItem) {
         existingItem.coordinate = detection.coordinate
         updatedBuffer.set(stableKey, existingItem)
         return
       }
 
-      // Új pont
       const showPlane = idx % planeDisplayPeriod.value === 0
       const hasAzimuth = detection.azimuth != null
       const color = getColorByRoiOrSensor(detection, sensorId)
@@ -221,7 +242,6 @@ function _doRenderDetections () {
 
       if (showPlane) item.planeIcon = getPlaneIconById(sensorId)
 
-      // ✅ Az azimuth már radiánban van
       if (hasAzimuth && showAzimuthLines.value) {
         item.azimuthLine = computeAzimuthLine(detection.coordinate, detection.azimuth, true)
         item.hasAzimuth = true
@@ -230,7 +250,6 @@ function _doRenderDetections () {
     })
   })
 
-  // Opcionális TTL (régi detekciók eltávolítása)
   const ttlMs = realtimeConfig.value.detectionTTL || 10000
   const now = Date.now()
   for (const [key, item] of updatedBuffer.entries()) {
@@ -244,10 +263,24 @@ function _doRenderDetections () {
   debugInfo.value.detectionsCount = updatedBuffer.size
   debugInfo.value.selectedSensorsCount = selectedSensors.value.length
   debugInfo.value.renderTime = performance.now() - renderStart
+  debugInfo.value.geoJsonCount = geoJsonPointsWithOpacity.value.length
 }
 
-// Computed property a template számára
 const detectionBufferArray = computed(() => Array.from(detectionBuffer.value.values()))
+
+// --- GEOJSON FUNCTIONS ---
+function updateGeoJsonSettings() {
+  sensorStore.updateGeoJsonSettings(localGeoJsonSettings.value)
+}
+
+function toggleGeoJsonFetch() {
+  if (isGeoJsonEnabled.value) {
+    sensorStore.stopGeoJsonFetch()
+  } else {
+    updateGeoJsonSettings()
+    sensorStore.startGeoJsonFetch()
+  }
+}
 
 // --- SETTINGS HANDLING ---
 function updateBatchInterval() {
@@ -302,7 +335,7 @@ function onMapReady (mapInstance: any) {
 // --- WATCHERS (OPTIMIZED) ---
 watch(sensors, () => {
   if (hasSelectedSensors.value) {
-    renderDetections() // throttled
+    renderDetections()
   }
 }, { deep: true })
 
@@ -311,6 +344,10 @@ watch(selectedSensors, () => {
 }, { deep: false })
 
 watch(batchInterval, val => (batchIntervalLocal.value = val), { immediate: true })
+
+watch(geoJsonData, () => {
+  debugInfo.value.geoJsonCount = geoJsonPointsWithOpacity.value.length
+}, { deep: true })
 
 onMounted(async () => {
   await nextTick()
@@ -340,11 +377,12 @@ onBeforeUnmount(() => {
           <div>Map: {{ debugInfo.mapInitialized ? '✅' : '❌' }}</div>
           <div>Sensors: {{ debugInfo.selectedSensorsCount }}</div>
           <div>Detections: {{ debugInfo.detectionsCount }}</div>
+          <div>GeoJSON: {{ debugInfo.geoJsonCount }}</div>
           <div>Render: {{ debugInfo.renderTime.toFixed(1) }}ms</div>
           <div>Cache: {{ debugInfo.cacheSize }}</div>
         </div>
 
-        <!-- Detection markers - OPTIMIZED -->
+        <!-- Detection markers (SSE Stream) -->
         <template v-for="detection in detectionBufferArray" :key="detection.key">
           <l-marker
             v-if="detection.showPlane && detection.planeIcon"
@@ -363,13 +401,35 @@ onBeforeUnmount(() => {
             :icon="detection.dotIcon"
           />
         </template>
+
+        <!-- GeoJSON markers -->
+        <template v-for="point in geoJsonPointsWithOpacity" :key="`geojson-${point.id}`">
+          <l-circle-marker
+            :lat-lng="point.coordinate"
+            :radius="8"
+            :color="point.type === 'raw' ? 'red' : 'blue'"
+            :fillColor="point.type === 'raw' ? 'red' : 'blue'"
+            :fillOpacity="point.opacity"
+            :opacity="point.opacity"
+            :weight="2"
+          >
+            <l-tooltip>
+              <div class="text-xs">
+                <div><strong>Type:</strong> {{ point.type === 'raw' ? '🔴 RAW' : '🔵 FILTERED' }}</div>
+                <div><strong>ID:</strong> {{ point.id }}</div>
+                <div v-if="point.roi_id"><strong>ROI:</strong> {{ point.roi_id }}</div>
+                <div><strong>Age:</strong> {{ ((Date.now() - point.timestamp) / 1000).toFixed(1) }}s</div>
+              </div>
+            </l-tooltip>
+          </l-circle-marker>
+        </template>
       </l-map>
     </div>
 
     <!-- Controls -->
     <div class="flex-[1] mt-4 px-4 overflow-auto">
+      <!-- EXISTING CONTROLS -->
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-700">
-        <!-- existing controls -->
         <div>
           <label class="font-semibold text-gray-300 text-sm">Max points</label>
           <input type="number" v-model.number="maxVisiblePoints" @change="updateSettings"
@@ -407,27 +467,91 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
+      <!-- GEOJSON SETTINGS PANEL -->
+      <div class="mt-4 bg-slate-800 p-4 rounded-xl border border-slate-700">
+        <div class="flex justify-between items-center mb-3">
+          <h3 class="text-lg font-bold text-gray-100">GeoJSON Settings</h3>
+          <button
+            @click="toggleGeoJsonFetch"
+            :class="[
+              'px-4 py-2 font-semibold rounded-lg shadow transition',
+              isGeoJsonEnabled ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700',
+              'text-white'
+            ]"
+          >
+            {{ isGeoJsonEnabled ? '⏸️ Stop' : '▶️ Start' }} GeoJSON Fetch
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+          <div>
+            <label class="block text-sm mb-1 text-gray-300">Limit (points)</label>
+            <input v-model.number="localGeoJsonSettings.limit" type="number" min="1" max="1000"
+                   @change="updateGeoJsonSettings"
+                   class="w-full px-2 py-1 bg-slate-700 rounded text-gray-100 border border-slate-600" />
+          </div>
+
+          <div>
+            <label class="block text-sm mb-1 text-gray-300">Stride (every n-th)</label>
+            <input v-model.number="localGeoJsonSettings.stride" type="number" min="1" max="100"
+                   @change="updateGeoJsonSettings"
+                   class="w-full px-2 py-1 bg-slate-700 rounded text-gray-100 border border-slate-600" />
+          </div>
+
+          <div>
+            <label class="block text-sm mb-1 text-gray-300">Fetch Period (sec)</label>
+            <input v-model.number="localGeoJsonSettings.fetchPeriodSec" type="number" step="0.5" min="0.5" max="10"
+                   @change="updateGeoJsonSettings"
+                   class="w-full px-2 py-1 bg-slate-700 rounded text-gray-100 border border-slate-600" />
+          </div>
+
+          <div>
+            <label class="block text-sm mb-1 text-gray-300">TTL (ms)</label>
+            <input v-model.number="localGeoJsonSettings.ttl" type="number" step="1000" min="1000"
+                   @change="updateGeoJsonSettings"
+                   class="w-full px-2 py-1 bg-slate-700 rounded text-gray-100 border border-slate-600" />
+          </div>
+
+          <div class="flex items-center gap-2 mt-6">
+            <input v-model="localGeoJsonSettings.showRaw" type="checkbox" @change="updateGeoJsonSettings"
+                   class="h-4 w-4 text-red-500 border-slate-600 bg-slate-800 rounded focus:ring-red-500" />
+            <span class="text-sm text-gray-300">🔴 Show RAW</span>
+          </div>
+
+          <div class="flex items-center gap-2 mt-6">
+            <input v-model="localGeoJsonSettings.showFiltered" type="checkbox" @change="updateGeoJsonSettings"
+                   class="h-4 w-4 text-blue-500 border-slate-600 bg-slate-800 rounded focus:ring-blue-500" />
+            <span class="text-sm text-gray-300">🔵 Show FILTERED</span>
+          </div>
+        </div>
+
+        <div class="mt-3 text-xs text-gray-400">
+          <p>🔴 <strong>RAW:</strong> /comintgeoloc/geojson/raw/list_last/{{ localGeoJsonSettings.limit }}</p>
+          <p>🔵 <strong>FILTERED:</strong> /comintgeoloc/geojson/list_last/{{ localGeoJsonSettings.limit }}</p>
+        </div>
+      </div>
+
       <!-- REAL-TIME SETTINGS PANEL -->
       <div class="mt-4 bg-slate-800 p-4 rounded-xl border border-slate-700">
-        <h3 class="text-lg font-bold mb-3 text-gray-100">Real-time Settings</h3>
+        <h3 class="text-lg font-bold mb-3 text-gray-100">Real-time Settings (SSE Stream)</h3>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <label class="block text-sm mb-1 text-gray-300">Max Latency (ms)</label>
             <input v-model.number="realtimeConfig.maxLatencyMs" type="number" @change="updateRealtimeConfig"
-                   class="w-full px-2 py-1 bg-slate-700 rounded text-gray-100" />
+                   class="w-full px-2 py-1 bg-slate-700 rounded text-gray-100 border border-slate-600" />
           </div>
 
           <div>
             <label class="block text-sm mb-1 text-gray-300">Detection TTL (ms)</label>
             <input v-model.number="realtimeConfig.detectionTTL" type="number" @change="updateRealtimeConfig"
-                   class="w-full px-2 py-1 bg-slate-700 rounded text-gray-100" />
+                   class="w-full px-2 py-1 bg-slate-700 rounded text-gray-100 border border-slate-600" />
           </div>
 
           <div>
             <label class="block text-sm mb-1 text-gray-300">Buffer Size</label>
             <input v-model.number="realtimeConfig.circularBufferSize" type="number" @change="updateRealtimeConfig"
-                   class="w-full px-2 py-1 bg-slate-700 rounded text-gray-100" />
+                   class="w-full px-2 py-1 bg-slate-700 rounded text-gray-100 border border-slate-600" />
           </div>
 
           <div class="flex items-center gap-2 mt-6">
