@@ -37,7 +37,7 @@ class AudioStreamer(mp.Process):
         self._logger.setLevel(level)
         self.daemon = True
 
-        self._default_port_start = 4000  # TODO: move to config file
+        self._default_port_start = 4300  # TODO: move to config file
 
         self._in_q = in_q
         self._out_q = out_q
@@ -274,9 +274,9 @@ class AudioStreamProcessor(Loop):
 
         # get incoming data
         try:
-            in_packet = self._in_queue.get(timeout=0)
+            in_packet = self._in_queue.get(timeout=0.1)
         except queue.Empty:
-            in_packet = []
+            return
 
         # handle in_packet contents one-by-one
         for sound_signal in in_packet:

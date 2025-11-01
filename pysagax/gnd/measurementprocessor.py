@@ -25,11 +25,11 @@ class MeasurementProcessor(Loop):
     """Processes packets received from UAVs through the UDP stream connection"""
 
     def __init__(
-            self,
-            db: ComIntDatabase,
-            db_commit_frequency: float,
-            *args,
-            **kwargs,
+        self,
+        db: ComIntDatabase,
+        db_commit_frequency: float,
+        *args,
+        **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
 
@@ -39,6 +39,7 @@ class MeasurementProcessor(Loop):
         self._in_queue: Optional[Queue] = None
         self._to_monitoring_queue: Optional[Queue] = None
         self._to_stream_queue: Optional[Queue] = None
+        self._audio_stream_queue: Optional[Queue] = None
         self._last_commit = time.time()
         self._measurements_to_add = []
         self._uavs_to_update = {}
@@ -46,18 +47,19 @@ class MeasurementProcessor(Loop):
 
     def __call__(
         self,
-        in_queue: Queue, 
+        in_queue: Queue,
         to_monitoring_queue: Queue,
         to_stream_queue: Queue,
+        audio_stream_queue: Queue,
         *args,
         **kwargs,
     ) -> None:
         self._in_queue = in_queue
         self._to_monitoring_queue = to_monitoring_queue
         self._to_stream_queue = to_stream_queue
+        self._audio_stream_queue = audio_stream_queue
         self._db_app = self._db.get_app_instance()
         return super()._call(*args, **kwargs)
-
 
     def _receive_telemetry(
         self, uav_entity: UAVEntity, packet: proto_data.Telemetry
@@ -71,7 +73,13 @@ class MeasurementProcessor(Loop):
         )
         # report.update_from_sysinfo(sysinfo)
         report.update_from_telemetry(packet)
-        queue_put(self._to_monitoring_queue, report, 1, self._logger, "Telemetry to monitoring")
+        queue_put(
+            self._to_monitoring_queue,
+            report,
+            1,
+            self._logger,
+            "Telemetry to monitoring",
+        )
         return
 
         # TODO: plan how this health report will work and do it
@@ -97,7 +105,13 @@ class MeasurementProcessor(Loop):
         report.update_from_sysinfo(sysinfo)
         report.update_from_telemetry(telem)
         assert self._telemetry_to_monitoring is not None
-        queue_put(self._telemetry_to_monitoring, report, 1, self._logger, "Telemetry to monitoring")
+        queue_put(
+            self._telemetry_to_monitoring,
+            report,
+            1,
+            self._logger,
+            "Telemetry to monitoring",
+        )
 
     def _receive_measurement(
         self, uav_entity: UAVEntity, packet: proto_data.Measurement
@@ -105,7 +119,9 @@ class MeasurementProcessor(Loop):
         self._logger.trace(
             f"Got a Measurement from {uav_entity.uav_label}! Detection count is {len(packet.detection)}"
         )
-        self._logger.trace(f"Measurement packet delay: {time.time()-packet.time.seconds-packet.time.nanos/1e9}")
+        self._logger.trace(
+            f"Measurement packet delay: {time.time()-packet.time.seconds-packet.time.nanos/1e9}"
+        )
         for det in packet.detection:
             new_meas_entity = ComIntDetectionEntity()
             new_meas_entity.uav_id = uav_entity.uav_id
@@ -140,6 +156,17 @@ class MeasurementProcessor(Loop):
             self._logger.warning(
                 f"Received quaternion length is {len(packet.heading_data.quaternion)}"
             )
+
+        # push audio stream
+        if len(packet.sound_signal):
+            queue_put(
+                self._audio_stream_queue,
+                packet.sound_signal,
+                timeout=0,
+                logger=self._logger,
+                message="audio stream",
+            )
+
         return uav_entity
 
     def _receive_event(self, uav_entity: UAVEntity, packet: proto_data.Event) -> None:
@@ -171,11 +198,16 @@ class MeasurementProcessor(Loop):
                 self._logger.error(f"UAVEntity {uav_id} not found in DB!")
                 return
             match type(packet):
-                case proto_data.Telemetry: self._receive_telemetry(uav_entity, packet)
-                case proto_data.Measurement: uav_entity = self._receive_measurement(uav_entity, packet)
-                case proto_data.Event: self._receive_event(uav_entity, packet)
-                case proto_data.OperationalError: self._receive_operror(uav_entity, packet)
-                case _: self._logger.critical(f"Unknown packet type ({type(packet)})") 
+                case proto_data.Telemetry:
+                    self._receive_telemetry(uav_entity, packet)
+                case proto_data.Measurement:
+                    uav_entity = self._receive_measurement(uav_entity, packet)
+                case proto_data.Event:
+                    self._receive_event(uav_entity, packet)
+                case proto_data.OperationalError:
+                    self._receive_operror(uav_entity, packet)
+                case _:
+                    self._logger.critical(f"Unknown packet type ({type(packet)})")
             uav_entity.last_seen = sqlalchemy.func.now()
 
             self._uavs_to_update[uav_entity.uav_id] = uav_entity
@@ -185,25 +217,34 @@ class MeasurementProcessor(Loop):
         self._logger.warning(f"input queue has {size} elements waiting to be processed")
         # If you see this warning a lot, consider increasing db_commit_frequency
 
-
     def _loop(self) -> None:
         try:
             id, packet = self._in_queue.get(timeout=1.0)
             self._receive_packet(id, packet)
 
-            queue_put(self._to_stream_queue, (id, packet), 0, self._logger, "Measurement to stream")
+            queue_put(
+                self._to_stream_queue,
+                (id, packet),
+                0,
+                self._logger,
+                "Measurement to stream",
+            )
 
             in_q_size = self._in_queue.qsize()
-            if  in_q_size > 10:
+            if in_q_size > 10:
                 self._log_queue_filled(in_q_size)
             if time.time() - self._last_commit > self.db_commit_frequency:
                 # only commit the DB changes after db_commit_frequency seconds have elapsed
                 # TODO: we should use a DB technology where transactions are cheap
-                #       we might want to remove this and commit every update instantly 
+                #       we might want to remove this and commit every update instantly
                 #       when we have the new db
                 with self._db_app.app_context():
-                    self._logger.trace(f"Adding {len(self._measurements_to_add)} detections to DB")
-                    self._logger.trace(f"Updating {len(self._uavs_to_update)} uavs in DB")
+                    self._logger.trace(
+                        f"Adding {len(self._measurements_to_add)} detections to DB"
+                    )
+                    self._logger.trace(
+                        f"Updating {len(self._uavs_to_update)} uavs in DB"
+                    )
                     self._db.bulk_insert(self._measurements_to_add)
                     self._measurements_to_add = []
 
