@@ -20,7 +20,8 @@ const sensorStore = useSensorStore()
 const { sensors, selectedSensors, hasSelectedSensors, realtimeConfig } = storeToRefs(sensorStore)
 
 const zoom = ref(12)
-const center = ref([47.4979, 19.0402])
+const center = ref<[number, number] | null>(null)
+let centerInitialized = false
 const mapRef = ref<any>(null)
 const leafletMap = shallowRef<L.Map | null>(null)
 const heatLayer = shallowRef<any>(null)
@@ -199,6 +200,29 @@ watch(() => dataSettings.value.updateInterval, () => {
 })
 watch(() => dataSettings.value.showRealtime, (isRealtime) => { isRealtime ? startAutoUpdate() : stopAutoUpdate() })
 
+watch(selectedSensors, (newSensors) => {
+  if (centerInitialized) return // csak egyszer állítjuk be
+
+  for (const sensor of newSensors) {
+    if (sensor.detections?.length) {
+      const firstDetection = sensor.detections[0]
+      if (
+        Array.isArray(firstDetection.coordinate) &&
+        firstDetection.coordinate.length === 2
+      ) {
+        const [lat, lon] = firstDetection.coordinate
+        if (!isNaN(lat) && !isNaN(lon)) {
+          center.value = [lat, lon]
+          centerInitialized = true
+          console.log(`[Map] 🧭 Center set to first detection:`, center.value)
+          break
+        }
+      }
+    }
+  }
+}, { deep: true })
+
+
 function clearHeatmap() {
   accumulatedPoints.value.clear()
   if (heatLayer.value && leafletMap.value) {
@@ -232,7 +256,7 @@ onBeforeUnmount(() => { stopAutoUpdate(); clearHeatmap() })
 <template>
   <div class="flex flex-col w-full h-full">
     <div class="flex-1 relative rounded-xl overflow-visible">
-      <l-map ref="mapRef" :zoom="zoom" :center="center" class="w-full h-full z-0" @ready="onMapReady">
+      <l-map ref="mapRef" :zoom="zoom" :center="center || [47.4979, 19.0402]" class="w-full h-full z-0" @ready="onMapReady">
         <l-tile-layer :url="url" :attribution="attribution" />
       </l-map>
       <div class="absolute top-2 left-2 bg-slate-800/90 text-gray-200 p-3 rounded-lg shadow-lg border border-slate-600 z-10 text-xs space-y-1">
