@@ -1,0 +1,22 @@
+#EXTM3U
+#EXTINF:0,roi_id = 0
+#EXTVLCOPT:network-caching=1000
+udp://@:4400
+#EXTINF:0,roi_id = 1
+#EXTVLCOPT:network-caching=1000
+udp://@:4401
+#EXTINF:0,roi_id = 2
+#EXTVLCOPT:network-caching=1000
+udp://@:4402
+#EXTINF:0,roi_id = 3
+#EXTVLCOPT:network-caching=1000
+udp://@:4403
+#EXTINF:0,roi_id = 4
+#EXTVLCOPT:network-caching=1000
+udp://@:4404
+#EXTINF:0,roi_id = 5
+#EXTVLCOPT:network-caching=1000
+udp://@:4405
+#EXTINF:0,roi_id = 6
+#EXTVLCOPT:network-caching=1000
+udp://@:4406
