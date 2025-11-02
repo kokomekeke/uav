@@ -253,7 +253,7 @@ function processRawDetection (detectionData: string): void {
   lastSampleTime = currentTime
 
   if (!detectionData) {
-    console.warn('[Worker] No detection data received')
+    // console.warn('[Worker] No detection data received')
     return
   }
 
@@ -280,16 +280,16 @@ function processRawDetection (detectionData: string): void {
     if (dataType !== DataType.MEASUREMENT) continue
 
     const measurement = item.Measurement
-    console.log('measurement: ', item.Measurement)
+    // console.log('measurement: ', item.Measurement)
     if (!measurement || !measurement.detection || measurement.detection.length === 0) continue
-    console.log('...')
+    // console.log('...')
     // const headingData = measurement.headingData || {}
     const headingData = typeof measurement.headingData === 'string'
       ? JSON.parse(measurement.headingData)
       : measurement.headingData || {}
 
-    console.log('heading Data: ', headingData)
-    console.log('pozi: ', item.Measurement.position)
+    // console.log('heading Data: ', headingData)
+    // console.log('pozi: ', item.Measurement.position)
     if (
       headingData.gpsLat === undefined ||
       headingData.gpsLon === undefined
@@ -362,10 +362,10 @@ function processRawDetection (detectionData: string): void {
   stats.avgProcessingTime = (stats.avgProcessingTime * 0.9) + (processingTime * 0.1)
 
   if (processedCount > 0) {
-    console.log(
-      `[Worker] ✅ Processed ${processedCount} detections in ${processingTime.toFixed(2)}ms ` +
-      `(avg: ${stats.avgProcessingTime.toFixed(2)}ms)`
-    )
+    // console.log(
+    //   `[Worker] ✅ Processed ${processedCount} detections in ${processingTime.toFixed(2)}ms ` +
+    //   `(avg: ${stats.avgProcessingTime.toFixed(2)}ms)`
+    // )
   }
 
   if (stats.totalProcessed % 100 === 0) {
@@ -389,7 +389,7 @@ self.onmessage = function (e: MessageEvent<WorkerIncomingMessage>) {
       case 'uavIds': {
         if (!message.uavIds || !Array.isArray(message.uavIds)) return
         uavIds = message.uavIds
-        console.log('[Worker] ✅ UAV IDs updated:', uavIds)
+        // console.log('[Worker] ✅ UAV IDs updated:', uavIds)
         self.postMessage({ type: 'uavIdsUpdated', uavIds })
         break
       }
@@ -405,7 +405,7 @@ self.onmessage = function (e: MessageEvent<WorkerIncomingMessage>) {
         }
         if (message.maxLatencyMs !== undefined) {
           maxLatencyMs = message.maxLatencyMs
-          console.log(`[Worker] Max latency updated: ${maxLatencyMs}ms`)
+          // console.log(`[Worker] Max latency updated: ${maxLatencyMs}ms`)
         }
         const response: WorkerOutgoingMessage = {
           type: 'settingsUpdated',
@@ -422,7 +422,7 @@ self.onmessage = function (e: MessageEvent<WorkerIncomingMessage>) {
           lastProcessingTime: 0,
           avgProcessingTime: 0
         }
-        console.log('[Worker] Statistics cleared')
+        // console.log('[Worker] Statistics cleared')
         self.postMessage({ type: 'statsUpdated', stats: { ...stats } })
         break
       }

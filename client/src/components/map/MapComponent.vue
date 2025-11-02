@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, shallowRef, onBeforeUnmount, nextTick, watch, computed } from 'vue'
-import { LMap, LTileLayer, LMarker, LPolyline, LCircleMarker } from '@vue-leaflet/vue-leaflet'
+import { LMap, LTileLayer, LMarker, LPolyline, LCircleMarker, LPopup } from '@vue-leaflet/vue-leaflet'
 import L from 'leaflet'
 import pW from '@/assets/dir1.png'
 import { useSensorStore } from '@/stores/sensor'
@@ -69,7 +69,9 @@ const debugInfo = ref({
   selectedSensorsCount: 0,
   renderTime: 0,
   cacheSize: 0,
-  geoJsonCount: 0
+  geoJsonCount: 0,
+  geoJsonRaw: 0,
+  geoJsonFiltered: 0
 })
 
 // --- PERFORMANCE CACHES ---
@@ -93,10 +95,11 @@ const selectedSensorCount = computed(() => selectedSensors.value.length)
 
 // --- GEOJSON COMPUTED ---
 const geoJsonPointsWithOpacity = computed(() => {
+  console.log('geoJsonPointsWithOpacity')
   const now = Date.now()
   const ttl = localGeoJsonSettings.value.ttl
 
-  return geoJsonData.value.map(point => {
+  const points = geoJsonData.value.map(point => {
     const age = now - point.timestamp
     const opacity = Math.max(0.3, 1 - (age / ttl))
 
@@ -107,8 +110,26 @@ const geoJsonPointsWithOpacity = computed(() => {
   }).filter(point => {
     // Filter out NaN coordinates
     const [lat, lon] = point.coordinate
-    return !isNaN(lat) && !isNaN(lon)
+    if (isNaN(lat) || isNaN(lon)) {
+      console.warn('[Map] Filtered out NaN coordinate:', point)
+      return false
+    }
+    return true
   })
+  console.log('pointzzzz: ', points)
+  // Update debug info
+  debugInfo.value.geoJsonRaw = points.filter(p => p.type === 'raw').length
+  debugInfo.value.geoJsonFiltered = points.filter(p => p.type === 'filtered').length
+
+  console.log('[Map] GeoJSON points computed:', {
+    total: points.length,
+    raw: debugInfo.value.geoJsonRaw,
+    filtered: debugInfo.value.geoJsonFiltered
+  })
+
+  console.log('geo_points: ', points)
+
+  return points
 })
 
 // --- FUNCTIONS (heading, icons, lines stb.) ---
@@ -270,14 +291,19 @@ const detectionBufferArray = computed(() => Array.from(detectionBuffer.value.val
 
 // --- GEOJSON FUNCTIONS ---
 function updateGeoJsonSettings() {
+  console.log('[Map] Updating GeoJSON settings:', localGeoJsonSettings.value)
   sensorStore.updateGeoJsonSettings(localGeoJsonSettings.value)
 }
 
 function toggleGeoJsonFetch() {
+  console.log('[Map] Toggle GeoJSON fetch, current state:', isGeoJsonEnabled.value)
+
   if (isGeoJsonEnabled.value) {
     sensorStore.stopGeoJsonFetch()
   } else {
+    // Update settings first
     updateGeoJsonSettings()
+    // Then start
     sensorStore.startGeoJsonFetch()
   }
 }
@@ -306,6 +332,8 @@ function clearMapData() {
 
 function debugStore() {
   console.log('=== MAP COMPONENT DEBUG ===', debugInfo.value)
+  console.log('GeoJSON data from store:', geoJsonData.value)
+  console.log('GeoJSON computed points:', geoJsonPointsWithOpacity.value)
   sensorStore.debugReactivity()
 }
 
@@ -330,7 +358,14 @@ function onMapReady (mapInstance: any) {
   mapBounds.value = mapInstance.getBounds()
   debugInfo.value.mapInitialized = true
   renderDetections()
+  console.log('[Map] Map ready, bounds:', mapBounds.value)
 }
+
+// Map component-ben watch hozzáadása
+watch(() => geoJsonData.value, (newVal) => {
+  console.log('[Map] 🔄 geoJsonData changed, new length:', newVal.length)
+  console.log('[Map] 🔄 computed points:', geoJsonPointsWithOpacity.value.length)
+}, { deep: true, immediate: true })
 
 // --- WATCHERS (OPTIMIZED) ---
 watch(sensors, () => {
@@ -345,7 +380,8 @@ watch(selectedSensors, () => {
 
 watch(batchInterval, val => (batchIntervalLocal.value = val), { immediate: true })
 
-watch(geoJsonData, () => {
+watch(geoJsonData, (newData) => {
+  console.log('[Map] GeoJSON data changed:', newData.length, 'points')
   debugInfo.value.geoJsonCount = geoJsonPointsWithOpacity.value.length
 }, { deep: true })
 
@@ -354,6 +390,7 @@ onMounted(async () => {
   updateMapView()
   leafletMap.value?.on('moveend', updateMapView)
   leafletMap.value?.on('zoomend', updateMapView)
+  console.log('[Map] Component mounted')
 })
 
 onBeforeUnmount(() => {
@@ -377,7 +414,8 @@ onBeforeUnmount(() => {
           <div>Map: {{ debugInfo.mapInitialized ? '✅' : '❌' }}</div>
           <div>Sensors: {{ debugInfo.selectedSensorsCount }}</div>
           <div>Detections: {{ debugInfo.detectionsCount }}</div>
-          <div>GeoJSON: {{ debugInfo.geoJsonCount }}</div>
+          <div>GeoJSON: {{ debugInfo.geoJsonCount }} (🔴{{ debugInfo.geoJsonRaw }} 🔵{{ debugInfo.geoJsonFiltered }})</div>
+          <div>Fetch: {{ isGeoJsonEnabled ? '✅' : '❌' }}</div>
           <div>Render: {{ debugInfo.renderTime.toFixed(1) }}ms</div>
           <div>Cache: {{ debugInfo.cacheSize }}</div>
         </div>
@@ -403,24 +441,25 @@ onBeforeUnmount(() => {
         </template>
 
         <!-- GeoJSON markers -->
-        <template v-for="point in geoJsonPointsWithOpacity" :key="`geojson-${point.id}`">
+        <template v-for="point in geoJsonPointsWithOpacity" :key="`geojson-${point.id}-${point.type}`">
           <l-circle-marker
             :lat-lng="point.coordinate"
             :radius="8"
-            :color="point.type === 'raw' ? 'red' : 'blue'"
-            :fillColor="point.type === 'raw' ? 'red' : 'blue'"
+            :color="point.type === 'raw' ? '#ff0000' : '#0000ff'"
+            :fillColor="point.type === 'raw' ? '#ff0000' : '#0000ff'"
             :fillOpacity="point.opacity"
             :opacity="point.opacity"
             :weight="2"
           >
-            <l-tooltip>
+            <l-popup>
               <div class="text-xs">
                 <div><strong>Type:</strong> {{ point.type === 'raw' ? '🔴 RAW' : '🔵 FILTERED' }}</div>
                 <div><strong>ID:</strong> {{ point.id }}</div>
                 <div v-if="point.roi_id"><strong>ROI:</strong> {{ point.roi_id }}</div>
                 <div><strong>Age:</strong> {{ ((Date.now() - point.timestamp) / 1000).toFixed(1) }}s</div>
+                <div><strong>Coord:</strong> [{{ point.coordinate[0].toFixed(4) }}, {{ point.coordinate[1].toFixed(4) }}]</div>
               </div>
-            </l-tooltip>
+            </l-popup>
           </l-circle-marker>
         </template>
       </l-map>
@@ -470,7 +509,7 @@ onBeforeUnmount(() => {
       <!-- GEOJSON SETTINGS PANEL -->
       <div class="mt-4 bg-slate-800 p-4 rounded-xl border border-slate-700">
         <div class="flex justify-between items-center mb-3">
-          <h3 class="text-lg font-bold text-gray-100">GeoJSON Settings</h3>
+          <h3 class="text-lg font-bold text-gray-100">🌍 GeoJSON Settings</h3>
           <button
             @click="toggleGeoJsonFetch"
             :class="[
@@ -525,15 +564,18 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="mt-3 text-xs text-gray-400">
-          <p>🔴 <strong>RAW:</strong> /comintgeoloc/geojson/raw/list_last/{{ localGeoJsonSettings.limit }}</p>
-          <p>🔵 <strong>FILTERED:</strong> /comintgeoloc/geojson/list_last/{{ localGeoJsonSettings.limit }}</p>
+        <div class="mt-3 text-xs text-gray-400 space-y-1">
+          <p>🔴 <strong>RAW:</strong> /comintgeoloc/geojson/raw/list_last/{{ localGeoJsonSettings.limit }}?stride={{ localGeoJsonSettings.stride }}</p>
+          <p>🔵 <strong>FILTERED:</strong> /comintgeoloc/geojson/list_last/{{ localGeoJsonSettings.limit }}?stride={{ localGeoJsonSettings.stride }}</p>
+          <p class="mt-2 text-yellow-400" v-if="selectedSensorIds.length > 0">
+            📍 Filtering by ROI IDs: {{ selectedSensorIds.join(', ') }}
+          </p>
         </div>
       </div>
 
       <!-- REAL-TIME SETTINGS PANEL -->
       <div class="mt-4 bg-slate-800 p-4 rounded-xl border border-slate-700">
-        <h3 class="text-lg font-bold mb-3 text-gray-100">Real-time Settings (SSE Stream)</h3>
+        <h3 class="text-lg font-bold mb-3 text-gray-100">⚡ Real-time Settings (SSE Stream)</h3>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
