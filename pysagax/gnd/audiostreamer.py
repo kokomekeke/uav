@@ -62,6 +62,12 @@ class AudioStreamer(Loop):
         port = self._default_port_start + stream_id
         ar = AudioRetransmitter(self._ip, port)
         self._active_streamers[stream_id] = ar
+        self._logger.info(
+            f"\n\n"
+            f"\t\t##############################################\n"
+            f"\t\t#   Audio stream started on {self._ip}:{port}   #\n"
+            f"\t\t##############################################\n"
+        )
 
     def _handle_incoming_sound_signal(self, sound_signal: SoundSignal):
         stream_id = sound_signal.demod_id
@@ -75,6 +81,7 @@ class AudioStreamer(Loop):
         # get incoming data
         try:
             in_packet = self._in_queue.get(timeout=0.1)
+            self._logger.trace(f"Audio data received")
         except queue.Empty:
             return
 

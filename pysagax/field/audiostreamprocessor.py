@@ -21,6 +21,21 @@ from pysagax.util.queue_put import queue_put
 
 import multiprocessing as mp
 
+"""TODO list
+check live changes if they are needed
+
+compress stream packets using zlib
+if I missed the header packet of a wav stream, can I reconstruct it?
+    check header info, it doesn't mach previous than also contstruct a new header
+
+TEST:
+    I start a stream then pause it and start a new one (that has different headers) will ffmpeg die??
+    
+poll ffmpeg status
+dont even start if I dont have the header packet
+
+"""
+
 
 class AudioStreamer(mp.Process):
     """
@@ -45,7 +60,7 @@ class AudioStreamer(mp.Process):
 
         self._ffmpeg_process = None
 
-        self._fifo_path = f"/tmp/audio_pipe/stream_id_{self._stream_id}"
+        self._fifo_path = f"/tmp/audio_pipe_stream_id_{self._stream_id}"
         self._destination_ip = "127.0.0.1"
         self._destination_port = self._default_port_start + self._stream_id
 
@@ -97,7 +112,7 @@ class AudioStreamer(mp.Process):
             # TODO: what happens here, is this a problem?
             pass
 
-    def _connect_to_ffmpeg(self, ip, port):
+    def _connect_to_ffmpeg(self):
 
         # Create UDP socket for incoming stream
         rx_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -116,6 +131,7 @@ class AudioStreamer(mp.Process):
         wav_chunk = sound_signal.data
         fifo.write(wav_chunk)
         fifo.flush()
+        self._logger.trace(f"flushed {sound_signal.packet_id} to FIFO")
 
     def _collect_udp_packets(self):
         """
@@ -133,6 +149,7 @@ class AudioStreamer(mp.Process):
 
     def _send_processed_sound_signals(self, udp_packets):
         for data in udp_packets:
+            self._logger.trace("Sending UDP audio stream packet")
             out_packet = SoundSignal()
             out_packet.demod_id = self._stream_id
             self._latest_packet_id += 1
@@ -148,6 +165,7 @@ class AudioStreamer(mp.Process):
             )
 
     def _teardown(self):
+        self._ffmpeg_process.kill()
         if os.path.exists(self._fifo_path):
             os.remove(self._fifo_path)
             self._logger.info(f" Removed FIFO {self._fifo_path}")
@@ -172,6 +190,7 @@ class AudioStreamer(mp.Process):
         # get data chunk from imput queue
         try:
             sound_signal = self._in_q.get(timeout=0.1)
+            self._logger.trace("received wav audio packet")
         except queue.Empty:
             sound_signal = None
 
@@ -213,9 +232,9 @@ class AudioStreamerHandler:
         self._stop_event.set()
 
     def join(self):
-        self._logger.trace("Waiting for AudioStreamer to join...")
+        self._logger.debug("Waiting for AudioStreamer to join...")
         self._streamer.join()
-        self._logger.trace("AudioStreamer connection joined!")
+        self._logger.debug("AudioStreamer connection joined!")
 
     def is_old(self):
         """If the streamer has not been used for 15 secs it is deemed old and can be stopped"""
@@ -254,6 +273,9 @@ class AudioStreamProcessor(Loop):
     def _start_audio_streamer(self, stream_id):
         sh = AudioStreamerHandler(stream_id, self._out_queue, level=self._logger.level)
         self._active_streams[stream_id] = sh
+        sh.start()
+
+        self._logger.info(f"Activated AudioStreamer#{stream_id} )")
 
     def _handle_incoming_sound_signal(self, sound_signal: SoundSignal):
         stream_id = sound_signal.demod_id
@@ -263,18 +285,26 @@ class AudioStreamProcessor(Loop):
         self._active_streams[stream_id].process_data(sound_signal)
 
     def _shut_down_old_streamers(self):
+        to_remove_ids = []
         for id, sh in self._active_streams.items():
             if sh.is_old():
+                self._logger.info(f"Trying to deactivate AudioStreamer#{id} )")
                 sh.stop()
                 sh.join()
-                del self._active_streams[id]
-                self._logger.info(f"Deactivated AudioStreamer#{id} )")
+                to_remove_ids.append(id)
+
+        for id in to_remove_ids:
+            del self._active_streams[id]
+            self._logger.info(f"Deactivated AudioStreamer#{id} )")
 
     def _loop(self) -> None:
+
+        self._shut_down_old_streamers()
 
         # get incoming data
         try:
             in_packet = self._in_queue.get(timeout=0.1)
+            self._logger.trace(f"Received audio packet")
         except queue.Empty:
             return
 

@@ -196,6 +196,10 @@ class Interpreter(Loop):
                 | proto_cmd.AUTO_CALIBRATION_DISABLE
                 | proto_cmd.AUTO_CALIBRATION_TRIGGER
                 | proto_cmd.CS_RELOAD_CONFIG
+                | proto_cmd.CS_ACTIVATE_DEMODULATION
+                | proto_cmd.CS_DEACTIVATE_DEMODULATION
+                | proto_cmd.CS_START_DEMODULATION_RECORD
+                | proto_cmd.CS_STOP_DEMODULATION_RECORD
             ):
                 response.CopyFrom(self._se_control(command))
 

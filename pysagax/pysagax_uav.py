@@ -84,7 +84,7 @@ class Commander:
 
         self._logger = getLogger("Commander")
         self._manager = multiprocessing.Manager()
-        self._pool = ProcessPoolExecutor(max_workers=14)
+        self._pool = ProcessPoolExecutor(max_workers=15)
 
         self._commands_q = self._manager.Queue(maxsize=1)
         self._responses_q = self._manager.Queue(maxsize=1)

@@ -194,7 +194,7 @@ class PPStreamPreparation(Loop):
                 # and we don't spend spectrum with every packet
                 # then send audio data in a packet that doesn't have spectrum
                 # otherwise send it here
-                if len(self._audio_packets > 40):
+                if len(self._audio_packets) > 40:
                     # if audio queue is very backed up, increase the throughput
                     self._audio_packets_per_stream_packets += 1
                 self._add_audio_packet_to_measurement(packet)
@@ -248,6 +248,7 @@ class PPStreamPreparation(Loop):
             while True:
                 audio_packet = self._audio_queue_in.get(block=True, timeout=0)
                 self._audio_packets.append(audio_packet)
+                self._logger.trace("received audio packet")
         except queue.Empty:
             pass
 

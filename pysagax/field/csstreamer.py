@@ -72,14 +72,19 @@ class CSStreamer(Loop):
         if isinstance(stream_packet, Measurement):
             if len(stream_packet.sound_signal):
                 # If there is audio stream then remove it from stream_packet and direct it to SoundStreamProcessor
+                sound_signal_list = [ss for ss in stream_packet.sound_signal]
                 queue_put(
                     self._audio_stream_queue_out,
-                    stream_packet.sound_signal,
+                    sound_signal_list,
                     0,
                     self._logger,
                     "Stream audio queue out",
                 )
                 del stream_packet.sound_signal[:]
+                if len(stream_packet.detection) == 0 and len(stream_packet.data) == 0:
+                    # the packet only contained audio data, so no need to send it to post processing
+                    self._logger.trace("Measurement packet not sent to post processing")
+                    return
             queue_put(
                 self._stream_queue_out,
                 stream_packet,

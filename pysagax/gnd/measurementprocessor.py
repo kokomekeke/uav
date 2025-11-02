@@ -159,13 +159,15 @@ class MeasurementProcessor(Loop):
 
         # push audio stream
         if len(packet.sound_signal):
+            sound_signal_list = [ss for ss in packet.sound_signal]
             queue_put(
                 self._audio_stream_queue,
-                packet.sound_signal,
+                sound_signal_list,
                 timeout=0,
                 logger=self._logger,
                 message="audio stream",
             )
+            self._logger.trace("audio data received")
 
         return uav_entity
 
