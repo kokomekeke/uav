@@ -840,7 +840,7 @@ def main() -> None:
     multiprocessing.set_start_method("spawn")
     root = tkinter.Tk()
     ex = ClientWindow()
-    root.geometry("1024x768")
+    # root.geometry("1024x768")
     root.wm_title("PySagax-UAV ZMQ Test Client")
     root.mainloop()
     ex.disconnect_commands()
