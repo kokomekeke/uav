@@ -133,6 +133,27 @@ enum Instruction {
     CS_RELOAD_CONFIG = 44;
     CS_WRITE_SAMPLE_SHIFT = 45;
 
+    // Activate the Demodulation
+    //  parameter: DemodulationCommand.id
+    //  parameter: DemodulationCommand.demodulation_freq
+    //  parameter: DemodulationCommand.demodulation_span
+    //  parameter: DemodulationCommand.sound_sample_freq
+    //  response: success[bool]
+    CS_ACTIVATE_DEMODULATION = 46;
+    // Deactivate the Demodulation
+    //  parameter: DemodulationCommand.id
+    //  response: success[bool]
+    CS_DEACTIVATE_DEMODULATION = 47;
+    // Start the recording of the demodulated signal in the wav file with the given name
+    //  parameter: DemodulationCommand.id
+    //  parameter: DemodulationCommand.wav_file_name
+    //  response: success[bool]
+    CS_START_DEMODULATION_RECORD = 48;
+    // Stop the recording of the demodulated signal in the wav file with the given name
+    //  parameter: DemodulationCommand.id
+    //  response: success[bool]
+    CS_STOP_DEMODULATION_RECORD = 49;
+        
     // Forward the message to the Aviation Processing Module in Altiss
     //   parameter: msg_to_apm [MessageToAPM]
     //   response:  success [bool]
@@ -343,6 +364,19 @@ message CalibrationCommand {
 
 }
 
+message DemodulationCommand {
+    // uniqe id of the demodulation
+    uint32  id                      = 1;
+    // center frequency of demodulated signal
+    float   demodulation_freq       = 2;
+    // bandwidth of the demodulated signal
+    float   demodulation_span       = 3;
+    // downsampled frequency of the output signal
+    float   sound_sample_frequency  = 4;
+    // Name of the wav File
+    string  wav_file_name             = 5;
+}
+
 message MessageToAPM{
     // Wraps a message that we want to forward to the Avionics Processing Module in the Altiss project
 
@@ -388,6 +422,8 @@ message Command {
         MessageToAPM msg_to_apm = 13; 
 
         WriteSampleShiftCommand write_shift_command = 14;
+
+        DemodulationCommand demod_command = 15;
     }
     reserved 11;
 }

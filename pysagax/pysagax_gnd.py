@@ -24,6 +24,7 @@ from pysagax.field.scanengine import ScanEngine
 from pysagax.gnd.cievents import CIEvents
 from pysagax.gnd.commaggregate import CommAggregate
 from pysagax.gnd.measurementprocessor import MeasurementProcessor
+from pysagax.gnd.audiostreamer import AudioStreamer
 from pysagax.gnd.commandengine import CommandEngine
 from pysagax.gnd.database import ComIntDatabase
 from pysagax.gnd.monitoring import Monitoring
@@ -79,6 +80,7 @@ class Commander:
         self._api_to_command_engine_commands_q = self._manager.Queue(maxsize=8)
         self._command_engine_to_api_responses_q = self._manager.Queue(maxsize=8)
         self._uavs_to_measurement_processor_q = self._manager.Queue(maxsize=8)
+        self._to_audio_streamer_q = self._manager.Queue(maxsize=100)
         self._geoloc_to_apm_q = self._manager.Queue(maxsize=8)
 
         self._cievents = CIEvents(level=level)
@@ -88,6 +90,7 @@ class Commander:
             db=self._db,
             db_commit_frequency=db_commit_frequency,
         )
+        self._audio_streamer = AudioStreamer(level=level)
         # self._commandengine = CommandEngine(level=level)
         self._monitoring = Monitoring(level=level)
         self._ppgeoloc = PPGeoLoc(
@@ -131,6 +134,11 @@ class Commander:
             self._uavs_to_measurement_processor_q,
             self._telemetry_for_monitoring_q,
             self._to_stream_q,
+            self._to_audio_streamer_q,
+        )
+        audio_streamer_future = self._pool.submit(
+            self._audio_streamer,
+            self._to_audio_streamer_q,
         )
         # commandengine_future = self._pool.submit(self._commandengine)
         monitoring_future = self._pool.submit(
@@ -154,6 +162,7 @@ class Commander:
                     cievents_future,
                     commaggregate_future,
                     measurement_processor_future,
+                    audio_streamer_future,
                     # commandengine_future,
                     monitoring_future,
                     ppgeoloc_future,

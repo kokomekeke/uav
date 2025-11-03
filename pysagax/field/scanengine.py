@@ -919,6 +919,10 @@ class ScanEngine(Loop):
             proto_cmd.CS_TURN_OFF_COMPENSATION,
             proto_cmd.CS_TURN_ON_COMPENSATION,
             proto_cmd.CS_RELOAD_CONFIG,
+            proto_cmd.CS_ACTIVATE_DEMODULATION,
+            proto_cmd.CS_DEACTIVATE_DEMODULATION,
+            proto_cmd.CS_START_DEMODULATION_RECORD,
+            proto_cmd.CS_STOP_DEMODULATION_RECORD,
         ]:
             self.manual_command(command)
             self.check_cs_response()
