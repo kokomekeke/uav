@@ -20,6 +20,8 @@ from pysagax.common.loop import Loop
 
 from pysagax.gnd.database import ComIntDatabase, ComIntDetectionEntity, UAVEntity
 
+from pysagax.util.mat import yaw_pitch_roll_from_quaternion, normalize_angle
+
 
 class MeasurementProcessor(Loop):
     """Processes packets received from UAVs through the UDP stream connection"""
@@ -222,7 +224,25 @@ class MeasurementProcessor(Loop):
     def _loop(self) -> None:
         try:
             id, packet = self._in_queue.get(timeout=1.0)
+
+            # TODO: dont compensate azimuth angles with YPR here. 
+            #           find a better place for this code or decide that the table and stream enpoint will use uncompensated values
+            if isinstance(packet, proto_data.Measurement):
+                try:
+
+                    yaw, _, _ = yaw_pitch_roll_from_quaternion(packet.heading_data.quaternion)
+                    for i in range(len(packet.detection)):
+                        a = packet.detection[i].azimuth
+                        a_compensated = normalize_angle(a + yaw)
+                        a_m = packet.detection[i].mean_azimuth
+                        a_m_compensated = normalize_angle(a_m + yaw)
+                
+                        packet.detection[i].azimuth = a_compensated
+                        packet.detection[i].mean_azimuth = a_m_compensated
+                except:
+                    self._logger.error("Coulndt compensate YPR")
             self._receive_packet(id, packet)
+
 
             queue_put(
                 self._to_stream_queue,
