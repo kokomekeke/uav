@@ -15,7 +15,6 @@ export function useDetectionWorker () {
    * Inicializálja a Worker instance-t (singleton pattern)
    */
   const initWorker = (): Worker => {
-    console.log('initialize worker')
     if (workerInstance && isInitialized) {
       console.log('[WorkerManager] Worker already initialized')
       return workerInstance
@@ -112,7 +111,7 @@ export function useDetectionWorker () {
    * Kiválasztott UAV ID-k frissítése
    */
   const updateSelectedUavIds = (uavIds: number[]): void => {
-    console.log('[WorkerManager] 📤 Updating selected UAV IDs:', uavIds)
+    // console.log('[WorkerManager] 📤 Updating selected UAV IDs:', uavIds)
     postToWorker({
       type: 'uavIds',
       uavIds
