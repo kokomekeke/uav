@@ -27,8 +27,8 @@ const leafletMap = shallowRef<L.Map | null>(null)
 const heatLayer = shallowRef<any>(null)
 
 // MAP SOURCE
-const url = ref('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
-// const url = ref('/tiles/{z}/{x}/{y}.png')
+// const url = ref('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
+const url = ref('/tiles/{z}/{x}/{y}.png')
 
 const attribution = ref('&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors')
 
