@@ -61,6 +61,7 @@ export const useSensorStore = defineStore('sensor', () => {
   })
   const isGeoJsonEnabled = ref(false)
   let geoJsonIntervalId: number | null = null
+  let geoJsonCleanupIntervalId: number | null = null
 
   // Cleanup interval reference
   let cleanupIntervalId: number | null = null
@@ -108,7 +109,7 @@ export const useSensorStore = defineStore('sensor', () => {
 
   const stopPeriodicCleanup = (): void => {
     if (cleanupIntervalId !== null) {
-      console.log('[Store] 🛑 Stopping periodic cleanup')
+      // console.log('[Store] 🛑 Stopping periodic cleanup')
       window.clearInterval(cleanupIntervalId)
       cleanupIntervalId = null
     }
@@ -118,158 +119,169 @@ export const useSensorStore = defineStore('sensor', () => {
   // GEOJSON FETCH
   // ============================================================================
 
+  let isFetching = false
+
   const fetchGeoJsonData = async (): Promise<void> => {
+
     if (!isGeoJsonEnabled.value) return
+    if (isFetching) {
+      console.warn('[Store] ⏳ Previous fetch still running, skipping...')
+      return
+    }
+    isFetching = true
 
     const { limit, stride, showRaw, showFiltered } = geoJsonSettings.value
-
-    const now = Date.now()
     const newPoints: GeoJsonPoint[] = []
 
     try {
-      // Fetch RAW data
-      if (showRaw) {
-        const rawUrl = `http://localhost:5000/v1/comintgeoloc/geojson/raw/list_last/${limit}?stride=${stride}`
-        console.log('[Store] 🌍 Fetching RAW GeoJSON:', rawUrl)
+      const start = performance.now()
 
-        try {
-          console.log('kutyulimutyuli')
-          const rawResponse = await fetch(rawUrl)
-          console.log('[Store] 📥 RAW Response status:', rawResponse.status, rawResponse.statusText)
-
-          if (!rawResponse.ok) {
-            const errorText = await rawResponse.text()
-            console.error('[Store] ❌ RAW fetch failed:', errorText)
-            throw new Error(`HTTP ${rawResponse.status}: ${errorText}`)
-          }
-
-          const rawData = await rawResponse.json()
-          console.log('[Store] ✅ RAW data received:', {
-            type: rawData.type,
-            featuresCount: rawData.features?.length,
-            firstFeature: rawData.features?.[0]
-          })
-
-          if (!rawData.features || !Array.isArray(rawData.features)) {
-            console.warn('[Store] ⚠️ No features array in response')
-            return
-          }
-
-          let processedCount = 0
-          rawData.features.forEach((feature: any, idx: number) => {
-            const coords = feature.geometry?.coordinates
-            if (!coords || coords.length !== 2) {
-              console.warn(`[Store] ⚠️ Feature ${idx} has invalid coords:`, feature)
-              return
-            }
-
-            const [lon, lat] = coords
-
-            if (isNaN(lat) || isNaN(lon)) {
-              console.warn(`[Store] ⚠️ Feature ${idx} has NaN coords:`, { lat, lon })
-              return
-            }
-
-            newPoints.push({
-              id: feature.properties?.geoloc_id || `raw-${idx}-${Math.random()}`,
-              coordinate: [lat, lon],
-              timestamp: now,
-              type: 'raw',
-              roi_id: feature.properties?.roi_identifier,
-              properties: feature.properties
+      // 🚀 PÁRHUZAMOS FETCH-EK
+      const [rawData, filteredData] = await Promise.all([
+        // RAW fetch
+        showRaw
+          ? fetch(`http://localhost:5000/v1/comintgeoloc/geojson/raw/list_last/${limit}`)
+            .then(res => res.ok ? res.json() : null)
+            .catch(err => {
+              console.error('[Store] ❌ RAW fetch error:', err)
+              return null
             })
-            processedCount++
-          })
+          : Promise.resolve(null),
 
-          console.log(`[Store] ✅ RAW: processed ${processedCount} of ${rawData.features.length} features`)
-        } catch (rawError) {
-          console.error('[Store] ❌ RAW fetch error:', rawError)
-          throw rawError
-        }
+        // FILTERED fetch
+        showFiltered
+          ? fetch(`http://localhost:5000/v1/comintgeoloc/geojson/list_last/${limit}?stride=${stride}`)
+            .then(res => res.ok ? res.json() : null)
+            .catch(err => {
+              console.error('[Store] ❌ FILTERED fetch error:', err)
+              return null
+            })
+          : Promise.resolve(null)
+      ])
+
+      const fetchEnd = performance.now()
+      console.log(`[Store] ⚡ Fetch completed in ${(fetchEnd - start).toFixed(2)}ms`)
+
+      // === PROCESS RAW DATA ===
+      if (rawData?.features) {
+        rawData.features.forEach((feature: any, idx: number) => {
+          console.log('feature: ', feature)
+          const coords = feature.geometry?.coordinates
+          if (!coords || coords.length !== 2) return
+
+          const [lon, lat] = coords
+          if (isNaN(lat) || isNaN(lon)) return
+
+          const detectionTimestamp = feature.properties?.timestamp
+            ? new Date(feature.properties.timestamp).getTime()
+            : Date.now() - Math.random() * 5000
+
+          newPoints.push({
+            id: feature.properties?.geoloc_id || `raw-${idx}-${Math.random()}`,
+            coordinate: [lat, lon] as [number, number],
+            timestamp: detectionTimestamp,
+            type: 'raw' as const,
+            roi_id: feature.properties?.roi_id,
+            properties: feature.properties
+          })
+        })
       }
 
-      // Fetch FILTERED data
-      if (showFiltered) {
-        const filteredUrl = `http://localhost:5000/v1/comintgeoloc/geojson/list_last/${limit}?stride=${stride}`
-        console.log('[Store] 🌍 Fetching FILTERED GeoJSON:', filteredUrl)
+      // === PROCESS FILTERED DATA ===
+      if (filteredData?.features) {
+        filteredData.features.forEach((feature: any, idx: number) => {
+          const coords = feature.geometry?.coordinates
+          if (!coords || coords.length !== 2) return
 
-        try {
-          const filteredResponse = await fetch(filteredUrl)
-          console.log('[Store] 📥 FILTERED Response status:', filteredResponse.status, filteredResponse.statusText)
+          const [lon, lat] = coords
+          if (isNaN(lat) || isNaN(lon)) return
 
-          if (!filteredResponse.ok) {
-            const errorText = await filteredResponse.text()
-            console.error('[Store] ❌ FILTERED fetch failed:', errorText)
-            throw new Error(`HTTP ${filteredResponse.status}: ${errorText}`)
-          }
+          const detectionTimestamp = feature.properties?.timestamp
+            ? new Date(feature.properties.timestamp).getTime()
+            : Date.now() - Math.random() * 5000
 
-          const filteredData = await filteredResponse.json()
-          console.log('[Store] ✅ FILTERED data received:', {
-            type: filteredData.type,
-            featuresCount: filteredData.features?.length,
-            firstFeature: filteredData.features?.[0]
+          newPoints.push({
+            id: feature.properties?.geoloc_id || `filtered-${idx}-${Math.random()}`,
+            coordinate: [lat, lon] as [number, number],
+            timestamp: detectionTimestamp,
+            type: 'filtered' as const,
+            roi_id: feature.properties?.roi_identifier,
+            properties: feature.properties
           })
-
-          if (!filteredData.features || !Array.isArray(filteredData.features)) {
-            console.warn('[Store] ⚠️ No features array in FILTERED response')
-            return
-          }
-
-          let processedCount = 0
-          filteredData.features.forEach((feature: any, idx: number) => {
-            const coords = feature.geometry?.coordinates
-            if (!coords || coords.length !== 2) {
-              console.warn(`[Store] ⚠️ FILTERED Feature ${idx} has invalid coords:`, feature)
-              return
-            }
-
-            const [lon, lat] = coords
-
-            if (isNaN(lat) || isNaN(lon)) {
-              console.warn(`[Store] ⚠️ FILTERED Feature ${idx} has NaN coords:`, { lat, lon })
-              return
-            }
-
-            newPoints.push({
-              id: feature.properties?.geoloc_id || `filtered-${idx}-${Math.random()}`,
-              coordinate: [lat, lon],
-              timestamp: now,
-              type: 'filtered',
-              roi_id: feature.properties?.roi_identifier,
-              properties: feature.properties
-            })
-            processedCount++
-          })
-
-          console.log(`[Store] ✅ FILTERED: processed ${processedCount} of ${filteredData.features.length} features`)
-        } catch (filteredError) {
-          console.error('[Store] ❌ FILTERED fetch error:', filteredError)
-          throw filteredError
-        }
+        })
       }
 
-      console.log('[Store] 📊 Total points before assignment:', newPoints.length)
-      geoJsonData.value = newPoints
-      console.log('[Store] 📊 geoJsonData.value after assignment:', geoJsonData.value.length)
-      console.log('[Store] 📊 Sample point:', newPoints[0])
+      // === MERGE WITH CLEANUP ===
+      const now = Date.now()
+      const ttl = geoJsonSettings.value.ttl
+
+      const existingPoints = geoJsonData.value.filter(point =>
+        (now - point.timestamp) <= ttl
+      )
+
+      geoJsonData.value = [...existingPoints, ...newPoints]
+
+      const totalTime = performance.now() - start
+      console.log(`[Store] ✅ Total: ${totalTime.toFixed(2)}ms | Points: ${newPoints.length} | Total: ${geoJsonData.value.length}`)
     } catch (error) {
       console.error('[Store] ❌ Failed to fetch GeoJSON:', error)
+    } finally {
+      isFetching = false
+    }
+
+  }
+
+  // ============================================================================
+  // GEOJSON CLEANUP
+  // ============================================================================
+
+  const startGeoJsonCleanup = (): void => {
+    if (geoJsonCleanupIntervalId !== null) return
+
+    console.log('[Store] 🧹 Starting GeoJSON cleanup (every 5s)')
+
+    geoJsonCleanupIntervalId = window.setInterval(() => {
+      if (!isGeoJsonEnabled.value) return
+
+      const now = Date.now()
+      const ttl = geoJsonSettings.value.ttl
+
+      const beforeCount = geoJsonData.value.length
+      geoJsonData.value = geoJsonData.value.filter(point => {
+        const age = now - point.timestamp
+        return age <= ttl
+      })
+
+      const cleaned = beforeCount - geoJsonData.value.length
+      if (cleaned > 0) {
+        console.log(`[Store] 🧹 Cleaned ${cleaned} expired GeoJSON points`)
+      }
+    }, 5000) // 5 másodpercenként
+  }
+
+  const stopGeoJsonCleanup = (): void => {
+    if (geoJsonCleanupIntervalId !== null) {
+      console.log('[Store] 🛑 Stopping GeoJSON cleanup')
+      window.clearInterval(geoJsonCleanupIntervalId)
+      geoJsonCleanupIntervalId = null
     }
   }
 
-  const startGeoJsonFetch = (): void => {
+  async function startGeoJsonFetch (): Promise<void> {
     if (geoJsonIntervalId !== null) return
 
     console.log('[Store] 🌍 Starting GeoJSON periodic fetch')
     isGeoJsonEnabled.value = true
 
-    // Initial fetch
-    fetchGeoJsonData()
+    // Initial fetch — wait for completion
+    await fetchGeoJsonData()
+    console.log('first fetch completed')
 
-    // Periodic fetch
-    geoJsonIntervalId = window.setInterval(() => {
-      fetchGeoJsonData()
-    }, geoJsonSettings.value.fetchPeriodSec * 1000)
+    // Start periodic fetch
+    geoJsonIntervalId = window.setInterval(fetchGeoJsonData, geoJsonSettings.value.fetchPeriodSec * 1000)
+
+    // Start cleanup is
+    startGeoJsonCleanup()
   }
 
   const stopGeoJsonFetch = (): void => {
@@ -278,6 +290,7 @@ export const useSensorStore = defineStore('sensor', () => {
       window.clearInterval(geoJsonIntervalId)
       geoJsonIntervalId = null
     }
+    stopGeoJsonCleanup()
     isGeoJsonEnabled.value = false
     geoJsonData.value = []
   }
@@ -356,9 +369,9 @@ export const useSensorStore = defineStore('sensor', () => {
           })
 
           const cleaned = beforeCount - sensors.value[uavId].detections.length
-          if (cleaned > 0) {
-            // console.log(`[Store] 🧹 Cleaned ${cleaned} expired detections during insert (sensor ${uavId})`)
-          }
+          // if (cleaned > 0) {
+          //   console.log(`[Store] 🧹 Cleaned ${cleaned} expired detections during insert (sensor ${uavId})`)
+          // }
         }
 
         const buffer = sensors.value[uavId].detections
@@ -377,7 +390,7 @@ export const useSensorStore = defineStore('sensor', () => {
     const cleanupStats = onWorkerMessage<StatsUpdatedMessage>(
       'statsUpdated',
       (data) => {
-        // console.log('[Store] 📊 Worker stats:', data.stats)
+        console.log('[Store] 📊 Worker stats:', data.stats)
       }
     )
 
@@ -392,7 +405,7 @@ export const useSensorStore = defineStore('sensor', () => {
     const cleanupStarted = onWorkerMessage<WorkerStartedMessage>(
       'workerStarted',
       (data) => {
-        // console.log(`[Store] ✅ Worker started - version: ${data.version}`)
+        console.log(`[Store] ✅ Worker started - version: ${data.version}`)
       }
     )
 
@@ -408,7 +421,7 @@ export const useSensorStore = defineStore('sensor', () => {
       (data) => {
         const usedMB = (data.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)
         const totalMB = (data.memory.totalJSHeapSize / 1024 / 1024).toFixed(2)
-        // console.log(`[Store] 💾 Worker memory: ${usedMB}MB / ${totalMB}MB`)
+        console.log(`[Store] 💾 Worker memory: ${usedMB}MB / ${totalMB}MB`)
       }
     )
 
@@ -421,7 +434,7 @@ export const useSensorStore = defineStore('sensor', () => {
       cleanupMemory
     )
 
-    // console.log('[Store] ✅ Worker initialized and handlers registered')
+    console.log('[Store] ✅ Worker initialized and handlers registered')
     startPeriodicCleanup()
   }
 
@@ -431,17 +444,17 @@ export const useSensorStore = defineStore('sensor', () => {
 
   const initializeStream = (): void => {
     if (eventSource.value) {
-      // console.log('[Store] 📡 Stream already connected')
+      console.log('[Store] 📡 Stream already connected')
       return
     }
 
-    // console.log('[Store] 📡 Initializing SSE stream connection to:', streamUrl.value)
+    console.log('[Store] 📡 Initializing SSE stream connection to:', streamUrl.value)
 
     try {
       eventSource.value = new EventSource(streamUrl.value)
 
       eventSource.value.onopen = () => {
-        // console.log('[Store] 📡 ✅ SSE Stream connected')
+        console.log('[Store] 📡 ✅ SSE Stream connected')
         isStreamConnected.value = true
       }
 
@@ -466,10 +479,10 @@ export const useSensorStore = defineStore('sensor', () => {
         isStreamConnected.value = false
 
         if (eventSource.value?.readyState === EventSource.CLOSED) {
-          // console.log('[Store] 📡 Stream closed, attempting to reconnect in 5 seconds...')
+          console.log('[Store] 📡 Stream closed, attempting to reconnect in 5 seconds...')
           setTimeout(() => {
             if (!isStreamConnected.value) {
-              // console.log('[Store] 📡 Reconnecting...')
+              console.log('[Store] 📡 Reconnecting...')
               disconnectStream()
               initializeStream()
             }
@@ -477,7 +490,7 @@ export const useSensorStore = defineStore('sensor', () => {
         }
       }
 
-      // console.log('[Store] 📡 SSE Stream listener registered')
+      console.log('[Store] 📡 SSE Stream listener registered')
     } catch (error) {
       console.error('[Store] 📡 Failed to initialize SSE stream:', error)
       errorMessage.value = 'Failed to connect to stream'
@@ -486,11 +499,11 @@ export const useSensorStore = defineStore('sensor', () => {
 
   const disconnectStream = (): void => {
     if (eventSource.value) {
-      // console.log('[Store] 📡 Disconnecting SSE stream...')
+      console.log('[Store] 📡 Disconnecting SSE stream...')
       eventSource.value.close()
       eventSource.value = null
       isStreamConnected.value = false
-      // console.log('[Store] 📡 ✅ SSE Stream disconnected')
+      console.log('[Store] 📡 ✅ SSE Stream disconnected')
     }
   }
 
@@ -532,13 +545,13 @@ export const useSensorStore = defineStore('sensor', () => {
         }
 
         if (!isStreamConnected.value && !eventSource.value) {
-          // console.log('[Store] 📡 Sensors selected, initializing stream...')
+          console.log('[Store] 📡 Sensors selected, initializing stream...')
           initializeStream()
         }
 
         updateSelectedUavIds(selectedIds)
       } else {
-        // console.log('[Store] No sensors selected')
+        console.log('[Store] No sensors selected')
       }
     },
     { immediate: true, deep: true }
@@ -551,13 +564,13 @@ export const useSensorStore = defineStore('sensor', () => {
   const selectSensor = (uavId: number): void => {
     if (sensors.value[uavId]) {
       sensors.value[uavId].is_selected = !sensors.value[uavId].is_selected
-      // console.log(`[Store] Sensor ${uavId} ${sensors.value[uavId].is_selected ? 'selected' : 'deselected'}`)
+      console.log(`[Store] Sensor ${uavId} ${sensors.value[uavId].is_selected ? 'selected' : 'deselected'}`)
     }
   }
 
   const updateRealtimeConfig = (config: Partial<RealtimeConfig>): void => {
     realtimeConfig.value = { ...realtimeConfig.value, ...config }
-    // console.log('[Store] ⚙️ Realtime config updated:', realtimeConfig.value)
+    console.log('[Store] ⚙️ Realtime config updated:', realtimeConfig.value)
   }
 
   const handleStreamData = (rawData: string): void => {
@@ -596,7 +609,7 @@ export const useSensorStore = defineStore('sensor', () => {
       })
 
       sensors.value = sensorsMap
-      // console.log('[Store] ✅ Sensors fetched:', Object.keys(sensorsMap).length)
+      console.log('[Store] ✅ Sensors fetched:', Object.keys(sensorsMap).length)
     } catch (error) {
       console.error('[Store] ❌ Failed to fetch sensors:', error)
       errorMessage.value = 'Failed to load sensors'
@@ -610,7 +623,7 @@ export const useSensorStore = defineStore('sensor', () => {
       const uavId = selectedSensor.value.uav_id
       delete sensors.value[uavId]
       selectedSensor.value = null
-      // console.log(`[Store] Sensor ${uavId} removed`)
+      console.log(`[Store] Sensor ${uavId} removed`)
     }
   }
 
@@ -623,7 +636,7 @@ export const useSensorStore = defineStore('sensor', () => {
       sensor.detections = []
     })
     clearDetections()
-    // console.log('[Store] 🧹 All detections cleared')
+    console.log('[Store] 🧹 All detections cleared')
   }
 
   const debugReactivity = (): void => {

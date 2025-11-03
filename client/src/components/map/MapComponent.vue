@@ -50,8 +50,11 @@ const localGeoJsonSettings = ref({
   fetchPeriodSec: 1,
   showRaw: true,
   showFiltered: true,
-  ttl: 10000
+  ttl: 60000
 })
+
+// --- ÚJ: GeoJSON renderelés kontroll ---
+const geoJsonRenderKey = ref(0)
 
 // --- REAL-TIME CONFIG ---
 const realtimeConfig = ref({
@@ -95,29 +98,27 @@ const selectedSensorCount = computed(() => selectedSensors.value.length)
 
 // --- GEOJSON COMPUTED ---
 const geoJsonPointsWithOpacity = computed(() => {
-  console.log('geoJsonPointsWithOpacity')
   const now = Date.now()
   const ttl = localGeoJsonSettings.value.ttl
 
   const points = geoJsonData.value.map(point => {
     const age = now - point.timestamp
-    const opacity = Math.max(0.3, 1 - (age / ttl))
+    const opacity = Math.max(0.1, 1 - (age / ttl))
 
     return {
       ...point,
-      opacity: isNaN(opacity) ? 1 : opacity
+      opacity: isNaN(opacity) ? 1 : opacity,
+      age: age
     }
   }).filter(point => {
-    // Filter out NaN coordinates
     const [lat, lon] = point.coordinate
     if (isNaN(lat) || isNaN(lon)) {
       console.warn('[Map] Filtered out NaN coordinate:', point)
       return false
     }
-    return true
+    return point.opacity >= 0.1
   })
-  console.log('pointzzzz: ', points)
-  // Update debug info
+
   debugInfo.value.geoJsonRaw = points.filter(p => p.type === 'raw').length
   debugInfo.value.geoJsonFiltered = points.filter(p => p.type === 'filtered').length
 
@@ -127,12 +128,10 @@ const geoJsonPointsWithOpacity = computed(() => {
     filtered: debugInfo.value.geoJsonFiltered
   })
 
-  console.log('geo_points: ', points)
-
   return points
 })
 
-// --- FUNCTIONS (heading, icons, lines stb.) ---
+// --- FUNCTIONS ---
 
 function getHeadingFromQuaternion([q0, q1, q2, q3]: number[]): number {
   if (q0 === undefined || q1 === undefined || q2 === undefined || q3 === undefined) return 0
@@ -301,9 +300,7 @@ function toggleGeoJsonFetch() {
   if (isGeoJsonEnabled.value) {
     sensorStore.stopGeoJsonFetch()
   } else {
-    // Update settings first
     updateGeoJsonSettings()
-    // Then start
     sensorStore.startGeoJsonFetch()
   }
 }
@@ -361,13 +358,34 @@ function onMapReady (mapInstance: any) {
   console.log('[Map] Map ready, bounds:', mapBounds.value)
 }
 
-// Map component-ben watch hozzáadása
-watch(() => geoJsonData.value, (newVal) => {
-  console.log('[Map] 🔄 geoJsonData changed, new length:', newVal.length)
-  console.log('[Map] 🔄 computed points:', geoJsonPointsWithOpacity.value.length)
-}, { deep: true, immediate: true })
+// --- WATCHERS ---
 
-// --- WATCHERS (OPTIMIZED) ---
+// 🆕 ÚJ: Egyszerű watch a GeoJSON pontok változására
+watch(geoJsonPointsWithOpacity, (newPoints) => {
+  if (newPoints.length > 0 && isGeoJsonEnabled.value) {
+    // Force re-render when points change
+    geoJsonRenderKey.value++
+    console.log('[Map] 🔄 GeoJSON points changed, triggering re-render (key:', geoJsonRenderKey.value, ')')
+  }
+}, { deep: true })
+
+// 🆕 ÚJ: Watch a TTL változására
+watch(() => localGeoJsonSettings.value.ttl, () => {
+  console.log('[Map] 🔄 TTL setting changed')
+  if (isGeoJsonEnabled.value) {
+    geoJsonRenderKey.value++
+  }
+})
+
+watch(
+  geoJsonData,
+  (newVal) => {
+    console.log('1234[Map] GeoJSON data changed (deep):', newVal)
+    geoJsonRenderKey.value++
+  },
+  { deep: true }
+)
+
 watch(sensors, () => {
   if (hasSelectedSensors.value) {
     renderDetections()
@@ -383,6 +401,22 @@ watch(batchInterval, val => (batchIntervalLocal.value = val), { immediate: true 
 watch(geoJsonData, (newData) => {
   console.log('[Map] GeoJSON data changed:', newData.length, 'points')
   debugInfo.value.geoJsonCount = geoJsonPointsWithOpacity.value.length
+}, { deep: true })
+
+watch(geoJsonPointsWithOpacity, (newPoints) => {
+  console.log('[Map] 🔍 GeoJSON points details:', {
+    total: newPoints.length,
+    sample: newPoints.slice(0, 3).map(p => ({
+      coordinate: p.coordinate,
+      opacity: p.opacity,
+      age: p.age,
+      type: p.type
+    }))
+  })
+
+  if (newPoints.length > 0 && isGeoJsonEnabled.value) {
+    geoJsonRenderKey.value++
+  }
 }, { deep: true })
 
 onMounted(async () => {
@@ -416,6 +450,7 @@ onBeforeUnmount(() => {
           <div>Detections: {{ debugInfo.detectionsCount }}</div>
           <div>GeoJSON: {{ debugInfo.geoJsonCount }} (🔴{{ debugInfo.geoJsonRaw }} 🔵{{ debugInfo.geoJsonFiltered }})</div>
           <div>Fetch: {{ isGeoJsonEnabled ? '✅' : '❌' }}</div>
+          <div>Render Key: {{ geoJsonRenderKey }}</div>
           <div>Render: {{ debugInfo.renderTime.toFixed(1) }}ms</div>
           <div>Cache: {{ debugInfo.cacheSize }}</div>
         </div>
@@ -440,9 +475,10 @@ onBeforeUnmount(() => {
           />
         </template>
 
-        <!-- GeoJSON markers -->
-        <template v-for="point in geoJsonPointsWithOpacity" :key="`geojson-${point.id}-${point.type}`">
+        <!-- 🆕 GeoJSON markers - KEY-vel a force re-render-hez -->
+        <template v-for="point in geoJsonPointsWithOpacity" :key="`geojson-${point.id}-${point.type}-${geoJsonRenderKey}-${point.opacity.toFixed(2)}`">
           <l-circle-marker
+            v-if="point.coordinate?.length === 2"
             :lat-lng="point.coordinate"
             :radius="8"
             :color="point.type === 'raw' ? '#ff0000' : '#0000ff'"
@@ -450,6 +486,7 @@ onBeforeUnmount(() => {
             :fillOpacity="point.opacity"
             :opacity="point.opacity"
             :weight="2"
+            class="fade-marker"
           >
             <l-popup>
               <div class="text-xs">
@@ -457,7 +494,9 @@ onBeforeUnmount(() => {
                 <div><strong>ID:</strong> {{ point.id }}</div>
                 <div v-if="point.roi_id"><strong>ROI:</strong> {{ point.roi_id }}</div>
                 <div><strong>Age:</strong> {{ ((Date.now() - point.timestamp) / 1000).toFixed(1) }}s</div>
+                <div><strong>Opacity:</strong> {{ (point.opacity * 100).toFixed(0) }}%</div>
                 <div><strong>Coord:</strong> [{{ point.coordinate[0].toFixed(4) }}, {{ point.coordinate[1].toFixed(4) }}]</div>
+                <div><strong>Render Key:</strong> {{ geoJsonRenderKey }}</div>
               </div>
             </l-popup>
           </l-circle-marker>
@@ -618,4 +657,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 @import "leaflet/dist/leaflet.css";
+
+.fade-marker {
+  transition: opacity 0.5s ease-in-out;
+}
 </style>

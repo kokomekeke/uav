@@ -102,6 +102,27 @@ class ComIntGeoLocEntity(db.Model):
     timestamp = db.Column(db.DateTime(), default=datetime.datetime.now, nullable=False)
 
 
+class ComIntFilteredGeoLocEntity(db.Model):
+    """
+    Stores KÃ¡lmÃ¡n filtered geolocation data calculated from ComInt detections.
+    """
+
+    __tablename__ = "comintfilteredgeoloc"
+
+    geoloc_id = db.Column(db.BigInteger(), primary_key=True)  # autoincremented id
+
+
+    roi_identifier = db.Column(db.Integer(), nullable=True)
+
+    lat = db.Column(db.Numeric(10, 6))
+    lon = db.Column(db.Numeric(10, 6))
+    heading = db.Column(db.Numeric(10, 6))
+    speed = db.Column(db.Numeric(10, 6))
+    # certainty_radius = db.Column(db.Numeric(10, 1)
+
+    timestamp = db.Column(db.DateTime(), default=datetime.datetime.now, nullable=False)
+
+
 class ComIntDetectionEntity(db.Model):
     __tablename__ = "comintdetection"
 

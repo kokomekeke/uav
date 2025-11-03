@@ -92,7 +92,7 @@ class TargetMocker(multiprocessing.Process):
             ]
         )
         return sm
-    
+
     def generate_current_location(self):
         elapsed_time = time() - self.start_time
         distance_km = elapsed_time * self.speed_mps / 1000

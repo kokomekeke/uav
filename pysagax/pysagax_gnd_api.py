@@ -13,6 +13,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from pysagax.common.loop import Loop
 
+
 try:
     from pysagax.gnd.api.api import api
 
@@ -31,35 +32,55 @@ from pysagax.gnd.database import db
 #           - finalize passing queues in run_api
 
 app = Flask(__name__)
-CORS(
-    app,
-    resources={
-        r"*": {
-            "origins": ["http://localhost:5173"],
-            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "allow_headers": [
-                "Content-Type",
-                "Authorization",
-                "Accept",
-                "Cache-Control",
-            ],
-            "expose_headers": ["Content-Type", "Cache-Control"],
-            "supports_credentials": True,  # Important for EventSource with wildcard origin
-        }
-    },
-)
 
+# CORS(app, resources={
+#     r"/*": {
+#         "origins": ["http://localhost:5173", "http://localhost:5000"],
+#         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+#         "allow_headers": ["Content-Type", "Authorization"],
+#         "supports_credentials": True
+#     }
+# })
+#
+# socketio = SocketIO(
+#     app,
+#     async_mode="eventlet",
+#     cors_allowed_origins="*",
+#     logger=True,
+#     engineio_logger=True,
+#     ping_timeout=45,
+#     ping_interval=15,
+#     allow_upgrades=True,
+#     transports=["websocket", "polling"],  # only websocket transport
+# )
+
+
+# CORS(app,
+#      origins=["http://localhost:5173", "http://localhost:5000"],
+#      supports_credentials=True)
+#
+# socketio = SocketIO(
+#     app,
+#     async_mode="eventlet",
+#     cors_allowed_origins=["http://localhost:5173", "http://localhost:5000"],  # ⭐ Konkrét origin-ek
+#     logger=True,
+#     engineio_logger=True,
+#     ping_timeout=45,
+#     ping_interval=15,
+#     transports=["polling", "websocket"],  # ⭐ polling először!
+# )
+
+CORS(app)
+
+# ✅ THREADING MODE:
 socketio = SocketIO(
     app,
-    async_mode="eventlet",
+    async_mode='threading',  # ⭐ NEM eventlet!
     cors_allowed_origins="*",
     logger=True,
-    engineio_logger=True,
-    ping_timeout=45,
-    ping_interval=15,
-    allow_upgrades=True,
-    transports=["websocket", "polling"],  # only websocket transport
+    engineio_logger=True
 )
+
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -145,9 +166,9 @@ def run_api(
         app,
         host=host,
         port=port,
-        debug=logger.isEnabledFor(
-            logging.DEBUG
-        ),  # True if logging level is DEBUG or lower (TRACE)
+        debug=False,
+        use_reloader=False,
+        allow_unsafe_werkzeug=True,  # ⭐ ADD HOZZÁ EZT!
     )
 
 

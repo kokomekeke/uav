@@ -9,6 +9,8 @@ from flask import jsonify, make_response, current_app, Response, request, stream
 from sqlalchemy.sql import text
 from flask_marshmallow_openapi import open_api
 
+from functools import wraps
+from time import time as current_time
 
 import pysagax.message.command_pb2 as proto_cmd
 from google.protobuf.json_format import Parse, MessageToDict, ParseDict, MessageToJson
@@ -46,6 +48,45 @@ uav_schema = UAVSchema()
 
 logger = logging.getLogger("api")
 
+_geojson_cache = {}
+_cache_timestamps = {}
+
+
+def simple_cache(ttl_seconds=10):
+    """Cache decorator with TTL"""
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Generate cache key from function name and args
+            cache_key = f"{func.__name__}:{flask.request.full_path}"
+            now = current_time()
+
+            # Check cache
+            if cache_key in _geojson_cache:
+                if now - _cache_timestamps.get(cache_key, 0) < ttl_seconds:
+                    print(f"[Cache] ✅ HIT: {cache_key}")
+                    return _geojson_cache[cache_key]
+
+            # Cache miss - execute function
+            print(f"[Cache] ❌ MISS: {cache_key}")
+            result = func(*args, **kwargs)
+
+            # Store in cache
+            _geojson_cache[cache_key] = result
+            _cache_timestamps[cache_key] = now
+
+            # Cleanup old entries (keep max 100)
+            if len(_geojson_cache) > 100:
+                oldest_key = min(_cache_timestamps.keys(), key=_cache_timestamps.get)
+                del _geojson_cache[oldest_key]
+                del _cache_timestamps[oldest_key]
+
+            return result
+
+        return wrapper
+
+    return decorator
 
 def not_found_error(message):
     return make_response(jsonify(message), 404)
@@ -184,6 +225,60 @@ def comintdetection_detail(id):
     comintdetection = ComIntDetectionEntity.query.get(id)
     return comintdetection_schema.jsonify(comintdetection)
 
+@open_api.get(
+    response_schema=GeoJSONSchema,
+    has_id_in_path=True,
+)
+@api.route("/comintgeoloc/geojson/raw/list_last/<int:limit>", methods=["GET"])
+def comintevent_raw_geojson(limit):
+    """
+    Return a geojson of the most recent raw (unfiltered) geolocations.
+    limit sets the number of returned points.
+    roi URL parameter filters the points for the given roi_ids.
+    if stride URL parameter is specified it only returns every n-th row of the geolocation table.
+
+    Usage with limit=1000, roi=[10, 12, 15] and stride=5
+        .../geojson/list_last/1000?roi=10@&roi=12&roi=15&stride=5
+
+    """
+    stride = flask.request.args.get("stride", 1, type=int)
+    roi_ids = flask.request.args.getlist("roi_id", type=int)
+
+    sql = """
+    WITH ranked AS (
+        SELECT *
+        FROM comintgeoloc
+        {where_clause}
+    )
+    SELECT *
+    FROM ranked
+    WHERE geoloc_id % :stride = 0 
+    ORDER BY geoloc_id DESC
+    LIMIT :limit
+    """
+
+    where_clause = "WHERE roi_identifier IN :roi_ids" if roi_ids else ""
+
+    sql = sql.format(where_clause=where_clause)
+    query = db.session.query(ComIntGeoLocEntity).from_statement(text(sql))
+
+    params = {"stride": stride, "limit": limit}
+    if roi_ids:
+        params["roi_ids"] = tuple(roi_ids)
+
+    points = query.params(**params).all()
+
+    return jsonify(
+        {
+            "type": "FeatureCollection",
+            "name": "ComIntGeoLoc",
+            "crs": {
+                "type": "name",
+                "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"},
+            },
+            "features": [geojson_feature_from_geoloc(point) for point in points],
+        }
+    )
 
 @open_api.get(
     response_schema=GeoJSONSchema,
@@ -207,7 +302,7 @@ def comintevent_geojson(limit):
     sql = """
     WITH ranked AS (
         SELECT *
-        FROM comintgeoloc
+        FROM comintfilteredgeoloc
         {where_clause}
     )
     SELECT *
