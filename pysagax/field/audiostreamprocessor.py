@@ -13,7 +13,7 @@ import socket
 
 from pysagax.common.loop import Loop
 
-from pysagax.message.data_pb2 import SoundSignal
+from pysagax.message.data_pb2 import SoundSignal, WavHeaderInfos
 from pysagax.message.data_types import DataType
 
 from pysagax.util.queue_put import queue_put
@@ -36,6 +36,31 @@ dont even start if I dont have the header packet
 
 """
 
+def generate_wav_header(length_of_format:int, type_of_format:int, number_of_channels: int, sample_rate:int, bits_per_sample: int):
+    """
+    Generate the wav header bytes for a continous stream
+    file size is set as FFFFFFFF
+    """
+    bytes_per_sample: int = int(sample_rate * bits_per_sample * number_of_channels / 8) #TODO:  	(Sample Rate * BitsPerSample * Channels) / 8
+
+    block_alignment:int = int(bits_per_sample * number_of_channels / 8) # TODO:  (BitsPerSample * Channels) / 8.1 - 8 bit mono2 - 8 bit stereo/16 bit mono4 - 16 bit stereo 
+    int.from_bytes()
+    header =  b""
+    header += b'RIFF'
+    header += b'\xFF\xFF\xFF\xFF'  # Place holder for chunk size
+    header += b'WAVE'
+    header += b'fmt '
+    header += length_of_format.to_bytes(length=4, byteorder="little") # Sub chunk size
+    header += type_of_format.to_bytes(length=2, byteorder="little") # audio format, always little endian 1
+    header += number_of_channels.to_bytes(length=2, byteorder="little") # number of channels, always 1
+    header += sample_rate.to_bytes(length=4, byteorder='little') # sample rate
+    header += bytes_per_sample.to_bytes(length=4, byteorder='little') # bytes per sample
+    header += block_alignment.to_bytes(length=2, byteorder="little") # block alignment
+    header += bits_per_sample.to_bytes(length=2, byteorder="little") # bits per sample
+    header += b'data'
+    header += b'\xFF\xFF\xFF\xFF' # place holder for sub chunk size
+
+    return header
 
 class AudioStreamer(mp.Process):
     """
@@ -44,10 +69,11 @@ class AudioStreamer(mp.Process):
     """
 
     def __init__(
-        self, stream_id, in_q: Queue, out_q: Queue, stop_event: mp.Event, level: Any
+        self, stream_id, wav_header: WavHeaderInfos, in_q: Queue, out_q: Queue, stop_event: mp.Event, level: Any
     ):
         super().__init__()
         self._stream_id = stream_id
+        self._wav_header = wav_header
         self._logger = logging.getLogger(f"AudioStreamer#{stream_id:02d}")
         self._logger.setLevel(level)
         self.daemon = True
@@ -128,6 +154,20 @@ class AudioStreamer(mp.Process):
 
         self._receive_ffmpg_data_fn = receive_fn
 
+    def _send_wav_header_to_ffmpeg(self, fifo):
+        header_bytes = generate_wav_header(
+            length_of_format=self._wav_header.length_of_format,
+            type_of_format=self._wav_header.type_of_format,
+            number_of_channels=self._wav_header.number_of_channels,
+            sample_rate=self._wav_header.sample_rate,
+            bits_per_sample=self._wav_header.bits_per_sample,
+        )
+        fifo.write(header_bytes)
+        fifo.flush()
+        self._logger.trace(f"flushed wav header to FIFO: {header_bytes}")
+
+
+
     def _process_sound_signal(self, sound_signal: SoundSignal, fifo):
         wav_chunk = sound_signal.data
         fifo.write(wav_chunk)
@@ -177,8 +217,10 @@ class AudioStreamer(mp.Process):
         self._setup_fifo()
         self._connect_to_ffmpeg()
 
-        # loop
         with open(self._fifo_path, "wb") as fifo:
+            self._send_wav_header_to_ffmpeg(fifo)
+        
+            # loop
             while not self._stop_event.is_set():
                 self._loop(fifo)
 
@@ -204,7 +246,9 @@ class AudioStreamer(mp.Process):
 
 
 class AudioStreamerHandler:
-    def __init__(self, stream_id, processed_packets_return_q, level):
+    def __init__(self, stream_id, wav_header, processed_packets_return_q, level):
+
+        self.wav_header = wav_header
 
         self._logger = logging.getLogger(f"AudioStreamerHandler#{stream_id:02d}")
 
@@ -213,6 +257,7 @@ class AudioStreamerHandler:
         self._stop_event = mp.Event()
         self._streamer = AudioStreamer(
             stream_id=stream_id,
+            wav_header=self.wav_header, 
             in_q=self._to_audio_streamer_q,
             out_q=processed_packets_return_q,
             stop_event=self._stop_event,
@@ -271,8 +316,8 @@ class AudioStreamProcessor(Loop):
 
     # self._create_new_stream()
 
-    def _start_audio_streamer(self, stream_id):
-        sh = AudioStreamerHandler(stream_id, self._out_queue, level=self._logger.level)
+    def _start_audio_streamer(self, stream_id, wav_header):
+        sh = AudioStreamerHandler(stream_id, wav_header, self._out_queue, level=self._logger.level)
         self._active_streams[stream_id] = sh
         sh.start()
 
@@ -281,7 +326,15 @@ class AudioStreamProcessor(Loop):
     def _handle_incoming_sound_signal(self, sound_signal: SoundSignal):
         stream_id = sound_signal.demod_id
         if stream_id not in self._active_streams.keys():
-            self._start_audio_streamer(stream_id)
+            # start audio stream if it doesn't exist
+            self._start_audio_streamer(stream_id, sound_signal.wav_header)
+        
+        if self._active_streams[stream_id].wav_header != sound_signal.wav_header:
+            # Restart audio stream if wav header changed
+            self._active_streams[stream_id].stop()
+            self._active_streams[stream_id].join()
+            del self._active_streams[stream_id]
+            self._start_audio_streamer(stream_id, sound_signal.wav_header)            
 
         self._active_streams[stream_id].process_data(sound_signal)
 
