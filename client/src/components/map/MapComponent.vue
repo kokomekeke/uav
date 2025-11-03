@@ -24,7 +24,7 @@ const {
 } = storeToRefs(sensorStore)
 
 // --- MAP STATE ---
-const zoom = ref(10)
+const zoom = ref(2)
 const center = ref([47.4979, 19.0402])
 const mapRef = ref(null)
 const leafletMap = shallowRef(null)
