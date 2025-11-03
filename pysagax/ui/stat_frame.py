@@ -133,6 +133,7 @@ class StatFrame(tkinter.Frame):
         self.pitch_string = tkinter.StringVar(value="NaN")
         self.roll_string = tkinter.StringVar(value="NaN")
         self.packet_time_string = tkinter.StringVar(value="")
+        self.audio_on_string = tkinter.StringVar(value="..")
 
         self.columnconfigure(0, weight=1, minsize=50)
         self.columnconfigure(1, weight=1, minsize=60)
@@ -263,6 +264,12 @@ class StatFrame(tkinter.Frame):
         time_disp.grid(
             column=1, row=9, columnspan=2, sticky=tkinter.E + tkinter.W, padx=5, pady=3
         )
+        auido_disp = ttk.Label(
+            self, textvariable=self.audio_on_string, **display_kwargs
+        )
+        auido_disp.grid(
+            column=3, row=9, sticky=tkinter.E + tkinter.W, padx=5, pady=3
+        )
 
         self.peak_chart = PeakChart(self)
 
@@ -277,6 +284,7 @@ class StatFrame(tkinter.Frame):
         detection: proto_data.Detection | None = None,
         heading: proto_heading.HeadingData | None = None,
         packet_time: Timestamp | None = None,
+        is_audio_stream_on: bool = False,
     ) -> None:
         rad_to_deg = lambda x: (
             normalize_angle(x * 180 / np.pi, high=360.0, low=0.0)
@@ -336,3 +344,7 @@ class StatFrame(tkinter.Frame):
                 self.roll_string.set(f"{roll:.2f}°")
         if packet_time is not None:
             self.packet_time_string.set(packet_time.ToDatetime())
+        if is_audio_stream_on:
+            self.audio_on_string.set("AUDIO ON")
+        else:
+            self.audio_on_string.set("audio off")

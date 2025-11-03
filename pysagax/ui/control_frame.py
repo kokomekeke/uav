@@ -4,7 +4,7 @@ from tktooltip import ToolTip
 from typing import Any, Callable, Optional
 from pysagax.source.source_manager import SourceManager
 
-from pysagax.ui.custom_widgets import ComboboxWithLabel, EntryWithLabel
+from pysagax.ui.custom_widgets import ComboboxWithLabel, EntryWithLabel, ToggleButton
 from pysagax.util.read_from_conf import read_from_conf
 from pysagax.util.mat import si_to_float
 from pysagax.ui.ui_helpers import en_if
@@ -20,6 +20,7 @@ class SingleROIEntry(tkinter.Frame):
         default_center_freq=None,
         default_span=None,
         default_threshold=None,
+        default_demodulation=False,
         *args,
         **kwargs,
     ):
@@ -40,18 +41,39 @@ class SingleROIEntry(tkinter.Frame):
             self, "Threshold:", 2, 3, default_threshold
         )
 
+        self.do_demodulation = default_demodulation
+
+        demodulate_label = ttk.Label(self, text="Demodulate:")
+        demodulate_label.grid(column=2, row=4, sticky=tkinter.W, padx=5, pady=5)
+        self.toggle_button = ToggleButton(
+            self,
+            self._demod_on_action,
+            self._demod_off_action,
+            default_value=self.do_demodulation,
+        )
+        self.toggle_button.grid(column=3, row=4)
+    
+    def _demod_on_action(self):
+        self.do_demodulation = True
+    
+    def _demod_off_action(self):
+        self.do_demodulation = False
+
+
 
 class DetectionControlFrame(tkinter.Frame):
     def __init__(
         self,
         master: tkinter.Misc,
         pp_configuration_function: Callable,
+        send_commands_function,
         highlight_selected_roi_function: Optional[Callable] = None,
         *args: Any,
         **kwargs: Any,
     ):
         tkinter.Frame.__init__(self, master, *args, **kwargs)
         self.pp_configuration_function = pp_configuration_function
+        self.send_commands_function = send_commands_function
         self.highlight_selected_roi_function = highlight_selected_roi_function
 
         self.columnconfigure(0)
@@ -114,8 +136,9 @@ class DetectionControlFrame(tkinter.Frame):
 
     def configure_commands(self):
         """sends config commands to uav (if updated by button or plot click)"""
-        cmd = self.generate_pp_config_cmd()
-        self.pp_configuration_function(cmd)
+        roi_cmd, demod_cmd_list = self.generate_pp_config_cmd()
+        self.pp_configuration_function(roi_cmd)
+        self.send_commands_function(demod_cmd_list)
 
     def generate_pp_config_cmd(self) -> proto_cmd.PostProcessingConfig:
         """Generates a PostProcessingConfig message from the current settings"""
@@ -130,7 +153,27 @@ class DetectionControlFrame(tkinter.Frame):
                 threshold=float(tab.roi_threshold_entry.get()),
             )
             msg.roi.append(roi)
-        return msg
+        
+        return msg, self.generate_demod_cmds()
+    
+    def generate_demod_cmds(self):
+        demodulation_cmd_list = []
+        for i, tab_name in enumerate(self.tabControl.tabs()):
+            tab = self.tabControl.nametowidget(tab_name)
+            if not tab.do_demodulation:
+                continue
+            cmd = proto_cmd.Command()
+            cmd.instruction = proto_cmd.CS_ACTIVATE_DEMODULATION
+        
+            d_cmd = proto_cmd.DemodulationCommand()
+            d_cmd.id = i
+            d_cmd.demodulation_freq = si_to_float(tab.roi_center_entry.get())
+            d_cmd.demodulation_span = si_to_float(tab.roi_span_entry.get())
+            d_cmd.sound_sample_frequency = 44000
+            cmd.demod_command.CopyFrom(d_cmd)
+            demodulation_cmd_list.append(cmd)
+
+        return demodulation_cmd_list
 
     def get_active_roi_tab_id(self):
         """Returns the index of the currently selected tab
@@ -201,6 +244,7 @@ class ControlFrame(tkinter.Frame):
         conf: Optional[dict[str, Any]],
         do_configuration_function: Callable[[dict[str, Any]], None],
         pp_configuration_function: Callable,
+        send_commands_function,
         source_manager: SourceManager,
         highlight_selected_roi_function: Optional[Callable] = None,
         *args: Any,
@@ -304,6 +348,7 @@ class ControlFrame(tkinter.Frame):
         self.detection_control_frame = DetectionControlFrame(
             self,
             pp_configuration_function,
+            send_commands_function,
             highlight_selected_roi_function=highlight_selected_roi_function,
         )
         self.detection_control_frame.grid(column=0, columnspan=4, row=6, sticky="wens")

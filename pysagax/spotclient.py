@@ -120,6 +120,7 @@ class ClientWindow(tkinter.Frame):
             conf=conf,
             do_configuration_function=self.client.do_configuration,
             pp_configuration_function=self.client.config_pp_settings,
+            send_commands_function=self.client.send_commands,
             source_manager=self.client.source_manager,
             highlight_selected_roi_function=self.plot_frame.highlight_selected_roi,
             relief=tkinter.RAISED,
@@ -283,7 +284,7 @@ class ClientWindow(tkinter.Frame):
         self.stat_frame.update_peak_plot(packet.peaks)
 
         self.stat_frame.update_stats(
-            self.detection_to_plot, self.heading_to_plot, packet.time
+            self.detection_to_plot, self.heading_to_plot, packet.time, bool(len(packet.sound_signal))
         )
 
     @run_once(timeout=10)
