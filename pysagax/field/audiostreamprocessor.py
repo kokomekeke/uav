@@ -64,7 +64,8 @@ class AudioStreamer(mp.Process):
         self._destination_ip = "127.0.0.1"
         self._destination_port = self._default_port_start + self._stream_id
 
-        self._packet_size = 512  # TODO: move to config or command
+        # packet size: ideally a multiple of 188??
+        self._packet_size = 1316  # TODO: move to config or command
 
         # function for receiving data from ffmpeg
         self._receive_ffmpg_data_fn = None
@@ -84,7 +85,7 @@ class AudioStreamer(mp.Process):
             "-i",
             self._fifo_path,  # input fifo
             "-acodec",
-            "libmp3lame",
+            "aac",
             "-b:a",
             "32k",
             # "-c:a", "libopus",
