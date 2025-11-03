@@ -44,7 +44,7 @@ def generate_wav_header(length_of_format:int, type_of_format:int, number_of_chan
     bytes_per_sample: int = int(sample_rate * bits_per_sample * number_of_channels / 8) #TODO:  	(Sample Rate * BitsPerSample * Channels) / 8
 
     block_alignment:int = int(bits_per_sample * number_of_channels / 8) # TODO:  (BitsPerSample * Channels) / 8.1 - 8 bit mono2 - 8 bit stereo/16 bit mono4 - 16 bit stereo 
-    int.from_bytes()
+
     header =  b""
     header += b'RIFF'
     header += b'\xFF\xFF\xFF\xFF'  # Place holder for chunk size
