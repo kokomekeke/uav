@@ -265,7 +265,7 @@ function _doRenderDetections () {
       if (showPlane) item.planeIcon = getPlaneIconById(sensorId)
 
       if (hasAzimuth && showAzimuthLines.value) {
-        item.azimuthLine = computeAzimuthLine(detection.coordinate, detection.azimuth, true)
+        item.azimuthLine = computeAzimuthLine(detection.coordinate, detection.meanAzimuth, true)
         item.hasAzimuth = true
       }
       updatedBuffer.set(stableKey, item)

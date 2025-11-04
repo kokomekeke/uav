@@ -210,8 +210,8 @@ function createOptimizedDetection (
     frequency: detectionItem.frequency,
     azimuth: detectionItem.azimuth ?? 0,
     elevation: detectionItem.elevation ?? 0,
-    meanAzimuth: detectionItem.mean_azimuth ?? 0, // ✅ snake_case -> camelCase (frontend)
-    meanElevation: detectionItem.mean_elevation ?? 0, // ✅ snake_case -> camelCase (frontend)
+    meanAzimuth: detectionItem.meanAzimuth ?? 0, // ✅ snake_case -> camelCase (frontend)
+    meanElevation: detectionItem.meanElevation ?? 0, // ✅ snake_case -> camelCase (frontend)
     coordinate,
     quaternion,
     heading,
