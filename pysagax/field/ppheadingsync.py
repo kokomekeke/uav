@@ -40,6 +40,8 @@ class PPHeadingSync(Loop):
             [{"delta_t": float("inf"), "data": proto_heading.HeadingData()}] * 2
         )
 
+        self._freshest_heading_packet = proto_heading.HeadingData()
+
     def __call__(
         self,
         queue_in: Queue[Any],
@@ -82,6 +84,19 @@ class PPHeadingSync(Loop):
                     delta_t = abs(target_time - ts)
                     current_oldest_ts = ts
                 self.heading_deque[i]["delta_t"] = delta_t
+
+    def _get_freshest_heading_data(self):
+        try:
+            while True:
+                heading_packet: proto_heading.HeadingData = (
+                    self._heading_queue_in.get_nowait()
+                )
+                self._freshest_heading_packet = heading_packet
+        except queue.Empty:
+            pass
+            
+            
+
 
     def _get_best_fitting_heading(
         self, target_time: int
@@ -140,23 +155,27 @@ class PPHeadingSync(Loop):
             meas_packet = self._queue_in.get(block=True, timeout=1)
             assert isinstance(meas_packet, proto_data.Measurement)
 
-            target_time = meas_packet.time.ToNanoseconds()
-            self._update_delta_t(target_time)
-            delta_t, best_fit = self._get_best_fitting_heading(target_time)
+            # target_time = meas_packet.time.ToNanoseconds()
+            # self._update_delta_t(target_time)
+            # delta_t, best_fit = self._get_best_fitting_heading(target_time)
 
-            if best_fit is not None:
-                meas_packet.heading_data.CopyFrom(best_fit)
+            # if best_fit is not None:
+            #     meas_packet.heading_data.CopyFrom(best_fit)
 
-            if self._latest_config_id_value is not None:
-                meas_packet.config_id = self._latest_config_id_value.get()
+            # if self._latest_config_id_value is not None:
+            #     meas_packet.config_id = self._latest_config_id_value.get()
 
-            self._logger.debug(
-                f"Heading and measurement packets merged with a time difference of {delta_t/1e6:.0f}ms. Packet id: {meas_packet.packet_id}"
-            )
-            if delta_t > 5e9 and delta_t < float("inf"):
-                self._logger.warning(
-                    f"Heading data and measurement packets synced with large time difference: {delta_t/1e9:.2f} seconds"
-                )
+            # self._logger.debug(
+            #     f"Heading and measurement packets merged with a time difference of {delta_t/1e6:.0f}ms. Packet id: {meas_packet.packet_id}"
+            # )
+            # if delta_t > 5e9 and delta_t < float("inf"):
+            #     self._logger.warning(
+            #         f"Heading data and measurement packets synced with large time difference: {delta_t/1e9:.2f} seconds"
+            #     )
+
+            self._get_freshest_heading_data()
+            meas_packet.heading_data.CopyFrom(self._freshest_heading_packet)
+            self._logger.debug(f"Synced: cs_time={meas_packet.time}; heading_time={meas_packet.heading_data.timestamp}")
 
             if self._spectrogram_mode.lower() == "playback":
                 # TODO: implement proper record/playback controlling mechanism

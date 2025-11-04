@@ -26,7 +26,15 @@ class AudioRetransmitter:
 
         self._tx_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
+        self._latest_packet_id = 0
+        self._skipped_packets = 0
+
     def transmit(self, packet: SoundSignal):
+        diff = packet.packet_id - self._latest_packet_id
+        self._latest_packet_id = packet.packet_id
+        self._skipped_packets += diff -1
+        #TODO: logger
+        print(f"audio packet#{self._latest_packet_id} \t skipped: {self._skipped_packets} \t {self._skipped_packets/(self._latest_packet_id+1)*100:.2f}%")
         data = packet.data
         self._tx_sock.sendto(data, (self._ip, self._port))
 

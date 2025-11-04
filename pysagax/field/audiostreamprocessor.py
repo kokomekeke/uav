@@ -98,6 +98,9 @@ class AudioStreamer(mp.Process):
 
         self._latest_packet_id = 0  # incremental id for packet order tracking
 
+        self._latest_incoming_packet_id = 0 # TODO: use first received packet id
+        self._skipped_incoming_packets = 0
+
     def _start_ffmpeg_server(self):
         """ """
         import subprocess
@@ -169,6 +172,12 @@ class AudioStreamer(mp.Process):
 
 
     def _process_sound_signal(self, sound_signal: SoundSignal, fifo):
+
+        diff = sound_signal.packet_id - self._latest_incoming_packet_id
+        self._latest_incoming_packet_id = sound_signal.packet_id
+        self._skipped_incoming_packets += diff -1
+        self._logger.debug(f"audio packet#{self._latest_incoming_packet_id} \t skipped: {self._skipped_incoming_packets} \t {self._skipped_incoming_packets/(self._latest_incoming_packet_id+1)*100:.2f}%")
+        
         wav_chunk = sound_signal.data
         fifo.write(wav_chunk)
         fifo.flush()

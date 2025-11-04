@@ -20,3 +20,25 @@ udp://@:4405
 #EXTINF:0,roi_id = 6
 #EXTVLCOPT:network-caching=1000
 udp://@:4406
+#EXTINF:0,roi_id = 0 buff=10s
+#EXTVLCOPT:network-caching=10000
+udp://@:4400
+#EXTINF:0,roi_id = 1b buff=10s
+#EXTVLCOPT:network-caching=10000
+udp://@:4401
+#EXTINF:0,roi_id = 2b buff=10s
+#EXTVLCOPT:network-caching=10000
+udp://@:4402
+#EXTINF:0,roi_id = 3b buff=10s
+#EXTVLCOPT:network-caching=10000
+udp://@:4403
+#EXTINF:0,roi_id = 4b buff=10s
+#EXTVLCOPT:network-caching=10000
+udp://@:4404
+#EXTINF:0,roi_id = 5b buff=10s
+#EXTVLCOPT:network-caching=10000
+udp://@:4405
+#EXTINF:0,roi_id = 6b buff=10s
+#EXTVLCOPT:network-caching=10000
+udp://@:4406
+

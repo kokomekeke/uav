@@ -187,8 +187,10 @@ class PPStreamPreparation(Loop):
         """
 
         current_time = time()
-        if current_time - self._last_spectrum_sent > self._spectrum_interval:
+        elapsed_time = current_time - self._last_spectrum_sent
+        if elapsed_time > self._spectrum_interval or elapsed_time < 0:
             # not pruning spectrum data from measurement packets
+            # check negative elapsed time to evade problems from clock changes and other anomalies
             if self._spectrum_interval == 0 or len(self._audio_packets) > 10:
                 # if the audio packet queue is not backed up too much
                 # and we don't spend spectrum with every packet
