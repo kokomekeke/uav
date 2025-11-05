@@ -17,7 +17,13 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const sensorStore = useSensorStore()
-const { sensors, selectedSensors, hasSelectedSensors, realtimeConfig } = storeToRefs(sensorStore)
+const { heatMapPoints } = storeToRefs(sensorStore)
+
+// ✅ Perzisztens pont tároló - megtartja az utolsó N pontot
+const persistedPoints = ref<Array<{
+  coordinate: [number, number]
+  lastUpdate: number
+}>>([])
 
 const zoom = ref(12)
 const center = ref<[number, number] | null>(null)
@@ -25,11 +31,7 @@ let centerInitialized = false
 const mapRef = ref<any>(null)
 const leafletMap = shallowRef<L.Map | null>(null)
 const heatLayer = shallowRef<any>(null)
-
-// MAP SOURCE
-// const url = ref('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
-const url = ref('/tiles/{z}/{x}/{y}.png')
-
+const url = ref('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
 const attribution = ref('&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors')
 
 const heatmapSettings = ref({
@@ -49,10 +51,10 @@ const heatmapSettings = ref({
 
 const dataSettings = ref({
   timeWindow: 60,
-  intensityMode: 'count' as 'count' | 'frequency' | 'strength' | 'snr',
-  updateInterval: 1000,
+  updateInterval: 500, // ✅ 500ms (gyorsabb update)
   showRealtime: true,
-  gridResolution: 4
+  gridResolution: 4,
+  maxPoints: 100 // ✅ Új: max pontszám
 })
 
 const stats = ref({
@@ -60,58 +62,69 @@ const stats = ref({
   uniqueLocations: 0,
   maxIntensity: 0,
   avgIntensity: 0,
-  selectedSensorCount: 0,
-  totalDetections: 0
+  totalHeatMapPoints: 0
 })
 
 const showControlPanel = ref(false)
 
-const accumulatedPoints = ref<Map<string, { lat: number; lon: number; intensity: number; timestamp: number }>>(new Map())
-
+// ✅ HEATMAP COMPUTED - A perzisztált pontokból dolgozik
 const heatmapPoints = computed(() => {
-  const now = performance.now()
-  const timeWindowMs = dataSettings.value.timeWindow * 1000
-  const locationMap = new Map<string, { count: number; totalIntensity: number; maxIntensity: number }>()
+  if (persistedPoints.value.length === 0) return []
 
-  selectedSensors.value.forEach(sensor => {
-    if (!sensor.detections?.length) return
-    sensor.detections.forEach(detection => {
-      const detectionTime = detection.timestamp || 0
-      const age = now - detectionTime
-      if (age > timeWindowMs) return
-      if (!Array.isArray(detection.coordinate) || detection.coordinate.length !== 2) return
-      const [lat, lon] = detection.coordinate
-      if (!lat || !lon || isNaN(lat) || isNaN(lon)) return
-      const gridKey = `${lat.toFixed(dataSettings.value.gridResolution)},${lon.toFixed(dataSettings.value.gridResolution)}`
-      if (!locationMap.has(gridKey)) {
-        locationMap.set(gridKey, { count: 0, totalIntensity: 0, maxIntensity: 0 })
-      }
-      const loc = locationMap.get(gridKey)!
-      loc.count++
-      let intensity = 0
-      switch (dataSettings.value.intensityMode) {
-        case 'count': intensity = 1; break
-        case 'frequency': intensity = detection.frequency ? detection.frequency / 1e9 : 0; break
-        case 'strength': intensity = Math.abs(detection.azimuth || 0); break
-        case 'snr': intensity = detection.elevation || 0; break
-      }
-      loc.totalIntensity += intensity
-      loc.maxIntensity = Math.max(loc.maxIntensity, intensity)
-    })
+  // ✅ Rendezés timestamp szerint (régebbi → újabb)
+  const sortedPoints = [...persistedPoints.value].sort((a, b) => a.lastUpdate - b.lastUpdate)
+
+  const locationMap = new Map<string, {
+    count: number
+    maxIntensity: number
+    oldestIndex: number
+    latestTimestamp: number
+    lat: number
+    lon: number
+  }>()
+
+  // ✅ Grid aggregáció
+  sortedPoints.forEach((p, index) => {
+    const [lat, lon] = p.coordinate
+    const gridKey = `${lat.toFixed(dataSettings.value.gridResolution)},${lon.toFixed(dataSettings.value.gridResolution)}`
+
+    if (!locationMap.has(gridKey)) {
+      locationMap.set(gridKey, {
+        count: 0,
+        maxIntensity: 0,
+        oldestIndex: index,
+        latestTimestamp: 0,
+        lat,
+        lon
+      })
+    }
+
+    const loc = locationMap.get(gridKey)!
+    loc.count++
+
+    // ✅ Intenzitás pozíció alapján: első pont (legrégebbi) = 0.1, utolsó (legújabb) = 1.0
+    const positionFactor = sortedPoints.length > 1
+      ? (index / (sortedPoints.length - 1)) * 0.9 + 0.1  // 0.1 → 1.0
+      : 1.0
+
+    loc.maxIntensity = Math.max(loc.maxIntensity, positionFactor)
+    loc.oldestIndex = Math.min(loc.oldestIndex, index)
+    loc.latestTimestamp = Math.max(loc.latestTimestamp, p.lastUpdate)
   })
 
   const newPoints: [number, number, number][] = []
   let globalMaxIntensity = 0
   let totalIntensity = 0
 
-  locationMap.forEach((data, key) => {
-    const [lat, lon] = key.split(',').map(Number)
-    const finalIntensity = dataSettings.value.intensityMode === 'count'
-      ? Math.min(data.count / 5, 1.0)
-      : Math.min(data.maxIntensity, 1.0)
+  locationMap.forEach((data) => {
+    // ✅ Smooth intensity: count + pozíció faktor kombináció
+    const countFactor = Math.min(data.count / 5, 1.0)
+    let finalIntensity = (countFactor * 0.3 + data.maxIntensity * 0.7) // 70% pozíció, 30% count
+    finalIntensity = Math.max(0.1, Math.min(finalIntensity, 1.0))
+
     globalMaxIntensity = Math.max(globalMaxIntensity, finalIntensity)
     totalIntensity += finalIntensity
-    newPoints.push([lat, lon, finalIntensity])
+    newPoints.push([data.lat, data.lon, finalIntensity])
   })
 
   stats.value = {
@@ -119,40 +132,22 @@ const heatmapPoints = computed(() => {
     uniqueLocations: locationMap.size,
     maxIntensity: parseFloat(globalMaxIntensity.toFixed(3)),
     avgIntensity: newPoints.length > 0 ? parseFloat((totalIntensity / newPoints.length).toFixed(3)) : 0,
-    selectedSensorCount: selectedSensors.value.length,
-    totalDetections: selectedSensors.value.reduce((sum, s) => sum + (s.detections?.length || 0), 0)
+    totalHeatMapPoints: persistedPoints.value.length
   }
 
   return newPoints
 })
 
+// ✅ SMOOTH UPDATE: SOHA NEM RECREATE, CSAK SETLATLNGS!
 function updateHeatmap(forceRecreate = false) {
   if (!leafletMap.value) return
-  const now = performance.now()
-  const timeWindowMs = dataSettings.value.timeWindow * 1000
-  const newPoints = heatmapPoints.value
 
-  newPoints.forEach(([lat, lon, intensity]) => {
-    const key = `${lat.toFixed(dataSettings.value.gridResolution)},${lon.toFixed(dataSettings.value.gridResolution)}`
-    const existing = accumulatedPoints.value.get(key)
-    if (existing) {
-      existing.intensity = Math.min(1.0, existing.intensity + intensity * 0.5)
-      existing.timestamp = now
-    } else {
-      accumulatedPoints.value.set(key, { lat, lon, intensity, timestamp: now })
-    }
-  })
-
-  accumulatedPoints.value.forEach((v, k) => {
-    if (now - v.timestamp > timeWindowMs) accumulatedPoints.value.delete(k)
-  })
-
-  const points = Array.from(accumulatedPoints.value.values()).map(p => [p.lat, p.lon, p.intensity])
+  const points = heatmapPoints.value
 
   if (points.length === 0) {
     if (heatLayer.value) {
-      leafletMap.value.removeLayer(heatLayer.value)
-      heatLayer.value = null
+      heatLayer.value.setLatLngs([])
+      heatLayer.value.redraw()
     }
     return
   }
@@ -160,21 +155,24 @@ function updateHeatmap(forceRecreate = false) {
   if (heatLayer.value && !forceRecreate) {
     heatLayer.value.setLatLngs(points)
     heatLayer.value.redraw()
-  } else {
-    if (heatLayer.value) {
-      leafletMap.value.removeLayer(heatLayer.value)
-      heatLayer.value = null
-    }
-    heatLayer.value = (L as any).heatLayer(points, {
-      radius: heatmapSettings.value.radius,
-      blur: heatmapSettings.value.blur,
-      maxZoom: heatmapSettings.value.maxZoom,
-      max: heatmapSettings.value.max,
-      minOpacity: heatmapSettings.value.minOpacity,
-      gradient: heatmapSettings.value.gradient
-    }).addTo(leafletMap.value)
+    return
   }
+
+  if (heatLayer.value) {
+    leafletMap.value.removeLayer(heatLayer.value)
+    heatLayer.value = null
+  }
+
+  heatLayer.value = (L as any).heatLayer(points, {
+    radius: heatmapSettings.value.radius,
+    blur: heatmapSettings.value.blur,
+    maxZoom: heatmapSettings.value.maxZoom,
+    max: heatmapSettings.value.max,
+    minOpacity: heatmapSettings.value.minOpacity,
+    gradient: heatmapSettings.value.gradient
+  }).addTo(leafletMap.value)
 }
+
 
 function onMapReady() {
   if (mapRef.value?.leafletObject) {
@@ -183,78 +181,139 @@ function onMapReady() {
   }
 }
 
-watch(selectedSensors, () => { if (dataSettings.value.showRealtime) updateHeatmap(false) }, { deep: false })
-watch(sensors, () => { if (dataSettings.value.showRealtime && hasSelectedSensors.value) updateHeatmap(false) }, { deep: true })
+// ✅ WATCH: Új adatok hozzáadása a perzisztált tárolóhoz ÉS heatmap frissítés
+watch(heatMapPoints, (newPoints) => {
+  if (!newPoints || newPoints.length === 0) return
+
+  // Szűrjük ki az érvényes pontokat
+  const validNewPoints = newPoints.filter(p => {
+    if (!Array.isArray(p.coordinate) || p.coordinate.length !== 2) return false
+    const [lat, lon] = p.coordinate
+    return lat && lon && !isNaN(lat) && !isNaN(lon)
+  })
+
+  if (validNewPoints.length === 0) return
+
+  // ✅ Hozzáadjuk az új pontokat a perzisztált listához
+  persistedPoints.value = [
+    ...persistedPoints.value,
+    ...validNewPoints.map(p => ({
+      coordinate: p.coordinate as [number, number],
+      lastUpdate: p.lastUpdate
+    }))
+  ]
+
+  // ✅ Rendezzük timestamp szerint és megtartjuk az utolsó N-et
+  persistedPoints.value = persistedPoints.value
+    .sort((a, b) => a.lastUpdate - b.lastUpdate)
+    .slice(-dataSettings.value.maxPoints)
+
+  console.log(`[Heatmap] 📊 Persisted points: ${persistedPoints.value.length}`)
+}, { deep: false, immediate: true })
+
+// ✅ WATCH: Perzisztált pontok változása → heatmap frissítés
+watch(persistedPoints, () => {
+  if (dataSettings.value.showRealtime) {
+    updateHeatmap(false)
+  }
+}, { deep: false })
+
+// ✅ Settings változás → recreate
 watch(() => heatmapSettings.value, () => updateHeatmap(true), { deep: true })
-watch(() => dataSettings.value.intensityMode, () => updateHeatmap(false))
 watch(() => dataSettings.value.timeWindow, () => updateHeatmap(false))
 watch(() => dataSettings.value.gridResolution, () => updateHeatmap(false))
+watch(() => dataSettings.value.maxPoints, (newMaxPoints) => {
+  // ✅ Limitáljuk a perzisztált pontokat az új max értékre
+  if (persistedPoints.value.length > newMaxPoints) {
+    persistedPoints.value = persistedPoints.value
+      .sort((a, b) => a.lastUpdate - b.lastUpdate)
+      .slice(-newMaxPoints)
+    console.log(`[Heatmap] 📉 Limited persisted points to ${newMaxPoints}`)
+  }
+  updateHeatmap(false)
+})
 
+// ✅ Auto-update timer
 let updateTimer: number | null = null
+
 function startAutoUpdate() {
   if (updateTimer) clearInterval(updateTimer)
   updateTimer = setInterval(() => {
-    if (dataSettings.value.showRealtime && hasSelectedSensors.value) updateHeatmap(false)
+    if (dataSettings.value.showRealtime) {
+      updateHeatmap(false)  // ✅ Smooth update
+    }
   }, dataSettings.value.updateInterval)
 }
-function stopAutoUpdate() { if (updateTimer) { clearInterval(updateTimer); updateTimer = null } }
+
+function stopAutoUpdate() {
+  if (updateTimer) {
+    clearInterval(updateTimer)
+    updateTimer = null
+  }
+}
 
 watch(() => dataSettings.value.updateInterval, () => {
-  if (dataSettings.value.showRealtime) { stopAutoUpdate(); startAutoUpdate() }
+  if (dataSettings.value.showRealtime) {
+    stopAutoUpdate()
+    startAutoUpdate()
+  }
 })
-watch(() => dataSettings.value.showRealtime, (isRealtime) => { isRealtime ? startAutoUpdate() : stopAutoUpdate() })
 
-watch(selectedSensors, (newSensors) => {
-  if (centerInitialized) return // csak egyszer állítjuk be
+watch(() => dataSettings.value.showRealtime, (isRealtime) => {
+  isRealtime ? startAutoUpdate() : stopAutoUpdate()
+})
 
-  for (const sensor of newSensors) {
-    if (sensor.detections?.length) {
-      const firstDetection = sensor.detections[0]
-      if (
-        Array.isArray(firstDetection.coordinate) &&
-        firstDetection.coordinate.length === 2
-      ) {
-        const [lat, lon] = firstDetection.coordinate
-        if (!isNaN(lat) && !isNaN(lon)) {
-          center.value = [lat, lon]
-          centerInitialized = true
-          console.log(`[Map] 🧭 Center set to first detection:`, center.value)
-          break
-        }
-      }
+// ✅ Center beállítása a perzisztált pontokból
+watch(persistedPoints, (points) => {
+  if (centerInitialized || points.length === 0) return
+
+  console.log('[Heatmap] Setting center from persisted points:', points.length)
+
+  const firstPoint = points[0]
+  if (firstPoint && Array.isArray(firstPoint.coordinate) && firstPoint.coordinate.length === 2) {
+    const [lat, lon] = firstPoint.coordinate
+    if (!isNaN(lat) && !isNaN(lon)) {
+      center.value = [lat, lon]
+      centerInitialized = true
+      console.log('[Heatmap] 🧭 Center set to first point:', center.value)
     }
   }
-}, { deep: true })
-
+}, { deep: false, immediate: true })
 
 function clearHeatmap() {
-  accumulatedPoints.value.clear()
   if (heatLayer.value && leafletMap.value) {
     leafletMap.value.removeLayer(heatLayer.value)
     heatLayer.value = null
   }
+  // ✅ Perzisztált pontok törlése
+  persistedPoints.value = []
+  console.log('[Heatmap] 🧹 Cleared all persisted points')
 }
 
-function manualUpdate() { updateHeatmap(true) }
+function manualUpdate() {
+  updateHeatmap(true)
+}
 
 function exportData() {
   const data = {
-    points: Array.from(accumulatedPoints.value.values()),
+    points: heatmapPoints.value,
     stats: stats.value,
-    settings: { heatmap: heatmapSettings.value, data: dataSettings.value },
-    sensors: selectedSensors.value.map(s => ({ id: s.uav_id, label: s.uav_label, detectionCount: s.detections.length }))
+    settings: { heatmap: heatmapSettings.value, data: dataSettings.value }
   }
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `heatmap-data-${Date.now()}.json`
+  a.download = `heatmap-geojson-${Date.now()}.json`
   a.click()
   URL.revokeObjectURL(url)
 }
 
 onMounted(() => startAutoUpdate())
-onBeforeUnmount(() => { stopAutoUpdate(); clearHeatmap() })
+onBeforeUnmount(() => {
+  stopAutoUpdate()
+  clearHeatmap()
+})
 </script>
 
 <template>
@@ -263,48 +322,37 @@ onBeforeUnmount(() => { stopAutoUpdate(); clearHeatmap() })
       <l-map ref="mapRef" :zoom="zoom" :center="center || [47.4979, 19.0402]" class="w-full h-full z-0" @ready="onMapReady">
         <l-tile-layer :url="url" :attribution="attribution" />
       </l-map>
+
       <div class="absolute top-2 left-2 bg-slate-800/90 text-gray-200 p-3 rounded-lg shadow-lg border border-slate-600 z-10 text-xs space-y-1">
         <div class="flex items-center gap-2 font-semibold text-cyan-400">
           <span>🔥</span><span>Heatmap Statistics</span>
         </div>
         <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-gray-300">
-          <span>Sensors:</span><strong class="text-gray-100">{{ stats.selectedSensorCount }}</strong>
-          <span>Detections:</span><strong class="text-gray-100">{{ stats.totalDetections }}</strong>
-          <span>Points:</span><strong class="text-gray-100">{{ stats.totalPoints }}</strong>
+          <span>Source Points:</span><strong class="text-gray-100">{{ stats.totalHeatMapPoints }}</strong>
+          <span>Grid Points:</span><strong class="text-gray-100">{{ stats.totalPoints }}</strong>
           <span>Locations:</span><strong class="text-gray-100">{{ stats.uniqueLocations }}</strong>
           <span>Max Int:</span><strong class="text-cyan-400">{{ stats.maxIntensity }}</strong>
           <span>Avg Int:</span><strong class="text-cyan-400">{{ stats.avgIntensity }}</strong>
         </div>
         <div class="pt-1 border-t border-slate-700 text-gray-400">
-          Mode: <strong class="text-gray-200">{{ dataSettings.intensityMode }}</strong>
+          Showing: <strong class="text-gray-200">Last {{ dataSettings.maxPoints }} points</strong>
         </div>
       </div>
 
-      <div v-if="!hasSelectedSensors" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-slate-800/95 text-gray-200 p-6 rounded-lg shadow-xl border border-slate-600 z-10 text-center">
-        <div class="text-4xl mb-3">⚠️</div>
-        <h3 class="text-lg font-semibold mb-2">No Sensors Selected</h3>
-        <p class="text-sm text-gray-400">Please select sensors from the list to view heatmap data.</p>
-      </div>
-
-      <button v-if="props.showControls" @click="showControlPanel = !showControlPanel" class="absolute top-2 right-2 bg-slate-800/90 hover:bg-slate-700 text-gray-200 p-2 rounded shadow-lg border border-slate-600 z-10 transition-colors" :class="{ 'bg-cyan-600': showControlPanel }">
+      <button v-if="props.showControls" @click="showControlPanel = !showControlPanel"
+        class="absolute top-2 right-2 bg-slate-800/90 hover:bg-slate-700 text-gray-200 p-2 rounded shadow-lg border border-slate-600 z-10 transition-colors"
+        :class="{ 'bg-cyan-600': showControlPanel }">
         ⚙️
       </button>
 
-      <div v-if="props.showControls && showControlPanel" class="absolute top-14 right-2 bg-slate-800/95 text-gray-200 p-3 rounded-lg shadow-lg border border-slate-600 z-10 w-72 max-h-[calc(100%-4rem)] overflow-auto">
+      <div v-if="props.showControls && showControlPanel"
+        class="absolute top-14 right-2 bg-slate-800/95 text-gray-200 p-3 rounded-lg shadow-lg border border-slate-600 z-10 w-72 max-h-[calc(100%-4rem)] overflow-auto">
         <h4 class="font-semibold text-cyan-400 mb-3 text-sm">Heatmap Settings</h4>
         <div class="space-y-3">
           <div>
-            <label class="text-xs text-gray-300 block mb-1">Intensity Mode</label>
-            <select v-model="dataSettings.intensityMode" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-gray-100">
-              <option value="count">Detection Count</option>
-              <option value="frequency">Frequency</option>
-              <option value="strength">Signal Strength</option>
-              <option value="snr">SNR / Elevation</option>
-            </select>
-          </div>
-          <div>
-            <label class="text-xs text-gray-300 block mb-1">Time Window: <strong>{{ dataSettings.timeWindow }}s</strong></label>
-            <input type="range" min="10" max="300" step="10" v-model.number="dataSettings.timeWindow" class="w-full accent-cyan-500" />
+            <label class="text-xs text-gray-300 block mb-1">Max Points to Show: <strong>{{ dataSettings.maxPoints }}</strong></label>
+            <input type="range" min="20" max="500" step="10" v-model.number="dataSettings.maxPoints" class="w-full accent-cyan-500" />
+            <p class="text-xs text-gray-400 mt-1">Mindig a legújabb pontokat mutatja</p>
           </div>
           <div>
             <label class="text-xs text-gray-300 block mb-1">Grid Resolution: <strong>{{ dataSettings.gridResolution }}</strong></label>
@@ -343,9 +391,9 @@ onBeforeUnmount(() => { stopAutoUpdate(); clearHeatmap() })
         <div class="flex flex-col gap-1">
           <div class="flex items-center gap-2">
             <div class="w-20 h-3 rounded" style="background: linear-gradient(to right, blue, cyan, lime, yellow, red)"></div>
-            <span class="text-xs text-gray-400">Low → High</span>
+            <span class="text-xs text-gray-400">Old → New</span>
           </div>
-          <div class="text-xs text-gray-400 text-center">Intensity: {{ dataSettings.intensityMode }}</div>
+          <div class="text-xs text-gray-400 text-center">Position-based Intensity</div>
         </div>
       </div>
     </div>

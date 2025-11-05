@@ -133,3 +133,4 @@ export type WorkerOutgoingMessage =
   | { type: 'uavIdsUpdated'; uavIds: number[] }
   | { type: 'settingsUpdated'; settings: { samplingRate: number } }
   | { type: 'terminated' }
+  | { type: 'statsUpdated' }

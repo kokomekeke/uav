@@ -24,22 +24,19 @@ const {
 } = storeToRefs(sensorStore)
 
 // --- MAP STATE ---
-const zoom = ref(2)
+const zoom = ref(10)
 const center = ref([47.4979, 19.0402])
 const mapRef = ref(null)
 const leafletMap = shallowRef(null)
 const mapBounds = shallowRef(null)
 const mapContainer = ref(null)
 
-//MAP SOURCE
-// const url = ref('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
-const url = ref('/tiles/{z}/{x}/{y}.png')
+const url = ref('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
 const attribution = ref('&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors')
 
 // --- SETTINGS ---
 const newDetectionSize = ref(Math.abs(sensorStore.detectionSize))
 const batchIntervalLocal = ref(sensorStore.batchInterval)
-const autoZoom = ref(false)
 const maxVisiblePoints = ref(50)
 const lineLength = ref(0.05)
 const planeDisplayPeriod = ref(4)
@@ -52,20 +49,13 @@ const localGeoJsonSettings = ref({
   fetchPeriodSec: 1,
   showRaw: true,
   showFiltered: true,
-  ttl: 60000
+  ttl: 80000,
+  maxVisibleGeoJsonPoints: 200  // ✅ ÚJ: Max pontok száma
 })
 
-// --- ÚJ: GeoJSON renderelés kontroll ---
-const geoJsonRenderKey = ref(0)
-
-// --- REAL-TIME CONFIG ---
-const realtimeConfig = ref({
-  ...sensorStore.realtimeConfig
-})
-
-const updateRealtimeConfig = () => {
-  sensorStore.updateRealtimeConfig(realtimeConfig.value)
-}
+// --- ✅ ÚJ: STABLE GEOJSON BUFFER (NEM VÁLTOZIK MINDEN FRAME-BEN) ---
+const geoJsonBuffer = shallowRef<Map<string, any>>(new Map())
+let geoJsonUpdateThrottle: number | null = null
 
 // --- DEBUG ---
 const debugInfo = ref({
@@ -98,44 +88,90 @@ const lineColors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'cyan',
 // --- COMPUTED ---
 const selectedSensorCount = computed(() => selectedSensors.value.length)
 
-// --- GEOJSON COMPUTED ---
-const geoJsonPointsWithOpacity = computed(() => {
+// --- ✅ OPTIMALIZÁLT: STABLE GEOJSON BUFFER UPDATE ---
+function updateGeoJsonBuffer () {
+  if (geoJsonUpdateThrottle) return
+
+  geoJsonUpdateThrottle = window.setTimeout(() => {
+    geoJsonUpdateThrottle = null
+    _doUpdateGeoJsonBuffer()
+  }, 100) // 100ms throttle
+}
+
+function _doUpdateGeoJsonBuffer () {
   const now = Date.now()
   const ttl = localGeoJsonSettings.value.ttl
+  const maxPoints = localGeoJsonSettings.value.maxVisibleGeoJsonPoints
 
-  const points = geoJsonData.value.map(point => {
+  const currentBuffer = geoJsonBuffer.value
+  const newBuffer = new Map(currentBuffer)
+
+  // ✅ 1. UPDATE/ADD új pontok
+  geoJsonData.value.forEach(point => {
+    const stableKey = `${point.id}-${point.type}`
     const age = now - point.timestamp
     const opacity = Math.max(0.1, 1 - (age / ttl))
 
-    return {
-      ...point,
-      opacity: isNaN(opacity) ? 1 : opacity,
-      age: age
-    }
-  }).filter(point => {
+    // Skip ha lejárt TTL
+    if (opacity < 0.1) return
+
+    // Koordináta validáció
     const [lat, lon] = point.coordinate
-    if (isNaN(lat) || isNaN(lon)) {
-      console.warn('[Map] Filtered out NaN coordinate:', point)
-      return false
+    if (isNaN(lat) || isNaN(lon)) return
+
+    const existingItem = currentBuffer.get(stableKey)
+
+    if (existingItem) {
+      // ✅ CSAK AZ OPACITY ÉS AGE VÁLTOZIK, NEM RENDERELŐDIK ÚJ MARKER!
+      existingItem.opacity = opacity
+      existingItem.age = age
+      existingItem.timestamp = point.timestamp
+      newBuffer.set(stableKey, existingItem)
+    } else {
+      // ✅ ÚJ PONT HOZZÁADÁSA
+      newBuffer.set(stableKey, {
+        ...point,
+        opacity,
+        age,
+        stableKey
+      })
     }
-    return point.opacity >= 0.1
   })
 
-  debugInfo.value.geoJsonRaw = points.filter(p => p.type === 'raw').length
-  debugInfo.value.geoJsonFiltered = points.filter(p => p.type === 'filtered').length
+  // ✅ 2. REMOVE lejárt pontok
+  for (const [key, item] of newBuffer.entries()) {
+    // TODO: ezt a sort rendesen ellenőrizni, időzónák szerint
+    const age = now - item.timestamp - 3600000
+    if (age > ttl) {
+      newBuffer.delete(key)
+    }
+  }
+  // ✅ 3. LRU (Least Recently Used) - ha túl sok pont van
+  if (newBuffer.size > maxPoints) {
+    // Rendezés timestamp szerint (legrégebbi először)
+    const sorted = Array.from(newBuffer.entries())
+      .sort((a, b) => a[1].timestamp - b[1].timestamp)
 
-  console.log('[Map] GeoJSON points computed:', {
-    total: points.length,
-    raw: debugInfo.value.geoJsonRaw,
-    filtered: debugInfo.value.geoJsonFiltered
-  })
+    // Töröljük a legrégebbi pontokat
+    const toDelete = sorted.slice(0, newBuffer.size - maxPoints)
+    toDelete.forEach(([key]) => newBuffer.delete(key))
+  }
 
-  return points
+  geoJsonBuffer.value = newBuffer
+
+  debugInfo.value.geoJsonCount = newBuffer.size
+  debugInfo.value.geoJsonRaw = Array.from(newBuffer.values()).filter(p => p.type === 'raw').length
+  debugInfo.value.geoJsonFiltered = Array.from(newBuffer.values()).filter(p => p.type === 'filtered').length
+}
+
+// ✅ COMPUTED: Array-re konvertálás (stabil objektumok!)
+const geoJsonPointsWithOpacity = computed(() => {
+  return Array.from(geoJsonBuffer.value.values())
 })
 
 // --- FUNCTIONS ---
 
-function getHeadingFromQuaternion([q0, q1, q2, q3]: number[]): number {
+function getHeadingFromQuaternion ([q0, q1, q2, q3]: number[]): number {
   if (q0 === undefined || q1 === undefined || q2 === undefined || q3 === undefined) return 0
   const headingRad = Math.atan2(2 * (q0 * q3 + q1 * q2), q0 * q0 + q1 * q1 - q2 * q2 - q3 * q3)
   const deg = headingRad * (180 / Math.PI)
@@ -183,7 +219,7 @@ function getPlaneIconById(id: number): any {
   return icon
 }
 
-function computeAzimuthLine (coord: [number, number], azimuth: number, isRadians = false): number[][] {
+function computeAzimuthLine(coord: [number, number], azimuth: number, isRadians = false): number[][] {
   const cacheKey = `${coord[0].toFixed(4)}_${coord[1].toFixed(4)}_${azimuth.toFixed(3)}_${lineLength.value}`
   if (azimuthLinesCache.has(cacheKey)) return azimuthLinesCache.get(cacheKey)!
 
@@ -218,7 +254,7 @@ function renderDetections() {
   }, 16)
 }
 
-function _doRenderDetections () {
+function _doRenderDetections() {
   if (!leafletMap.value || !mapBounds.value) return
   const renderStart = performance.now()
   const bounds = mapBounds.value
@@ -265,7 +301,7 @@ function _doRenderDetections () {
       if (showPlane) item.planeIcon = getPlaneIconById(sensorId)
 
       if (hasAzimuth && showAzimuthLines.value) {
-        item.azimuthLine = computeAzimuthLine(detection.coordinate, detection.meanAzimuth, true)
+        item.azimuthLine = computeAzimuthLine(detection.coordinate, detection.azimuth, true)
         item.hasAzimuth = true
       }
       updatedBuffer.set(stableKey, item)
@@ -285,7 +321,6 @@ function _doRenderDetections () {
   debugInfo.value.detectionsCount = updatedBuffer.size
   debugInfo.value.selectedSensorsCount = selectedSensors.value.length
   debugInfo.value.renderTime = performance.now() - renderStart
-  debugInfo.value.geoJsonCount = geoJsonPointsWithOpacity.value.length
 }
 
 const detectionBufferArray = computed(() => Array.from(detectionBuffer.value.values()))
@@ -308,13 +343,13 @@ function toggleGeoJsonFetch() {
 }
 
 // --- SETTINGS HANDLING ---
-function updateBatchInterval() {
+function updateBatchInterval () {
   const newInterval = Number(batchIntervalLocal.value)
   if (isNaN(newInterval) || newInterval < 0.01 || newInterval > 10) return
   sensorStore.$patch({ batchInterval: newInterval })
 }
 
-function updateSettings() {
+function updateSettings () {
   const size = newDetectionSize.value
   if (!isNaN(size) && size > 0) sensorStore.$patch({ detectionSize: size })
   updateBatchInterval()
@@ -326,12 +361,13 @@ function clearMapData() {
   planeIconsCache.clear()
   azimuthLinesCache.clear()
   detectionBuffer.value = new Map()
+  geoJsonBuffer.value = new Map()  // ✅ GeoJSON buffer is
   debugInfo.value.cacheSize = 0
 }
 
 function debugStore() {
   console.log('=== MAP COMPONENT DEBUG ===', debugInfo.value)
-  console.log('GeoJSON data from store:', geoJsonData.value)
+  console.log('GeoJSON buffer size:', geoJsonBuffer.value.size)
   console.log('GeoJSON computed points:', geoJsonPointsWithOpacity.value)
   sensorStore.debugReactivity()
 }
@@ -345,13 +381,6 @@ function updateMapView() {
   }
 }
 
-function goFullscreen() {
-  if (!mapContainer.value) return
-  const el: any = mapContainer.value
-  if (!document.fullscreenElement) el.requestFullscreen?.()
-  else document.exitFullscreen?.()
-}
-
 function onMapReady (mapInstance: any) {
   leafletMap.value = mapInstance
   mapBounds.value = mapInstance.getBounds()
@@ -360,67 +389,43 @@ function onMapReady (mapInstance: any) {
   console.log('[Map] Map ready, bounds:', mapBounds.value)
 }
 
-// --- WATCHERS ---
-
-// 🆕 ÚJ: Egyszerű watch a GeoJSON pontok változására
-watch(geoJsonPointsWithOpacity, (newPoints) => {
-  if (newPoints.length > 0 && isGeoJsonEnabled.value) {
-    // Force re-render when points change
-    geoJsonRenderKey.value++
-    console.log('[Map] 🔄 GeoJSON points changed, triggering re-render (key:', geoJsonRenderKey.value, ')')
-  }
-}, { deep: true })
-
-// 🆕 ÚJ: Watch a TTL változására
-watch(() => localGeoJsonSettings.value.ttl, () => {
-  console.log('[Map] 🔄 TTL setting changed')
-  if (isGeoJsonEnabled.value) {
-    geoJsonRenderKey.value++
-  }
+// --- REAL-TIME CONFIG ---
+const realtimeConfig = ref({
+  ...sensorStore.realtimeConfig
 })
 
-watch(
-  geoJsonData,
-  (newVal) => {
-    console.log('1234[Map] GeoJSON data changed (deep):', newVal)
-    geoJsonRenderKey.value++
-  },
-  { deep: true }
-)
+const updateRealtimeConfig = () => {
+  sensorStore.updateRealtimeConfig(realtimeConfig.value)
+}
 
+// --- ✅ OPTIMALIZÁLT WATCHERS ---
+
+// ✅ GeoJSON data változás → buffer update
+watch(geoJsonData, () => {
+  updateGeoJsonBuffer()
+}, { deep: false })
+
+// ✅ TTL változás → buffer újraszámolás
+watch(() => localGeoJsonSettings.value.ttl, () => {
+  updateGeoJsonBuffer()
+})
+
+// ✅ Sensors watch
 watch(sensors, () => {
   if (hasSelectedSensors.value) {
     renderDetections()
   }
 }, { deep: true })
 
+// ✅ Selected sensors watch
 watch(selectedSensors, () => {
   renderDetections()
 }, { deep: false })
 
+// ✅ Batch interval watch
 watch(batchInterval, val => (batchIntervalLocal.value = val), { immediate: true })
 
-watch(geoJsonData, (newData) => {
-  console.log('[Map] GeoJSON data changed:', newData.length, 'points')
-  debugInfo.value.geoJsonCount = geoJsonPointsWithOpacity.value.length
-}, { deep: true })
-
-watch(geoJsonPointsWithOpacity, (newPoints) => {
-  console.log('[Map] 🔍 GeoJSON points details:', {
-    total: newPoints.length,
-    sample: newPoints.slice(0, 3).map(p => ({
-      coordinate: p.coordinate,
-      opacity: p.opacity,
-      age: p.age,
-      type: p.type
-    }))
-  })
-
-  if (newPoints.length > 0 && isGeoJsonEnabled.value) {
-    geoJsonRenderKey.value++
-  }
-}, { deep: true })
-
+// --- LIFECYCLE ---
 onMounted(async () => {
   await nextTick()
   updateMapView()
@@ -431,6 +436,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (renderThrottle) clearTimeout(renderThrottle)
+  if (geoJsonUpdateThrottle) clearTimeout(geoJsonUpdateThrottle)
   leafletMap.value?.off('moveend', updateMapView)
   leafletMap.value?.off('zoomend', updateMapView)
   planeIconsCache.clear()
@@ -452,7 +458,6 @@ onBeforeUnmount(() => {
           <div>Detections: {{ debugInfo.detectionsCount }}</div>
           <div>GeoJSON: {{ debugInfo.geoJsonCount }} (🔴{{ debugInfo.geoJsonRaw }} 🔵{{ debugInfo.geoJsonFiltered }})</div>
           <div>Fetch: {{ isGeoJsonEnabled ? '✅' : '❌' }}</div>
-          <div>Render Key: {{ geoJsonRenderKey }}</div>
           <div>Render: {{ debugInfo.renderTime.toFixed(1) }}ms</div>
           <div>Cache: {{ debugInfo.cacheSize }}</div>
         </div>
@@ -477,8 +482,8 @@ onBeforeUnmount(() => {
           />
         </template>
 
-        <!-- 🆕 GeoJSON markers - KEY-vel a force re-render-hez -->
-        <template v-for="point in geoJsonPointsWithOpacity" :key="`geojson-${point.id}-${point.type}-${geoJsonRenderKey}-${point.opacity.toFixed(2)}`">
+        <!-- ✅ GeoJSON markers - STABLE KEY (nem változik minden frame-ben!) -->
+        <template v-for="point in geoJsonPointsWithOpacity" :key="point.stableKey">
           <l-circle-marker
             v-if="point.coordinate?.length === 2"
             :lat-lng="point.coordinate"
@@ -495,10 +500,9 @@ onBeforeUnmount(() => {
                 <div><strong>Type:</strong> {{ point.type === 'raw' ? '🔴 RAW' : '🔵 FILTERED' }}</div>
                 <div><strong>ID:</strong> {{ point.id }}</div>
                 <div v-if="point.roi_id"><strong>ROI:</strong> {{ point.roi_id }}</div>
-                <div><strong>Age:</strong> {{ ((Date.now() - point.timestamp) / 1000).toFixed(1) }}s</div>
+                <div><strong>Age:</strong> {{ (point.age / 1000).toFixed(1) }}s</div>
                 <div><strong>Opacity:</strong> {{ (point.opacity * 100).toFixed(0) }}%</div>
                 <div><strong>Coord:</strong> [{{ point.coordinate[0].toFixed(4) }}, {{ point.coordinate[1].toFixed(4) }}]</div>
-                <div><strong>Render Key:</strong> {{ geoJsonRenderKey }}</div>
               </div>
             </l-popup>
           </l-circle-marker>
@@ -608,6 +612,9 @@ onBeforeUnmount(() => {
         <div class="mt-3 text-xs text-gray-400 space-y-1">
           <p>🔴 <strong>RAW:</strong> /comintgeoloc/geojson/raw/list_last/{{ localGeoJsonSettings.limit }}?stride={{ localGeoJsonSettings.stride }}</p>
           <p>🔵 <strong>FILTERED:</strong> /comintgeoloc/geojson/list_last/{{ localGeoJsonSettings.limit }}?stride={{ localGeoJsonSettings.stride }}</p>
+          <p class="mt-2 text-cyan-400">
+            📍 Max Visible: {{ localGeoJsonSettings.maxVisibleGeoJsonPoints }} points
+          </p>
           <p class="mt-2 text-yellow-400" v-if="selectedSensorIds.length > 0">
             📍 Filtering by ROI IDs: {{ selectedSensorIds.join(', ') }}
           </p>
@@ -660,7 +667,8 @@ onBeforeUnmount(() => {
 <style scoped>
 @import "leaflet/dist/leaflet.css";
 
+/* ✅ SMOOTH OPACITY TRANSITION */
 .fade-marker {
-  transition: opacity 0.5s ease-in-out;
+  transition: opacity 0.8s ease-in-out !important;
 }
 </style>

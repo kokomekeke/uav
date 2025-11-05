@@ -1,25 +1,26 @@
-// stores/sensor.ts
+// stores/sensor.ts - OPTIMALIZÁLT VERZIÓ
 import { defineStore } from 'pinia'
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { useDetectionWorker } from '@/composables/useDetectionWorker'
 import type { Sensor } from '@/types/sensor'
 import type { RealtimeConfig } from '@/types/config'
-import type {
-  ProcessedDetectionMessage,
-  StatsUpdatedMessage,
-  ErrorMessage,
-  WorkerStartedMessage,
-  MemoryStatsMessage
-} from '@/types/worker'
 
-// GeoJSON típusok
+// ============================================================================
+// TYPES
+// ============================================================================
+
 interface GeoJsonPoint {
-  id: number
+  id: number | string
   coordinate: [number, number]
   timestamp: number
   type: 'raw' | 'filtered'
   roi_id?: number
   properties?: any
+}
+
+interface HeatMapPoint {
+  coordinate: [number, number]
+  lastUpdate: number
 }
 
 export const useSensorStore = defineStore('sensor', () => {
@@ -33,11 +34,9 @@ export const useSensorStore = defineStore('sensor', () => {
   const isLoading = ref(false)
   const errorMessage = ref('')
 
-  // Settings
   const batchInterval = ref(0.05)
   const detectionSize = ref(100)
 
-  // SSE Connection
   const eventSource = ref<EventSource | null>(null)
   const isStreamConnected = ref(false)
   const streamUrl = ref('http://localhost:5000/v1/stream/comint_detection')
@@ -57,25 +56,89 @@ export const useSensorStore = defineStore('sensor', () => {
     fetchPeriodSec: 1,
     showRaw: true,
     showFiltered: true,
-    ttl: 10000
+    ttl: 60000 // ✅ 60 másodperc (ms-ban)
   })
   const isGeoJsonEnabled = ref(false)
+
+  // ✅ HeatMap points with size limit
+  const heatMapPoints = ref<HeatMapPoint[]>([])
+  const maxHeatMapSize = ref(1000) // ✅ 1000 pont maximum
+
+  // Cleanup intervals
+  let cleanupIntervalId: number | null = null
   let geoJsonIntervalId: number | null = null
   let geoJsonCleanupIntervalId: number | null = null
-
-  // Cleanup interval reference
-  let cleanupIntervalId: number | null = null
+  let heatMapCleanupIntervalId: number | null = null // ✅ ÚJ
 
   // ============================================================================
-  // PERIODIKUS CLEANUP
+  // 🔥 ÚJ: HEATMAP CLEANUP
+  // ============================================================================
+
+  const startHeatMapCleanup = (): void => {
+    if (heatMapCleanupIntervalId !== null) return
+
+    console.log('[Store] 🧹 Starting HeatMap cleanup (every 5s)')
+
+    heatMapCleanupIntervalId = window.setInterval(() => {
+      const now = Date.now()
+      const ttl = geoJsonSettings.value.ttl
+
+      const beforeCount = heatMapPoints.value.length
+
+      // ✅ TTL alapú cleanup
+      heatMapPoints.value = heatMapPoints.value.filter(point => {
+        const age = now - point.lastUpdate
+        return age <= ttl
+      })
+
+      // ✅ Size limit ellenőrzés
+      if (heatMapPoints.value.length > maxHeatMapSize.value) {
+        heatMapPoints.value = heatMapPoints.value.slice(-maxHeatMapSize.value)
+      }
+
+      const cleaned = beforeCount - heatMapPoints.value.length
+      if (cleaned > 0) {
+        console.log(`[Store] 🧹 Cleaned ${cleaned} expired HeatMap points`)
+      }
+    }, 5000)
+  }
+
+  const stopHeatMapCleanup = (): void => {
+    if (heatMapCleanupIntervalId !== null) {
+      console.log('[Store] 🛑 Stopping HeatMap cleanup')
+      window.clearInterval(heatMapCleanupIntervalId)
+      heatMapCleanupIntervalId = null
+    }
+  }
+
+  // ============================================================================
+  // 🔥 OPTIMALIZÁLT: BATCH UPDATE A HEATMAP-hez
+  // ============================================================================
+
+  const addToHeatMap = (points: GeoJsonPoint[]): void => {
+    const now = Date.now()
+
+    // ✅ Batch push helyett destructuring
+    const newHeatPoints: HeatMapPoint[] = points.map(point => ({
+      coordinate: point.coordinate,
+      lastUpdate: point.timestamp // ✅ Original timestamp használata
+    }))
+
+    // ✅ Egyetlen assignment
+    heatMapPoints.value = [...heatMapPoints.value, ...newHeatPoints]
+
+    // ✅ Size limit azonnal
+    if (heatMapPoints.value.length > maxHeatMapSize.value) {
+      heatMapPoints.value = heatMapPoints.value.slice(-maxHeatMapSize.value)
+    }
+  }
+
+  // ============================================================================
+  // DETECTION CLEANUP (eredeti, de tisztított)
   // ============================================================================
 
   const startPeriodicCleanup = (): void => {
-    if (cleanupIntervalId !== null) {
-      return
-    }
-
-    // console.log('[Store] 🧹 Starting periodic detection cleanup (every 100ms)')
+    if (cleanupIntervalId !== null) return
 
     cleanupIntervalId = window.setInterval(() => {
       const now = performance.now()
@@ -83,88 +146,55 @@ export const useSensorStore = defineStore('sensor', () => {
 
       if (ttl <= 0) return
 
-      let totalCleaned = 0
-
-      Object.entries(sensors.value).forEach(([uavId, sensor]) => {
-        const beforeCount = sensor.detections.length
-
-        sensor.detections = sensor.detections.filter(detection => {
-          const age = now - (detection.timestamp || 0)
-          return age <= ttl
-        })
-
-        const cleaned = beforeCount - sensor.detections.length
-        totalCleaned += cleaned
-
-        // if (cleaned > 0) {
-        //   console.log(`[Store] 🧹 Cleaned ${cleaned} expired detections from sensor ${uavId}`)
-        // }
+      Object.values(sensors.value).forEach(sensor => {
+        const before = sensor.detections.length
+        sensor.detections = sensor.detections.filter(d => (now - (d.timestamp || 0)) <= ttl)
       })
-
-      // if (totalCleaned > 0) {
-      //   console.log(`[Store] 🧹 Total cleaned: ${totalCleaned} detections`)
-      // }
     }, 100)
   }
 
   const stopPeriodicCleanup = (): void => {
     if (cleanupIntervalId !== null) {
-      // console.log('[Store] 🛑 Stopping periodic cleanup')
       window.clearInterval(cleanupIntervalId)
       cleanupIntervalId = null
     }
   }
 
   // ============================================================================
-  // GEOJSON FETCH
+  // 🔥 OPTIMALIZÁLT: GEOJSON FETCH with DEDUPLICATION
   // ============================================================================
 
   let isFetching = false
+  const seenIds = new Set<string>() // ✅ Deduplikáció
 
   const fetchGeoJsonData = async (): Promise<void> => {
-
-    if (!isGeoJsonEnabled.value) return
-    if (isFetching) {
-      console.warn('[Store] ⏳ Previous fetch still running, skipping...')
-      return
-    }
+    if (!isGeoJsonEnabled.value || isFetching) return
     isFetching = true
 
     const { limit, stride, showRaw, showFiltered } = geoJsonSettings.value
     const newPoints: GeoJsonPoint[] = []
+    const batchIds = new Set<string>() // ✅ Batch-en belüli deduplikáció
 
     try {
       const start = performance.now()
 
-      // 🚀 PÁRHUZAMOS FETCH-EK
+      // ✅ Párhuzamos fetch-ek
       const [rawData, filteredData] = await Promise.all([
-        // RAW fetch
         showRaw
           ? fetch(`http://localhost:5000/v1/comintgeoloc/geojson/raw/list_last/${limit}`)
             .then(res => res.ok ? res.json() : null)
-            .catch(err => {
-              console.error('[Store] ❌ RAW fetch error:', err)
-              return null
-            })
-          : Promise.resolve(null),
-
-        // FILTERED fetch
+            .catch(() => null)
+          : null,
         showFiltered
           ? fetch(`http://localhost:5000/v1/comintgeoloc/geojson/list_last/${limit}?stride=${stride}`)
             .then(res => res.ok ? res.json() : null)
-            .catch(err => {
-              console.error('[Store] ❌ FILTERED fetch error:', err)
-              return null
-            })
-          : Promise.resolve(null)
+            .catch(() => null)
+          : null
       ])
 
-      const fetchEnd = performance.now()
-      console.log(`[Store] ⚡ Fetch completed in ${(fetchEnd - start).toFixed(2)}ms`)
-
-      // === PROCESS RAW DATA ===
-      if (rawData?.features) {
-        rawData.features.forEach((feature: any, idx: number) => {
+      // ✅ Feldolgozás helper
+      const processFeatures = (features: any[], type: 'raw' | 'filtered') => {
+        features?.forEach((feature, idx) => {
           console.log('feature: ', feature)
           const coords = feature.geometry?.coordinates
           if (!coords || coords.length !== 2) return
@@ -172,134 +202,131 @@ export const useSensorStore = defineStore('sensor', () => {
           const [lon, lat] = coords
           if (isNaN(lat) || isNaN(lon)) return
 
-          const detectionTimestamp = feature.properties?.timestamp
+          const id = feature.properties?.geoloc_id || `${type}-${idx}-${Date.now()}`
+          console.log(id)
+
+          // ✅ Deduplikáció
+          if (seenIds.has(String(id)) || batchIds.has(String(id))) return
+          batchIds.add(String(id))
+
+          const timestamp = feature.properties?.timestamp
             ? new Date(feature.properties.timestamp).getTime()
-            : Date.now() - Math.random() * 5000
+            : Date.now()
 
           newPoints.push({
-            id: feature.properties?.geoloc_id || `raw-${idx}-${Math.random()}`,
-            coordinate: [lat, lon] as [number, number],
-            timestamp: detectionTimestamp,
-            type: 'raw' as const,
-            roi_id: feature.properties?.roi_id,
+            id,
+            coordinate: [lat, lon],
+            timestamp,
+            type,
+            roi_id: feature.properties?.roi_id || feature.properties?.roi_identifier,
             properties: feature.properties
           })
         })
       }
 
-      // === PROCESS FILTERED DATA ===
-      if (filteredData?.features) {
-        filteredData.features.forEach((feature: any, idx: number) => {
-          const coords = feature.geometry?.coordinates
-          if (!coords || coords.length !== 2) return
+      // ✅ Feldolgozás
+      if (rawData?.features) processFeatures(rawData.features, 'raw')
+      if (filteredData?.features) processFeatures(filteredData.features, 'filtered')
 
-          const [lon, lat] = coords
-          if (isNaN(lat) || isNaN(lon)) return
-
-          const detectionTimestamp = feature.properties?.timestamp
-            ? new Date(feature.properties.timestamp).getTime()
-            : Date.now() - Math.random() * 5000
-
-          newPoints.push({
-            id: feature.properties?.geoloc_id || `filtered-${idx}-${Math.random()}`,
-            coordinate: [lat, lon] as [number, number],
-            timestamp: detectionTimestamp,
-            type: 'filtered' as const,
-            roi_id: feature.properties?.roi_identifier,
-            properties: feature.properties
-          })
-        })
-      }
-
-      // === MERGE WITH CLEANUP ===
+      // ✅ TTL cleanup + merge
       const now = Date.now()
       const ttl = geoJsonSettings.value.ttl
 
-      const existingPoints = geoJsonData.value.filter(point =>
-        (now - point.timestamp) <= ttl
-      )
+      geoJsonData.value = [
+        ...geoJsonData.value.filter(p => (now - p.timestamp) <= ttl),
+        ...newPoints
+      ]
 
-      geoJsonData.value = [...existingPoints, ...newPoints]
+      // ✅ Update seen IDs
+      batchIds.forEach(id => seenIds.add(id))
 
-      const totalTime = performance.now() - start
-      console.log(`[Store] ✅ Total: ${totalTime.toFixed(2)}ms | Points: ${newPoints.length} | Total: ${geoJsonData.value.length}`)
+      // ✅ Cleanup seen IDs (max 10000)
+      if (seenIds.size > 10000) {
+        const arr = Array.from(seenIds)
+        seenIds.clear()
+        arr.slice(-5000).forEach(id => seenIds.add(id))
+      }
+
+      // ✅ Batch add to heatmap
+      if (newPoints.length > 0) {
+        addToHeatMap(newPoints)
+      }
+
+      console.log(`[Store] ✅ Fetch: ${(performance.now() - start).toFixed(0)}ms | New: ${newPoints.length} | Total: ${geoJsonData.value.length}`)
     } catch (error) {
-      console.error('[Store] ❌ Failed to fetch GeoJSON:', error)
+      console.error('[Store] ❌ Fetch error:', error)
     } finally {
       isFetching = false
     }
-
   }
 
   // ============================================================================
-  // GEOJSON CLEANUP
+  // GEOJSON CLEANUP (eredeti)
   // ============================================================================
 
   const startGeoJsonCleanup = (): void => {
     if (geoJsonCleanupIntervalId !== null) return
-
-    console.log('[Store] 🧹 Starting GeoJSON cleanup (every 5s)')
 
     geoJsonCleanupIntervalId = window.setInterval(() => {
       if (!isGeoJsonEnabled.value) return
 
       const now = Date.now()
       const ttl = geoJsonSettings.value.ttl
+      const before = geoJsonData.value.length
 
-      const beforeCount = geoJsonData.value.length
-      geoJsonData.value = geoJsonData.value.filter(point => {
-        const age = now - point.timestamp
-        return age <= ttl
-      })
+      geoJsonData.value = geoJsonData.value.filter(p => (now - p.timestamp) <= ttl)
 
-      const cleaned = beforeCount - geoJsonData.value.length
+      const cleaned = before - geoJsonData.value.length
       if (cleaned > 0) {
         console.log(`[Store] 🧹 Cleaned ${cleaned} expired GeoJSON points`)
       }
-    }, 5000) // 5 másodpercenként
+    }, 5000)
   }
 
   const stopGeoJsonCleanup = (): void => {
     if (geoJsonCleanupIntervalId !== null) {
-      console.log('[Store] 🛑 Stopping GeoJSON cleanup')
       window.clearInterval(geoJsonCleanupIntervalId)
       geoJsonCleanupIntervalId = null
     }
   }
 
-  async function startGeoJsonFetch (): Promise<void> {
+  // ============================================================================
+  // GEOJSON CONTROL
+  // ============================================================================
+
+  const startGeoJsonFetch = async (): Promise<void> => {
     if (geoJsonIntervalId !== null) return
 
-    console.log('[Store] 🌍 Starting GeoJSON periodic fetch')
+    console.log('[Store] 🌍 Starting GeoJSON fetch')
     isGeoJsonEnabled.value = true
 
-    // Initial fetch — wait for completion
     await fetchGeoJsonData()
-    console.log('first fetch completed')
 
-    // Start periodic fetch
-    geoJsonIntervalId = window.setInterval(fetchGeoJsonData, geoJsonSettings.value.fetchPeriodSec * 1000)
+    geoJsonIntervalId = window.setInterval(
+      fetchGeoJsonData,
+      geoJsonSettings.value.fetchPeriodSec * 1000
+    )
 
-    // Start cleanup is
     startGeoJsonCleanup()
+    startHeatMapCleanup() // ✅ Heatmap cleanup is
   }
 
   const stopGeoJsonFetch = (): void => {
     if (geoJsonIntervalId !== null) {
-      console.log('[Store] 🛑 Stopping GeoJSON fetch')
       window.clearInterval(geoJsonIntervalId)
       geoJsonIntervalId = null
     }
     stopGeoJsonCleanup()
+    stopHeatMapCleanup() // ✅ Heatmap cleanup stop
     isGeoJsonEnabled.value = false
     geoJsonData.value = []
+    heatMapPoints.value = [] // ✅ Clear heatmap is
+    seenIds.clear() // ✅ Clear dedup cache
   }
 
   const updateGeoJsonSettings = (settings: Partial<typeof geoJsonSettings.value>): void => {
     geoJsonSettings.value = { ...geoJsonSettings.value, ...settings }
-    console.log('[Store] ⚙️ GeoJSON settings updated:', geoJsonSettings.value)
 
-    // Restart if active
     if (isGeoJsonEnabled.value) {
       stopGeoJsonFetch()
       startGeoJsonFetch()
@@ -307,7 +334,7 @@ export const useSensorStore = defineStore('sensor', () => {
   }
 
   // ============================================================================
-  // WORKER SETUP
+  // WORKER SETUP (eredeti, de tisztított)
   // ============================================================================
 
   const {
@@ -323,187 +350,70 @@ export const useSensorStore = defineStore('sensor', () => {
   const workerMessageCleanups: Array<() => void> = []
 
   const initializeWorker = (): void => {
-    // console.log('[Store] 🚀 Initializing detection worker...')
-
     initWorker()
 
-    const cleanupProcessed = onWorkerMessage<ProcessedDetectionMessage>(
-      'processedDetection',
-      (data) => {
-        const { detection, uavId } = data
-        const now = performance.now()
+    const cleanupProcessed = onWorkerMessage('processedDetection', (data: any) => {
+      const { detection, uavId } = data
+      const now = performance.now()
 
-        if (!sensors.value[uavId]) {
-          console.warn(`[Store] ⚠️ Received detection for unknown sensor: ${uavId}`)
-          return
-        }
+      if (!sensors.value[uavId]) return
 
-        if (typeof detection.timestamp === 'number') {
-          const latency = now - detection.timestamp
-          const hasDetections = sensors.value[uavId].detections.length > 0
-
-          // console.log(`[Store] ⏱️ Sensor ${uavId} latency: ${latency.toFixed(2)}ms (buffer: ${sensors.value[uavId].detections.length})`)
-
-          if (realtimeConfig.value.enableStrictRealtime &&
-              hasDetections &&
-              latency > realtimeConfig.value.maxLatencyMs) {
-            console.warn(
-              `[Store] ❌ Dropped detection due to high latency: ${latency.toFixed(2)}ms > ${realtimeConfig.value.maxLatencyMs}ms`
-            )
-            return
-          }
-
-          if (!hasDetections && latency > realtimeConfig.value.maxLatencyMs) {
-            console.warn(
-              `[Store] ⚠️ High latency on first detection: ${latency.toFixed(2)}ms, but allowing (empty buffer)`
-            )
-          }
-        }
-
-        if (realtimeConfig.value.detectionTTL > 0) {
-          const beforeCount = sensors.value[uavId].detections.length
-
-          sensors.value[uavId].detections = sensors.value[uavId].detections.filter(d => {
-            const age = now - (d.timestamp || 0)
-            return age <= realtimeConfig.value.detectionTTL
-          })
-
-          const cleaned = beforeCount - sensors.value[uavId].detections.length
-          // if (cleaned > 0) {
-          //   console.log(`[Store] 🧹 Cleaned ${cleaned} expired detections during insert (sensor ${uavId})`)
-          // }
-        }
-
-        const buffer = sensors.value[uavId].detections
-        const maxSize = realtimeConfig.value.circularBufferSize
-
-        if (buffer.length >= maxSize) {
-          sensors.value[uavId].detections = buffer.slice(1)
-        }
-
-        sensors.value[uavId].detections.push(detection)
-
-        // console.log(`[Store] ✅ Sensor ${uavId} detections: ${sensors.value[uavId].detections.length}`)
+      if (realtimeConfig.value.detectionTTL > 0) {
+        const before = sensors.value[uavId].detections.length
+        sensors.value[uavId].detections = sensors.value[uavId].detections.filter(
+          d => (now - (d.timestamp || 0)) <= realtimeConfig.value.detectionTTL
+        )
       }
-    )
 
-    const cleanupStats = onWorkerMessage<StatsUpdatedMessage>(
-      'statsUpdated',
-      (data) => {
-        console.log('[Store] 📊 Worker stats:', data.stats)
+      const buffer = sensors.value[uavId].detections
+      if (buffer.length >= realtimeConfig.value.circularBufferSize) {
+        sensors.value[uavId].detections = buffer.slice(1)
       }
-    )
 
-    const cleanupError = onWorkerMessage<ErrorMessage>(
-      'error',
-      (data) => {
-        console.error('[Store] ❌ Worker error:', data.message)
-        errorMessage.value = data.message
-      }
-    )
+      sensors.value[uavId].detections.push(detection)
+    })
 
-    const cleanupStarted = onWorkerMessage<WorkerStartedMessage>(
-      'workerStarted',
-      (data) => {
-        console.log(`[Store] ✅ Worker started - version: ${data.version}`)
-      }
-    )
-
-    const cleanupUavIds = onWorkerMessage<{ uavIds: number[] }>(
-      'uavIdsUpdated',
-      (data) => {
-        // console.log('[Store] 📋 Worker confirmed UAV IDs:', data.uavIds)
-      }
-    )
-
-    const cleanupMemory = onWorkerMessage<MemoryStatsMessage>(
-      'memoryStats',
-      (data) => {
-        const usedMB = (data.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)
-        const totalMB = (data.memory.totalJSHeapSize / 1024 / 1024).toFixed(2)
-        console.log(`[Store] 💾 Worker memory: ${usedMB}MB / ${totalMB}MB`)
-      }
-    )
-
-    workerMessageCleanups.push(
-      cleanupProcessed,
-      cleanupStats,
-      cleanupError,
-      cleanupStarted,
-      cleanupUavIds,
-      cleanupMemory
-    )
-
-    console.log('[Store] ✅ Worker initialized and handlers registered')
+    workerMessageCleanups.push(cleanupProcessed)
     startPeriodicCleanup()
   }
 
   // ============================================================================
-  // SSE STREAM CONNECTION
+  // SSE STREAM (eredeti)
   // ============================================================================
 
   const initializeStream = (): void => {
-    if (eventSource.value) {
-      console.log('[Store] 📡 Stream already connected')
-      return
+    if (eventSource.value) return
+
+    eventSource.value = new EventSource(streamUrl.value)
+
+    eventSource.value.onopen = () => {
+      isStreamConnected.value = true
     }
 
-    console.log('[Store] 📡 Initializing SSE stream connection to:', streamUrl.value)
+    eventSource.value.onmessage = (event: MessageEvent) => {
+      if (!event.data) return
+      if (!isWorkerReady()) initializeWorker()
+      handleStreamData(event.data)
+    }
 
-    try {
-      eventSource.value = new EventSource(streamUrl.value)
-
-      eventSource.value.onopen = () => {
-        console.log('[Store] 📡 ✅ SSE Stream connected')
-        isStreamConnected.value = true
+    eventSource.value.onerror = () => {
+      isStreamConnected.value = false
+      if (eventSource.value?.readyState === EventSource.CLOSED) {
+        setTimeout(() => {
+          if (!isStreamConnected.value) {
+            disconnectStream()
+            initializeStream()
+          }
+        }, 5000)
       }
-
-      eventSource.value.onmessage = (event: MessageEvent) => {
-        // console.log('[Store] 📥 SSE message received, data length:', event.data?.length)
-
-        if (!event.data) {
-          console.warn('[Store] ⚠️ Empty SSE message received')
-          return
-        }
-
-        if (!isWorkerReady()) {
-          console.warn('[Store] ⚠️ Worker not ready when stream data arrived, initializing...')
-          initializeWorker()
-        }
-
-        handleStreamData(event.data)
-      }
-
-      eventSource.value.onerror = (error: Event) => {
-        console.error('[Store] 📡 ❌ SSE Stream error:', error)
-        isStreamConnected.value = false
-
-        if (eventSource.value?.readyState === EventSource.CLOSED) {
-          console.log('[Store] 📡 Stream closed, attempting to reconnect in 5 seconds...')
-          setTimeout(() => {
-            if (!isStreamConnected.value) {
-              console.log('[Store] 📡 Reconnecting...')
-              disconnectStream()
-              initializeStream()
-            }
-          }, 5000)
-        }
-      }
-
-      console.log('[Store] 📡 SSE Stream listener registered')
-    } catch (error) {
-      console.error('[Store] 📡 Failed to initialize SSE stream:', error)
-      errorMessage.value = 'Failed to connect to stream'
     }
   }
 
   const disconnectStream = (): void => {
     if (eventSource.value) {
-      console.log('[Store] 📡 Disconnecting SSE stream...')
       eventSource.value.close()
       eventSource.value = null
       isStreamConnected.value = false
-      console.log('[Store] 📡 ✅ SSE Stream disconnected')
     }
   }
 
@@ -511,51 +421,29 @@ export const useSensorStore = defineStore('sensor', () => {
   // COMPUTED
   // ============================================================================
 
-  const selectedSensors = computed(() => {
-    return Object.values(sensors.value).filter(sensor => sensor.is_selected)
-  })
+  const selectedSensors = computed(() =>
+    Object.values(sensors.value).filter(s => s.is_selected)
+  )
 
-  const hasSelectedSensors = computed(() => {
-    return selectedSensors.value.length > 0
-  })
+  const hasSelectedSensors = computed(() => selectedSensors.value.length > 0)
 
   // ============================================================================
   // WATCH
   // ============================================================================
 
-  watch(
-    selectedSensors,
-    (newSelected) => {
-      selectedSensorIds.value = newSelected.map(s => s.uav_id)
-      // console.log('[Store] 📋 Selected sensor IDs updated:', selectedSensorIds.value)
-    },
-    { immediate: true, deep: true }
-  )
+  watch(selectedSensors, (newSelected) => {
+    selectedSensorIds.value = newSelected.map(s => s.uav_id)
+  }, { immediate: true, deep: true })
 
-  watch(
-    selectedSensors,
-    (newSelected) => {
-      const selectedIds = newSelected.map(s => s.uav_id)
-      // console.log('[Store] 📤 Selected sensors changed:', selectedIds)
+  watch(selectedSensors, (newSelected) => {
+    const selectedIds = newSelected.map(s => s.uav_id)
 
-      if (selectedIds.length > 0) {
-        if (!isWorkerReady()) {
-          console.warn('[Store] ⚠️ Sensors selected but worker not ready, initializing...')
-          initializeWorker()
-        }
-
-        if (!isStreamConnected.value && !eventSource.value) {
-          console.log('[Store] 📡 Sensors selected, initializing stream...')
-          initializeStream()
-        }
-
-        updateSelectedUavIds(selectedIds)
-      } else {
-        console.log('[Store] No sensors selected')
-      }
-    },
-    { immediate: true, deep: true }
-  )
+    if (selectedIds.length > 0) {
+      if (!isWorkerReady()) initializeWorker()
+      if (!isStreamConnected.value && !eventSource.value) initializeStream()
+      updateSelectedUavIds(selectedIds)
+    }
+  }, { immediate: true, deep: true })
 
   // ============================================================================
   // ACTIONS
@@ -564,24 +452,15 @@ export const useSensorStore = defineStore('sensor', () => {
   const selectSensor = (uavId: number): void => {
     if (sensors.value[uavId]) {
       sensors.value[uavId].is_selected = !sensors.value[uavId].is_selected
-      console.log(`[Store] Sensor ${uavId} ${sensors.value[uavId].is_selected ? 'selected' : 'deselected'}`)
     }
   }
 
   const updateRealtimeConfig = (config: Partial<RealtimeConfig>): void => {
     realtimeConfig.value = { ...realtimeConfig.value, ...config }
-    console.log('[Store] ⚙️ Realtime config updated:', realtimeConfig.value)
   }
 
   const handleStreamData = (rawData: string): void => {
-    // console.log('[Store] 📥 handleStreamData called, data length:', rawData?.length)
-
-    if (!isWorkerReady()) {
-      console.warn('[Store] ⚠️ Worker not initialized when stream data arrived, initializing now...')
-      initializeWorker()
-    }
-
-    // console.log('[Store] 📤 Sending to worker...')
+    if (!isWorkerReady()) initializeWorker()
     sendDetection(rawData)
   }
 
@@ -591,13 +470,9 @@ export const useSensorStore = defineStore('sensor', () => {
 
     try {
       const response = await fetch('http://localhost:5000/v1/uav')
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
 
       const data = await response.json()
-
       const sensorsMap: Record<number, Sensor> = {}
 
       data.forEach((sensorData: any) => {
@@ -609,9 +484,7 @@ export const useSensorStore = defineStore('sensor', () => {
       })
 
       sensors.value = sensorsMap
-      console.log('[Store] ✅ Sensors fetched:', Object.keys(sensorsMap).length)
     } catch (error) {
-      console.error('[Store] ❌ Failed to fetch sensors:', error)
       errorMessage.value = 'Failed to load sensors'
     } finally {
       isLoading.value = false
@@ -623,7 +496,6 @@ export const useSensorStore = defineStore('sensor', () => {
       const uavId = selectedSensor.value.uav_id
       delete sensors.value[uavId]
       selectedSensor.value = null
-      console.log(`[Store] Sensor ${uavId} removed`)
     }
   }
 
@@ -632,37 +504,20 @@ export const useSensorStore = defineStore('sensor', () => {
   }
 
   const clearAllDetections = (): void => {
-    Object.values(sensors.value).forEach(sensor => {
-      sensor.detections = []
-    })
+    Object.values(sensors.value).forEach(s => (s.detections = []))
     clearDetections()
-    console.log('[Store] 🧹 All detections cleared')
   }
 
   const debugReactivity = (): void => {
     console.log('=== SENSOR STORE DEBUG ===')
-    console.log('Total sensors:', Object.keys(sensors.value).length)
-    console.log('Selected sensors:', selectedSensors.value.length)
-    console.log('Has selections:', hasSelectedSensors.value)
+    console.log('Sensors:', Object.keys(sensors.value).length)
+    console.log('Selected:', selectedSensors.value.length)
     console.log('Worker ready:', isWorkerReady())
     console.log('Stream connected:', isStreamConnected.value)
-    console.log('Cleanup interval active:', cleanupIntervalId !== null)
     console.log('GeoJSON enabled:', isGeoJsonEnabled.value)
     console.log('GeoJSON points:', geoJsonData.value.length)
-    console.log('Settings:', {
-      batchInterval: batchInterval.value,
-      detectionSize: detectionSize.value,
-      streamUrl: streamUrl.value
-    })
-    console.log('Realtime config:', realtimeConfig.value)
-    console.log('GeoJSON settings:', geoJsonSettings.value)
-
-    selectedSensors.value.forEach(sensor => {
-      console.log(`Sensor ${sensor.uav_id}:`, {
-        label: sensor.uav_label,
-        detections: sensor.detections.length
-      })
-    })
+    console.log('HeatMap points:', heatMapPoints.value.length)
+    console.log('Seen IDs cache:', seenIds.size)
   }
 
   // ============================================================================
@@ -670,13 +525,11 @@ export const useSensorStore = defineStore('sensor', () => {
   // ============================================================================
 
   onUnmounted(() => {
-    console.log('[Store] 🧹 Cleaning up...')
     stopPeriodicCleanup()
     stopGeoJsonFetch()
     disconnectStream()
     workerMessageCleanups.forEach(cleanup => cleanup())
     terminateWorker()
-    console.log('[Store] ✅ Cleanup complete')
   })
 
   // ============================================================================
@@ -684,7 +537,6 @@ export const useSensorStore = defineStore('sensor', () => {
   // ============================================================================
 
   return {
-    // State
     sensors,
     selectedSensor,
     isLoading,
@@ -696,12 +548,8 @@ export const useSensorStore = defineStore('sensor', () => {
     geoJsonData,
     geoJsonSettings,
     isGeoJsonEnabled,
-
-    // Computed
     selectedSensors,
     hasSelectedSensors,
-
-    // Actions
     initializeWorker,
     initializeStream,
     disconnectStream,
@@ -721,6 +569,9 @@ export const useSensorStore = defineStore('sensor', () => {
     startGeoJsonFetch,
     stopGeoJsonFetch,
     updateGeoJsonSettings,
-    fetchGeoJsonData
+    fetchGeoJsonData,
+    heatMapPoints,
+    maxHeatMapSize,
+    addToHeatMap // ✅ Export if needed
   }
 })
