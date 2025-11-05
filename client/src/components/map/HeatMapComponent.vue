@@ -25,7 +25,7 @@ const persistedPoints = ref<Array<{
   lastUpdate: number
 }>>([])
 
-const zoom = ref(12)
+const zoom = ref(2)
 const center = ref<[number, number] | null>(null)
 let centerInitialized = false
 const mapRef = ref<any>(null)

@@ -24,7 +24,7 @@ const {
 } = storeToRefs(sensorStore)
 
 // --- MAP STATE ---
-const zoom = ref(10)
+const zoom = ref(2)
 const center = ref([47.4979, 19.0402])
 const mapRef = ref(null)
 const leafletMap = shallowRef(null)
@@ -178,8 +178,9 @@ function getHeadingFromQuaternion ([q0, q1, q2, q3]: number[]): number {
   return deg < 0 ? deg + 360 : deg
 }
 
-function getHeading(sensor: Sensor): number {
+function getHeading (sensor: Sensor): number {
   const lastDetection = sensor.detections?.at(-1)
+
   if (lastDetection?.quaternion) {
     return getHeadingFromQuaternion([
       lastDetection.quaternion.q0,
