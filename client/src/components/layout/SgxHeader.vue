@@ -23,7 +23,7 @@ const toHome = () => {
   >
     <div class="flex flex-row items-center justify-between w-full">
       <div class="w-32"></div>
-      <h1 class="p-5 font-bold tracking-widest text-cyan-300 select-none text-center z-0" @click="toHome">
+      <h1 class="p-5 font-bold tracking-widest text-cyan-300 select-none text-center" @click="toHome">
         LENA_ALTISS
       </h1>
       <div class="w-32 flex justify-end">

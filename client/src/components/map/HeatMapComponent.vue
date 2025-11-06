@@ -68,35 +68,24 @@ const stats = ref({
 
 const showControlPanel = ref(false)
 
-// ✅ CACHE a computed eredményhez
-let lastProcessedLength = 0
+// ✅ EGYSZERŰBB CACHE - csak a grid resolution-t figyeli
 let lastGridResolution = 4
-let cachedHeatmapPoints: [number, number, number][] = []
+let lastPointsHash = ''
 
-// ✅ OPTIMALIZÁLT HEATMAP COMPUTED - Cache-el
+// ✅ OPTIMALIZÁLT HEATMAP COMPUTED
 const heatmapPoints = computed(() => {
   const currentLength = persistedPoints.value.length
   const currentGridRes = dataSettings.value.gridResolution
 
-  // ✅ Ha nem változott semmi, return cache
-  if (
-    currentLength === lastProcessedLength &&
-    currentGridRes === lastGridResolution &&
-    cachedHeatmapPoints.length > 0
-  ) {
-    return cachedHeatmapPoints
-  }
-
   if (currentLength === 0) {
-    cachedHeatmapPoints = []
-    lastProcessedLength = 0
     return []
   }
 
-  lastProcessedLength = currentLength
-  lastGridResolution = currentGridRes
+  // ✅ Hash a gyors változás detektáláshoz (ha kell cache-elni később)
+  const currentHash = `${currentLength}-${currentGridRes}`
+  lastPointsHash = currentHash
 
-  // ✅ A persistedPoints már rendezve van, nem kell újra sortolni!
+  // A persistedPoints már rendezve van
   const sortedPoints = persistedPoints.value
 
   const locationMap = new Map<string, {
@@ -159,11 +148,10 @@ const heatmapPoints = computed(() => {
     totalHeatMapPoints: persistedPoints.value.length
   }
 
-  cachedHeatmapPoints = newPoints
   return newPoints
 })
 
-// ✅ THROTTLED UPDATE - Max 1x / 300ms
+// ✅ ENYHÉBB THROTTLE - 150ms (gyorsabb update)
 const throttledUpdateHeatmap = useThrottleFn((forceRecreate = false) => {
   if (!leafletMap.value) return
 
@@ -197,7 +185,7 @@ const throttledUpdateHeatmap = useThrottleFn((forceRecreate = false) => {
     minOpacity: heatmapSettings.value.minOpacity,
     gradient: heatmapSettings.value.gradient
   }).addTo(leafletMap.value)
-}, 300)
+}, 150)
 
 function updateHeatmap(forceRecreate = false) {
   throttledUpdateHeatmap(forceRecreate)
@@ -210,7 +198,7 @@ function onMapReady() {
   }
 }
 
-// ✅ BINARY INSERT - Sorted beszúrás O(log n) + O(n) helyett O(n log n) sort
+// ✅ BINARY INSERT - Sorted beszúrás
 function insertSorted(arr: typeof persistedPoints.value, item: typeof persistedPoints.value[0]) {
   let low = 0
   let high = arr.length
@@ -227,7 +215,7 @@ function insertSorted(arr: typeof persistedPoints.value, item: typeof persistedP
   arr.splice(low, 0, item)
 }
 
-// ✅ WATCH: Új adatok hozzáadása - RENDEZVE, THROTTLED
+// ✅ WATCH: Új adatok hozzáadása - KISEBB THROTTLE (100ms)
 const processNewPoints = useThrottleFn((newPoints: typeof heatMapPoints.value) => {
   if (!newPoints || newPoints.length === 0) return
 
@@ -256,13 +244,13 @@ const processNewPoints = useThrottleFn((newPoints: typeof heatMapPoints.value) =
   }
 
   console.log(`[Heatmap] 📊 Persisted points: ${persistedPoints.value.length}`)
-}, 200) // Max 5x / sec
+}, 100) // ✅ 100ms - gyorsabb válasz
 
 watch(heatMapPoints, (newPoints) => {
   processNewPoints(newPoints)
 }, { deep: false, immediate: true })
 
-// ✅ WATCH: Perzisztált pontok változása → heatmap frissítés (THROTTLED)
+// ✅ WATCH: Perzisztált pontok változása → heatmap frissítés
 watch(persistedPoints, () => {
   if (dataSettings.value.showRealtime) {
     updateHeatmap(false)
@@ -271,12 +259,10 @@ watch(persistedPoints, () => {
 
 // ✅ Settings változás → recreate
 watch(() => heatmapSettings.value, () => {
-  lastProcessedLength = -1 // ✅ Invalidate cache
   updateHeatmap(true)
 }, { deep: true })
 
 watch(() => dataSettings.value.gridResolution, () => {
-  lastProcessedLength = -1 // ✅ Invalidate cache
   updateHeatmap(false)
 })
 
@@ -286,32 +272,38 @@ watch(() => dataSettings.value.maxPoints, (newMaxPoints) => {
     persistedPoints.value.splice(0, toRemove)
     console.log(`[Heatmap] 📉 Limited persisted points to ${newMaxPoints}`)
   }
-  lastProcessedLength = -1 // ✅ Invalidate cache
   updateHeatmap(false)
 })
 
-// ✅ ELTÁVOLÍTVA az auto-update timer - a watch-ok elég gyorsak!
-// Ha mégis kellene, akkor requestAnimationFrame-el:
-/*
-let rafId: number | null = null
+// ✅ BACKUP AUTO-UPDATE - ha a watch-ok nem működnének jól
+let updateTimer: number | null = null
 
 function startAutoUpdate() {
-  function update() {
-    if (dataSettings.value.showRealtime) {
+  if (updateTimer) clearInterval(updateTimer)
+  updateTimer = setInterval(() => {
+    if (dataSettings.value.showRealtime && persistedPoints.value.length > 0) {
       updateHeatmap(false)
     }
-    rafId = requestAnimationFrame(update)
-  }
-  rafId = requestAnimationFrame(update)
+  }, dataSettings.value.updateInterval)
 }
 
 function stopAutoUpdate() {
-  if (rafId !== null) {
-    cancelAnimationFrame(rafId)
-    rafId = null
+  if (updateTimer) {
+    clearInterval(updateTimer)
+    updateTimer = null
   }
 }
-*/
+
+watch(() => dataSettings.value.updateInterval, () => {
+  if (dataSettings.value.showRealtime) {
+    stopAutoUpdate()
+    startAutoUpdate()
+  }
+})
+
+watch(() => dataSettings.value.showRealtime, (isRealtime) => {
+  isRealtime ? startAutoUpdate() : stopAutoUpdate()
+})
 
 // ✅ Center beállítása
 watch(persistedPoints, (points) => {
@@ -336,14 +328,11 @@ function clearHeatmap() {
   }
 
   persistedPoints.value = []
-  lastProcessedLength = 0
-  cachedHeatmapPoints = []
 
   console.log('[Heatmap] 🧹 Cleared all persisted points')
 }
 
 function manualUpdate() {
-  lastProcessedLength = -1 // ✅ Invalidate cache
   updateHeatmap(true)
 }
 
@@ -362,9 +351,16 @@ function exportData() {
   URL.revokeObjectURL(url)
 }
 
+onMounted(() => {
+  startAutoUpdate()
+})
+
 // ✅ TELJES CLEANUP
 onBeforeUnmount(() => {
   console.log('[Heatmap] 🧹 Starting cleanup...')
+
+  // 0. Stop timer
+  stopAutoUpdate()
 
   // 1. Heat layer cleanup
   if (heatLayer.value) {
@@ -382,8 +378,6 @@ onBeforeUnmount(() => {
   // 3. Refs cleanup
   mapRef.value = null
   persistedPoints.value = []
-  cachedHeatmapPoints = []
-  lastProcessedLength = 0
 
   console.log('[Heatmap] ✅ Complete cleanup done')
 })
@@ -510,6 +504,21 @@ onBeforeUnmount(() => {
               max="1"
               step="0.1"
               v-model.number="heatmapSettings.minOpacity"
+              class="w-full accent-cyan-500"
+            />
+          </div>
+
+          <!-- Update Interval -->
+          <div>
+            <label class="text-xs text-gray-300 block mb-1">
+              Update Interval: <strong>{{ dataSettings.updateInterval }}ms</strong>
+            </label>
+            <input
+              type="range"
+              min="500"
+              max="5000"
+              step="100"
+              v-model.number="dataSettings.updateInterval"
               class="w-full accent-cyan-500"
             />
           </div>
