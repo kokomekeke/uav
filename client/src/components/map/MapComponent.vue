@@ -332,7 +332,7 @@ function updateGeoJsonSettings() {
   sensorStore.updateGeoJsonSettings(localGeoJsonSettings.value)
 }
 
-function toggleGeoJsonFetch() {
+function toggleGeoJsonFetch () {
   console.log('[Map] Toggle GeoJSON fetch, current state:', isGeoJsonEnabled.value)
 
   if (isGeoJsonEnabled.value) {
