@@ -40,7 +40,7 @@ class MeasurementProcessor(Loop):
 
         self._in_queue: Optional[Queue] = None
         self._to_monitoring_queue: Optional[Queue] = None
-        self._to_stream_queue: Optional[Queue] = None
+        # self._to_stream_queue: Optional[Queue] = None
         self._audio_stream_queue: Optional[Queue] = None
         self._last_commit = time.time()
         self._measurements_to_add = []
@@ -51,14 +51,14 @@ class MeasurementProcessor(Loop):
         self,
         in_queue: Queue,
         to_monitoring_queue: Queue,
-        to_stream_queue: Queue,
+        # to_stream_queue: Queue,
         audio_stream_queue: Queue,
         *args,
         **kwargs,
     ) -> None:
         self._in_queue = in_queue
         self._to_monitoring_queue = to_monitoring_queue
-        self._to_stream_queue = to_stream_queue
+        # self._to_stream_queue = to_stream_queue
         self._audio_stream_queue = audio_stream_queue
         self._db_app = self._db.get_app_instance()
         return super()._call(*args, **kwargs)
@@ -244,13 +244,13 @@ class MeasurementProcessor(Loop):
             self._receive_packet(id, packet)
 
 
-            queue_put(
-                self._to_stream_queue,
-                (id, packet),
-                0,
-                self._logger,
-                "Measurement to stream",
-            )
+            # queue_put(
+            #     self._to_stream_queue,
+            #     (id, packet),
+            #     0,
+            #     self._logger,
+            #     "Measurement to stream",
+            # )
 
             in_q_size = self._in_queue.qsize()
             if in_q_size > 10:

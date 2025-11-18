@@ -355,6 +355,13 @@ export const useSensorStore = defineStore('sensor', () => {
     const cleanupProcessed = onWorkerMessage('processedDetection', (data: any) => {
       const { detection, uavId } = data
       const now = performance.now()
+      const ms = Math.floor(now % 1000)
+      const sec = Math.floor((now / 1000) % 60)
+      const min = Math.floor((now / (1000 * 60)) % 60)
+      const hour = Math.floor((now / (1000 * 60 * 60)) % 24)
+
+      const human = `${hour}h ${min}m ${sec}s ${ms}ms`
+      console.log('human: ',  human)
 
       if (!sensors.value[uavId]) return
 
@@ -367,10 +374,12 @@ export const useSensorStore = defineStore('sensor', () => {
 
       const buffer = sensors.value[uavId].detections
       if (buffer.length >= realtimeConfig.value.circularBufferSize) {
-        sensors.value[uavId].detections = buffer.slice(1)
+        sensors.value[uavId].detections = buffer.slice(-50)
       }
 
       sensors.value[uavId].detections.push(detection)
+      // console.log('BUFFER_LENGTH: ', sensors.value[uavId].detections.length)
+      // console.log('first n last item stuff: ', sensors.value[uavId].detections[0].timestamp, sensors.value[uavId].detections[sensors.value[uavId].detections.length - 1].timestamp)
     })
 
     workerMessageCleanups.push(cleanupProcessed)
@@ -528,7 +537,10 @@ export const useSensorStore = defineStore('sensor', () => {
     stopPeriodicCleanup()
     stopGeoJsonFetch()
     disconnectStream()
-    workerMessageCleanups.forEach(cleanup => cleanup())
+    workerMessageCleanups.forEach(cleanup => {
+     cleanup()
+     console.log('cleanup: ', cleanup)
+    })
     terminateWorker()
   })
 

@@ -12,3 +12,10 @@ def queue_put(q: Queue[Any], data, timeout: float = 1, logger=None, message: str
     except queue.Full:
         if logger is not None:
             logger.warning(" ".join([message, "Output queue is full, data is dropped."]))
+
+def multi_put(queues, data, timeout=0):
+    for q in queues:
+        try:
+            q.put(data, timeout=timeout)
+        except queue.Full:
+            pass

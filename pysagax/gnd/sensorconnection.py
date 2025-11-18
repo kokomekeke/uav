@@ -15,7 +15,7 @@ from pysagax.gnd.database import ComIntDatabase, ComIntDetectionEntity, UAVEntit
 from pysagax.message.data_types import DataType
 from pysagax.util.get_ip import get_ip
 
-from pysagax.util.queue_put import queue_put
+from pysagax.util.queue_put import queue_put, multi_put
 
 import queue
 import multiprocessing as mp
@@ -49,7 +49,8 @@ class UAVConnection(mp.Process):
         self,
         uav_entity: UAVEntity,
         streaming_level: proto_cmd.StreamTarget.StreamLevel,
-        stream_out_q: queue.Queue,
+        to_measurement_processor_q: queue.Queue,
+        to_stream_q: queue.Queue,
         command_q: queue.Queue,
         response_q: queue.Queue,
         stop_event: mp.Event,
@@ -63,7 +64,8 @@ class UAVConnection(mp.Process):
         self.uav_label = uav_entity.uav_label
         self.streaming_level = streaming_level
 
-        self._stream_out_q = stream_out_q
+        self._to_measurement_processor_q = to_measurement_processor_q
+        self._to_stream_q = to_stream_q
         self._command_q = command_q
         self._response_q = response_q
 
@@ -267,10 +269,23 @@ class UAVConnection(mp.Process):
             data_type_object = DataType(data_type)
             stream_packet = DataType.to_message(data_type_object)
             stream_packet.ParseFromString(data)
-            queue_put(
-                self._stream_out_q,
-                (self.uav_db_id, stream_packet),
+            stream_data = (self.uav_db_id, stream_packet)
+
+            multi_put(
+                [self._to_measurement_processor_q, self._to_stream_q],
+                stream_data,
                 timeout=0,
             )
+
+            # queue_put(
+            #     self._to_measurement_processor_q,
+            #     stream_data,
+            #     timeout=0,
+            # )
+            # queue_put(
+            #     self._to_stream_q,
+            #     stream_data,
+            #     timeout=0
+            # )
             # self._stream_out_q.put((self.uav_db_id, stream_packet)) # TODO use queue_put?
             self.last_interacted_ts = time.time()

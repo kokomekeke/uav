@@ -29,6 +29,7 @@ class UAVConnectionHandler:
         self,
         uav_entity: UAVEntity,
         to_measurement_processor_q: queue.Queue,
+        to_stream_q: queue.Queue,
         level: Any,
         streaming_level: proto_cmd.StreamTarget.StreamLevel = proto_cmd.StreamTarget.StreamLevel.DETECTION,
     ):
@@ -45,7 +46,8 @@ class UAVConnectionHandler:
         self._uav = UAVConnection(
             uav_entity=uav_entity,
             streaming_level=streaming_level,
-            stream_out_q=to_measurement_processor_q,
+            to_measurement_processor_q=to_measurement_processor_q,
+            to_stream_q=to_stream_q,
             command_q=self._command_q,
             response_q=self._response_q,
             stop_event=self._stop_event,
@@ -116,6 +118,7 @@ class CommAggregate(Loop):
         self._incoming_command_q: Optional[queue.Queue] = None
         self._outgoing_responses_q: Optional[queue.Queue] = None
         self._uavs_to_measurement_processor: Optional[queue.Queue] = None
+        self._to_stream_q: Optional[queue.Queue] = None
 
         super().__init__(*args, **kwargs)
 
@@ -124,6 +127,7 @@ class CommAggregate(Loop):
         commands_from_api: queue.Queue[Any],
         responses_to_api: queue.Queue[Any],
         uavs_to_measurement_processor: queue.Queue[Any],
+        to_stream_q: Optional[queue.Queue],
         *args,
         **kwargs,
     ) -> None:
@@ -131,6 +135,7 @@ class CommAggregate(Loop):
         self._incoming_command_q = commands_from_api
         self._outgoing_responses_q = responses_to_api
         self._uavs_to_measurement_processor = uavs_to_measurement_processor
+        self._to_stream_q = to_stream_q
         return super()._call(*args, **kwargs)
 
     def _refresh_active_sensor_list(self):
@@ -163,7 +168,7 @@ class CommAggregate(Loop):
                 f"Activating #{uav_entity.uav_id} {uav_entity.uav_label} ({uav_entity.uav_address})"
             )
             uav_conn = UAVConnectionHandler(
-                uav_entity, self._uavs_to_measurement_processor, self._logger.level
+                uav_entity, self._uavs_to_measurement_processor, self._to_stream_q, self._logger.level
             )
             self._uavs[uav_entity.uav_id] = uav_conn
             uav_conn.start()

@@ -128,12 +128,13 @@ class Commander:
             self._api_to_command_engine_commands_q,
             self._command_engine_to_api_responses_q,
             self._uavs_to_measurement_processor_q,
+            self._to_stream_q
         )
         measurement_processor_future = self._pool.submit(
             self._measurement_processor,
             self._uavs_to_measurement_processor_q,
             self._telemetry_for_monitoring_q,
-            self._to_stream_q,
+            # self._to_stream_q,
             self._to_audio_streamer_q,
         )
         audio_streamer_future = self._pool.submit(
