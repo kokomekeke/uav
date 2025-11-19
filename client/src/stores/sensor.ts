@@ -45,7 +45,8 @@ export const useSensorStore = defineStore('sensor', () => {
     maxLatencyMs: 1000,
     detectionTTL: 10000,
     enableStrictRealtime: true,
-    circularBufferSize: 50
+    circularBufferSize: 50,
+    interval: 100
   })
 
   // GeoJSON State
@@ -147,10 +148,9 @@ export const useSensorStore = defineStore('sensor', () => {
       if (ttl <= 0) return
 
       Object.values(sensors.value).forEach(sensor => {
-        const before = sensor.detections.length
         sensor.detections = sensor.detections.filter(d => (now - (d.timestamp || 0)) <= ttl)
       })
-    }, 100)
+    }, realtimeConfig.value.interval)
   }
 
   const stopPeriodicCleanup = (): void => {
@@ -361,7 +361,7 @@ export const useSensorStore = defineStore('sensor', () => {
       const hour = Math.floor((now / (1000 * 60 * 60)) % 24)
 
       const human = `${hour}h ${min}m ${sec}s ${ms}ms`
-      console.log('human: ',  human)
+      console.log('human: ', human)
 
       if (!sensors.value[uavId]) return
 
@@ -374,7 +374,7 @@ export const useSensorStore = defineStore('sensor', () => {
 
       const buffer = sensors.value[uavId].detections
       if (buffer.length >= realtimeConfig.value.circularBufferSize) {
-        sensors.value[uavId].detections = buffer.slice(-50)
+        sensors.value[uavId].detections = buffer.slice(-realtimeConfig.value.circularBufferSize)
       }
 
       sensors.value[uavId].detections.push(detection)
