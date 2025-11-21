@@ -1,6 +1,6 @@
 // stores/sensor.ts - OPTIMALIZÁLT VERZIÓ
 import { defineStore } from 'pinia'
-import { ref, computed, watch, onUnmounted } from 'vue'
+import { ref, computed, watch, onUnmounted, shallowRef } from 'vue'
 import { useDetectionWorker } from '@/composables/useDetectionWorker'
 import type { Sensor } from '@/types/sensor'
 import type { RealtimeConfig } from '@/types/config'
@@ -28,7 +28,7 @@ export const useSensorStore = defineStore('sensor', () => {
   // STATE
   // ============================================================================
 
-  const sensors = ref<Record<number, Sensor>>({})
+  const sensors = shallowRef<Record<number, Sensor>>({})
   const selectedSensor = ref<Sensor | null>(null)
   const selectedSensorIds = ref<number[]>([])
   const isLoading = ref(false)
@@ -147,9 +147,16 @@ export const useSensorStore = defineStore('sensor', () => {
 
       if (ttl <= 0) return
 
-      Object.values(sensors.value).forEach(sensor => {
-        sensor.detections = sensor.detections.filter(d => (now - (d.timestamp || 0)) <= ttl)
+      const newSensors: Record<number, Sensor> = {}
+
+      Object.entries(sensors.value).forEach(([id, sensor]) => {
+        newSensors[+id] = {
+          ...sensor,
+          detections: sensor.detections.filter(d => (now - (d.timestamp || 0)) <= ttl)
+        }
       })
+
+      sensors.value = newSensors
     }, realtimeConfig.value.interval)
   }
 
@@ -366,20 +373,39 @@ export const useSensorStore = defineStore('sensor', () => {
       if (!sensors.value[uavId]) return
 
       if (realtimeConfig.value.detectionTTL > 0) {
-        const before = sensors.value[uavId].detections.length
-        sensors.value[uavId].detections = sensors.value[uavId].detections.filter(
+        const detections = sensors.value[uavId].detections.filter(
           d => (now - (d.timestamp || 0)) <= realtimeConfig.value.detectionTTL
         )
+        sensors.value = {
+          ...sensors.value,
+          [uavId]: {
+            ...sensors.value[uavId], // ← spreadeljük a régi szenzort
+            detections // ← csak ezt írjuk felül
+          }
+        }
       }
 
       const buffer = sensors.value[uavId].detections
       if (buffer.length >= realtimeConfig.value.circularBufferSize) {
-        sensors.value[uavId].detections = buffer.slice(-realtimeConfig.value.circularBufferSize)
+        sensors.value = {
+          ...sensors.value,
+          [uavId]: {
+            ...sensors.value[uavId],
+            detections: buffer.slice(-realtimeConfig.value.circularBufferSize)
+          }
+        }
       }
 
-      sensors.value[uavId].detections.push(detection)
-      // console.log('BUFFER_LENGTH: ', sensors.value[uavId].detections.length)
-      // console.log('first n last item stuff: ', sensors.value[uavId].detections[0].timestamp, sensors.value[uavId].detections[sensors.value[uavId].detections.length - 1].timestamp)
+      sensors.value = {
+        ...sensors.value,
+        [uavId]: {
+          ...sensors.value[uavId],
+          detections: [
+            ...sensors.value[uavId].detections,
+            detection
+          ]
+        }
+      }
     })
 
     workerMessageCleanups.push(cleanupProcessed)
@@ -439,28 +465,33 @@ export const useSensorStore = defineStore('sensor', () => {
   // ============================================================================
   // WATCH
   // ============================================================================
-
   watch(selectedSensors, (newSelected) => {
-    selectedSensorIds.value = newSelected.map(s => s.uav_id)
-  }, { immediate: true, deep: true })
-
-  watch(selectedSensors, (newSelected) => {
+    // 1. Update IDs
     const selectedIds = newSelected.map(s => s.uav_id)
+    selectedSensorIds.value = selectedIds
 
+    // 2. Initialize worker/stream ha szükséges
     if (selectedIds.length > 0) {
       if (!isWorkerReady()) initializeWorker()
       if (!isStreamConnected.value && !eventSource.value) initializeStream()
       updateSelectedUavIds(selectedIds)
     }
-  }, { immediate: true, deep: true })
+  }, { immediate: true, deep: false })
 
   // ============================================================================
   // ACTIONS
   // ============================================================================
 
   const selectSensor = (uavId: number): void => {
-    if (sensors.value[uavId]) {
-      sensors.value[uavId].is_selected = !sensors.value[uavId].is_selected
+    const sensor = sensors.value[uavId]
+    if (!sensor) return
+
+    sensors.value = {
+      ...sensors.value,
+      [uavId]: { // ← Helyes kulcs
+        ...sensor,
+        is_selected: !sensor.is_selected
+      }
     }
   }
 
@@ -513,7 +544,16 @@ export const useSensorStore = defineStore('sensor', () => {
   }
 
   const clearAllDetections = (): void => {
-    Object.values(sensors.value).forEach(s => (s.detections = []))
+    const newSensors: Record<number, Sensor> = {}
+
+    Object.entries(sensors.value).forEach(([id, sensor]) => {
+      newSensors[+id] = {
+        ...sensor,
+        detections: []
+      }
+    })
+
+    sensors.value = newSensors
     clearDetections()
   }
 
@@ -538,8 +578,8 @@ export const useSensorStore = defineStore('sensor', () => {
     stopGeoJsonFetch()
     disconnectStream()
     workerMessageCleanups.forEach(cleanup => {
-     cleanup()
-     console.log('cleanup: ', cleanup)
+      cleanup()
+      console.log('cleanup: ', cleanup)
     })
     terminateWorker()
   })
