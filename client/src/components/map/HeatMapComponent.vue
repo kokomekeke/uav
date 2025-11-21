@@ -7,6 +7,7 @@ import { storeToRefs } from 'pinia'
 import { useThrottleFn } from '@vueuse/core'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.heat'
+import {useGeoLocStore} from "@/stores/geoloc";
 
 interface Props {
   showControls?: boolean
@@ -17,8 +18,11 @@ const props = withDefaults(defineProps<Props>(), {
   compactMode: false
 })
 
-const sensorStore = useSensorStore()
-const { heatMapPoints } = storeToRefs(sensorStore)
+// const sensorStore = useSensorStore()
+// const { heatMapPoints } = storeToRefs(sensorStore)
+
+const geolocStore = useGeoLocStore()
+const { heatMapPoints } = storeToRefs(geolocStore)
 
 // ✅ Perzisztens pont tároló - MINDIG rendezve tartva
 const persistedPoints = ref<Array<{

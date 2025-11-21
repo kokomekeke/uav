@@ -9,6 +9,7 @@ import 'leaflet/dist/leaflet.css'
 import 'leaflet.fullscreen'
 import 'leaflet.fullscreen/Control.FullScreen.css'
 import { Sensor } from '@/types/sensor'
+import {useGeoLocStore} from "@/stores/geoloc";
 
 // --- STORE ---
 const sensorStore = useSensorStore()
@@ -17,11 +18,18 @@ const {
   batchInterval,
   selectedSensors,
   selectedSensorIds,
-  hasSelectedSensors,
+  hasSelectedSensors
+  // geoJsonData,
+  // geoJsonSettings,
+  // isGeoJsonEnabled
+} = storeToRefs(sensorStore)
+
+const geolocStore = useGeoLocStore()
+const {
   geoJsonData,
   geoJsonSettings,
   isGeoJsonEnabled
-} = storeToRefs(sensorStore)
+} = storeToRefs(geolocStore)
 
 // --- MAP STATE ---
 const zoom = ref(2)
@@ -327,19 +335,19 @@ function _doRenderDetections() {
 const detectionBufferArray = computed(() => Array.from(detectionBuffer.value.values()))
 
 // --- GEOJSON FUNCTIONS ---
-function updateGeoJsonSettings() {
+function updateGeoJsonSettings () {
   console.log('[Map] Updating GeoJSON settings:', localGeoJsonSettings.value)
-  sensorStore.updateGeoJsonSettings(localGeoJsonSettings.value)
+  geolocStore.updateGeoJsonSettings(localGeoJsonSettings.value)
 }
 
 function toggleGeoJsonFetch () {
   console.log('[Map] Toggle GeoJSON fetch, current state:', isGeoJsonEnabled.value)
 
   if (isGeoJsonEnabled.value) {
-    sensorStore.stopGeoJsonFetch()
+    geolocStore.stopGeoJsonFetch()
   } else {
     updateGeoJsonSettings()
-    sensorStore.startGeoJsonFetch()
+    geolocStore.startGeoJsonFetch()
   }
 }
 
@@ -357,7 +365,7 @@ function updateSettings () {
   renderDetections()
 }
 
-function clearMapData() {
+function clearMapData () {
   sensorStore.clearDetections()
   planeIconsCache.clear()
   azimuthLinesCache.clear()
@@ -366,7 +374,7 @@ function clearMapData() {
   debugInfo.value.cacheSize = 0
 }
 
-function debugStore() {
+function debugStore () {
   console.log('=== MAP COMPONENT DEBUG ===', debugInfo.value)
   console.log('GeoJSON buffer size:', geoJsonBuffer.value.size)
   console.log('GeoJSON computed points:', geoJsonPointsWithOpacity.value)
@@ -374,7 +382,7 @@ function debugStore() {
 }
 
 // --- MAP SETUP ---
-function updateMapView() {
+function updateMapView () {
   if (mapRef.value?.leafletObject) {
     leafletMap.value = mapRef.value.leafletObject
     mapBounds.value = leafletMap.value.getBounds()

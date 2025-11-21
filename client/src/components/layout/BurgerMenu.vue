@@ -91,9 +91,9 @@ const showMap = (): void => {
   console.log('[SensorSidebar] Routing to Map')
 }
 
-const addSensor = (): void => {
-  isModalOpen.value = true
-}
+// const addSensor = (): void => {
+//   isModalOpen.value = true
+// }
 
 const confirm = async (): Promise<void> => {
   if (!selectedSensorForModify.value) {
@@ -119,7 +119,6 @@ const confirm = async (): Promise<void> => {
       // Close modify panel
       isModifyPanelOpen.value = false
       selectedSensorForModify.value = null
-
     } catch (error) {
       console.error('[SensorSidebar] API error:', error)
       if (axios.isAxiosError(error)) {

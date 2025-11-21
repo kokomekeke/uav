@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import {ref} from "vue";
+import { ref } from 'vue'
 
 interface GeoJsonPoint {
   id: number | string
@@ -16,6 +16,7 @@ interface HeatMapPoint {
 }
 
 export const useGeoLocStore = defineStore('geoloc', () => {
+  // GeoJSON State
   const geoJsonData = ref<GeoJsonPoint[]>([])
   const geoJsonSettings = ref({
     limit: 20,
@@ -32,7 +33,6 @@ export const useGeoLocStore = defineStore('geoloc', () => {
   const maxHeatMapSize = ref(1000) // ✅ 1000 pont maximum
 
   // Cleanup intervals
-  let cleanupIntervalId: number | null = null
   let geoJsonIntervalId: number | null = null
   let geoJsonCleanupIntervalId: number | null = null
   let heatMapCleanupIntervalId: number | null = null
@@ -175,6 +175,43 @@ export const useGeoLocStore = defineStore('geoloc', () => {
     }
   }
 
+  const startHeatMapCleanup = (): void => {
+    if (heatMapCleanupIntervalId !== null) return
+
+    console.log('[Store] 🧹 Starting HeatMap cleanup (every 5s)')
+
+    heatMapCleanupIntervalId = window.setInterval(() => {
+      const now = Date.now()
+      const ttl = geoJsonSettings.value.ttl
+
+      const beforeCount = heatMapPoints.value.length
+
+      // ✅ TTL alapú cleanup
+      heatMapPoints.value = heatMapPoints.value.filter(point => {
+        const age = now - point.lastUpdate
+        return age <= ttl
+      })
+
+      // ✅ Size limit ellenőrzés
+      if (heatMapPoints.value.length > maxHeatMapSize.value) {
+        heatMapPoints.value = heatMapPoints.value.slice(-maxHeatMapSize.value)
+      }
+
+      const cleaned = beforeCount - heatMapPoints.value.length
+      if (cleaned > 0) {
+        console.log(`[Store] 🧹 Cleaned ${cleaned} expired HeatMap points`)
+      }
+    }, 5000)
+  }
+
+  const stopHeatMapCleanup = (): void => {
+    if (heatMapCleanupIntervalId !== null) {
+      console.log('[Store] 🛑 Stopping HeatMap cleanup')
+      window.clearInterval(heatMapCleanupIntervalId)
+      heatMapCleanupIntervalId = null
+    }
+  }
+
   const startGeoJsonCleanup = (): void => {
     if (geoJsonCleanupIntervalId !== null) return
 
@@ -217,5 +254,18 @@ export const useGeoLocStore = defineStore('geoloc', () => {
     if (heatMapPoints.value.length > maxHeatMapSize.value) {
       heatMapPoints.value = heatMapPoints.value.slice(-maxHeatMapSize.value)
     }
+  }
+
+  return {
+    geoJsonData,
+    geoJsonSettings,
+    isGeoJsonEnabled,
+    startGeoJsonFetch,
+    stopGeoJsonFetch,
+    updateGeoJsonSettings,
+    fetchGeoJsonData,
+    heatMapPoints,
+    maxHeatMapSize,
+    addToHeatMap
   }
 })
