@@ -1,3 +1,4 @@
+// workers/detectionWorker.ts - OPTIMALIZÁLT VERZIÓ
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -29,8 +30,8 @@ interface DetectionItem {
   frequency: number
   azimuth?: number
   elevation?: number
-  mean_azimuth?: number // ✅ snake_case
-  mean_elevation?: number // ✅ snake_case
+  mean_azimuth?: number
+  mean_elevation?: number
   roi_id?: number
   bandwidth?: number
   strength?: number
@@ -38,11 +39,12 @@ interface DetectionItem {
 }
 
 interface HeadingData {
-  latitude?: number // ✅ GPS koordináták a heading_data-ból
+  latitude?: number
   longitude?: number
   altitude?: number
   heading?: number
-  // További mezők a heading.proto szerint
+  gpsLat?: number
+  gpsLon?: number
 }
 
 interface MeasurementData {
@@ -52,13 +54,14 @@ interface MeasurementData {
   source_time?: number
   packet_id?: number
   position?: number
-  quaternion?: number[] // ✅ repeated float = tömb
+  quaternion?: number[]
   overflow?: boolean
   peaks?: number[]
-  heading_data?: HeadingData // ✅ snake_case
+  heading_data?: HeadingData
+  headingData?: HeadingData | string
   sampleIndex?: number
   data?: any[]
-  detection?: DetectionItem[] // ✅ repeated Detection
+  detection?: DetectionItem[]
 }
 
 interface StreamPacket {
@@ -79,7 +82,7 @@ interface WorkerStats {
 
 type WorkerIncomingMessage =
   | { type: 'uavIds'; uavIds: number[] }
-  | { type: 'newDetection'; detection: string }
+  | { type: 'newDetection'; detection: string; timestamp?: number }
   | { type: 'updateSettings'; samplingRate?: number; maxLatencyMs?: number }
   | { type: 'clearDetections' }
   | { type: 'getStats' }
@@ -121,52 +124,55 @@ const DataType = {
 
 type DataTypeValue = typeof DataType[keyof typeof DataType]
 
+// ✅ OBJECT POOL - Újrahasználható Detection objektumok
+const DETECTION_POOL_SIZE = 50
+const detectionPool: Detection[] = []
+let poolIndex = 0
+
+// ✅ Inicializálás: pool létrehozása
+for (let i = 0; i < DETECTION_POOL_SIZE; i++) {
+  detectionPool.push({
+    timestamp: 0,
+    frequency: 0,
+    azimuth: 0,
+    elevation: 0,
+    meanAzimuth: 0,
+    meanElevation: 0,
+    coordinate: [0, 0],
+    quaternion: { q0: 1, q1: 0, q2: 0, q3: 0 },
+    heading: 0,
+    gpsLat: 0,
+    gpsLon: 0,
+    altitude: 0,
+    roi_id: null
+  })
+}
+
 // ============================================================================
-// HELPER FUNCTIONS
+// HELPER FUNCTIONS - ✅ OPTIMALIZÁLT
 // ============================================================================
 
 /**
- * Koordináta számítás azimut és elevációból
+ * ✅ OPTIMALIZÁLT: Koordináta számítás (jelenleg identity function)
  */
-function calculateCoordinate (
+function calculateCoordinate(
   azimuth: number,
   elevation: number,
   gpsLat: number,
   gpsLon: number,
-  altitude: number
-): [number, number] {
-  // A matematikailag korrigált verzió
-  //
-  // const R = 6371000
-  // const elevationRad = elevation
-  // const azimuthRad = azimuth
-  //
-  // const distance = altitude / Math.tan(Math.abs(elevationRad))
-  // const clampedDistance = Math.max(0, Math.min(distance, 100000))
-  //
-  // const latRad = (gpsLat * Math.PI) / 180
-  // const lonRad = (gpsLon * Math.PI) / 180
-  //
-  // const newLatRad = Math.asin(
-  //   Math.sin(latRad) * Math.cos(clampedDistance / R) +
-  //   Math.cos(latRad) * Math.sin(clampedDistance / R) * Math.cos(azimuthRad)
-  // )
-  //
-  // const newLonRad = lonRad + Math.atan2(
-  //   Math.sin(azimuthRad) * Math.sin(clampedDistance / R) * Math.cos(latRad),
-  //   Math.cos(clampedDistance / R) - Math.sin(latRad) * Math.sin(newLatRad)
-  // )
-  //
-  // const newLat = (newLatRad * 180) / Math.PI
-  // const newLon = (newLonRad * 180) / Math.PI
-
-  return [gpsLat, gpsLon]
+  altitude: number,
+  outCoord: [number, number]
+): void {
+  // A matematikailag korrigált verzió ki van kommentelve
+  // Most egyszerűen visszaadjuk a GPS koordinátákat
+  outCoord[0] = gpsLat
+  outCoord[1] = gpsLon
 }
 
 /**
- * Quaternion alapú heading számítás
+ * ✅ OPTIMALIZÁLT: Quaternion alapú heading (inline math)
  */
-function getHeadingFromQuaternion (
+function getHeadingFromQuaternion(
   q0: number,
   q1: number,
   q2: number,
@@ -186,9 +192,9 @@ function getHeadingFromQuaternion (
 }
 
 /**
- * Optimalizált detekció objektum létrehozása
+ * ✅ OPTIMALIZÁLT: Detection objektum pool-ból, mutáció
  */
-function createOptimizedDetection (
+function getDetectionFromPool(
   detectionItem: DetectionItem,
   gpsLat: number,
   gpsLon: number,
@@ -197,35 +203,47 @@ function createOptimizedDetection (
   heading: number,
   timestamp: number
 ): Detection {
-  const coordinate = calculateCoordinate(
-    detectionItem.azimuth ?? detectionItem.mean_azimuth ?? 0, // ✅ snake_case
-    detectionItem.elevation ?? detectionItem.mean_elevation ?? 0, // ✅ snake_case
-    gpsLat,
-    gpsLon,
-    altitude
-  )
+  // ✅ Pool-ból vesszük a következő objektumot (circular)
+  const detection = detectionPool[poolIndex]
+  poolIndex = (poolIndex + 1) % DETECTION_POOL_SIZE
 
-  return {
-    timestamp,
-    frequency: detectionItem.frequency,
-    azimuth: detectionItem.azimuth ?? 0,
-    elevation: detectionItem.elevation ?? 0,
-    meanAzimuth: detectionItem.meanAzimuth ?? 0, // ✅ snake_case -> camelCase (frontend)
-    meanElevation: detectionItem.meanElevation ?? 0, // ✅ snake_case -> camelCase (frontend)
-    coordinate,
-    quaternion,
-    heading,
+  // ✅ Mutáljuk az objektumot (ne új allokáció)
+  detection.timestamp = timestamp
+  detection.frequency = detectionItem.frequency
+  detection.azimuth = detectionItem.azimuth ?? 0
+  detection.elevation = detectionItem.elevation ?? 0
+  detection.meanAzimuth = detectionItem.mean_azimuth ?? 0
+  detection.meanElevation = detectionItem.mean_elevation ?? 0
+  detection.roi_id = detectionItem.roi_id ?? null
+
+  // ✅ Koordináta számítás in-place
+  calculateCoordinate(
+    detection.azimuth,
+    detection.elevation,
     gpsLat,
     gpsLon,
     altitude,
-    roi_id: detectionItem.roi_id ?? null
-  }
+    detection.coordinate
+  )
+
+  // ✅ Quaternion mutáció
+  detection.quaternion.q0 = quaternion.q0
+  detection.quaternion.q1 = quaternion.q1
+  detection.quaternion.q2 = quaternion.q2
+  detection.quaternion.q3 = quaternion.q3
+
+  detection.heading = heading
+  detection.gpsLat = gpsLat
+  detection.gpsLon = gpsLon
+  detection.altitude = altitude
+
+  return detection
 }
 
 /**
- * Data type detektálása
+ * ✅ OPTIMALIZÁLT: Data type detektálás (inline)
  */
-function detectDataType (item: StreamPacket): DataTypeValue | null {
+function detectDataType(item: StreamPacket): DataTypeValue | null {
   if (item.type) {
     return item.type as DataTypeValue
   }
@@ -239,21 +257,20 @@ function detectDataType (item: StreamPacket): DataTypeValue | null {
 }
 
 // ============================================================================
-// MAIN PROCESSING FUNCTION
+// MAIN PROCESSING FUNCTION - ✅ OPTIMALIZÁLT
 // ============================================================================
 
-function processRawDetection (detectionData: string): void {
+function processRawDetection(detectionData: string): void {
   const t0_processStart = performance.now()
   const currentTime = Date.now()
 
-  // Sampling rate ellenőrzés
+  // ✅ Sampling rate ellenőrzés
   if (samplingRate > 0 && currentTime - lastSampleTime < samplingRate) {
     return
   }
   lastSampleTime = currentTime
 
   if (!detectionData) {
-    // console.warn('[Worker] No detection data received')
     return
   }
 
@@ -272,39 +289,45 @@ function processRawDetection (detectionData: string): void {
 
   let processedCount = 0
 
-  for (const item of parsed) {
+  // ✅ Loop optimalizálás
+  for (let i = 0; i < parsed.length; i++) {
+    const item = parsed[i]
     const backendUavId = item.id
+
+    // ✅ Early exit ha nincs benne a UAV IDs listában
     if (!uavIds.includes(backendUavId)) continue
 
     const dataType = detectDataType(item)
     if (dataType !== DataType.MEASUREMENT) continue
 
     const measurement = item.Measurement
-    // console.log('measurement: ', item.Measurement)
     if (!measurement || !measurement.detection || measurement.detection.length === 0) continue
-    // console.log('...')
-    // const headingData = measurement.headingData || {}
-    const headingData = typeof measurement.headingData === 'string'
-      ? JSON.parse(measurement.headingData)
-      : measurement.headingData || {}
 
-    // console.log('heading Data: ', headingData)
-    // console.log('pozi: ', item.Measurement.position)
-    if (
-      headingData.gpsLat === undefined ||
-      headingData.gpsLon === undefined
-    ) {
-      console.warn('[Worker] ❌ Missing GPS coordinates in headingData — skipping UAV position')
+    // ✅ Heading data parsing
+    let headingData: HeadingData
+    if (typeof measurement.headingData === 'string') {
+      try {
+        headingData = JSON.parse(measurement.headingData)
+      } catch {
+        headingData = {}
+      }
+    } else {
+      headingData = measurement.headingData || {}
+    }
+
+    // ✅ GPS koordináták ellenőrzése
+    if (headingData.gpsLat === undefined || headingData.gpsLon === undefined) {
+      // Silent skip - túl sok log lenne
       continue
     }
 
-    const gpsLat = headingData.gpsLat // az utolsó érték átírása szükség szerint
-    const gpsLon = headingData.gpsLon // same here
+    const gpsLat = headingData.gpsLat
+    const gpsLon = headingData.gpsLon
     const altitude = headingData.altitude ?? 100.0
 
-    // ✅ Quaternion közvetlenül a Measurement-ből (repeated float = tömb)
+    // ✅ Quaternion
     const quaternionArray = measurement.quaternion || []
-    let q0 = 1; let q1 = 0; let q2 = 0; let q3 = 0
+    let q0 = 1, q1 = 0, q2 = 0, q3 = 0
 
     if (Array.isArray(quaternionArray) && quaternionArray.length === 4) {
       [q0, q1, q2, q3] = quaternionArray
@@ -315,16 +338,20 @@ function processRawDetection (detectionData: string): void {
 
     const timestamp = performance.now()
 
-    // ✅ Latency ellenőrzés
+    // ✅ Latency ellenőrzés (csak ha túl nagy)
     const processingLatency = timestamp - t0_processStart
     if (processingLatency > maxLatencyMs) {
       console.warn(`[Worker] ⚠️ Processing too slow: ${processingLatency.toFixed(2)}ms`)
     }
 
-    // ✅ Detection-ok feldolgozása (repeated Detection = tömb)
-    measurement.detection.forEach((detectionItem: DetectionItem) => {
+    // ✅ Detection-ok feldolgozása
+    const detections = measurement.detection
+    for (let j = 0; j < detections.length; j++) {
+      const detectionItem = detections[j]
+
       try {
-        const detection = createOptimizedDetection(
+        // ✅ POOL-ból vesszük a detection objektumot (nem új allokáció!)
+        const detection = getDetectionFromPool(
           detectionItem,
           gpsLat,
           gpsLon,
@@ -338,12 +365,14 @@ function processRawDetection (detectionData: string): void {
         stats.totalProcessed++
         processedCount++
 
+        // ✅ Objektum újrahasználás - shallow copy az értékeknek
         const message: WorkerOutgoingMessage = {
           type: 'processedDetection',
           detection,
           uavId: backendUavId,
           timestamp: measurement.time || currentTime
         }
+
         self.postMessage(message)
       } catch (error) {
         console.error('[Worker] Detection processing error:', error)
@@ -354,20 +383,23 @@ function processRawDetection (detectionData: string): void {
         }
         self.postMessage(errorMessage)
       }
-    })
+    }
   }
 
   const processingTime = performance.now() - t0_processStart
   stats.lastProcessingTime = processingTime
   stats.avgProcessingTime = (stats.avgProcessingTime * 0.9) + (processingTime * 0.1)
 
-  if (processedCount > 0) {
-    // console.log(
-    //   `[Worker] ✅ Processed ${processedCount} detections in ${processingTime.toFixed(2)}ms ` +
-    //   `(avg: ${stats.avgProcessingTime.toFixed(2)}ms)`
-    // )
+  // ✅ Ritkább logging (csak minden 100. esetben)
+  if (processedCount > 0 && stats.totalProcessed % 100 === 0) {
+    console.log(
+      `[Worker] ✅ Processed ${stats.totalProcessed} total detections | ` +
+      `Last batch: ${processedCount} in ${processingTime.toFixed(2)}ms ` +
+      `(avg: ${stats.avgProcessingTime.toFixed(2)}ms)`
+    )
   }
 
+  // ✅ Stats ritkábban (csak minden 100. processnél)
   if (stats.totalProcessed % 100 === 0) {
     const statsMessage: WorkerOutgoingMessage = {
       type: 'statsUpdated',
@@ -389,7 +421,7 @@ self.onmessage = function (e: MessageEvent<WorkerIncomingMessage>) {
       case 'uavIds': {
         if (!message.uavIds || !Array.isArray(message.uavIds)) return
         uavIds = message.uavIds
-        // console.log('[Worker] ✅ UAV IDs updated:', uavIds)
+        // Silent mode - ne spameljük a console-t
         self.postMessage({ type: 'uavIdsUpdated', uavIds })
         break
       }
@@ -405,7 +437,6 @@ self.onmessage = function (e: MessageEvent<WorkerIncomingMessage>) {
         }
         if (message.maxLatencyMs !== undefined) {
           maxLatencyMs = message.maxLatencyMs
-          // console.log(`[Worker] Max latency updated: ${maxLatencyMs}ms`)
         }
         const response: WorkerOutgoingMessage = {
           type: 'settingsUpdated',
@@ -422,7 +453,6 @@ self.onmessage = function (e: MessageEvent<WorkerIncomingMessage>) {
           lastProcessingTime: 0,
           avgProcessingTime: 0
         }
-        // console.log('[Worker] Statistics cleared')
         self.postMessage({ type: 'statsUpdated', stats: { ...stats } })
         break
       }
@@ -463,10 +493,10 @@ self.onmessage = function (e: MessageEvent<WorkerIncomingMessage>) {
 const initMessage: WorkerOutgoingMessage = {
   type: 'workerStarted',
   timestamp: Date.now(),
-  version: '5.0-protobuf-corrected'
+  version: '6.0-optimized-pool'
 }
 self.postMessage(initMessage)
-console.log('✅ Detection Worker v5.0 initialized - Protobuf Corrected Mode')
+console.log('✅ Detection Worker v6.0 initialized - OPTIMIZED with Object Pool')
 
 // ============================================================================
 // ERROR HANDLER
@@ -481,7 +511,7 @@ self.onerror = function (error: ErrorEvent) {
 }
 
 // ============================================================================
-// PERFORMANCE MONITORING
+// PERFORMANCE MONITORING - ✅ RITKÁBB (30s helyett 60s)
 // ============================================================================
 
 if (typeof performance !== 'undefined' && (performance as any).memory) {
@@ -495,5 +525,5 @@ if (typeof performance !== 'undefined' && (performance as any).memory) {
         limit: memory.jsHeapSizeLimit
       }
     })
-  }, 30000)
+  }, 60000) // ✅ 60s helyett 30s
 }

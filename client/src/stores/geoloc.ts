@@ -1,5 +1,6 @@
+// stores/geoloc.ts - OPTIMALIZÁLT VERZIÓ
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, shallowRef } from 'vue'
 
 interface GeoJsonPoint {
   id: number | string
@@ -16,43 +17,46 @@ interface HeatMapPoint {
 }
 
 export const useGeoLocStore = defineStore('geoloc', () => {
-  // GeoJSON State
-  const geoJsonData = ref<GeoJsonPoint[]>([])
+  // ✅ SHALLOW REFS FOR ARRAYS
+  const geoJsonData = shallowRef<GeoJsonPoint[]>([])
   const geoJsonSettings = ref({
     limit: 20,
     stride: 1,
     fetchPeriodSec: 1,
     showRaw: true,
     showFiltered: true,
-    ttl: 60000 // ✅ 60 másodperc (ms-ban)
+    ttl: 60000
   })
   const isGeoJsonEnabled = ref(false)
 
-  // ✅ HeatMap points with size limit
-  const heatMapPoints = ref<HeatMapPoint[]>([])
-  const maxHeatMapSize = ref(1000) // ✅ 1000 pont maximum
+  // ✅ SHALLOW REF FOR HEATMAP
+  const heatMapPoints = shallowRef<HeatMapPoint[]>([])
+  const maxHeatMapSize = ref(1000)
 
   // Cleanup intervals
   let geoJsonIntervalId: number | null = null
   let geoJsonCleanupIntervalId: number | null = null
   let heatMapCleanupIntervalId: number | null = null
 
-  // ============================================================================
-  // GEOJSON CONTROL
-  // ============================================================================
+  // ✅ DEDUPLIKÁCIÓ - Set helyett Map (gyorsabb lookup)
+  const seenIds = new Map<string, number>() // id -> timestamp
+
   let isFetching = false
-  const seenIds = new Set<string>() // ✅ Deduplikáció
+
+  // ============================================================================
+  // GEOJSON CONTROL - ✅ OPTIMALIZÁLT
+  // ============================================================================
 
   const fetchGeoJsonData = async (): Promise<void> => {
     if (!isGeoJsonEnabled.value || isFetching) return
     isFetching = true
 
-    const { limit, stride, showRaw, showFiltered } = geoJsonSettings.value
+    const { limit, stride, showRaw, showFiltered, ttl } = geoJsonSettings.value
     const newPoints: GeoJsonPoint[] = []
-    const batchIds = new Set<string>() // ✅ Batch-en belüli deduplikáció
 
     try {
       const start = performance.now()
+      const now = Date.now()
 
       // ✅ Párhuzamos fetch-ek
       const [rawData, filteredData] = await Promise.all([
@@ -71,23 +75,21 @@ export const useGeoLocStore = defineStore('geoloc', () => {
       // ✅ Feldolgozás helper
       const processFeatures = (features: any[], type: 'raw' | 'filtered') => {
         features?.forEach((feature, idx) => {
-          console.log('feature: ', feature)
           const coords = feature.geometry?.coordinates
           if (!coords || coords.length !== 2) return
 
           const [lon, lat] = coords
           if (isNaN(lat) || isNaN(lon)) return
 
-          const id = feature.properties?.geoloc_id || `${type}-${idx}-${Date.now()}`
-          console.log(id)
+          const id = String(feature.properties?.geoloc_id || `${type}-${idx}-${Date.now()}`)
 
-          // ✅ Deduplikáció
-          if (seenIds.has(String(id)) || batchIds.has(String(id))) return
-          batchIds.add(String(id))
+          // ✅ Deduplikáció Map-pel
+          if (seenIds.has(id)) return
+          seenIds.set(id, now)
 
           const timestamp = feature.properties?.timestamp
             ? new Date(feature.properties.timestamp).getTime()
-            : Date.now()
+            : now
 
           newPoints.push({
             id,
@@ -104,23 +106,19 @@ export const useGeoLocStore = defineStore('geoloc', () => {
       if (rawData?.features) processFeatures(rawData.features, 'raw')
       if (filteredData?.features) processFeatures(filteredData.features, 'filtered')
 
-      // ✅ TTL cleanup + merge
-      const now = Date.now()
-      const ttl = geoJsonSettings.value.ttl
+      // ✅ OPTIMALIZÁLT MERGE: Filter + push helyett új array
+      const existingValid = geoJsonData.value.filter(p => (now - p.timestamp) <= ttl)
+      geoJsonData.value = [...existingValid, ...newPoints]
 
-      geoJsonData.value = [
-        ...geoJsonData.value.filter(p => (now - p.timestamp) <= ttl),
-        ...newPoints
-      ]
-
-      // ✅ Update seen IDs
-      batchIds.forEach(id => seenIds.add(id))
-
-      // ✅ Cleanup seen IDs (max 10000)
+      // ✅ Cleanup seen IDs (csak ha túl nagy)
       if (seenIds.size > 10000) {
-        const arr = Array.from(seenIds)
+        const entries = Array.from(seenIds.entries())
         seenIds.clear()
-        arr.slice(-5000).forEach(id => seenIds.add(id))
+        // Csak a legfrissebb 5000-et tartjuk meg
+        entries
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5000)
+          .forEach(([id, ts]) => seenIds.set(id, ts))
       }
 
       // ✅ Batch add to heatmap
@@ -150,7 +148,7 @@ export const useGeoLocStore = defineStore('geoloc', () => {
     )
 
     startGeoJsonCleanup()
-    startHeatMapCleanup() // ✅ Heatmap cleanup is
+    startHeatMapCleanup()
   }
 
   const stopGeoJsonFetch = (): void => {
@@ -159,11 +157,11 @@ export const useGeoLocStore = defineStore('geoloc', () => {
       geoJsonIntervalId = null
     }
     stopGeoJsonCleanup()
-    stopHeatMapCleanup() // ✅ Heatmap cleanup stop
+    stopHeatMapCleanup()
     isGeoJsonEnabled.value = false
     geoJsonData.value = []
-    heatMapPoints.value = [] // ✅ Clear heatmap is
-    seenIds.clear() // ✅ Clear dedup cache
+    heatMapPoints.value = []
+    seenIds.clear()
   }
 
   const updateGeoJsonSettings = (settings: Partial<typeof geoJsonSettings.value>): void => {
@@ -175,43 +173,7 @@ export const useGeoLocStore = defineStore('geoloc', () => {
     }
   }
 
-  const startHeatMapCleanup = (): void => {
-    if (heatMapCleanupIntervalId !== null) return
-
-    console.log('[Store] 🧹 Starting HeatMap cleanup (every 5s)')
-
-    heatMapCleanupIntervalId = window.setInterval(() => {
-      const now = Date.now()
-      const ttl = geoJsonSettings.value.ttl
-
-      const beforeCount = heatMapPoints.value.length
-
-      // ✅ TTL alapú cleanup
-      heatMapPoints.value = heatMapPoints.value.filter(point => {
-        const age = now - point.lastUpdate
-        return age <= ttl
-      })
-
-      // ✅ Size limit ellenőrzés
-      if (heatMapPoints.value.length > maxHeatMapSize.value) {
-        heatMapPoints.value = heatMapPoints.value.slice(-maxHeatMapSize.value)
-      }
-
-      const cleaned = beforeCount - heatMapPoints.value.length
-      if (cleaned > 0) {
-        console.log(`[Store] 🧹 Cleaned ${cleaned} expired HeatMap points`)
-      }
-    }, 5000)
-  }
-
-  const stopHeatMapCleanup = (): void => {
-    if (heatMapCleanupIntervalId !== null) {
-      console.log('[Store] 🛑 Stopping HeatMap cleanup')
-      window.clearInterval(heatMapCleanupIntervalId)
-      heatMapCleanupIntervalId = null
-    }
-  }
-
+  // ✅ OPTIMALIZÁLT CLEANUP: 10s helyett (kevesebb overhead)
   const startGeoJsonCleanup = (): void => {
     if (geoJsonCleanupIntervalId !== null) return
 
@@ -222,13 +184,14 @@ export const useGeoLocStore = defineStore('geoloc', () => {
       const ttl = geoJsonSettings.value.ttl
       const before = geoJsonData.value.length
 
+      // ✅ Új array referencia (shallow ref miatt jó)
       geoJsonData.value = geoJsonData.value.filter(p => (now - p.timestamp) <= ttl)
 
       const cleaned = before - geoJsonData.value.length
       if (cleaned > 0) {
         console.log(`[Store] 🧹 Cleaned ${cleaned} expired GeoJSON points`)
       }
-    }, 5000)
+    }, 10000) // ✅ 10s helyett 5s-ból
   }
 
   const stopGeoJsonCleanup = (): void => {
@@ -238,22 +201,62 @@ export const useGeoLocStore = defineStore('geoloc', () => {
     }
   }
 
-  const addToHeatMap = (points: GeoJsonPoint[]): void => {
-    const now = Date.now()
+  // ✅ HEATMAP CLEANUP - 10s
+  const startHeatMapCleanup = (): void => {
+    if (heatMapCleanupIntervalId !== null) return
 
-    // ✅ Batch push helyett destructuring
+    console.log('[Store] 🧹 Starting HeatMap cleanup (every 10s)')
+
+    heatMapCleanupIntervalId = window.setInterval(() => {
+      const now = Date.now()
+      const ttl = geoJsonSettings.value.ttl
+
+      const beforeCount = heatMapPoints.value.length
+
+      // ✅ TTL alapú cleanup
+      let cleaned = heatMapPoints.value.filter(point => {
+        const age = now - point.lastUpdate
+        return age <= ttl
+      })
+
+      // ✅ Size limit ellenőrzés
+      if (cleaned.length > maxHeatMapSize.value) {
+        cleaned = cleaned.slice(-maxHeatMapSize.value)
+      }
+
+      heatMapPoints.value = cleaned
+
+      const removedCount = beforeCount - heatMapPoints.value.length
+      if (removedCount > 0) {
+        console.log(`[Store] 🧹 Cleaned ${removedCount} expired HeatMap points`)
+      }
+    }, 10000) // ✅ 10s
+  }
+
+  const stopHeatMapCleanup = (): void => {
+    if (heatMapCleanupIntervalId !== null) {
+      console.log('[Store] 🛑 Stopping HeatMap cleanup')
+      window.clearInterval(heatMapCleanupIntervalId)
+      heatMapCleanupIntervalId = null
+    }
+  }
+
+  // ✅ OPTIMALIZÁLT: Batch add
+  const addToHeatMap = (points: GeoJsonPoint[]): void => {
     const newHeatPoints: HeatMapPoint[] = points.map(point => ({
       coordinate: point.coordinate,
-      lastUpdate: point.timestamp // ✅ Original timestamp használata
+      lastUpdate: point.timestamp
     }))
 
-    // ✅ Egyetlen assignment
-    heatMapPoints.value = [...heatMapPoints.value, ...newHeatPoints]
+    // ✅ Egyetlen merge
+    let combined = [...heatMapPoints.value, ...newHeatPoints]
 
     // ✅ Size limit azonnal
-    if (heatMapPoints.value.length > maxHeatMapSize.value) {
-      heatMapPoints.value = heatMapPoints.value.slice(-maxHeatMapSize.value)
+    if (combined.length > maxHeatMapSize.value) {
+      combined = combined.slice(-maxHeatMapSize.value)
     }
+
+    heatMapPoints.value = combined
   }
 
   return {

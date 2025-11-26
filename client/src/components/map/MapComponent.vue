@@ -9,7 +9,7 @@ import 'leaflet/dist/leaflet.css'
 import 'leaflet.fullscreen'
 import 'leaflet.fullscreen/Control.FullScreen.css'
 import { Sensor } from '@/types/sensor'
-import {useGeoLocStore} from "@/stores/geoloc";
+import { useGeoLocStore } from '@/stores/geoloc'
 
 // --- STORE ---
 const sensorStore = useSensorStore()
@@ -58,7 +58,7 @@ const localGeoJsonSettings = ref({
   showRaw: true,
   showFiltered: true,
   ttl: 80000,
-  maxVisibleGeoJsonPoints: 200  // ✅ ÚJ: Max pontok száma
+  maxVisibleGeoJsonPoints: 200 // ✅ ÚJ: Max pontok száma
 })
 
 // --- ✅ ÚJ: STABLE GEOJSON BUFFER (NEM VÁLTOZIK MINDEN FRAME-BEN) ---
@@ -206,7 +206,7 @@ function getHeading (sensor: Sensor): number {
   return 0
 }
 
-function getPlaneIconById(id: number): any {
+function getPlaneIconById (id: number): any {
   const sensor = sensors.value[id]
   if (!sensor) return dotIcons[0]
   const heading = getHeading(sensor)
@@ -229,24 +229,136 @@ function getPlaneIconById(id: number): any {
 }
 
 function computeAzimuthLine(coord: [number, number], azimuth: number, isRadians = false): number[][] {
-  const cacheKey = `${coord[0].toFixed(4)}_${coord[1].toFixed(4)}_${azimuth.toFixed(3)}_${lineLength.value}`
-  if (azimuthLinesCache.has(cacheKey)) return azimuthLinesCache.get(cacheKey)!
-
   const [lat, lon] = coord
-  const distance = lineLength.value
-  const azimuthRad = isRadians ? azimuth : azimuth * (Math.PI / 180)
-  const endLat = lat + distance * Math.cos(azimuthRad)
-  const endLon = lon + distance * Math.sin(azimuthRad)
-  const result = [[lat, lon], [endLat, endLon]]
 
-  if (azimuthLinesCache.size > CACHE_CLEANUP_THRESHOLD) {
-    azimuthLinesCache.delete(azimuthLinesCache.keys().next().value)
-  }
+  // A vonal hossza MÉTERBEN legyen
+  const distanceMeters = lineLength.value * 1000
+
+  const bearingDeg = isRadians ? azimuth * (180 / Math.PI) : azimuth
+
+  const { lat: endLat, lon: endLon } = vincentyForward(lat, lon, bearingDeg, distanceMeters)
+
+  const result = [
+    [lat, lon],
+    [endLat, endLon]
+  ]
+
+  const cacheKey = `${lat.toFixed(4)}_${lon.toFixed(4)}_${bearingDeg.toFixed(3)}_${lineLength.value}`
   azimuthLinesCache.set(cacheKey, result)
+
   return result
 }
 
-function getColorByRoiOrSensor(detection: any, sensorId: number): string {
+/**
+ * Vincenty forward formula (WGS84)
+ * Calculates the destination point given start point, azimuth, and distance
+ *
+ * lat1, lon1 in degrees
+ * bearing in degrees (0 = North, clockwise)
+ * distance in meters
+ *
+ * Returns: { lat, lon, finalBearing }
+ */
+function vincentyForward (
+  lat1: number,
+  lon1: number,
+  bearing: number,
+  distance: number
+) {
+  // WGS84 ellipsoid constants
+  const a = 6378137.0 // major axis
+  const f = 1 / 298.257223563 // flattening
+  const b = (1 - f) * a // minor axis
+
+  // Convert degrees to radians
+  const phi1 = lat1 * Math.PI / 180
+  const lambda1 = lon1 * Math.PI / 180
+  const alpha1 = bearing * Math.PI / 180
+
+  const sinAlpha1 = Math.sin(alpha1)
+  const cosAlpha1 = Math.cos(alpha1)
+
+  const tanU1 = (1 - f) * Math.tan(phi1)
+  const cosU1 = 1 / Math.sqrt(1 + tanU1 * tanU1)
+  const sinU1 = tanU1 * cosU1
+
+  const sigma1 = Math.atan2(tanU1, cosAlpha1)
+  const sinAlpha = cosU1 * sinAlpha1
+  const cosSqAlpha = 1 - sinAlpha * sinAlpha
+
+  const uSq = cosSqAlpha * (a * a - b * b) / (b * b)
+  const A = 1 + (uSq / 16384) * (4096 + uSq * (-768 + uSq * (320 - 175 * uSq)))
+  const B = (uSq / 1024) * (256 + uSq * (-128 + uSq * (74 - 47 * uSq)))
+
+  let sigma = distance / (b * A)
+  let sigmaPrev: number
+  let sinSigma: number
+  let cosSigma: number
+  let cos2SigmaM: number
+
+  // Iterate until convergence
+  do {
+    cos2SigmaM = Math.cos(2 * sigma1 + sigma)
+    sinSigma = Math.sin(sigma)
+    cosSigma = Math.cos(sigma)
+
+    const deltaSigma =
+            B * sinSigma *
+            (cos2SigmaM +
+                (B / 4) *
+                (cosSigma * (-1 + 2 * cos2SigmaM * cos2SigmaM) -
+                    (B / 6) *
+                    cos2SigmaM *
+                    (-3 + 4 * sinSigma * sinSigma) *
+                    (-3 + 4 * cos2SigmaM * cos2SigmaM)))
+
+    sigmaPrev = sigma
+    sigma = distance / (b * A) + deltaSigma
+  } while (Math.abs(sigma - sigmaPrev) > 1e-12)
+
+  // Compute phi2 (lat2)
+  const x =
+        sinU1 * sinSigma - cosU1 * cosSigma * cosAlpha1
+
+  const phi2 = Math.atan2(
+    sinU1 * cosSigma + cosU1 * sinSigma * cosAlpha1,
+    (1 - f) * Math.sqrt(sinAlpha * sinAlpha + x * x)
+  )
+
+  // Compute lambda
+  const lambda = Math.atan2(
+    sinSigma * sinAlpha1,
+    cosU1 * cosSigma - sinU1 * sinSigma * cosAlpha1
+  )
+
+  const C =
+        (f / 16) * cosSqAlpha * (4 + f * (4 - 3 * cosSqAlpha))
+
+  const L =
+        lambda -
+        (1 - C) *
+        f *
+        sinAlpha *
+        (sigma +
+            C *
+            sinSigma *
+            (cos2SigmaM +
+                C * cosSigma * (-1 + 2 * cos2SigmaM * cos2SigmaM)))
+
+  const lambda2 = lambda1 + L
+
+  // Final bearing
+  const alpha2 = Math.atan2(sinAlpha, -x)
+
+  // Convert back to degrees
+  return {
+    lat: phi2 * 180 / Math.PI,
+    lon: lambda2 * 180 / Math.PI,
+    finalBearing: (alpha2 * 180 / Math.PI + 360) % 360
+  }
+}
+
+function getColorByRoiOrSensor (detection: any, sensorId: number): string {
   if (detection.roi_id != null) return lineColors[detection.roi_id % lineColors.length]
   return lineColors[sensorId % lineColors.length]
 }
@@ -255,7 +367,7 @@ function getColorByRoiOrSensor(detection: any, sensorId: number): string {
 const detectionBuffer = shallowRef<Map<string, any>>(new Map())
 let renderThrottle: number | null = null
 
-function renderDetections() {
+function renderDetections () {
   if (renderThrottle) return
   renderThrottle = setTimeout(() => {
     renderThrottle = null
@@ -263,7 +375,7 @@ function renderDetections() {
   }, 16)
 }
 
-function _doRenderDetections() {
+function _doRenderDetections () {
   if (!leafletMap.value || !mapBounds.value) return
   const renderStart = performance.now()
   const bounds = mapBounds.value
@@ -370,7 +482,7 @@ function clearMapData () {
   planeIconsCache.clear()
   azimuthLinesCache.clear()
   detectionBuffer.value = new Map()
-  geoJsonBuffer.value = new Map()  // ✅ GeoJSON buffer is
+  geoJsonBuffer.value = new Map() // ✅ GeoJSON buffer is
   debugInfo.value.cacheSize = 0
 }
 

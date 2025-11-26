@@ -1,5 +1,5 @@
 import marshmallow as ma
-from flask_marshmallow.sqla import SQLAlchemyAutoSchema
+from marshmallow_sqlalchemy import SQLAlchemyAutoSchema, auto_field
 
 from pysagax.gnd.database import (
     AreaOfInterestEntity,
@@ -14,73 +14,88 @@ from pysagax.gnd.database import (
 )
 
 
-class UAVSchema(SQLAlchemyAutoSchema):
+# ======================================================================
+#  SQLALCHEMY-ALAPÚ SÉMÁK (AUTO-GENERATED)
+# ======================================================================
+
+class BaseSQLAlchemySchema(SQLAlchemyAutoSchema):
+    """
+    Közös alap séma:
+    - session szükséges a Marshmallow-SQLAlchemy-hez
+    - load_instance=True → automatikusan SQLAlchemy objektumot ad vissza
+    """
     class Meta:
-        model = UAVEntity
-        include_relationships = True
+        sqla_session = db.session
         load_instance = True
+        include_relationships = True
         include_fk = True
 
 
+# ---------------- UAV ----------------
+
+class UAVSchema(BaseSQLAlchemySchema):
+    class Meta(BaseSQLAlchemySchema.Meta):
+        model = UAVEntity
+
+
+class UAVEventSchema(BaseSQLAlchemySchema):
+    class Meta(BaseSQLAlchemySchema.Meta):
+        model = UAVEventEntity
+
+
+# ---------------- COMINT ----------------
+
+class ComIntEventSchema(BaseSQLAlchemySchema):
+    class Meta(BaseSQLAlchemySchema.Meta):
+        model = ComIntEventEntity
+
+
+class ComIntDetectionSchema(BaseSQLAlchemySchema):
+    class Meta(BaseSQLAlchemySchema.Meta):
+        model = ComIntDetectionEntity
+
+
+# ---------------- CONFIGURATION ----------------
+
+class ConfigurationSchema(BaseSQLAlchemySchema):
+    class Meta(BaseSQLAlchemySchema.Meta):
+        model = ConfigurationEntity
+
+
+# ---------------- AOI / FOI ----------------
+
+class AreaOfInterestSchema(BaseSQLAlchemySchema):
+    class Meta(BaseSQLAlchemySchema.Meta):
+        model = AreaOfInterestEntity
+
+
+class FreqOfInterestSchema(BaseSQLAlchemySchema):
+    class Meta(BaseSQLAlchemySchema.Meta):
+        model = FreqOfInterestEntity
+
+
+# ======================================================================
+#  KÉZI VALIDÁCIÓS SÉMÁK (CREATE / UPDATE INPUTOK)
+# ======================================================================
+
 class UAVCreateSchema(ma.Schema):
-    uav_label = ma.fields.String(allow_none=True, required=False)
-    uav_address = ma.fields.String(allow_none=False, required=True)
-    active = ma.fields.Boolean(allow_none=False, required=True)
+    uav_label = ma.fields.String(allow_none=True)
+    uav_address = ma.fields.String(required=True)
+    active = ma.fields.Boolean(required=True)
 
 
 class UAVUpdateSchema(ma.Schema):
-    uav_label = ma.fields.String(allow_none=True, required=False)
-    uav_address = ma.fields.String(allow_none=False, required=False)
-    active = ma.fields.Boolean(allow_none=False, required=False)
+    uav_label = ma.fields.String(allow_none=True)
+    uav_address = ma.fields.String()
+    active = ma.fields.Boolean()
 
 
-class UAVEventSchema(SQLAlchemyAutoSchema):
-    class Meta:
-        model = UAVEventEntity
-        include_relationships = True
-        include_fk = True
-        load_instance = True
-
-
-class ComIntEventSchema(SQLAlchemyAutoSchema):
-    class Meta:
-        model = ComIntEventEntity
-        include_relationships = True
-        include_fk = True
-        load_instance = True
-
-
-class ComIntDetectionSchema(SQLAlchemyAutoSchema):
-    class Meta:
-        model = ComIntDetectionEntity
-        include_fk = True
-        load_instance = True
-
-
-class ConfigurationSchema(SQLAlchemyAutoSchema):
-    class Meta:
-        model = ConfigurationEntity
-        include_relationships = True
-        include_fk = True
-        load_instance = True
-
-
-class AreaOfInterestSchema(SQLAlchemyAutoSchema):
-    class Meta:
-        model = AreaOfInterestEntity
-        include_fk = True
-        load_instance = True
-
-
-class FreqOfInterestSchema(SQLAlchemyAutoSchema):
-    class Meta:
-        model = FreqOfInterestEntity
-        include_fk = True
-        load_instance = True
-
+# ======================================================================
+#  GEOJSON OUTPUT SCHEMA
+# ======================================================================
 
 class GeoJSONSchema(ma.Schema):
-    type = ma.fields.String()
-    name = ma.fields.String()
-    crs = ma.fields.Dict()
-    features = ma.fields.List(ma.fields.Dict())
+    type = ma.fields.String(required=True)
+    name = ma.fields.String(required=False)
+    crs = ma.fields.Dict(required=False)
+    features = ma.fields.List(ma.fields.Dict(), required=True)

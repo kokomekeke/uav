@@ -7,7 +7,7 @@ import { storeToRefs } from 'pinia'
 import { useThrottleFn } from '@vueuse/core'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.heat'
-import {useGeoLocStore} from "@/stores/geoloc";
+import { useGeoLocStore } from '@/stores/geoloc'
 
 interface Props {
   showControls?: boolean
@@ -73,7 +73,7 @@ const stats = ref({
 const showControlPanel = ref(false)
 
 // ✅ EGYSZERŰBB CACHE - csak a grid resolution-t figyeli
-let lastGridResolution = 4
+const lastGridResolution = 4
 let lastPointsHash = ''
 
 // ✅ OPTIMALIZÁLT HEATMAP COMPUTED
@@ -191,11 +191,11 @@ const throttledUpdateHeatmap = useThrottleFn((forceRecreate = false) => {
   }).addTo(leafletMap.value)
 }, 150)
 
-function updateHeatmap(forceRecreate = false) {
+function updateHeatmap (forceRecreate = false) {
   throttledUpdateHeatmap(forceRecreate)
 }
 
-function onMapReady() {
+function onMapReady () {
   if (mapRef.value?.leafletObject) {
     leafletMap.value = mapRef.value.leafletObject
     setTimeout(() => updateHeatmap(true), 500)
@@ -203,7 +203,7 @@ function onMapReady() {
 }
 
 // ✅ BINARY INSERT - Sorted beszúrás
-function insertSorted(arr: typeof persistedPoints.value, item: typeof persistedPoints.value[0]) {
+function insertSorted (arr: typeof persistedPoints.value, item: typeof persistedPoints.value[0]) {
   let low = 0
   let high = arr.length
 
@@ -282,7 +282,7 @@ watch(() => dataSettings.value.maxPoints, (newMaxPoints) => {
 // ✅ BACKUP AUTO-UPDATE - ha a watch-ok nem működnének jól
 let updateTimer: number | null = null
 
-function startAutoUpdate() {
+function startAutoUpdate () {
   if (updateTimer) clearInterval(updateTimer)
   updateTimer = setInterval(() => {
     if (dataSettings.value.showRealtime && persistedPoints.value.length > 0) {
@@ -291,7 +291,7 @@ function startAutoUpdate() {
   }, dataSettings.value.updateInterval)
 }
 
-function stopAutoUpdate() {
+function stopAutoUpdate () {
   if (updateTimer) {
     clearInterval(updateTimer)
     updateTimer = null
@@ -324,7 +324,7 @@ watch(persistedPoints, (points) => {
   }
 }, { deep: false, immediate: true })
 
-function clearHeatmap() {
+function clearHeatmap () {
   // ✅ Proper layer cleanup
   if (heatLayer.value) {
     heatLayer.value.remove()
@@ -336,11 +336,11 @@ function clearHeatmap() {
   console.log('[Heatmap] 🧹 Cleared all persisted points')
 }
 
-function manualUpdate() {
+function manualUpdate () {
   updateHeatmap(true)
 }
 
-function exportData() {
+function exportData () {
   const data = {
     points: heatmapPoints.value,
     stats: stats.value,

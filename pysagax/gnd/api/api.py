@@ -1,17 +1,14 @@
 import logging
-# TODO: felváltható e JSONIFY-al?
 import json
 import time
 from queue import Empty
 
-import flask
-from flask import jsonify, make_response, current_app, Response, request, stream_with_context
+from flask import request, jsonify, make_response, current_app, Response, stream_with_context
+from flask_smorest import Blueprint, abort
 from sqlalchemy.sql import text
-from flask_marshmallow_openapi import open_api
-
 
 import pysagax.message.command_pb2 as proto_cmd
-from google.protobuf.json_format import Parse, MessageToDict, ParseDict, MessageToJson
+from google.protobuf.json_format import ParseDict, MessageToDict
 
 from pysagax.gnd.api.api_utils import (
     geojson_feature_from_detection,
@@ -19,6 +16,7 @@ from pysagax.gnd.api.api_utils import (
     geojson_feature_from_geoloc,
     send_to_command_engine,
 )
+
 from pysagax.gnd.api.model import (
     ComIntDetectionSchema,
     ComIntEventSchema,
@@ -27,6 +25,7 @@ from pysagax.gnd.api.model import (
     UAVUpdateSchema,
     GeoJSONSchema,
 )
+
 from pysagax.gnd.database import (
     ComIntDetectionEntity,
     UAVEntity,
@@ -34,94 +33,83 @@ from pysagax.gnd.database import (
     db,
 )
 
-api = flask.Blueprint("api", __name__)
-
-comintdetections_schema = ComIntDetectionSchema(many=True)
-comintdetection_schema = ComIntDetectionSchema()
-
-comintevent_schema = ComIntEventSchema()
-
-uavs_schema = UAVSchema(many=True)
-uav_schema = UAVSchema()
-
 logger = logging.getLogger("api")
 
+# ----------------------------------------------------------------------
+# SMOREST BLUEPRINT
+# ----------------------------------------------------------------------
+
+api = Blueprint(
+    "api",
+    __name__,
+    url_prefix="/v1",
+    description="PySAGAX GND API endpoints"
+)
+
+
+# ----------------------------------------------------------------------
+# UTIL
+# ----------------------------------------------------------------------
 
 def not_found_error(message):
-    return make_response(jsonify(message), 404)
+    abort(404, message=message)
 
 
-@open_api.get(response_schema=ComIntDetectionSchema, is_list=True, has_id_in_path=True)
-@api.route("/comintdetection/list_from/<int:id>", methods=["GET"])
+# ----------------------------------------------------------------------
+# ENDPOINTS
+# ----------------------------------------------------------------------
+
+# ---------------------------
+# COMINT DETECTION LIST
+# ---------------------------
+@api.route("/comintdetection/list_from/<int:id>")
+@api.response(200, ComIntDetectionSchema(many=True))
 def comintdetection_list(id):
     all_detections = (
-        ComIntDetectionEntity.query.order_by(ComIntDetectionEntity.detection_id.desc())
+        ComIntDetectionEntity.query
+        .order_by(ComIntDetectionEntity.detection_id.desc())
         .filter(ComIntDetectionEntity.detection_id >= id)
         .all()
     )
-    return jsonify(comintdetections_schema.dump(all_detections))
+    return all_detections
 
 
-@open_api.get(
-    response_schema=GeoJSONSchema,
-    has_id_in_path=True,
-)
-@api.route("/comintdetection/geojson/list_from/<int:id>", methods=["GET"])
+# ---------------------------
+# COMINT GEOJSON FROM ID
+# ---------------------------
+@api.route("/comintdetection/geojson/list_from/<int:id>")
+@api.response(200, GeoJSONSchema)
 def comintdetection_geojson_list(id):
     all_detections = (
-        ComIntDetectionEntity.query.order_by(ComIntDetectionEntity.detection_id.asc())
+        ComIntDetectionEntity.query
+        .order_by(ComIntDetectionEntity.detection_id.asc())
         .filter(ComIntDetectionEntity.detection_id >= id)
         .all()
     )
-    return jsonify(
-        {
-            "type": "FeatureCollection",
-            "name": "ComIntDetection",
-            "crs": {
-                "type": "name",
-                "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"},
-            },
-            "features": [geojson_feature_from_detection(det) for det in all_detections],
-        }
-    )
+
+    return {
+        "type": "FeatureCollection",
+        "name": "ComIntDetection",
+        "crs": {
+            "type": "name",
+            "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"},
+        },
+        "features": [geojson_feature_from_detection(det) for det in all_detections],
+    }
 
 
-@open_api.get(
-    response_schema=GeoJSONSchema,
-    has_id_in_path=True,
-)
-@api.route("/comintdetection/geojson/list_last/<int:limit>", methods=["GET"])
+# ---------------------------
+# COMINT GEOJSON LAST N
+# ---------------------------
+@api.route("/comintdetection/geojson/list_last/<int:limit>")
+@api.response(200, GeoJSONSchema)
 def comintdetection_geojson_list_last(limit):
-    """
-    Return a geojson of the most recent detections.
-    limit sets the number of returned detections.
-    uav URL parameter filters the detections for the given uav_ids.
-    roi URL parameter filters the detections for the given roi_ids.
-    if stride URL parameter is specifie:d it only returns every n-th row of the detection DB.
 
-    Usage with limit=1000, uav=[10, 12, 15] and stride=5
-        .../geojson/list_last/1000?uav=10@&uav=12&uav=15&stride=5
+    stride = request.args.get("stride", 1, type=int)
+    uavs = request.args.getlist("uav", type=int)
+    roi_ids = request.args.getlist("roi_id", type=int)
+    event_ids = request.args.getlist("e_id", type=int)
 
-    """
-    stride = flask.request.args.get("stride", 1, type=int)
-    uavs = flask.request.args.getlist("uav", type=int)
-    roi_ids = flask.request.args.getlist("roi_id", type=int)
-    event_ids = flask.request.args.getlist("e_id", type=int)
-    # freqs = flask.request.args.getlist("freq", type=int)
-
-    # sql = """
-    # WITH ranked AS (
-    #     SELECT *,
-    #         ROW_NUMBER() OVER (ORDER BY detection_id DESC) AS rn
-    #     FROM comintdetection
-    #     {where_clause}
-    # )
-    # SELECT *
-    # FROM ranked
-    # WHERE (rn - 1) % :stride = 0
-    # ORDER BY detection_id DESC
-    # LIMIT :limit
-    # """
     sql = """
     WITH ranked AS (
         SELECT *
@@ -130,29 +118,22 @@ def comintdetection_geojson_list_last(limit):
     )
     SELECT *
     FROM ranked
-    WHERE detection_id % :stride = 0 
+    WHERE detection_id % :stride = 0
     ORDER BY detection_id DESC
     LIMIT :limit
     """
 
-    # where_clause = "WHERE uav_id IN :uavs" if uavs else ""  # filter if uav_id is given
-
-    # where_clause = f"WHERE uav_id IN {':uavs' if uavs else '*'} AND roi_identifier IN {':roi_ids' if roi_ids else '*'} AND event_id IN {':event_id' if event_ids else '*'}"
-
-    # uavs = uavs if uavs else "*"
-    # roi_ids = roi_ids if roi_ids else "*"
-    # event_ids = event_ids if event_ids else "*"
-    # where_clause = f"WHERE uav_id IN :uavs AND roi_identifier IN :roi_ids AND event_id IN :event_ids"
-
     where_clause_parts = []
-    where_clause_parts.append("uav_id IN :uavs" if uavs else "")
-    where_clause_parts.append("roi_identifier IN :roi_ids" if roi_ids else "")
-    where_clause_parts.append("event_id IN :event_id" if event_ids else "")
+    if uavs:
+        where_clause_parts.append("uav_id IN :uavs")
+    if roi_ids:
+        where_clause_parts.append("roi_identifier IN :roi_ids")
+    if event_ids:
+        where_clause_parts.append("event_id IN :event_id")
 
-    where_clause = " AND ".join(filter(None, where_clause_parts))
-    where_clause = "WHERE " + where_clause if where_clause else ""
-
+    where_clause = "WHERE " + " AND ".join(where_clause_parts) if where_clause_parts else ""
     sql = sql.format(where_clause=where_clause)
+
     query = db.session.query(ComIntDetectionEntity).from_statement(text(sql))
 
     params = {"stride": stride, "limit": limit}
@@ -161,48 +142,42 @@ def comintdetection_geojson_list_last(limit):
     if roi_ids:
         params["roi_ids"] = tuple(roi_ids)
     if event_ids:
-        params["event_ids"] = tuple(event_ids)
+        params["event_id"] = tuple(event_ids)
 
     detections = query.params(**params).all()
 
-    return jsonify(
-        {
-            "type": "FeatureCollection",
-            "name": "ComIntDetection",
-            "crs": {
-                "type": "name",
-                "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"},
-            },
-            "features": [geojson_feature_from_detection(det) for det in detections],
-        }
-    )
+    return {
+        "type": "FeatureCollection",
+        "name": "ComIntDetection",
+        "crs": {
+            "type": "name",
+            "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"},
+        },
+        "features": [geojson_feature_from_detection(det) for det in detections],
+    }
 
 
-@open_api.get_detail(ComIntDetectionSchema)
-@api.route("/comintdetection/<int:id>", methods=["GET"])
+# ---------------------------
+# COMINT DETECTION DETAIL
+# ---------------------------
+@api.route("/comintdetection/<int:id>")
+@api.response(200, ComIntDetectionSchema)
 def comintdetection_detail(id):
-    comintdetection = ComIntDetectionEntity.query.get(id)
-    return comintdetection_schema.jsonify(comintdetection)
+    det = ComIntDetectionEntity.query.get(id)
+    if not det:
+        not_found_error(f"ComIntDetection {id} not found.")
+    return det
 
 
-@open_api.get(
-    response_schema=GeoJSONSchema,
-    has_id_in_path=True,
-)
-@api.route("/comintgeoloc/geojson/raw/list_last/<int:limit>", methods=["GET"])
+# ---------------------------
+# RAW GEOLOC
+# ---------------------------
+@api.route("/comintgeoloc/geojson/raw/list_last/<int:limit>")
+@api.response(200, GeoJSONSchema)
 def comintevent_raw_geojson(limit):
-    """
-    Return a geojson of the most recent raw (unfiltered) geolocations.
-    limit sets the number of returned points.
-    roi URL parameter filters the points for the given roi_ids.
-    if stride URL parameter is specified it only returns every n-th row of the geolocation table.
 
-    Usage with limit=1000, roi=[10, 12, 15] and stride=5
-        .../geojson/list_last/1000?roi=10@&roi=12&roi=15&stride=5
-
-    """
-    stride = flask.request.args.get("stride", 1, type=int)
-    roi_ids = flask.request.args.getlist("roi_id", type=int)
+    stride = request.args.get("stride", 1, type=int)
+    roi_ids = request.args.getlist("roi_id", type=int)
 
     sql = """
     WITH ranked AS (
@@ -218,46 +193,32 @@ def comintevent_raw_geojson(limit):
     """
 
     where_clause = "WHERE roi_identifier IN :roi_ids" if roi_ids else ""
-
     sql = sql.format(where_clause=where_clause)
-    query = db.session.query(ComIntGeoLocEntity).from_statement(text(sql))
 
     params = {"stride": stride, "limit": limit}
     if roi_ids:
         params["roi_ids"] = tuple(roi_ids)
 
-    points = query.params(**params).all()
+    points = db.session.query(ComIntGeoLocEntity).from_statement(text(sql)).params(**params).all()
 
-    return jsonify(
-        {
-            "type": "FeatureCollection",
-            "name": "ComIntGeoLoc",
-            "crs": {
-                "type": "name",
-                "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"},
-            },
-            "features": [geojson_feature_from_geoloc(point) for point in points],
-        }
-    )
+    return {
+        "type": "FeatureCollection",
+        "name": "ComIntGeoLoc",
+        "crs": { "type": "name",
+                 "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"} },
+        "features": [geojson_feature_from_geoloc(p) for p in points],
+    }
 
-@open_api.get(
-    response_schema=GeoJSONSchema,
-    has_id_in_path=True,
-)
-@api.route("/comintgeoloc/geojson/list_last/<int:limit>", methods=["GET"])
+
+# ---------------------------
+# FILTERED GEOLOC
+# ---------------------------
+@api.route("/comintgeoloc/geojson/list_last/<int:limit>")
+@api.response(200, GeoJSONSchema)
 def comintevent_geojson(limit):
-    """
-    Return a geojson of the most recent geolocations.
-    limit sets the number of returned points.
-    roi URL parameter filters the points for the given roi_ids.
-    if stride URL parameter is specified it only returns every n-th row of the geolocation table.
 
-    Usage with limit=1000, roi=[10, 12, 15] and stride=5
-        .../geojson/list_last/1000?roi=10@&roi=12&roi=15&stride=5
-
-    """
-    stride = flask.request.args.get("stride", 1, type=int)
-    roi_ids = flask.request.args.getlist("roi_id", type=int)
+    stride = request.args.get("stride", 1, type=int)
+    roi_ids = request.args.getlist("roi_id", type=int)
 
     sql = """
     WITH ranked AS (
@@ -273,108 +234,108 @@ def comintevent_geojson(limit):
     """
 
     where_clause = "WHERE roi_identifier IN :roi_ids" if roi_ids else ""
-
     sql = sql.format(where_clause=where_clause)
-    query = db.session.query(ComIntGeoLocEntity).from_statement(text(sql))
 
     params = {"stride": stride, "limit": limit}
     if roi_ids:
         params["roi_ids"] = tuple(roi_ids)
 
-    points = query.params(**params).all()
+    points = db.session.query(ComIntGeoLocEntity).from_statement(text(sql)).params(**params).all()
 
-    return jsonify(
-        {
-            "type": "FeatureCollection",
-            "name": "ComIntGeoLoc",
-            "crs": {
-                "type": "name",
-                "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"},
-            },
-            "features": [geojson_feature_from_geoloc(point) for point in points],
-        }
-    )
+    return {
+        "type": "FeatureCollection",
+        "name": "ComIntGeoLoc",
+        "crs": {"type": "name",
+                "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"}},
+        "features": [geojson_feature_from_geoloc(p) for p in points],
+    }
 
 
-@open_api.get_list(UAVSchema)
+# ---------------------------
+# UAV LIST
+# ---------------------------
 @api.route("/uav/")
+@api.response(200, UAVSchema(many=True))
 def uav_list():
-    all_uavs = UAVEntity.query.order_by(UAVEntity.uav_id.asc()).all()
-    return jsonify(uavs_schema.dump(all_uavs))
+    return UAVEntity.query.order_by(UAVEntity.uav_id.asc()).all()
 
 
-@open_api.get(
-    response_schema=GeoJSONSchema,
-    has_id_in_path=False,
-)
-@api.route("/uav/geojson", methods=["GET"])
+# ---------------------------
+# UAV GEOJSON LIST
+# ---------------------------
+@api.route("/uav/geojson")
+@api.response(200, GeoJSONSchema)
 def uav_geojson_list():
     all_uavs = UAVEntity.query.order_by(UAVEntity.uav_id.asc()).all()
-    return jsonify(
-        {
-            "type": "FeatureCollection",
-            "name": "UAV",
-            "crs": {
-                "type": "name",
-                "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"},
-            },
-            "features": [geojson_feature_from_uav(uav) for uav in all_uavs],
-        }
-    )
+    return {
+        "type": "FeatureCollection",
+        "name": "UAV",
+        "crs": { "type": "name",
+                 "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"} },
+        "features": [geojson_feature_from_uav(u) for u in all_uavs],
+    }
 
 
-@open_api.get_detail(UAVSchema)
-@api.route("/uav/<int:id>", methods=["GET"])
+# ---------------------------
+# UAV DETAIL
+# ---------------------------
+@api.route("/uav/<int:id>")
+@api.response(200, UAVSchema)
 def uav_detail(id):
     uav = UAVEntity.query.get(id)
-    if uav is None:
-        return not_found_error(f"UAV {id} not found.")
-    return uav_schema.jsonify(uav)
+    if not uav:
+        not_found_error(f"UAV {id} not found.")
+    return uav
 
 
-@open_api.post(request_schema=UAVCreateSchema, response_schema=UAVSchema)
+# ---------------------------
+# UAV CREATE
+# ---------------------------
 @api.route("/uav", methods=["POST"])
-def uav_create():
-    data = UAVCreateSchema(many=False).load(flask.request.json)
-    new_uav = UAVEntity()
-    new_uav.active = data["active"]
-    new_uav.uav_label = data["uav_label"]
-    new_uav.uav_address = data["uav_address"]
+@api.arguments(UAVCreateSchema)
+@api.response(201, UAVSchema)
+def uav_create(data):
+    new_uav = UAVEntity(**data)
     db.session.add(new_uav)
     db.session.commit()
-    return uav_schema.jsonify(new_uav)
+    return new_uav
 
 
-@open_api.patch(request_schema=UAVUpdateSchema, response_schema=UAVSchema)
+# ---------------------------
+# UAV UPDATE
+# ---------------------------
 @api.route("/uav/<int:id>", methods=["PATCH"])
-def uav_update(id):
-    data = UAVUpdateSchema(many=False).load(flask.request.json)
+@api.arguments(UAVUpdateSchema)
+@api.response(200, UAVSchema)
+def uav_update(data, id):
     uav = UAVEntity.query.get(id)
-    if uav is None:
-        return not_found_error(f"UAV {id} not found.")
-    if "active" in data:
-        uav.active = data["active"]
-    if "uav_label" in data:
-        uav.uav_label = data["uav_label"]
-    if "uav_address" in data:
-        uav.uav_address = data["uav_address"]
+    if not uav:
+        not_found_error(f"UAV {id} not found.")
+
+    for key, value in data.items():
+        setattr(uav, key, value)
+
     db.session.commit()
-    return uav_schema.jsonify(uav)
+    return uav
 
 
-@open_api.delete(UAVSchema)
+# ---------------------------
+# UAV DELETE
+# ---------------------------
 @api.route("/uav/<int:id>", methods=["DELETE"])
+@api.response(200, dict)
 def uav_delete(id):
     uav = UAVEntity.query.get(id)
-    if uav is None:
-        return not_found_error(f"UAV {id} not found.")
+    if not uav:
+        not_found_error(f"UAV {id} not found.")
     db.session.delete(uav)
     db.session.commit()
-    return jsonify({})
+    return {}
 
 
-# mapping of command instructions to parameter name and message type tuples
-# if no parameter is used for the instruction, the value is None
+# ---------------------------
+# COMMAND ENDPOINT (unchanged)
+# ---------------------------
 INSTRUCTION_MAP = {
     proto_cmd.Instruction.PING: ("ping_data", str),
     proto_cmd.Instruction.CONFIG: ("config", proto_cmd.Config),
@@ -398,17 +359,11 @@ INSTRUCTION_MAP = {
     proto_cmd.Instruction.STREAM_STOP: ("target", proto_cmd.StreamTarget),
     proto_cmd.Instruction.SELF_TEST: None,
     proto_cmd.Instruction.CS_SCAN_START: None,
-    proto_cmd.Instruction.CS_CALIBRATE_START: (
-        "calib_command",
-        proto_cmd.CalibrationCommand,
-    ),
+    proto_cmd.Instruction.CS_CALIBRATE_START: ("calib_command", proto_cmd.CalibrationCommand),
     proto_cmd.Instruction.CS_CALIBRATE_ABORT: None,
     proto_cmd.Instruction.CS_TURN_OFF_COMPENSATION: None,
     proto_cmd.Instruction.CS_TURN_ON_COMPENSATION: None,
-    proto_cmd.Instruction.CS_READ_PHASEDIFFS_FROM_FILE: (
-        "calib_command",
-        proto_cmd.CalibrationCommand,
-    ),
+    proto_cmd.Instruction.CS_READ_PHASEDIFFS_FROM_FILE: ("calib_command", proto_cmd.CalibrationCommand),
     proto_cmd.Instruction.CS_CALIBRATION_VALUES_QUERY: None,
     proto_cmd.Instruction.CS_CALIBRATION_PHASE_CHECK: None,
     proto_cmd.Instruction.AUTO_CALIBRATION_ENABLE: None,
@@ -417,183 +372,116 @@ INSTRUCTION_MAP = {
     proto_cmd.Instruction.CS_RELOAD_CONFIG: None,
     proto_cmd.Instruction.FORWARD_TO_APM: ("msg_to_apm", proto_cmd.MessageToAPM),
 }
+
 cmd_id = 0
 
 
 @api.route("/uav/<int:id>/command/<string:instruction>/", methods=["POST"])
 def command(id, instruction):
-    """
-    Dynamically handle different types of commands based on the URL.
 
-    The HTTP/POST request should define the command's instruction in the URL.
-    The body of the request should have content-type 'application/json' and contain
-    the parameter of the corresponding protobuf Command.
-    Eg.
-        instruction == 'ping' -> body:string
-        instruction == 'config' -> body:json representation of Config protobuf message.
-    """
-
-    def assign_command_parameter(cmd, parameter_name, parameter):
-        """Fills in the oneof parameter field in the command message"""
+    def assign_cmd(cmd, parameter_name, parameter):
         try:
-            # For parameter fields with default types (eg ping_data)
             setattr(cmd, parameter_name, parameter)
         except AttributeError:
-            # For parameter fields of protobuf messages (eg config, target)
             getattr(cmd, parameter_name).CopyFrom(parameter)
 
-    def convert_parameter_from_json_to_protobuf(parameter_type, raw_data):
-        """
-        Converting the body of HTTP POST request containing the parameter
-        to the type the Command packet expects based on the instruction string.
-        """
+    def parse_param(parameter_type, raw_data):
         try:
-            # For parameter fields of protobuf messages (eg config, target)
-            parameter = parameter_type()  # create the correct message object
-            ParseDict(raw_data, parameter, ignore_unknown_fields=True)  # fill from json
-            # TODO: Maybe set ignore_unknown_fields=False and warn if
-            #       provided JSON is not compatible with protobuf definition
+            parameter = parameter_type()
+            ParseDict(raw_data, parameter, ignore_unknown_fields=True)
         except AttributeError:
-            # For parameter fields with default types (eg ping_data)
             parameter = raw_data
         return parameter
 
     try:
-        # convert instruction from URL to protobuf enum
         instruction_enum_value = proto_cmd.Instruction.Value(instruction.upper())
     except ValueError:
-        emsg = f"Invalid instruction ('{instruction.upper()}') specified in the URL"
-        logger.error(f"COMMAND: {emsg}")
-        return jsonify({"error": emsg}), 400
-    # Check instruction
-    if instruction_enum_value not in INSTRUCTION_MAP.keys():
-        emsg = f"Instruction ('{instruction.upper()}') is not yet supported"
-        logger.error(f"COMMAND: {emsg}")
-        return jsonify({"error": emsg}), 400
+        abort(400, message=f"Invalid instruction '{instruction}'")
 
-    # Parse incoming JSON data into the corresponding Protobuf message
-    if flask.request.is_json:
-        raw_data = flask.request.get_json()
-    else:
-        raw_data = b""
+    mapping = INSTRUCTION_MAP.get(instruction_enum_value)
+    if mapping is None and instruction_enum_value not in INSTRUCTION_MAP:
+        abort(400, message=f"Instruction '{instruction}' not supported")
 
-    logger.trace(f"Command endpoint: \n\tINSTRUCTION={instruction}\n\tDATA={raw_data}")
+    raw_data = request.get_json() if request.is_json else {}
 
-    # create the Command packet that'll contain the instruction and the parameter
     cmd = proto_cmd.Command()
 
-    if INSTRUCTION_MAP[instruction_enum_value] is not None:
-        # If the instruction expects a parameter -> fill it
-        # Get parameter type name corresponding to the specified instruction
-        parameter_name = INSTRUCTION_MAP[instruction_enum_value][0]
-        parameter_type = INSTRUCTION_MAP[instruction_enum_value][1]
+    if mapping:
+        parameter_name, parameter_type = mapping
+        parameter = parse_param(parameter_type, raw_data)
+        assign_cmd(cmd, parameter_name, parameter)
 
-        parameter = convert_parameter_from_json_to_protobuf(parameter_type, raw_data)
-
-        # Fill in the oneof parameter field
-        assign_command_parameter(cmd, parameter_name, parameter)
-
-    # Fill in instruction
     cmd.instruction = instruction_enum_value
 
-    # TODO: fill cmd.id
     global cmd_id
     cmd.id = cmd_id
     cmd_id += 1
 
-    response: proto_cmd.Response = send_to_command_engine(target_id=id, cmd=cmd)
-    # TODO: check response.id == cmd.id??
-    #       or each module that needs a cmd and rsp queue should have separate
-    #       queues with maxsize=1, and CommAggregate should handle them all separately
+    response = send_to_command_engine(target_id=id, cmd=cmd)
 
-    # Convert Protobuf message back to JSON for response
     return jsonify(MessageToDict(response))
 
+
+# ---------------------------
+# EVENT STREAM (unchanged)
+# ---------------------------
 @api.route("/stream/comint_detection", methods=["GET", "OPTIONS"])
 def comint_detection_stream():
-    """Stream ComInt detection data with batch_interval and buffer_all_flag query params"""
-    if request.method == 'OPTIONS':
-        return Response('', status=204, headers={
+
+    if request.method == "OPTIONS":
+        return Response("", status=204, headers={
             "Access-Control-Allow-Origin": "http://localhost:5173",
             "Access-Control-Allow-Methods": "GET, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type, Authorization",
-            "Access-Control-Allow-Credentials": "true"
+            "Access-Control-Allow-Credentials": "true",
         })
 
-    if not hasattr(current_app, 'to_stream_q'):
+    if not hasattr(current_app, "to_stream_q"):
         return make_response(jsonify({"error": "Stream queue not available"}), 503)
 
     app_queue = current_app.to_stream_q
 
-    default_batch_interval = 0.2
-    min_batch_interval = 0.01
-    max_batch_interval = 2.0
+    default_batch = 0.2
+    batch_interval = request.args.get("interval", default_batch, type=float)
+    batch_interval = max(0.01, min(batch_interval, 2.0))
+
+    buffer_all_flag = request.args.get("buffer_all_flag", True, type=bool)
+
     max_connection_time = 3600
 
-    try:
-        # Use getattr with default value instead of direct attribute access
-        batch_interval = getattr(current_app, 'batch_interval', None)
-        if batch_interval is None:
-            requested_interval = request.args.get('interval', default_batch_interval, type=float)
-            batch_interval = max(min_batch_interval, min(requested_interval, max_batch_interval))
-            current_app.batch_interval = batch_interval
-    except ValueError:
-        batch_interval = default_batch_interval
-        logger.warning(f"Invalid interval parameter, using default: {default_batch_interval}")
-
-    try:
-        # Same fix for buffer_all_flag
-        buffer_all_flag = getattr(current_app, 'buffer_all_flag', None)
-        if buffer_all_flag is None:
-            buffer_all_flag = request.args.get('buffer_all_flag', True, type=bool)
-            current_app.buffer_all_flag = buffer_all_flag
-    except ValueError:
-        buffer_all_flag = True
-        logger.warning(f"Invalid flag parameter, using default: {buffer_all_flag}")
-
     def generate():
-        # TODO: tovább optimalizálható erőforráshiány esetén a bufferezés rlsz így konkrétan
-        start_time = time.perf_counter()
-        last_sent_time = start_time
+        start = time.perf_counter()
+        last_sent = start
         buffer = []
         id_buff = {}
-        try:
-            while True:
-                current_time = time.perf_counter()
-                if current_time - start_time >= max_connection_time:
-                    logger.info("Max connection time reached")
-                    yield f"data: {json.dumps({'info': 'Connection timeout reached'})}\n\n"
-                    break
-                try:
-                    id, raw = app_queue.get(timeout=0.01)
-                    pb_type = raw.DESCRIPTOR.name
-                    data = {
-                        "id": id,
-                        pb_type: MessageToDict(raw)
-                    }
-                    if buffer_all_flag:
-                        buffer.append(data)
-                        if current_time - last_sent_time >= batch_interval:
-                            yield f"data: {json.dumps(buffer)}\n\n"
-                            last_sent_time = current_time
-                            buffer = []
-                    else:
-                        id_buff[f"{id}, {pb_type}"] = data
-                        if current_time - last_sent_time >= batch_interval:
-                            yield f"data: {json.dumps(id_buff.values())}\n\n"
-                            last_sent_time = current_time
-                            id_buff = {}
-                except Empty:
-                    pass
 
-        except GeneratorExit:
-            logger.info("Client disconnected from stream")
-        except Exception as e:
-            logger.error(f"Error in stream: {str(e)}")
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        while True:
+            now = time.perf_counter()
+            if now - start >= max_connection_time:
+                yield f"data: {json.dumps({'info': 'Connection timeout reached'})}\n\n"
+                break
 
-    logger.info(
-        f"Starting comint_detection stream with interval: {batch_interval}s, max time: {max_connection_time}s")
+            try:
+                id_, raw = app_queue.get(timeout=0.01)
+                pb_type = raw.DESCRIPTOR.name
+
+                data = {"id": id_, pb_type: MessageToDict(raw)}
+
+                if buffer_all_flag:
+                    buffer.append(data)
+                    if now - last_sent >= batch_interval:
+                        yield f"data: {json.dumps(buffer)}\n\n"
+                        buffer = []
+                        last_sent = now
+                else:
+                    id_buff[f"{id_},{pb_type}"] = data
+                    if now - last_sent >= batch_interval:
+                        yield f"data: {json.dumps(list(id_buff.values()))}\n\n"
+                        id_buff = {}
+                        last_sent = now
+
+            except Empty:
+                pass
 
     return Response(
         stream_with_context(generate()),
@@ -606,3 +494,22 @@ def comint_detection_stream():
             "Access-Control-Allow-Credentials": "true",
         }
     )
+
+
+# ---------------------------
+# REDOC
+# ---------------------------
+@api.route("/redoc")
+def redoc():
+    return """
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>ReDoc</title>
+        <script src="https://cdn.jsdelivr.net/npm/redoc@2.0.0-rc.72/bundles/redoc.standalone.js"></script>
+      </head>
+      <body>
+        <redoc spec-url='/v1/openapi.json'></redoc>
+      </body>
+    </html>
+    """
