@@ -220,6 +220,7 @@ class CommAggregate(Loop):
             else:
                 # TODO: RuntimeError: dictionary changed size during iteration -> we need to lock the target list??
                 for uav in target_uav_list:
+                    print("COMMAND:::", command)
                     response = uav.send_command(command)
                     self._logger.trace(
                         f"Got response for command '{proto_cmd.Instruction.Name(command.instruction)}' from uav_id #{uav.id}: {response}"

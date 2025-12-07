@@ -375,6 +375,26 @@ INSTRUCTION_MAP = {
 
 cmd_id = 0
 
+@api.route("/command/list", methods=["GET"])
+def command_list():
+    result = {}
+
+    for instruction, mapping in INSTRUCTION_MAP.items():
+        instr_name = proto_cmd.Instruction.Name(instruction)
+
+        if mapping is None:
+            result[instr_name] = None
+        else:
+            param_name, param_type = mapping
+
+            # param_type lehet Python type vagy protobuf class
+            result[instr_name] = {
+                "parameter_name": param_name,
+                "parameter_type": param_type.__name__
+            }
+
+    return jsonify(result)
+
 
 @api.route("/uav/<int:id>/command/<string:instruction>/", methods=["POST"])
 def command(id, instruction):
@@ -404,11 +424,17 @@ def command(id, instruction):
 
     raw_data = request.get_json() if request.is_json else {}
 
+    # ✅ DEBUG LOG #1
+    print(f"[API] Received command '{instruction}' for UAV #{id}")
+    print(f"[API] Raw data: {raw_data}")
+
     cmd = proto_cmd.Command()
 
     if mapping:
         parameter_name, parameter_type = mapping
         parameter = parse_param(parameter_type, raw_data)
+        # ✅ DEBUG LOG #2
+        print(f"[API] Parsed parameter ({parameter_name}): {parameter}")
         assign_cmd(cmd, parameter_name, parameter)
 
     cmd.instruction = instruction_enum_value
@@ -416,9 +442,12 @@ def command(id, instruction):
     global cmd_id
     cmd.id = cmd_id
     cmd_id += 1
-
+    # ✅ DEBUG LOG #3
+    print(f"[API] Final command object: {cmd}")
     response = send_to_command_engine(target_id=id, cmd=cmd)
 
+    # ✅ DEBUG LOG #4
+    print(f"[API] Response from command engine: {response}")
     return jsonify(MessageToDict(response))
 
 
@@ -466,6 +495,7 @@ def comint_detection_stream():
                 pb_type = raw.DESCRIPTOR.name
 
                 data = {"id": id_, pb_type: MessageToDict(raw)}
+                print('d')
 
                 if buffer_all_flag:
                     buffer.append(data)

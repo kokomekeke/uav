@@ -1,10 +1,11 @@
 // stores/sensor.ts - OPTIMALIZÁLT VERZIÓ
-import { defineStore } from 'pinia'
+import { defineStore, storeToRefs } from 'pinia'
 import { ref, computed, watch, onUnmounted, shallowRef } from 'vue'
 import { useIntervalFn } from '@vueuse/core'
 import { useDetectionWorker } from '@/composables/useDetectionWorker'
 import type { Sensor } from '@/types/sensor'
 import type { RealtimeConfig } from '@/types/config'
+import { useLogStore } from '@/stores/log'
 
 export const useSensorStore = defineStore('sensor', () => {
   // ============================================================================
@@ -31,6 +32,11 @@ export const useSensorStore = defineStore('sensor', () => {
     circularBufferSize: 50,
     interval: 100
   })
+
+  const logStore = useLogStore()
+  const {
+    logs
+  } = storeToRefs(logStore)
 
   // ============================================================================
   // DETECTION CLEANUP - VUEUSE - ✅ OPTIMALIZÁLT INTERVAL (150ms)
@@ -144,7 +150,9 @@ export const useSensorStore = defineStore('sensor', () => {
     eventSource.value.onmessage = (event: MessageEvent) => {
       if (!event.data) return
       if (!isWorkerReady()) initializeWorker()
-      handleStreamData(event.data)
+      const data = event.data
+      logStore.logs.push(data)
+      handleStreamData(data)
     }
 
     eventSource.value.onerror = () => {

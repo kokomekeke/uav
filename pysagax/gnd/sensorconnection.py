@@ -63,7 +63,14 @@ class UAVConnection(mp.Process):
         self.uav_db_id = uav_entity.uav_id
         self.uav_label = uav_entity.uav_label
         self.streaming_level = streaming_level
-
+        #
+        #
+        #
+        # test stuff
+        # self.streaming_level = proto_cmd.StreamTarget.SPECTRUM
+        #
+        #
+        #
         self._to_measurement_processor_q = to_measurement_processor_q
         self._to_stream_q = to_stream_q
         self._command_q = command_q
@@ -207,8 +214,26 @@ class UAVConnection(mp.Process):
         """Thread to handle incoming commands from the command queue"""
         while not self._stop_event.is_set():
             try:
-                # TODO: timeout for send_command return and handle no answer
                 command = self._command_q.get(timeout=0.2)
+
+                # ✅ STREAM_START/STOP parancsok kiegészítése hiányzó mezőkkel
+                if command.instruction in (proto_cmd.STREAM_START, proto_cmd.STREAM_STOP):
+                    # Az UAV-nak vissza kell küldenie a streamet a GND címére/portjára
+                    command.target.address = self.own_address
+                    command.target.port = self.own_stream_udp_port
+
+                    # Timeout-ok hozzáadása STREAM_START esetén
+                    if command.instruction == proto_cmd.STREAM_START:
+                        if not command.target.heartbeat_timeout:
+                            command.target.heartbeat_timeout = 1
+                        if not command.target.telemetry_timeout:
+                            command.target.telemetry_timeout = 1
+
+                    print(f"[UAVConnection#{self.uav_db_id}] Augmented STREAM command:")
+                    print(f"  level: {proto_cmd.StreamTarget.StreamLevel.Name(command.target.level)}")
+                    print(f"  address: {command.target.address}")
+                    print(f"  port: {command.target.port}")
+
                 response = self.send_command(command)
                 self._response_q.put(response)
             except queue.Empty:
@@ -270,7 +295,6 @@ class UAVConnection(mp.Process):
             stream_packet = DataType.to_message(data_type_object)
             stream_packet.ParseFromString(data)
             stream_data = (self.uav_db_id, stream_packet)
-
             multi_put(
                 [self._to_measurement_processor_q, self._to_stream_q],
                 stream_data,

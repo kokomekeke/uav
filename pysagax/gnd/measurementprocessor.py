@@ -124,6 +124,7 @@ class MeasurementProcessor(Loop):
         self._logger.trace(
             f"Measurement packet delay: {time.time()-packet.time.seconds-packet.time.nanos/1e9}"
         )
+        print('MEASUREMENT: ', packet)
         for det in packet.detection:
             new_meas_entity = ComIntDetectionEntity()
             new_meas_entity.uav_id = uav_entity.uav_id
@@ -240,7 +241,7 @@ class MeasurementProcessor(Loop):
                         packet.detection[i].azimuth = a_compensated
                         packet.detection[i].mean_azimuth = a_m_compensated
                 except:
-                    self._logger.error("Coulndt compensate YPR")
+                    self._logger.error("Couldn't compensate YPR")
             self._receive_packet(id, packet)
 
 

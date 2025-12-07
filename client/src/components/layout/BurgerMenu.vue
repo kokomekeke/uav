@@ -162,12 +162,14 @@ const toggleMenu = (): void => {
                dark:border-red-900/60 dark:shadow-[0_0_40px_-10px_rgba(255,0,0,0.25)]"
         :class="{ '-translate-x-full': !isMenuOpen, 'translate-x-0': isMenuOpen }"
       >
-        <button
-          @click="toggleMenu"
-          class="text-cyan-800 dark:text-cyan-400 text-2xl mb-6 font-bold z-[9999] relative hover:text-cyan-300 transition"
-        >
-          ×
-        </button>
+        <div class="flex flex-row items-center justify-between">
+          <button
+            @click="toggleMenu"
+            class="text-cyan-800 dark:text-cyan-400 text-2xl mb-6 font-bold z-[9999] relative hover:text-cyan-300 transition"
+          >
+            ×
+          </button>
+        </div>
 
         <div class="flex-grow text-gray-200 text-sm overflow-y-auto">
           <!-- Loading state -->
@@ -334,6 +336,7 @@ const toggleMenu = (): void => {
   display: inline-block;
   padding: 15px;
 }
+
 
 .right {
   margin-top: 100px;

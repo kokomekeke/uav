@@ -12,8 +12,22 @@ const isActiveTab = (mode: string) => viewMode.value === mode
 </script>
 
 <template>
-  <div class="flex flex-row gap-6 w-full min-h-screen pt-20 px-6 pb-6 z-999 bg-transparent dark:bg-slate-900 text-gray-100">
+  <div class="relative flex flex-row gap-6 w-full min-h-screen pt-20 px-6 pb-6 bg-transparent dark:bg-slate-900 text-gray-100">
 
+    <!-- JOBB FELSŐ SAROKRA FIXÁLT GOMB -->
+    <router-link
+      to="/log"
+      class="absolute top-4 right-6 z-50"
+    >
+      <button class="p-0 bg-transparent border-0">
+        <div class="log-lines">
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      </button>
+    </router-link>
     <!-- Left panel: Configuration -->
     <div class="flex-1 bg-sgx-accent-light-blue/30 dark:bg-slate-800 rounded-2xl shadow-lg p-4 border border-slate-100 dark:border-slate-700 overflow-auto">
       <configuration-view class="w-full"></configuration-view>
@@ -116,4 +130,18 @@ const isActiveTab = (mode: string) => viewMode.value === mode
 .fade-leave-to {
   opacity: 0;
 }
+.log-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 24px;
+}
+
+.log-lines span {
+  height: 3px;
+  width: 100%;
+  background-color: #a6ecfa;
+  border-radius: 3px;
+}
+
 </style>
