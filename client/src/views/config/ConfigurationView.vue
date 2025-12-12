@@ -1,6 +1,7 @@
-<script setup>
+<script setup lang="ts">
 import { ref } from 'vue'
-import ConfigComponent from "@/components/configuration/ConfigComponent.vue";
+import ConfigComponent from '@/components/configuration/ConfigComponent.vue'
+import axios from 'axios'
 
 const config = ref({
   // Source configuration
@@ -43,9 +44,20 @@ const config = ref({
 
 const streamLevels = ['SPECTRUM', 'DETECTION', 'TELEMETRY']
 
-const updateConfig = () => {
-  console.log('Updated settings:', config.value);
-  // Itt küldheted el a konfigurációt a backend-nek
+const updateConfig = async () => {
+  try {
+    const payload = buildProtoConfig(config.value)
+
+    const uavId = 1 // vagy store-ból
+    const res = await axios.post(
+      'http://localhost:5000/v1/uav/1/command/CONFIG/',
+      payload
+    )
+
+    console.log('CONFIG response:', res.data)
+  } catch (err) {
+    console.error('Failed to send CONFIG', err)
+  }
 }
 
 const addRoiSetting = () => {
@@ -53,6 +65,45 @@ const addRoiSetting = () => {
     center_frequency: '',
     threshold: ''
   })
+}
+
+function parseFreq (str: string): number {
+  if (!str) return 0
+  if (str.endsWith('M')) return parseFloat(str) * 1e6
+  if (str.endsWith('k')) return parseFloat(str) * 1e3
+  return Number(str)
+}
+
+function buildProtoConfig (cfg: any) {
+  return {
+    config_id: Date.now(),
+
+    cs: {
+      center_frequency: parseFreq(cfg.center_freq),
+      iq_rate: parseFreq(cfg.bandwidth),
+
+      bin_count: Number(cfg.bin_count),
+      burst_stride: Number(cfg.burst_stride),
+
+      channel_gain:
+        cfg.gain && Number(cfg.gain) > 0
+          ? [Number(cfg.gain)]
+          : [],
+
+      type: 0 // LIVE
+    },
+
+    pp: {
+      roi: cfg.pp_config.enabled
+        ? cfg.pp_config.roi_settings.map((roi, idx) => ({
+          roi_id: idx + 1,
+          center_frequency: parseFreq(roi.center_frequency),
+          span: 10_000, // 🔥 KÖTELEZŐ
+          threshold: Number(roi.threshold)
+        }))
+        : []
+    }
+  }
 }
 
 const removeRoiSetting = (index) => {

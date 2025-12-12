@@ -95,8 +95,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="flex flex-col pt-20 h-screen bg-slate-200 dark:bg-slate-700 max-w-screen max-h-full text-black dark:text-white">
-    <div class="flex flex-col bg-blue-200 dark:bg-sgx-dark-blue">
+  <div class="flex flex-col pt-20 h-screen bg-transparent max-w-screen max-h-full text-black dark:text-white">
+    <div class="flex flex-col bg-transparent">
       <div>Send command to sensor</div>
       <div class="flex flex-row gap-6 items-start mt-4">
 
@@ -165,7 +165,7 @@ onMounted(async () => {
     </div>
     <div
       ref="logScrollContainer"
-      class="bg-slate-400 dark:bg-slate-700 h-96 overflow-auto"
+      class="rounded-md mt-4 bg-slate-400 dark:bg-slate-700 h-128 overflow-auto"
     >
       <ol>
         <li v-for="(logEntry, index) in logs" :key="index" class="border-2 border-y-white pt-4">

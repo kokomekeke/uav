@@ -2,12 +2,15 @@
 import { computed, ref, watch, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSensorStore } from '@/stores/sensor'
+import { useConnectionStore } from '@/stores/connection' // ✅ ÚJ
 import NewSensorModal from '@/components/common/NewSensorModal.vue'
 import axios from 'axios'
 import type { Sensor } from '@/types/sensor'
 
 const sensorStore = useSensorStore()
-const { sensors } = storeToRefs(sensorStore)
+const { sensors, isConnected } = storeToRefs(sensorStore) // ✅ isConnected hozzáadva
+
+const connectionStore = useConnectionStore() // ✅ ÚJ
 
 interface Props {
   isMenuOpen: boolean
@@ -28,24 +31,32 @@ const emit = defineEmits<{
   'update:isMenuOpen': [value: boolean]
 }>()
 
-const sensorList = computed(() => Object.values(sensors.value))
+const sensorList = computed(() => {
+  // ✅ Csak connected állapotban listázzuk
+  if (!isConnected.value) return []
+  return Object.values(sensors.value)
+})
 
 // ============================================================================
-// LIFECYCLE - Worker inicializálás
+// LIFECYCLE
 // ============================================================================
 
 onMounted(async () => {
   console.log('[SensorSidebar] 🚀 Component mounted')
 
-  // 1. Worker inicializálás
+  // ✅ Kapcsolat ellenőrzés
+  if (!isConnected.value) {
+    console.warn('[SensorSidebar] Not connected - skipping initialization')
+    return
+  }
+
+  // Worker inicializálás
   if (!sensorStore.isWorkerReady()) {
     console.log('[SensorSidebar] Initializing worker...')
     sensorStore.initializeWorker()
-  } else {
-    console.log('[SensorSidebar] Worker already initialized')
   }
 
-  // 2. Szenzorok betöltése (ha még nincsenek)
+  // Szenzorok betöltése
   if (Object.keys(sensors.value).length === 0) {
     console.log('[SensorSidebar] Fetching sensors...')
     await sensorStore.fetchSensors()
@@ -62,38 +73,65 @@ watch(() => props.isMenuOpen, (newValue) => {
   isMenuOpen.value = newValue
 })
 
+// ✅ ÚJ: Connection state figyelés
+watch(isConnected, async (connected) => {
+  if (connected) {
+    console.log('[SensorSidebar] Connected - fetching sensors')
+    await sensorStore.fetchSensors()
+  } else {
+    console.log('[SensorSidebar] Disconnected - clearing UI')
+  }
+})
+
 // ============================================================================
 // METHODS
 // ============================================================================
 
-const removeSensor = (): void => {
-  sensorStore.removeSensor()
-  isRemoveDialogOpen.value = false
-}
+const removeSensor = async (): Promise<void> => {
+  if (!selectedSensorForModify.value) {
+    console.warn('[SensorSidebar] No sensor selected for deletion')
+    return
+  }
 
-const openModifyPanel = (sensor: Sensor): void => {
-  isModifyPanelOpen.value = !isModifyPanelOpen.value
-  selectedSensorForModify.value = sensor
+  if (!isConnected.value) {
+    console.error('[SensorSidebar] Cannot delete - not connected')
+    return
+  }
 
-  // Pre-fill form values
-  if (sensor) {
-    address.value = sensor.uav_address
-    label.value = sensor.uav_label
-    active.value = sensor.active
+  try {
+    await sensorStore.removeSensor(selectedSensorForModify.value.uav_id)
+
+    console.log('[SensorSidebar] ✅ Sensor deleted successfully')
+    isRemoveDialogOpen.value = false
+    selectedSensorForModify.value = null
+  } catch (error) {
+    console.error('[SensorSidebar] Failed to delete sensor:', error)
   }
 }
 
-const handleMouseOver = (sensor: Sensor): void => {
-  sensorStore.handleMouseOver(sensor)
+const selectedSensorIdForModify = ref<number | null>(null)
+
+const openModifyPanel = (sensor: Sensor): void => {
+  if (selectedSensorIdForModify.value === sensor.uav_id) {
+    isModifyPanelOpen.value = !isModifyPanelOpen.value
+  } else {
+    isModifyPanelOpen.value = true
+  }
+
+  selectedSensorIdForModify.value = sensor.uav_id
+  selectedSensorForModify.value = sensor
+  address.value = sensor.uav_address
+  label.value = sensor.uav_label
+  active.value = sensor.active
+}
+
+const setCurrentSensor = (sensor: Sensor): void => {
+  sensorStore.setCurrentSensor(sensor)
 }
 
 const showMap = (): void => {
   console.log('[SensorSidebar] Routing to Map')
 }
-
-// const addSensor = (): void => {
-//   isModalOpen.value = true
-// }
 
 const confirm = async (): Promise<void> => {
   if (!selectedSensorForModify.value) {
@@ -101,10 +139,20 @@ const confirm = async (): Promise<void> => {
     return
   }
 
+  if (!isConnected.value) {
+    console.error('[SensorSidebar] Cannot update - not connected')
+    return
+  }
+
   if (address.value && label.value) {
     try {
+      // ✅ Connection store URL használata
+      const baseUrl = connectionStore.ipPort.endsWith('/')
+        ? connectionStore.ipPort
+        : `${connectionStore.ipPort}/`
+
       await axios.patch(
-        `http://localhost:5000/v1/uav/${selectedSensorForModify.value.uav_id}`,
+        `${baseUrl}v1/uav/${selectedSensorForModify.value.uav_id}`,
         {
           uav_label: label.value,
           uav_address: address.value,
@@ -116,7 +164,6 @@ const confirm = async (): Promise<void> => {
       console.log('[SensorSidebar] ✅ Sensor updated')
       await sensorStore.fetchSensors()
 
-      // Close modify panel
       isModifyPanelOpen.value = false
       selectedSensorForModify.value = null
     } catch (error) {
@@ -172,21 +219,23 @@ const toggleMenu = (): void => {
         </div>
 
         <div class="flex-grow text-gray-200 text-sm overflow-y-auto">
-          <!-- Loading state -->
+          <!-- ✅ Connection warning -->
+          <div v-if="!isConnected" class="p-3 mb-4 bg-red-900/50 border border-red-600 rounded text-red-300 text-xs">
+            ⚠️ Not connected to server. Sensors unavailable.
+          </div>
+
           <p v-if="sensorStore.isLoading" class="text-yellow-400">Loading...</p>
 
-          <!-- Error state -->
           <p v-if="sensorStore.errorMessage" class="text-red-500">
             {{ sensorStore.errorMessage }}
           </p>
 
-          <!-- Sensor list -->
-          <ul>
+          <!-- ✅ Sensor lista csak connected esetén -->
+          <ul v-if="isConnected">
             <li
               v-for="sensor in sensorList"
               :key="sensor.uav_id"
               @click="showMap"
-              @mouseover="handleMouseOver(sensor)"
               :class="{
                 'bg-slate-800': sensorStore.selectedSensor === sensor,
                 'hover:bg-slate-700': sensorStore.selectedSensor !== sensor
@@ -194,7 +243,6 @@ const toggleMenu = (): void => {
               class="p-2 rounded cursor-pointer mb-2 transition text-slate-800 dark:text-white bg-slate-100/30 dark:bg-slate-100/20"
             >
               <div class="flex justify-between items-center">
-                <!-- Checkbox -->
                 <input
                   type="checkbox"
                   :id="`sensor-${sensor.uav_id}`"
@@ -204,10 +252,10 @@ const toggleMenu = (): void => {
                   class="cursor-pointer"
                 >
 
-                <!-- Label with router link -->
                 <router-link
                   :to="`/sensor/${sensor.uav_label}`"
                   class="pl-2 flex-grow text-left hover:underline"
+                  @click="setCurrentSensor(sensor)"
                   @click.stop
                 >
                   {{ sensor.uav_label }}
@@ -237,7 +285,7 @@ const toggleMenu = (): void => {
 
               <!-- Modify panel -->
               <div
-                v-if="selectedSensorForModify === sensor && isModifyPanelOpen"
+                v-if="selectedSensorIdForModify === sensor.uav_id && isModifyPanelOpen"
                 class="mt-2 p-3 rounded border border-cyan-700 bg-slate-700/10
                        dark:border-cyan-600 dark:bg-slate-800"
               >
@@ -278,6 +326,12 @@ const toggleMenu = (): void => {
             </li>
           </ul>
 
+          <!-- ✅ Empty state ha nincs sensor -->
+          <div v-else-if="isConnected && sensorList.length === 0 && !sensorStore.isLoading"
+               class="text-center text-gray-400 py-8">
+            <p>No sensors available</p>
+          </div>
+
           <!-- New sensor modal -->
           <new-sensor-modal />
 
@@ -298,18 +352,26 @@ const toggleMenu = (): void => {
                 <p class="text-sm text-gray-400 mb-6">
                   This action cannot be undone.
                 </p>
+
+                <!-- ✅ Error display -->
+                <p v-if="sensorStore.errorMessage" class="text-sm text-red-400 mb-4">
+                  ⚠️ {{ sensorStore.errorMessage }}
+                </p>
+
                 <div class="flex justify-end gap-3">
                   <button
                     @click="isRemoveDialogOpen = false"
-                    class="px-4 py-2 rounded-md bg-slate-700 hover:bg-slate-600 transition"
+                    :disabled="sensorStore.isLoading"
+                    class="px-4 py-2 rounded-md bg-slate-700 hover:bg-slate-600 transition disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
                     @click="removeSensor"
-                    class="px-4 py-2 rounded-md bg-red-600 hover:bg-red-500 transition"
+                    :disabled="sensorStore.isLoading || !isConnected"
+                    class="px-4 py-2 rounded-md bg-red-600 hover:bg-red-500 transition disabled:opacity-50"
                   >
-                    Delete
+                    {{ sensorStore.isLoading ? 'Deleting...' : 'Delete' }}
                   </button>
                 </div>
               </div>
@@ -336,7 +398,6 @@ const toggleMenu = (): void => {
   display: inline-block;
   padding: 15px;
 }
-
 
 .right {
   margin-top: 100px;

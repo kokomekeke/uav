@@ -1,7 +1,6 @@
 <template>
   <div>
     <CenteredModal :show="showModal" @close="closeModal">
-      <!-- HEADER -->
       <template #header>
         <div class="flex items-center space-x-3">
           <img src="/sgxlogo.jpg" class="w-12 h-12 border-2 rounded-lg border-cyan-700 dark:border-cyan-400 " alt="sgx-logo"/>
@@ -9,10 +8,8 @@
         </div>
       </template>
 
-      <!-- BODY -->
       <template #body>
         <div class="space-y-6">
-          <!-- IP Address Input -->
           <div>
             <label class="block text-sm font-semibold mb-2 text-cyan-900 dark:text-cyan-400">Enter IP Address and Port:</label>
             <input
@@ -28,7 +25,6 @@
             </p>
           </div>
 
-          <!-- Connection Status -->
           <div class="bg-slate-800 p-4 rounded border border-slate-700">
             <div class="flex items-center justify-between mb-3">
               <span class="font-semibold text-sm text-gray-300">Connection status:</span>
@@ -56,7 +52,6 @@
               </div>
             </div>
 
-            <!-- Reconnection Progress -->
             <div v-if="isReconnecting" class="space-y-2">
               <div class="flex justify-between text-xs text-yellow-400">
                 <span>Reconnecting in progress...</span>
@@ -70,7 +65,6 @@
               </div>
             </div>
 
-            <!-- Connection Test Button -->
             <div v-if="isConnected" class="mt-3">
               <button
                 @click="testConnection"
@@ -82,7 +76,6 @@
             </div>
           </div>
 
-          <!-- Server Info -->
           <div v-if="isConnected" class="bg-slate-800 p-4 rounded border border-green-600">
             <h4 class="text-sm font-semibold text-green-400 mb-2">Server information</h4>
             <div class="text-xs text-green-300 space-y-1 font-mono">
@@ -95,9 +88,7 @@
         </div>
       </template>
 
-      <!-- SUBMIT BUTTONS -->
       <template #submit>
-        <!-- Connect & Retry -->
         <button
           class="flex-1 bg-green-600 hover:bg-green-500 px-4 py-2 rounded-xl border border-green-700 font-semibold text-white disabled:opacity-50 transition"
           @click="connect"
@@ -145,7 +136,6 @@
         </button>
       </template>
 
-      <!-- ALERT -->
       <template #alert>
         <div v-if="connectionMessage" class="space-y-2">
           <div
@@ -161,7 +151,6 @@
             {{ connectionMessage }}
           </div>
 
-          <!-- Debug Info -->
           <details v-if="showDebugInfo" class="text-xs text-gray-400 mt-2">
             <summary class="cursor-pointer hover:text-gray-200">Debug information</summary>
             <div class="mt-2 p-2 bg-slate-800 rounded border border-slate-600">

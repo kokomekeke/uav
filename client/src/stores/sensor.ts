@@ -6,15 +6,33 @@ import { useDetectionWorker } from '@/composables/useDetectionWorker'
 import type { Sensor } from '@/types/sensor'
 import type { RealtimeConfig } from '@/types/config'
 import { useLogStore } from '@/stores/log'
+import { useConnectionStore } from '@/stores/connection' // ✅ ÚJ
 
 export const useSensorStore = defineStore('sensor', () => {
+  // ============================================================================
+  // CONNECTION STORE INTEGRATION - ✅ ÚJ
+  // ============================================================================
+
+  const connectionStore = useConnectionStore()
+  const { ipPort, isConnected } = storeToRefs(connectionStore)
+
+  // ✅ Computed URL a connection store-ból
+  const urlBase = computed(() => {
+    const base = ipPort.value.endsWith('/') ? ipPort.value : `${ipPort.value}/`
+    return `${base}v1/`
+  })
+
+  const streamUrl = computed(() => {
+    return `${urlBase.value}stream/comint_detection`
+  })
+
   // ============================================================================
   // STATE - ✅ SHALLOW REFS FOR PERFORMANCE
   // ============================================================================
 
   const sensors = shallowRef<Record<number, Sensor>>({})
   const selectedSensor = ref<Sensor | null>(null)
-  const selectedSensorIds = shallowRef<number[]>([]) // ✅ Already shallow
+  const selectedSensorIds = shallowRef<number[]>([])
   const isLoading = ref(false)
   const errorMessage = ref('')
 
@@ -23,7 +41,6 @@ export const useSensorStore = defineStore('sensor', () => {
 
   const eventSource = ref<EventSource | null>(null)
   const isStreamConnected = ref(false)
-  const streamUrl = ref('http://localhost:5000/v1/stream/comint_detection')
 
   const realtimeConfig = ref<RealtimeConfig>({
     maxLatencyMs: 1000,
@@ -34,12 +51,9 @@ export const useSensorStore = defineStore('sensor', () => {
   })
 
   const logStore = useLogStore()
-  const {
-    logs
-  } = storeToRefs(logStore)
 
   // ============================================================================
-  // DETECTION CLEANUP - VUEUSE - ✅ OPTIMALIZÁLT INTERVAL (150ms)
+  // DETECTION CLEANUP
   // ============================================================================
 
   const { pause: pauseCleanup, resume: resumeCleanup } = useIntervalFn(() => {
@@ -48,14 +62,11 @@ export const useSensorStore = defineStore('sensor', () => {
 
     if (ttl <= 0) return
 
-    // ✅ MUTATION helyett újraépítés (shallow ref miatt nincs nagy overhead)
     const newSensors: Record<number, Sensor> = {}
 
     Object.entries(sensors.value).forEach(([id, sensor]) => {
-      // ✅ Filter csak ha van lejárt detection
       const filtered = sensor.detections.filter(d => (now - (d.timestamp || 0)) <= ttl)
 
-      // ✅ Csak akkor hozunk létre új objektumot, ha változott
       if (filtered.length !== sensor.detections.length) {
         newSensors[+id] = {
           ...sensor,
@@ -70,7 +81,7 @@ export const useSensorStore = defineStore('sensor', () => {
   }, () => realtimeConfig.value.interval, { immediate: false })
 
   // ============================================================================
-  // WORKER SETUP - REFACTORED
+  // WORKER SETUP
   // ============================================================================
 
   const {
@@ -85,7 +96,6 @@ export const useSensorStore = defineStore('sensor', () => {
 
   const workerMessageCleanups: Array<() => void> = []
 
-  // ✅ OPTIMALIZÁLT: CIRCULAR BUFFER IMPLEMENTATION
   const addDetectionToSensor = (uavId: number, detection: any): void => {
     const sensor = sensors.value[uavId]
     if (!sensor) return
@@ -94,50 +104,38 @@ export const useSensorStore = defineStore('sensor', () => {
     const bufferSize = realtimeConfig.value.circularBufferSize
     const ttl = realtimeConfig.value.detectionTTL
 
-    // ✅ Circular buffer logika
     let detections = sensor.detections
 
-    // TTL cleanup csak akkor, ha szükséges (lazy)
     if (ttl > 0 && detections.length > 0) {
       const oldestTimestamp = detections[0]?.timestamp || 0
       if (now - oldestTimestamp > ttl) {
-        // ✅ Csak akkor filterelünk, ha az első elem már lejárt
         detections = detections.filter(d => (now - (d.timestamp || 0)) <= ttl)
       }
     }
 
-    // ✅ Új detection hozzáadása
     if (detections.length < bufferSize) {
-      // Van hely, egyszerű push
       detections = [...detections, detection]
     } else {
-      // Buffer tele, legrégebbi eldobása (shift + push optimalizáció)
       detections = [...detections.slice(1), detection]
     }
 
-    // ✅ Csak az érintett sensor módosítása, ne full spread
     sensors.value = {
       ...sensors.value,
       [uavId]: { ...sensor, detections }
     }
   }
 
-  // stores/sensor.ts
-
   const initializeWorker = (): void => {
     initWorker()
 
-    // ✅ Detection handler
     const cleanupProcessed = onWorkerMessage('processedDetection', (data: any) => {
       const { detection, uavId } = data
       addDetectionToSensor(uavId, detection)
     })
 
-    // ✅ Measurement handler (SPEKTRUM!)
     const cleanupMeasurement = onWorkerMessage('processedMeasurement', (data: any) => {
       const { measurement, uavId, timestamp } = data
 
-      // ✅ Teljes measurement-et adjuk hozzá (benne az array)
       const measurementItem = {
         Measurement: measurement,
         timestamp: timestamp || Date.now()
@@ -146,10 +144,8 @@ export const useSensorStore = defineStore('sensor', () => {
       addDetectionToSensor(uavId, measurementItem)
     })
 
-    // ✅ Telemetry handler
     const cleanupTelemetry = onWorkerMessage('processedTelemetry', (data: any) => {
       const { telemetry, uavId } = data
-      // console.log('📡 Telemetry from worker:', { uavId, telemetry })
     })
 
     workerMessageCleanups.push(cleanupProcessed, cleanupMeasurement, cleanupTelemetry)
@@ -161,19 +157,25 @@ export const useSensorStore = defineStore('sensor', () => {
   // ============================================================================
 
   const initializeStream = (): void => {
+    // ✅ Csak connected állapotban
+    if (!isConnected.value) {
+      console.warn('[SensorStore] Cannot initialize stream - not connected')
+      return
+    }
+
     if (eventSource.value) return
 
     eventSource.value = new EventSource(streamUrl.value)
 
     eventSource.value.onopen = () => {
       isStreamConnected.value = true
+      console.log('[SensorStore] ✅ Stream connected')
     }
 
     eventSource.value.onmessage = (event: MessageEvent) => {
       if (!event.data) return
       if (!isWorkerReady()) initializeWorker()
       const data = event.data
-      // console.log('datae:: ', data)
       logStore.logs.push(data)
       handleStreamData(data)
     }
@@ -182,7 +184,7 @@ export const useSensorStore = defineStore('sensor', () => {
       isStreamConnected.value = false
       if (eventSource.value?.readyState === EventSource.CLOSED) {
         setTimeout(() => {
-          if (!isStreamConnected.value) {
+          if (!isStreamConnected.value && isConnected.value) {
             disconnectStream()
             initializeStream()
           }
@@ -210,7 +212,7 @@ export const useSensorStore = defineStore('sensor', () => {
   const hasSelectedSensors = computed(() => selectedSensors.value.length > 0)
 
   // ============================================================================
-  // WATCH - ✅ OPTIMALIZÁLT: deep: false!
+  // WATCH
   // ============================================================================
 
   watch(selectedSensors, (newSelected) => {
@@ -221,8 +223,21 @@ export const useSensorStore = defineStore('sensor', () => {
       if (!isWorkerReady()) initializeWorker()
       if (!isStreamConnected.value && !eventSource.value) initializeStream()
       updateSelectedUavIds(selectedIds)
+    } else {
+      updateSelectedUavIds([])
     }
-  }, { immediate: true, deep: false }) // ✅ DEEP FALSE!
+  }, { immediate: true, deep: false })
+
+  // ✅ ÚJ: Connection state figyelés
+  watch(isConnected, (connected) => {
+    if (!connected) {
+      // Ha megszakadt a kapcsolat, töröljük a sensorokat
+      console.log('[SensorStore] Connection lost - clearing sensors')
+      disconnectStream()
+      sensors.value = {}
+      selectedSensorIds.value = []
+    }
+  })
 
   // ============================================================================
   // ACTIONS
@@ -251,11 +266,21 @@ export const useSensorStore = defineStore('sensor', () => {
   }
 
   const fetchSensors = async (): Promise<void> => {
+    // ✅ Kapcsolat ellenőrzés
+    if (!isConnected.value) {
+      errorMessage.value = 'Not connected to server'
+      console.warn('[SensorStore] Cannot fetch sensors - not connected')
+      return
+    }
+
     isLoading.value = true
     errorMessage.value = ''
 
     try {
-      const response = await fetch('http://localhost:5000/v1/uav')
+      const url = `${urlBase.value}uav`
+      console.log(`[SensorStore] Fetching sensors from: ${url}`)
+
+      const response = await fetch(url)
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
 
       const data = await response.json()
@@ -270,24 +295,59 @@ export const useSensorStore = defineStore('sensor', () => {
       })
 
       sensors.value = sensorsMap
+      console.log(`[SensorStore] ✅ Loaded ${Object.keys(sensorsMap).length} sensors`)
     } catch (error) {
       errorMessage.value = 'Failed to load sensors'
+      console.error('[SensorStore] Fetch error:', error)
     } finally {
       isLoading.value = false
     }
   }
 
-  const removeSensor = (): void => {
-    if (!selectedSensor.value) return
+  const removeSensor = async (uavId: number): Promise<void> => {
+    // ✅ Kapcsolat ellenőrzés
+    if (!isConnected.value) {
+      errorMessage.value = 'Not connected to server'
+      throw new Error('Not connected to server')
+    }
 
-    const uavId = selectedSensor.value.uav_id
-    const { [uavId]: removed, ...rest } = sensors.value
+    isLoading.value = true
+    errorMessage.value = ''
 
-    sensors.value = rest
-    selectedSensor.value = null
+    try {
+      const url = `${urlBase.value}uav/${uavId}`
+      console.log(`[SensorStore] Deleting sensor from: ${url}`)
+
+      const response = await fetch(url, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`)
+      }
+
+      const { [uavId]: removed, ...rest } = sensors.value
+      sensors.value = rest
+
+      if (selectedSensor.value?.uav_id === uavId) {
+        selectedSensor.value = null
+      }
+
+      console.log(`[SensorStore] ✅ Sensor ${uavId} deleted successfully`)
+    } catch (error) {
+      errorMessage.value = error instanceof Error ? error.message : 'Failed to delete sensor'
+      console.error('[SensorStore] Delete error:', error)
+      throw error
+    } finally {
+      isLoading.value = false
+    }
   }
 
-  const handleMouseOver = (sensor: Sensor): void => {
+  const setCurrentSensor = (sensor: Sensor): void => {
     selectedSensor.value = sensor
   }
 
@@ -307,6 +367,8 @@ export const useSensorStore = defineStore('sensor', () => {
 
   const debugReactivity = (): void => {
     console.log('=== SENSOR STORE DEBUG ===')
+    console.log('Connected:', isConnected.value)
+    console.log('Base URL:', urlBase.value)
     console.log('Sensors:', Object.keys(sensors.value).length)
     console.log('Selected:', selectedSensors.value.length)
     console.log('Worker ready:', isWorkerReady())
@@ -345,19 +407,21 @@ export const useSensorStore = defineStore('sensor', () => {
     batchInterval,
     detectionSize,
     isStreamConnected,
-    streamUrl,
+    streamUrl: computed(() => streamUrl.value), // ✅ Computed
+    urlBase: computed(() => urlBase.value), // ✅ Computed
     realtimeConfig,
 
     // Computed
     selectedSensors,
     hasSelectedSensors,
     selectedSensorIds,
+    isConnected, // ✅ ÚJ - connection state
 
     // Actions
     selectSensor,
     fetchSensors,
     removeSensor,
-    handleMouseOver,
+    setCurrentSensor,
     clearDetections: clearAllDetections,
     addDetectionToSensor,
 

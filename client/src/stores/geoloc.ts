@@ -1,4 +1,4 @@
-// stores/geoloc.ts - OPTIMALIZÁLT VERZIÓ
+// stores/geoloc.ts - PERZISZTENS HEATMAP VERZIÓ
 import { defineStore } from 'pinia'
 import { ref, shallowRef } from 'vue'
 
@@ -25,20 +25,27 @@ export const useGeoLocStore = defineStore('geoloc', () => {
     fetchPeriodSec: 1,
     showRaw: true,
     showFiltered: true,
-    ttl: 60000
+    ttl: 3600000  // ✅ 1 óra (3600s) - hosszabb megőrzés
   })
   const isGeoJsonEnabled = ref(false)
 
+  // ✅ HEATMAP SETTINGS - Perzisztens mód
+  const heatMapSettings = ref({
+    enabled: true,
+    maxSize: 10000,         // ✅ 10k pont maximum
+    enableTTLCleanup: false, // ✅ NINCS automatikus TTL-alapú törlés!
+    enableSizeLimit: true    // ✅ Csak size limit van
+  })
+
   // ✅ SHALLOW REF FOR HEATMAP
   const heatMapPoints = shallowRef<HeatMapPoint[]>([])
-  const maxHeatMapSize = ref(1000)
 
   // Cleanup intervals
   let geoJsonIntervalId: number | null = null
   let geoJsonCleanupIntervalId: number | null = null
   let heatMapCleanupIntervalId: number | null = null
 
-  // ✅ DEDUPLIKÁCIÓ - Set helyett Map (gyorsabb lookup)
+  // ✅ DEDUPLIKÁCIÓ - Map (gyorsabb lookup)
   const seenIds = new Map<string, number>() // id -> timestamp
 
   let isFetching = false
@@ -126,9 +133,9 @@ export const useGeoLocStore = defineStore('geoloc', () => {
         addToHeatMap(newPoints)
       }
 
-      console.log(`[Store] ✅ Fetch: ${(performance.now() - start).toFixed(0)}ms | New: ${newPoints.length} | Total: ${geoJsonData.value.length}`)
+      console.log(`[GeoLocStore] ✅ Fetch: ${(performance.now() - start).toFixed(0)}ms | New: ${newPoints.length} | Total GeoJSON: ${geoJsonData.value.length} | HeatMap: ${heatMapPoints.value.length}`)
     } catch (error) {
-      console.error('[Store] ❌ Fetch error:', error)
+      console.error('[GeoLocStore] ❌ Fetch error:', error)
     } finally {
       isFetching = false
     }
@@ -137,7 +144,7 @@ export const useGeoLocStore = defineStore('geoloc', () => {
   const startGeoJsonFetch = async (): Promise<void> => {
     if (geoJsonIntervalId !== null) return
 
-    console.log('[Store] 🌍 Starting GeoJSON fetch')
+    console.log('[GeoLocStore] 🌍 Starting GeoJSON fetch')
     isGeoJsonEnabled.value = true
 
     await fetchGeoJsonData()
@@ -159,9 +166,12 @@ export const useGeoLocStore = defineStore('geoloc', () => {
     stopGeoJsonCleanup()
     stopHeatMapCleanup()
     isGeoJsonEnabled.value = false
+
+    // ✅ NE töröljük a heatmap pontokat automatikusan!
     geoJsonData.value = []
-    heatMapPoints.value = []
     seenIds.clear()
+
+    console.log('[GeoLocStore] ⏸️ Fetch stopped (HeatMap points preserved)')
   }
 
   const updateGeoJsonSettings = (settings: Partial<typeof geoJsonSettings.value>): void => {
@@ -173,7 +183,7 @@ export const useGeoLocStore = defineStore('geoloc', () => {
     }
   }
 
-  // ✅ OPTIMALIZÁLT CLEANUP: 10s helyett (kevesebb overhead)
+  // ✅ GEOJSON CLEANUP - Csak GeoJSON adatokat tisztít
   const startGeoJsonCleanup = (): void => {
     if (geoJsonCleanupIntervalId !== null) return
 
@@ -189,9 +199,9 @@ export const useGeoLocStore = defineStore('geoloc', () => {
 
       const cleaned = before - geoJsonData.value.length
       if (cleaned > 0) {
-        console.log(`[Store] 🧹 Cleaned ${cleaned} expired GeoJSON points`)
+        console.log(`[GeoLocStore] 🧹 Cleaned ${cleaned} expired GeoJSON points`)
       }
-    }, 10000) // ✅ 10s helyett 5s-ból
+    }, 10000) // 10s
   }
 
   const stopGeoJsonCleanup = (): void => {
@@ -201,11 +211,16 @@ export const useGeoLocStore = defineStore('geoloc', () => {
     }
   }
 
-  // ✅ HEATMAP CLEANUP - 10s
+  // ✅ HEATMAP CLEANUP - PERZISZTENS MÓD (csak size limit!)
   const startHeatMapCleanup = (): void => {
     if (heatMapCleanupIntervalId !== null) return
 
-    console.log('[Store] 🧹 Starting HeatMap cleanup (every 10s)')
+    if (!heatMapSettings.value.enableTTLCleanup) {
+      console.log('[GeoLocStore] ℹ️ HeatMap TTL cleanup DISABLED (persistent mode)')
+      return
+    }
+
+    console.log('[GeoLocStore] 🧹 Starting HeatMap TTL cleanup')
 
     heatMapCleanupIntervalId = window.setInterval(() => {
       const now = Date.now()
@@ -213,53 +228,73 @@ export const useGeoLocStore = defineStore('geoloc', () => {
 
       const beforeCount = heatMapPoints.value.length
 
-      // ✅ TTL alapú cleanup
+      // ✅ TTL alapú cleanup (ha enabled)
       let cleaned = heatMapPoints.value.filter(point => {
         const age = now - point.lastUpdate
         return age <= ttl
       })
 
-      // ✅ Size limit ellenőrzés
-      if (cleaned.length > maxHeatMapSize.value) {
-        cleaned = cleaned.slice(-maxHeatMapSize.value)
+      // ✅ Size limit mindig él!
+      if (heatMapSettings.value.enableSizeLimit &&
+          cleaned.length > heatMapSettings.value.maxSize) {
+        cleaned = cleaned.slice(-heatMapSettings.value.maxSize)
       }
 
       heatMapPoints.value = cleaned
 
       const removedCount = beforeCount - heatMapPoints.value.length
       if (removedCount > 0) {
-        console.log(`[Store] 🧹 Cleaned ${removedCount} expired HeatMap points`)
+        console.log(`[GeoLocStore] 🧹 Cleaned ${removedCount} HeatMap points`)
       }
-    }, 10000) // ✅ 10s
+    }, 30000) // ✅ 30s (ritkábban fut)
   }
 
   const stopHeatMapCleanup = (): void => {
     if (heatMapCleanupIntervalId !== null) {
-      console.log('[Store] 🛑 Stopping HeatMap cleanup')
+      console.log('[GeoLocStore] 🛑 Stopping HeatMap cleanup')
       window.clearInterval(heatMapCleanupIntervalId)
       heatMapCleanupIntervalId = null
     }
   }
 
-  // ✅ OPTIMALIZÁLT: Batch add
+  // ✅ OPTIMALIZÁLT: Batch add - FRISS TIMESTAMP MINDIG!
   const addToHeatMap = (points: GeoJsonPoint[]): void => {
+    const now = Date.now()
+
     const newHeatPoints: HeatMapPoint[] = points.map(point => ({
       coordinate: point.coordinate,
-      lastUpdate: point.timestamp
+      lastUpdate: now  // ✅ Mindig friss timestamp! Így sosem öregszik el
     }))
 
     // ✅ Egyetlen merge
     let combined = [...heatMapPoints.value, ...newHeatPoints]
 
-    // ✅ Size limit azonnal
-    if (combined.length > maxHeatMapSize.value) {
-      combined = combined.slice(-maxHeatMapSize.value)
+    // ✅ Size limit azonnal (FIFO - legrégebbiek eldobása)
+    if (heatMapSettings.value.enableSizeLimit &&
+        combined.length > heatMapSettings.value.maxSize) {
+      const toRemove = combined.length - heatMapSettings.value.maxSize
+      combined = combined.slice(toRemove) // Legrégebbiek törlése
     }
 
     heatMapPoints.value = combined
+    console.log(`[GeoLocStore] 📍 HeatMap: +${newHeatPoints.length} new | Total: ${heatMapPoints.value.length}/${heatMapSettings.value.maxSize}`)
+  }
+
+  // ✅ MANUÁLIS CLEAR - User kontroll
+  const clearHeatMap = (): void => {
+    heatMapPoints.value = []
+    console.log('[GeoLocStore] 🧹 HeatMap manually cleared')
+  }
+
+  const clearAll = (): void => {
+    geoJsonData.value = []
+    heatMapPoints.value = []
+    seenIds.clear()
+    console.log('[GeoLocStore] 🧹 All data cleared')
   }
 
   return {
+    // GeoJSON
     geoJsonData,
     geoJsonSettings,
     isGeoJsonEnabled,
@@ -267,8 +302,14 @@ export const useGeoLocStore = defineStore('geoloc', () => {
     stopGeoJsonFetch,
     updateGeoJsonSettings,
     fetchGeoJsonData,
+
+    // HeatMap
     heatMapPoints,
-    maxHeatMapSize,
-    addToHeatMap
+    heatMapSettings,
+    addToHeatMap,
+    clearHeatMap,
+
+    // Utils
+    clearAll
   }
 })
