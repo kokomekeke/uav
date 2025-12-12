@@ -171,7 +171,7 @@ class PlotFrame(tkinter.Frame):
 
             # colorbar = self.fig_ref.colorbar(  # type: ignore
             #     self.magnitude_waterfall_graph.image, format=lambda x, _: f"{x:.0f}dB"
-            # )     #TODO:show colorbar but keep waterfall and spectrum graphs the same width
+            # )     #TODO:show colorbar but keep spectrum and spectrum graphs the same width
             self.magnitude_waterfall_graph[i].make_plot()
 
             self.magnitude_spectrum_plot.append(

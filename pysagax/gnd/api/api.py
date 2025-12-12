@@ -1,3 +1,4 @@
+import importlib
 import logging
 import json
 import time
@@ -347,6 +348,7 @@ INSTRUCTION_MAP = {
     proto_cmd.Instruction.CS_STOP: None,
     proto_cmd.Instruction.CS_RESTART: None,
     proto_cmd.Instruction.CS_PING: ("ping_data", str),
+    # ez inditja el a core serviceben azt h adjon ki adatot magából
     proto_cmd.Instruction.SOURCE_START: None,
     proto_cmd.Instruction.SOURCE_STOP: None,
     proto_cmd.Instruction.POSITION: ("position", int),
@@ -355,6 +357,7 @@ INSTRUCTION_MAP = {
     proto_cmd.Instruction.HEADING_START: None,
     proto_cmd.Instruction.HEADING_STOP: None,
     proto_cmd.Instruction.HEADING_RESTART: None,
+    # nem tudjuk, h van e használva
     proto_cmd.Instruction.STREAM_START: ("target", proto_cmd.StreamTarget),
     proto_cmd.Instruction.STREAM_STOP: ("target", proto_cmd.StreamTarget),
     proto_cmd.Instruction.SELF_TEST: None,
@@ -395,6 +398,74 @@ def command_list():
 
     return jsonify(result)
 
+@api.route("/command/descriptor/<string:command>", methods=["GET"])
+def get_descriptor(command):
+    # print("c", command)
+    def get_instruction_enum(cmd_str: str):
+        """Convert string instruction name to enum value."""
+        try:
+            # print("value: ", proto_cmd.Instruction.Value(cmd_str))
+            return proto_cmd.Instruction.Value(cmd_str)
+        except ValueError:
+            return None
+
+    def field_to_json(field):
+        # FIGYELEM: upb backend -> nincs type_name mező!
+        if field.type == field.TYPE_MESSAGE:
+            type_name = field.message_type.name
+        elif field.type == field.TYPE_ENUM:
+            type_name = field.enum_type.name
+        else:
+            type_name = field.type  # pl. TYPE_INT32
+
+        default = field.default_value
+        if isinstance(default, bytes):
+            try:
+                default = default.decode("utf-8")
+            except:
+                default = default.hex()
+
+        return {
+            "name": field.name,
+            "type": field.type,
+            "type_name": type_name,
+            "label": field.label,
+            "default": default
+        }
+
+    instr_enum = get_instruction_enum(command)
+    if instr_enum is None:
+        return jsonify({"error": "Invalid instruction"}), 400
+
+    mapping = INSTRUCTION_MAP.get(instr_enum)
+    if mapping is None:
+        return jsonify({
+            "instruction": command,
+            "parameters": None
+        })
+
+    param_name, param_type = mapping
+    # print("mapping", mapping)
+
+    # Sima Python típus (str, int)
+    if not hasattr(param_type, "DESCRIPTOR"):
+        return jsonify({
+            "instruction": command,
+            "parameter_name": param_name,
+            "type": param_type.__name__,
+            "fields": None,
+        })
+
+    # Protobuf message → descriptor mezők egyszerű JSON-é konvertálva
+    fields = [field_to_json(f) for f in param_type.DESCRIPTOR.fields]
+
+    return jsonify({
+        "instruction": command,
+        "parameter_name": param_name,
+        "type": param_type.__name__,
+        "fields": fields,
+    })
+
 
 @api.route("/uav/<int:id>/command/<string:instruction>/", methods=["POST"])
 def command(id, instruction):
@@ -425,8 +496,8 @@ def command(id, instruction):
     raw_data = request.get_json() if request.is_json else {}
 
     # ✅ DEBUG LOG #1
-    print(f"[API] Received command '{instruction}' for UAV #{id}")
-    print(f"[API] Raw data: {raw_data}")
+    # print(f"[API] Received command '{instruction}' for UAV #{id}")
+    # print(f"[API] Raw data: {raw_data}")
 
     cmd = proto_cmd.Command()
 
@@ -434,7 +505,7 @@ def command(id, instruction):
         parameter_name, parameter_type = mapping
         parameter = parse_param(parameter_type, raw_data)
         # ✅ DEBUG LOG #2
-        print(f"[API] Parsed parameter ({parameter_name}): {parameter}")
+        # print(f"[API] Parsed parameter ({parameter_name}): {parameter}")
         assign_cmd(cmd, parameter_name, parameter)
 
     cmd.instruction = instruction_enum_value
@@ -443,11 +514,11 @@ def command(id, instruction):
     cmd.id = cmd_id
     cmd_id += 1
     # ✅ DEBUG LOG #3
-    print(f"[API] Final command object: {cmd}")
+    # print(f"[API] Final command object: {cmd}")
     response = send_to_command_engine(target_id=id, cmd=cmd)
 
     # ✅ DEBUG LOG #4
-    print(f"[API] Response from command engine: {response}")
+    # print(f"[API] Response from command engine: {response}")
     return jsonify(MessageToDict(response))
 
 
@@ -495,7 +566,7 @@ def comint_detection_stream():
                 pb_type = raw.DESCRIPTOR.name
 
                 data = {"id": id_, pb_type: MessageToDict(raw)}
-                print('d')
+                # print(data)
 
                 if buffer_all_flag:
                     buffer.append(data)

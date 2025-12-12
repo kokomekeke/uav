@@ -90,6 +90,8 @@ type WorkerIncomingMessage =
 
 type WorkerOutgoingMessage =
   | { type: 'processedDetection'; detection: Detection; uavId: number; timestamp: number }
+  | { type: 'processedMeasurement'; measurement: MeasurementData; uavId: number; timestamp: number } // ✅ ÚJ!
+  | { type: 'processedTelemetry'; telemetry: any; uavId: number; timestamp: number } // ✅ ÚJ (opcionális)
   | { type: 'statsUpdated'; stats: WorkerStats }
   | { type: 'error'; message: string; uavId?: number }
   | { type: 'workerStarted'; timestamp: number; version: string }
@@ -155,7 +157,7 @@ for (let i = 0; i < DETECTION_POOL_SIZE; i++) {
 /**
  * ✅ OPTIMALIZÁLT: Koordináta számítás (jelenleg identity function)
  */
-function calculateCoordinate(
+function calculateCoordinate (
   azimuth: number,
   elevation: number,
   gpsLat: number,
@@ -172,7 +174,7 @@ function calculateCoordinate(
 /**
  * ✅ OPTIMALIZÁLT: Quaternion alapú heading (inline math)
  */
-function getHeadingFromQuaternion(
+function getHeadingFromQuaternion (
   q0: number,
   q1: number,
   q2: number,
@@ -194,7 +196,7 @@ function getHeadingFromQuaternion(
 /**
  * ✅ OPTIMALIZÁLT: Detection objektum pool-ból, mutáció
  */
-function getDetectionFromPool(
+function getDetectionFromPool (
   detectionItem: DetectionItem,
   gpsLat: number,
   gpsLon: number,
@@ -243,7 +245,7 @@ function getDetectionFromPool(
 /**
  * ✅ OPTIMALIZÁLT: Data type detektálás (inline)
  */
-function detectDataType(item: StreamPacket): DataTypeValue | null {
+function detectDataType (item: StreamPacket): DataTypeValue | null {
   if (item.type) {
     return item.type as DataTypeValue
   }
@@ -260,7 +262,7 @@ function detectDataType(item: StreamPacket): DataTypeValue | null {
 // MAIN PROCESSING FUNCTION - ✅ OPTIMALIZÁLT
 // ============================================================================
 
-function processRawDetection(detectionData: string): void {
+function processRawDetection (detectionData: string): void {
   const t0_processStart = performance.now()
   const currentTime = Date.now()
 
@@ -288,22 +290,59 @@ function processRawDetection(detectionData: string): void {
   }
 
   let processedCount = 0
+  let spectrumCount = 0
 
-  // ✅ Loop optimalizálás
   for (let i = 0; i < parsed.length; i++) {
     const item = parsed[i]
     const backendUavId = item.id
 
-    // ✅ Early exit ha nincs benne a UAV IDs listában
     if (!uavIds.includes(backendUavId)) continue
 
     const dataType = detectDataType(item)
+
+    // ✅ TELEMETRY kezelése
+    if (dataType === DataType.TELEMETRY && item.Telemetry) {
+      const telemetryMessage: WorkerOutgoingMessage = {
+        type: 'processedTelemetry',
+        telemetry: item.Telemetry,
+        uavId: backendUavId,
+        timestamp: currentTime
+      }
+      self.postMessage(telemetryMessage)
+      continue
+    }
+
+    // ✅ MEASUREMENT kezelése
     if (dataType !== DataType.MEASUREMENT) continue
 
     const measurement = item.Measurement
-    if (!measurement || !measurement.detection || measurement.detection.length === 0) continue
+    if (!measurement) continue
 
-    // ✅ Heading data parsing
+    // ✅ 1. SPEKTRUM ADATOK - array access!
+    if (measurement.data && Array.isArray(measurement.data) && measurement.data.length > 0) {
+      const dataItem = measurement.data[0] // ✅ Első elem
+
+      if (dataItem.dataType === 'FLOAT16') {
+        const measurementMessage: WorkerOutgoingMessage = {
+          type: 'processedMeasurement',
+          measurement, // ✅ Teljes measurement
+          uavId: backendUavId,
+          timestamp: measurement.time || currentTime
+        }
+
+        self.postMessage(measurementMessage)
+        spectrumCount++
+
+        // ✅ Ritkább logging
+        if (spectrumCount % 50 === 0) {
+          console.log(`[Worker] 📊 Sent ${spectrumCount} spectrum measurements`)
+        }
+      }
+    }
+
+    // ✅ 2. DETECTION feldolgozása
+    if (!measurement.detection || measurement.detection.length === 0) continue
+
     let headingData: HeadingData
     if (typeof measurement.headingData === 'string') {
       try {
@@ -315,9 +354,7 @@ function processRawDetection(detectionData: string): void {
       headingData = measurement.headingData || {}
     }
 
-    // ✅ GPS koordináták ellenőrzése
     if (headingData.gpsLat === undefined || headingData.gpsLon === undefined) {
-      // Silent skip - túl sok log lenne
       continue
     }
 
@@ -325,9 +362,8 @@ function processRawDetection(detectionData: string): void {
     const gpsLon = headingData.gpsLon
     const altitude = headingData.altitude ?? 100.0
 
-    // ✅ Quaternion
     const quaternionArray = measurement.quaternion || []
-    let q0 = 1, q1 = 0, q2 = 0, q3 = 0
+    let q0 = 1; let q1 = 0; let q2 = 0; let q3 = 0
 
     if (Array.isArray(quaternionArray) && quaternionArray.length === 4) {
       [q0, q1, q2, q3] = quaternionArray
@@ -335,22 +371,13 @@ function processRawDetection(detectionData: string): void {
 
     const quaternion: Quaternion = { q0, q1, q2, q3 }
     const heading = getHeadingFromQuaternion(q0, q1, q2, q3)
-
     const timestamp = performance.now()
 
-    // ✅ Latency ellenőrzés (csak ha túl nagy)
-    const processingLatency = timestamp - t0_processStart
-    if (processingLatency > maxLatencyMs) {
-      console.warn(`[Worker] ⚠️ Processing too slow: ${processingLatency.toFixed(2)}ms`)
-    }
-
-    // ✅ Detection-ok feldolgozása
     const detections = measurement.detection
     for (let j = 0; j < detections.length; j++) {
       const detectionItem = detections[j]
 
       try {
-        // ✅ POOL-ból vesszük a detection objektumot (nem új allokáció!)
         const detection = getDetectionFromPool(
           detectionItem,
           gpsLat,
@@ -365,7 +392,6 @@ function processRawDetection(detectionData: string): void {
         stats.totalProcessed++
         processedCount++
 
-        // ✅ Objektum újrahasználás - shallow copy az értékeknek
         const message: WorkerOutgoingMessage = {
           type: 'processedDetection',
           detection,
@@ -390,22 +416,11 @@ function processRawDetection(detectionData: string): void {
   stats.lastProcessingTime = processingTime
   stats.avgProcessingTime = (stats.avgProcessingTime * 0.9) + (processingTime * 0.1)
 
-  // ✅ Ritkább logging (csak minden 100. esetben)
   if (processedCount > 0 && stats.totalProcessed % 100 === 0) {
     console.log(
-      `[Worker] ✅ Processed ${stats.totalProcessed} total detections | ` +
-      `Last batch: ${processedCount} in ${processingTime.toFixed(2)}ms ` +
-      `(avg: ${stats.avgProcessingTime.toFixed(2)}ms)`
+      `[Worker] ✅ Processed ${stats.totalProcessed} detections + ${spectrumCount} spectrum | ` +
+      `Last batch in ${processingTime.toFixed(2)}ms`
     )
-  }
-
-  // ✅ Stats ritkábban (csak minden 100. processnél)
-  if (stats.totalProcessed % 100 === 0) {
-    const statsMessage: WorkerOutgoingMessage = {
-      type: 'statsUpdated',
-      stats: { ...stats }
-    }
-    self.postMessage(statsMessage)
   }
 }
 

@@ -124,7 +124,7 @@ class MeasurementProcessor(Loop):
         self._logger.trace(
             f"Measurement packet delay: {time.time()-packet.time.seconds-packet.time.nanos/1e9}"
         )
-        print('MEASUREMENT: ', packet)
+        # print('MEASUREMENT: ', packet)
         for det in packet.detection:
             new_meas_entity = ComIntDetectionEntity()
             new_meas_entity.uav_id = uav_entity.uav_id

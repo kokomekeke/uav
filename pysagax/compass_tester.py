@@ -44,7 +44,7 @@ parser.add_argument(
     metavar="N",
     type=int,
     default=1000,
-    help="waterfall size (set if experiencing performance issues)",
+    help="spectrum size (set if experiencing performance issues)",
 )
 parser.add_argument(
     "--fps",
@@ -106,7 +106,7 @@ class DisplayThread(threading.Thread):
         self.params = GraphParameters()
         self.params.waterfall_size = args.wf
         """
-        Amount of spectrum lines to be displayed on the waterfall diagram.
+        Amount of spectrum lines to be displayed on the spectrum diagram.
         """
 
         self.fig_ref: Optional[pyplot.Figure] = None
@@ -146,37 +146,37 @@ class DisplayThread(threading.Thread):
 
         self.waterfall_plot: Optional[object] = None
         """
-        Matplotlib plot (axes) object for the waterfall plot
+        Matplotlib plot (axes) object for the spectrum plot
         """
 
         self.waterfall_magneto: Optional[WaterfallAngleGraph] = None
         """
-        Matplotlib image object for the compass sensor waterfall
+        Matplotlib image object for the compass sensor spectrum
         """
 
         self.waterfall_compass: Optional[WaterfallAngleGraph] = None
         """
-        Matplotlib image object for the compass sensor waterfall
+        Matplotlib image object for the compass sensor spectrum
         """
 
         self.compass_plot: Optional[object] = None
         """
-        Matplotlib plot (axes) object for the waterfall plot
+        Matplotlib plot (axes) object for the spectrum plot
         """
 
         self.compass_graph: Optional[CompassGraph] = None
         """
-        Matplotlib image object for the compass sensor waterfall
+        Matplotlib image object for the compass sensor spectrum
         """
 
         self.compass_heading_graph: Optional[CompassGraph] = None
         """
-        Matplotlib image object for the compass sensor waterfall
+        Matplotlib image object for the compass sensor spectrum
         """
 
         self.compass_magneto_graph: Optional[CompassGraph] = None
         """
-        Matplotlib image object for the compass sensor waterfall
+        Matplotlib image object for the compass sensor spectrum
         """
 
         self.animation: Optional[matplotlib.animation.FuncAnimation] = None

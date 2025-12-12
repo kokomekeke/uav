@@ -38,15 +38,12 @@ const packageVer = '0'
 const gitHash = '0'
 const isMenuOpen = ref(false)
 
-// useDark inicializálása
 const isDark = useDark()
 
-// Toggle függvény
 const handleToggleDark = () => {
   isDark.value = !isDark.value
 }
 
-// Opcionális: dark mode változás figyelése
 watch(isDark, (newVal) => {
   console.log('Dark mode:', newVal)
 })

@@ -63,14 +63,8 @@ class UAVConnection(mp.Process):
         self.uav_db_id = uav_entity.uav_id
         self.uav_label = uav_entity.uav_label
         self.streaming_level = streaming_level
-        #
-        #
-        #
-        # test stuff
-        # self.streaming_level = proto_cmd.StreamTarget.SPECTRUM
-        #
-        #
-        #
+        self.stream_params = None  # itt tároljuk a legutolsó STREAM_START teljes target configját
+        self.streaming_level = proto_cmd.StreamTarget.SPECTRUM
         self._to_measurement_processor_q = to_measurement_processor_q
         self._to_stream_q = to_stream_q
         self._command_q = command_q
@@ -95,24 +89,38 @@ class UAVConnection(mp.Process):
         self.reconnect_timeout = 10.0  # seconds
 
     def send_command(
-        self, cmd: proto_cmd.Command, timeout: Optional[int] = 2
+            self, cmd: proto_cmd.Command, timeout: Optional[int] = 2
     ) -> Optional[proto_cmd.Response]:
-        # TODO: always reopen connection?
-        # TODO: ideal timeout
-        self._logger.trace(f"sending command: {cmd}")
-        cmd_zmq = REQ(
-            address_server=self.uav_address, port_server=self.uav_command_port
-        )
-        cmd_zmq.connect()
-        resp = proto_cmd.Response()
-        resp_raw = cmd_zmq.send(cmd.SerializeToString(), timeout=timeout * 1000)
-        cmd_zmq.disconnect()
-        if resp_raw is None:
-            self._logger.warning(f"No response for command: {cmd}")
+        self._logger.warning(f"[1] Starting send_command for: {cmd.instruction}")
+
+        try:
+            cmd_zmq = REQ(
+                address_server=self.uav_address, port_server=self.uav_command_port
+            )
+            self._logger.warning(f"[2] REQ created, connecting...")
+
+            cmd_zmq.connect()
+            self._logger.warning(f"[3] Connected, sending command...")
+
+            resp = proto_cmd.Response()
+            resp_raw = cmd_zmq.send(cmd.SerializeToString(), timeout=timeout * 1000)
+
+            self._logger.warning(
+                f"[4] Command sent, resp_raw={'None' if resp_raw is None else f'{len(resp_raw)} bytes'}")
+
+            cmd_zmq.disconnect()
+
+            if resp_raw is None:
+                self._logger.warning(f"[5] No response for command: {cmd}")
+                return None
+
+            resp.ParseFromString(resp_raw)
+            self._logger.warning(f"[6] Response parsed: {resp}")
+            return resp
+
+        except Exception as e:
+            self._logger.exception(f"[ERROR] Exception in send_command: {e}")
             return None
-        resp.ParseFromString(resp_raw)
-        self._logger.trace(f"received response: {resp}")
-        return resp
 
     def query_sysinfo(self) -> None:
 
@@ -208,7 +216,7 @@ class UAVConnection(mp.Process):
                         pass  # do stuff
 
                 except Exception as e:
-                    print(f"Control message error in sensor {self.sensor_id}: {e}")
+                    self._logger.exception(f"Control message error: {e}")
 
     def _handle_commands(self):
         """Thread to handle incoming commands from the command queue"""
@@ -216,25 +224,36 @@ class UAVConnection(mp.Process):
             try:
                 command = self._command_q.get(timeout=0.2)
 
-                # ✅ STREAM_START/STOP parancsok kiegészítése hiányzó mezőkkel
                 if command.instruction in (proto_cmd.STREAM_START, proto_cmd.STREAM_STOP):
-                    # Az UAV-nak vissza kell küldenie a streamet a GND címére/portjára
                     command.target.address = self.own_address
                     command.target.port = self.own_stream_udp_port
 
-                    # Timeout-ok hozzáadása STREAM_START esetén
                     if command.instruction == proto_cmd.STREAM_START:
                         if not command.target.heartbeat_timeout:
                             command.target.heartbeat_timeout = 1
                         if not command.target.telemetry_timeout:
                             command.target.telemetry_timeout = 1
 
-                    print(f"[UAVConnection#{self.uav_db_id}] Augmented STREAM command:")
-                    print(f"  level: {proto_cmd.StreamTarget.StreamLevel.Name(command.target.level)}")
-                    print(f"  address: {command.target.address}")
-                    print(f"  port: {command.target.port}")
+                # ➕ KÜLDÉS ELŐTT LOG
+                self._logger.warning(f"Sending command to UAV: {command}")
 
                 response = self.send_command(command)
+
+                # ➕ VÁLASZ ELLENŐRZÉSE
+                self._logger.warning(f"Response from UAV: {response}")
+
+                if response and response.HasField("error"):
+                    self._logger.error(f"UAV returned error: {response.error}")
+                elif response and response.HasField("success"):
+                    if response.success:
+                        self._logger.info(f"Command executed successfully!")
+                        # CSAK SIKERES VÁLASZ UTÁN VÁLTOZTATD:
+                        if command.instruction == proto_cmd.STREAM_START:
+                            self.streaming_level = proto_cmd.StreamTarget.StreamLevel.Name(command.target.level)
+                            self._logger.info(f"Streaming level changed: {self.streaming_level}")
+                    else:
+                        self._logger.error(f"UAV returned success=False!")
+
                 self._response_q.put(response)
             except queue.Empty:
                 continue

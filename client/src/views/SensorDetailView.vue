@@ -3,9 +3,10 @@ import { ref } from 'vue'
 import ConfigurationView from '@/views/config/ConfigurationView.vue'
 import MapComponent from '@/components/map/MapComponent.vue'
 import HeatmapComponent from '@/components/map/HeatMapComponent.vue'
+import SpectrumWaterfall from '@/components/spectrum/SpectrumWaterfall.vue'
 
-// View mode: 'map' | 'heatmap' | 'split'
-const viewMode = ref<'map' | 'heatmap' | 'split'>('map')
+// View mode: 'map' | 'heatmap' | 'split' | 'spectrum'
+const viewMode = ref<'map' | 'heatmap' | 'split' | 'spectrum'>('map')
 
 // Tab selection helper
 const isActiveTab = (mode: string) => viewMode.value === mode
@@ -28,12 +29,13 @@ const isActiveTab = (mode: string) => viewMode.value === mode
         </div>
       </button>
     </router-link>
+
     <!-- Left panel: Configuration -->
     <div class="flex-1 bg-sgx-accent-light-blue/30 dark:bg-slate-800 rounded-2xl shadow-lg p-4 border border-slate-100 dark:border-slate-700 overflow-auto">
       <configuration-view class="w-full"></configuration-view>
     </div>
 
-    <!-- Right panel: Map/Heatmap with tabs -->
+    <!-- Right panel: Map/Heatmap/Spectrum with tabs -->
     <div class="flex-[2] bg-slate-400/20 dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-700 overflow-hidden flex flex-col">
 
       <!-- Tab Header -->
@@ -64,6 +66,19 @@ const isActiveTab = (mode: string) => viewMode.value === mode
           🔥 Heatmap View
         </button>
 
+        <!-- Spectrum Tab -->
+        <button
+          @click="viewMode = 'spectrum'"
+          :class="[
+            'px-4 py-2 rounded-lg font-medium transition-all duration-200',
+            isActiveTab('spectrum')
+              ? 'bg-cyan-600 text-white shadow-lg'
+              : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+          ]"
+        >
+          📊 Spectrum View
+        </button>
+
         <!-- Split View Tab -->
         <button
           @click="viewMode = 'split'"
@@ -82,7 +97,12 @@ const isActiveTab = (mode: string) => viewMode.value === mode
 
         <!-- Info Badge -->
         <div class="text-sm text-gray-400">
-          {{ viewMode === 'map' ? 'Real-time Tracking' : viewMode === 'heatmap' ? 'Density Analysis' : 'Dual View' }}
+          {{
+            viewMode === 'map' ? 'Real-time Tracking' :
+            viewMode === 'heatmap' ? 'Density Analysis' :
+            viewMode === 'spectrum' ? 'Spectrum Analysis' :
+            'Dual View'
+          }}
         </div>
       </div>
 
@@ -101,7 +121,14 @@ const isActiveTab = (mode: string) => viewMode.value === mode
           <heatmap-component class="w-full h-full"></heatmap-component>
         </div>
 
-        <!-- Split View (Both) -->
+        <!-- Spectrum View (Single) -->
+        <div v-else-if="viewMode === 'spectrum'" class="w-full h-full p-4">
+          <div class="w-full h-full rounded-xl overflow-hidden">
+            <spectrum-waterfall class="w-full h-full"></spectrum-waterfall>
+          </div>
+        </div>
+
+        <!-- Split View (Map + Heatmap) -->
         <div v-else-if="viewMode === 'split'" class="w-full h-full flex flex-col gap-4 p-4">
           <!-- Top: Map -->
           <div class="flex-1 rounded-xl overflow-hidden border border-slate-700">
@@ -130,6 +157,7 @@ const isActiveTab = (mode: string) => viewMode.value === mode
 .fade-leave-to {
   opacity: 0;
 }
+
 .log-lines {
   display: flex;
   flex-direction: column;
@@ -143,5 +171,4 @@ const isActiveTab = (mode: string) => viewMode.value === mode
   background-color: #a6ecfa;
   border-radius: 3px;
 }
-
 </style>

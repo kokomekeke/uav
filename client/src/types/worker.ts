@@ -124,13 +124,16 @@ export type WorkerIncomingMessage =
   | { type: 'getStats' }
   | { type: 'terminate' }
 
+// types/worker.ts (ha külön fájlban van)
+
 export type WorkerOutgoingMessage =
-  | ProcessedDetectionMessage
-  | StatsUpdatedMessage
-  | ErrorMessage
-  | WorkerStartedMessage
-  | MemoryStatsMessage
+  | { type: 'processedDetection'; detection: Detection; uavId: number; timestamp: number }
+  | { type: 'processedMeasurement'; measurement: any; uavId: number; timestamp: number } // ✅ ÚJ
+  | { type: 'processedTelemetry'; telemetry: any; uavId: number; timestamp: number } // ✅ ÚJ
+  | { type: 'statsUpdated'; stats: WorkerStats }
+  | { type: 'error'; message: string; uavId?: number }
+  | { type: 'workerStarted'; timestamp: number; version: string }
   | { type: 'uavIdsUpdated'; uavIds: number[] }
-  | { type: 'settingsUpdated'; settings: { samplingRate: number } }
+  | { type: 'settingsUpdated'; settings: { samplingRate: number; maxLatencyMs: number } }
   | { type: 'terminated' }
-  | { type: 'statsUpdated' }
+  | { type: 'memoryStats'; memory: { usedJSHeapSize: number; totalJSHeapSize: number; limit: number } }

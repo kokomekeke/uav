@@ -10,12 +10,12 @@ const show = ref(false)
 <template>
   <div class="dropdown relative">
     <div
-      class="cursor-pointer h-10 bg-white flex border border-gray-200 rounded items-center p-3"
+      class="cursor-pointer h-10 bg-slate-500 flex border border-gray-600 rounded items-center p-3"
       v-html="title"
       @click="show = !show"
     ></div>
     <div
-      class="absolute rounded shadow bg-white overflow-hidden peer-checked:flex flex-col w-full mt-1 border border-gray-200"
+      class="absolute rounded shadow bg-slate-500 overflow-hidden peer-checked:flex flex-col w-full mt-1 border border-gray-200"
       v-if="show"
     >
       <slot />

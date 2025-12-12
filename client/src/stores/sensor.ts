@@ -122,15 +122,37 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
+  // stores/sensor.ts
+
   const initializeWorker = (): void => {
     initWorker()
 
+    // ✅ Detection handler
     const cleanupProcessed = onWorkerMessage('processedDetection', (data: any) => {
       const { detection, uavId } = data
       addDetectionToSensor(uavId, detection)
     })
 
-    workerMessageCleanups.push(cleanupProcessed)
+    // ✅ Measurement handler (SPEKTRUM!)
+    const cleanupMeasurement = onWorkerMessage('processedMeasurement', (data: any) => {
+      const { measurement, uavId, timestamp } = data
+
+      // ✅ Teljes measurement-et adjuk hozzá (benne az array)
+      const measurementItem = {
+        Measurement: measurement,
+        timestamp: timestamp || Date.now()
+      }
+
+      addDetectionToSensor(uavId, measurementItem)
+    })
+
+    // ✅ Telemetry handler
+    const cleanupTelemetry = onWorkerMessage('processedTelemetry', (data: any) => {
+      const { telemetry, uavId } = data
+      // console.log('📡 Telemetry from worker:', { uavId, telemetry })
+    })
+
+    workerMessageCleanups.push(cleanupProcessed, cleanupMeasurement, cleanupTelemetry)
     resumeCleanup()
   }
 
@@ -151,6 +173,7 @@ export const useSensorStore = defineStore('sensor', () => {
       if (!event.data) return
       if (!isWorkerReady()) initializeWorker()
       const data = event.data
+      // console.log('datae:: ', data)
       logStore.logs.push(data)
       handleStreamData(data)
     }

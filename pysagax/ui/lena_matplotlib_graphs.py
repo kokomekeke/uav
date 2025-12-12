@@ -38,7 +38,7 @@ class GraphParameters:
 
         self.waterfall_size: int = 0
         """
-        Amount of spectrum lines to be displayed on the waterfall diagram.
+        Amount of spectrum lines to be displayed on the spectrum diagram.
         """
 
 
@@ -137,7 +137,7 @@ class WaterfallMagnitudeGraph(GraphImage):
         self.params = params
         self.waterfall = np.ones([self.params.waterfall_size, self.params.bin_count])
         """
-        Magnitude waterfall data (numpy matrix)
+        Magnitude spectrum data (numpy matrix)
         """
         self.decimated_waterfall = np.ones(
             [self.params.waterfall_size, self.params.bin_count]
@@ -159,7 +159,7 @@ class WaterfallMagnitudeGraph(GraphImage):
         self.decimate = (self.new_lim[1] - self.new_lim[0]) // self.max_points
         if self.decimate < 1:
             self.decimate = 1
-        # self.decimated_waterfall = self.waterfall[:, self.new_lim[0]:self.new_lim[1]:self.decimate]
+        # self.decimated_waterfall = self.spectrum[:, self.new_lim[0]:self.new_lim[1]:self.decimate]
         self.decimated_waterfall = self.waterfall[:, :: self.decimate]
 
     def bin_freq_formatter(self, x: float, pos: Any = None) -> str:
