@@ -3,7 +3,7 @@
     <CenteredModal :show="showModal" @close="closeModal">
       <template #header>
         <div class="flex items-center space-x-3">
-          <img src="/sgxlogo.jpg" class="w-12 h-12 border-2 rounded-lg border-cyan-700 dark:border-cyan-400 " alt="sgx-logo"/>
+          <img src="/img.png" class="w-12 h-12 border-2 rounded-lg border-cyan-700 dark:border-cyan-400 " alt="sgx-logo"/>
           <h3 class="text-xl font-bold text-cyan-900 dark:text-cyan-400 tracking-widest">Connect to Ground Server</h3>
         </div>
       </template>
@@ -13,7 +13,7 @@
           <div>
             <label class="block text-sm font-semibold mb-2 text-cyan-900 dark:text-cyan-400">Enter IP Address and Port:</label>
             <input
-              v-model="ipPort"
+              v-model="ipPortModel"
               placeholder="http://192.168.0.82:5000"
               class="w-full p-2 border border-slate-600 rounded focus:ring-2 focus:ring-cyan-600 focus:border-cyan-600 bg-gray-50 text-gray-700
               dark:focus:ring-cyan-500 dark:focus:border-cyan-500 dark:bg-slate-800 dark:text-gray-200"
@@ -178,6 +178,7 @@ import { useSensorStore } from '@/stores/sensor'
 const connectionStore = useConnectionStore()
 const {
   ipPort,
+  ipPortModel,
   connectionMessage,
   isReconnecting,
   reconnectAttempts,

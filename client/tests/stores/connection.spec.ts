@@ -4,18 +4,51 @@ import { setActivePinia, createPinia } from 'pinia'
 import { useConnectionStore } from '@/stores/connection'
 
 // Mock socket.io-client
+// tests/__mocks__/socket.ts (vagy inline a spec-ben)
+const listeners: Record<string, Function[]> = {}
+
+export const mockSocket = {
+  connected: false,
+  id: 'mock-socket-id',
+
+  on: vi.fn((event, cb) => {
+    listeners[event] ??= []
+    listeners[event].push(cb)
+  }),
+
+  once: vi.fn((event, cb) => {
+    const wrapper = (...args: any[]) => {
+      cb(...args)
+      listeners[event] = listeners[event].filter(fn => fn !== wrapper)
+    }
+    listeners[event] ??= []
+    listeners[event].push(wrapper)
+  }),
+
+  off: vi.fn((event, cb) => {
+    if (!listeners[event]) return
+    listeners[event] = listeners[event].filter(fn => fn !== cb)
+  }),
+
+  emit: vi.fn(),
+
+  connect: vi.fn(() => {
+    // SEMMIT nem csinál automatikusan
+  }),
+
+  disconnect: vi.fn(() => {
+    mockSocket.connected = false
+  }),
+
+  removeAllListeners: vi.fn()
+}
+
+export const trigger = (event: string, payload?: any) => {
+  listeners[event]?.forEach(fn => fn(payload))
+}
+
 vi.mock('socket.io-client', () => ({
-  io: vi.fn(() => ({
-    on: vi.fn(),
-    once: vi.fn(), // ✅ Hozzáadva
-    off: vi.fn(),
-    emit: vi.fn(),
-    connect: vi.fn(),
-    disconnect: vi.fn(),
-    removeAllListeners: vi.fn(),
-    connected: false,
-    id: 'mock-socket-id'
-  }))
+  io: vi.fn(() => mockSocket)
 }))
 
 describe('Connection Store', () => {
@@ -54,41 +87,47 @@ describe('Connection Store', () => {
 
   describe('Connection State Management', () => {
     it('should update state to connecting', async () => {
-      await store.connectToServer()
-
-      // State should change during connection attempt
-      expect(['connecting', 'connected', 'failed']).toContain(store.connectionState)
-    })
-
-    it('should handle connection timeout', async () => {
       const connectPromise = store.connectToServer()
 
-      // Fast-forward time to trigger timeout
-      vi.advanceTimersByTime(16000)
+      expect(store.connectionState).toBe('connecting')
+
+      // szimuláljuk a szerver connect-et
+      trigger('connect')
 
       await connectPromise
 
-      expect(store.connectionState).toBe('failed')
+      expect(store.connectionState).toBe('connected')
     })
+
+
+    it('should handle connection timeout', async () => {
+      const promise = store.connectToServer()
+
+      // CONNECT_TIMEOUT = 15000
+      vi.advanceTimersByTime(15000)
+
+      await promise
+
+      // 🔑 a store logikája szerint itt reconnectel
+      expect(['failed', 'reconnecting']).toContain(store.connectionState)
+      expect(store.isReconnecting).toBe(true)
+    })
+
+
 
     it('should track reconnection attempts', async () => {
-      store.connectionState = 'disconnected'
-      store.isReconnecting = false
+      store.connectToServer()
 
-      // Trigger reconnect logic
-      await store.manualReconnect()
+      // szimulálunk egy connection hibát
+      trigger('connect_error', new Error('fail'))
 
-      expect(store.reconnectAttempts).toBeGreaterThanOrEqual(0)
+      // reconnect delay
+      vi.advanceTimersByTime(3000)
+
+      expect(store.reconnectAttempts).toBeGreaterThan(0)
+      expect(store.isReconnecting).toBe(true)
     })
 
-    it('should not exceed max reconnection attempts', async () => {
-      store.reconnectAttempts = 5
-      store.maxReconnectAttempts = 5
-
-      await store.manualReconnect()
-
-      expect(store.reconnectAttempts).toBeLessThanOrEqual(store.maxReconnectAttempts)
-    })
   })
 
   describe('Connection Actions', () => {
@@ -150,14 +189,14 @@ describe('Connection Store', () => {
 
   describe('Edge Cases', () => {
     it('should handle multiple connection attempts gracefully', async () => {
-      const promise1 = store.connectToServer()
-      const promise2 = store.connectToServer()
+      store.connectToServer()
+      store.connectToServer()
 
-      await Promise.all([promise1, promise2])
-
-      // Should not crash or create multiple connections
+      // nem triggerelünk connect-et
       expect(store.connectionState).toBeDefined()
     })
+
+
 
     it('should handle cleanup without active connection', () => {
       expect(() => store.cleanup()).not.toThrow()

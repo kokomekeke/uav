@@ -1,11 +1,32 @@
 import { vi } from 'vitest'
 import { config } from '@vue/test-utils'
 
-// Mock canvas API (SpectrumWaterfall-hoz)
+// ----------------------------------------------------------------------------
+// 🧠 URL API – NEM felülírjuk, csak kiegészítjük
+// ----------------------------------------------------------------------------
+
+if (typeof URL !== 'undefined') {
+  if (!URL.createObjectURL) {
+    URL.createObjectURL = vi.fn(() => 'blob:mock-url')
+  } else {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url')
+  }
+
+  if (!URL.revokeObjectURL) {
+    URL.revokeObjectURL = vi.fn()
+  } else {
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+  }
+}
+
+// ----------------------------------------------------------------------------
+// 🎨 Canvas mock (SpectrumWaterfall-hoz)
+// ----------------------------------------------------------------------------
+
 HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
   fillRect: vi.fn(),
   clearRect: vi.fn(),
-  getImageData: vi.fn(),
+  getImageData: vi.fn(() => ({ data: [] })),
   putImageData: vi.fn(),
   createImageData: vi.fn(),
   setTransform: vi.fn(),
@@ -29,7 +50,10 @@ HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
   clip: vi.fn()
 })) as any
 
-// Global test utilities
+// ----------------------------------------------------------------------------
+// 🌍 Global Vue test utils
+// ----------------------------------------------------------------------------
+
 config.global.stubs = {
   teleport: true
 }

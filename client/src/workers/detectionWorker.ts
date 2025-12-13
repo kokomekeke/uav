@@ -1,4 +1,4 @@
-// workers/detectionWorker.ts - OPTIMALIZÁLT VERZIÓ
+// workers/useDetectionWorker.ts - OPTIMALIZÁLT VERZIÓ
 // ============================================================================
 // TYPES
 // ============================================================================

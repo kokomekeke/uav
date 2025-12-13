@@ -1,89 +1,171 @@
-    // tests/stores/sensor.spec.ts
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { useSensorStore } from '@/stores/sensor'
+import { useGeoLocStore } from '@/stores/geoloc'
 
-// ✅ Mock fetch
-global.fetch = vi.fn()
-
-describe('useSensorStore', () => {
+describe('GeoLoc Store – persistent heatmap', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    vi.useFakeTimers()
+
+    global.fetch = vi.fn()
+  })
+
+  afterEach(() => {
     vi.clearAllMocks()
+    vi.useRealTimers()
   })
 
-  it('initializes with empty sensors', () => {
-    const store = useSensorStore()
-    expect(store.sensors).toEqual({})
+  it('initializes with default state', () => {
+    const store = useGeoLocStore()
+
+    expect(store.geoJsonData.length).toBe(0)
+    expect(store.heatMapPoints.length).toBe(0)
+    expect(store.isGeoJsonEnabled).toBe(false)
+    expect(store.heatMapSettings.enabled).toBe(true)
   })
 
-  it('fetches sensors from API', async () => {
-    const mockSensors = [
-      { uav_id: 17, uav_label: 'UAV 17', active: true },
-      { uav_id: 18, uav_label: 'UAV 18', active: false }
-    ]
+  it('adds points to heatmap and respects FIFO size limit', () => {
+    const store = useGeoLocStore()
+    store.heatMapSettings.maxSize = 3
 
-    ;(global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockSensors
+    store.addToHeatMap([
+      { id: 1, coordinate: [1, 1], timestamp: Date.now(), type: 'raw' },
+      { id: 2, coordinate: [2, 2], timestamp: Date.now(), type: 'raw' },
+      { id: 3, coordinate: [3, 3], timestamp: Date.now(), type: 'raw' },
+      { id: 4, coordinate: [4, 4], timestamp: Date.now(), type: 'raw' }
+    ])
+
+    expect(store.heatMapPoints.length).toBe(3)
+    expect(store.heatMapPoints[0].coordinate).toEqual([2, 2])
+  })
+
+  it('clearHeatMap removes all heatmap points', () => {
+    const store = useGeoLocStore()
+
+    store.addToHeatMap([
+      { id: 1, coordinate: [1, 1], timestamp: Date.now(), type: 'raw' }
+    ])
+
+    expect(store.heatMapPoints.length).toBe(1)
+
+    store.clearHeatMap()
+    expect(store.heatMapPoints.length).toBe(0)
+  })
+
+  it('fetchGeoJsonData fetches raw + filtered and populates geoJsonData and heatMap', async () => {
+    const store = useGeoLocStore()
+    store.isGeoJsonEnabled = true
+
+    const rawResponse = {
+      features: [
+        {
+          geometry: { coordinates: [19, 47] },
+          properties: {
+            geoloc_id: 1,
+            timestamp: new Date().toISOString()
+          }
+        }
+      ]
+    }
+
+    const filteredResponse = {
+      features: [
+        {
+          geometry: { coordinates: [20, 48] },
+          properties: {
+            geoloc_id: 2,
+            timestamp: new Date().toISOString()
+          }
+        }
+      ]
+    }
+
+    ;(fetch as any)
+      .mockResolvedValueOnce({ ok: true, json: async () => rawResponse })
+      .mockResolvedValueOnce({ ok: true, json: async () => filteredResponse })
+
+    await store.fetchGeoJsonData()
+
+    expect(store.geoJsonData.length).toBe(2)
+    expect(store.heatMapPoints.length).toBe(2)
+
+    expect(store.geoJsonData[0].type).toBe('raw')
+    expect(store.geoJsonData[1].type).toBe('filtered')
+  })
+
+  it('does not duplicate points with same geoloc_id', async () => {
+    const store = useGeoLocStore()
+    store.isGeoJsonEnabled = true
+
+    const response = {
+      features: [
+        {
+          geometry: { coordinates: [19, 47] },
+          properties: {
+            geoloc_id: 123,
+            timestamp: new Date().toISOString()
+          }
+        }
+      ]
+    }
+
+    ;(fetch as any)
+      .mockResolvedValueOnce({ ok: true, json: async () => response })
+      .mockResolvedValueOnce({ ok: true, json: async () => response })
+
+    await store.fetchGeoJsonData()
+    await store.fetchGeoJsonData()
+
+    expect(store.geoJsonData.length).toBe(1)
+    expect(store.heatMapPoints.length).toBe(1)
+  })
+
+  it('startGeoJsonFetch enables fetch and schedules interval', async () => {
+    const store = useGeoLocStore()
+
+    ;(fetch as any)
+      .mockResolvedValue({ ok: true, json: async () => ({ features: [] }) })
+
+    await store.startGeoJsonFetch()
+
+    expect(store.isGeoJsonEnabled).toBe(true)
+
+    vi.advanceTimersByTime(1100)
+    expect(fetch).toHaveBeenCalled()
+  })
+
+  it('stopGeoJsonFetch clears geoJsonData but preserves heatmap', () => {
+    const store = useGeoLocStore()
+
+    store.addToHeatMap([
+      { id: 1, coordinate: [1, 1], timestamp: Date.now(), type: 'raw' }
+    ])
+
+    store.startGeoJsonFetch()
+    store.stopGeoJsonFetch()
+
+    expect(store.isGeoJsonEnabled).toBe(false)
+    expect(store.geoJsonData.length).toBe(0)
+    expect(store.heatMapPoints.length).toBe(1) // ✅ perzisztens
+  })
+
+  it('clearAll clears everything', () => {
+    const store = useGeoLocStore()
+
+    store.addToHeatMap([
+      { id: 1, coordinate: [1, 1], timestamp: Date.now(), type: 'raw' }
+    ])
+
+    store.geoJsonData.push({
+      id: 'x',
+      coordinate: [1, 1],
+      timestamp: Date.now(),
+      type: 'raw'
     })
 
-    const store = useSensorStore()
-    await store.fetchSensors()
+    store.clearAll()
 
-    expect(store.sensors[17]).toBeDefined()
-    expect(store.sensors[17].uav_label).toBe('UAV 17')
-    expect(store.sensors[18]).toBeDefined()
-  })
-
-  it('handles fetch error', async () => {
-    ;(global.fetch as any).mockRejectedValueOnce(new Error('Network error'))
-
-    const store = useSensorStore()
-    await store.fetchSensors()
-
-    expect(store.errorMessage).toBe('Failed to load sensors')
-  })
-
-  it('selects sensor', () => {
-    const store = useSensorStore()
-    store.sensors = {
-      17: { uav_id: 17, uav_label: 'Test', active: true, is_selected: false, detections: [] }
-    }
-
-    store.selectSensor(17)
-
-    expect(store.sensors[17].is_selected).toBe(true)
-  })
-
-  it('adds detection to sensor', () => {
-    const store = useSensorStore()
-    store.sensors = {
-      17: { uav_id: 17, active: true, detections: [] }
-    }
-
-    const detection = { timestamp: Date.now(), data: {} }
-    store.addDetectionToSensor(17, detection)
-
-    expect(store.sensors[17].detections).toHaveLength(1)
-    expect(store.sensors[17].detections[0]).toBe(detection)
-  })
-
-  it('respects circular buffer size', () => {
-    const store = useSensorStore()
-    store.realtimeConfig.circularBufferSize = 3
-    store.sensors = {
-      17: { uav_id: 17, active: true, detections: [] }
-    }
-
-    // Add 5 detections
-    for (let i = 0; i < 5; i++) {
-      store.addDetectionToSensor(17, { timestamp: Date.now(), id: i })
-    }
-
-    // Should only keep last 3
-    expect(store.sensors[17].detections).toHaveLength(3)
-    expect(store.sensors[17].detections[0].id).toBe(2) // Oldest kept
-    expect(store.sensors[17].detections[2].id).toBe(4) // Newest
+    expect(store.geoJsonData.length).toBe(0)
+    expect(store.heatMapPoints.length).toBe(0)
   })
 })

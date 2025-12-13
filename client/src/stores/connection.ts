@@ -1,36 +1,44 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { io } from 'socket.io-client'
+import { io, Socket } from 'socket.io-client'
 
 export const useConnectionStore = defineStore('connection', () => {
-  // State
-  const socket = ref(null)
+  const socket = ref<Socket | null>(null)
   const ipPort = ref('http://localhost:5000')
-  const connectionState = ref('disconnected') // disconnected, connecting, connected, failed, reconnecting
+  const connectionState = ref('disconnected')
   const connectionMessage = ref('')
   const isReconnecting = ref(false)
   const reconnectAttempts = ref(0)
   const maxReconnectAttempts = ref(5)
 
-  // Timeout és interval referenciák
+  const lastPingSent = ref<number | null>(null)
+  const lastPongReceived = ref<number | null>(null)
+  const currentPing = ref<number | null>(null)
+
   let connectTimeout = null
   let reconnectTimeout = null
   let pingInterval = null
   let connectionCheckInterval = null
 
-  // Constants
-  const CONNECT_TIMEOUT = 15000 // 15 másodperc
-  const RECONNECT_DELAY = 3000 // 3 másodperc
-  const PING_INTERVAL = 30000 // 30 másodperc
-  const CONNECTION_CHECK_INTERVAL = 5000 // 5 másodperc
+  const CONNECT_TIMEOUT = 15000
+  const RECONNECT_DELAY = 3000
+  const PING_INTERVAL = 30000
+  const CONNECTION_CHECK_INTERVAL = 5000
 
-  // Computed
   const isConnected = computed(() => connectionState.value === 'connected')
   const isConnecting = computed(() => connectionState.value === 'connecting')
   const isFailed = computed(() => connectionState.value === 'failed')
   const isDisconnected = computed(() => connectionState.value === 'disconnected')
 
-  // Utility functions
+  const pingMs = computed(() => currentPing.value)
+
+  const ipPortModel = computed({
+    get: () => ipPort.value,
+    set: (value) => {
+      ipPort.value = value.trim()
+    }
+  })
+
   const clearAllTimeouts = () => {
     if (connectTimeout) {
       clearTimeout(connectTimeout)
@@ -75,7 +83,7 @@ export const useConnectionStore = defineStore('connection', () => {
     if (!socket.value) return
 
     socket.value.on('connect', () => {
-      console.log('✅ Socket connected:', socket.value.id)
+      console.log('✅ Socket connected:', socket.value?.id)
       updateConnectionState('connected', '✅ Successfully connected to the server')
       reconnectAttempts.value = 0
       isReconnecting.value = false
@@ -89,7 +97,10 @@ export const useConnectionStore = defineStore('connection', () => {
       updateConnectionState('disconnected', `🛑 Connection lost: ${reason}`)
       clearAllTimeouts()
 
-      // Csak akkor próbálkozunk újra, ha nem szándékos disconnect volt
+      lastPingSent.value = null
+      lastPongReceived.value = null
+      currentPing.value = null
+
       if (reason !== 'io client disconnect' && reason !== 'transport close') {
         attemptReconnect()
       }
@@ -108,15 +119,14 @@ export const useConnectionStore = defineStore('connection', () => {
       attemptReconnect()
     })
 
-    socket.value.on('connect_ack', (data) => {
-      console.log('📨 Server acknowledgment:', data)
-    })
-
     socket.value.on('pong', (data) => {
-      console.log('🏓 Pong received:', data.timestamp)
+      lastPongReceived.value = Date.now()
+      if (lastPingSent.value) {
+        currentPing.value = lastPongReceived.value - lastPingSent.value
+        console.log('🏓 Pong received, ping:', currentPing.value, 'ms')
+      }
     })
 
-    // Reconnect event from server
     socket.value.on('reconnect', () => {
       console.log('🔄 Reconnected to server')
       updateConnectionState('connected', '🔄 Reconnected')
@@ -127,12 +137,20 @@ export const useConnectionStore = defineStore('connection', () => {
 
   const startPingInterval = () => {
     clearInterval(pingInterval)
+
+    sendPing()
+
     pingInterval = setInterval(() => {
-      if (socket.value && socket.value.connected) {
-        socket.value.emit('ping', { timestamp: Date.now() })
-        console.log('🏓 Ping sent')
-      }
+      sendPing()
     }, PING_INTERVAL)
+  }
+
+  const sendPing = () => {
+    if (socket.value && socket.value.connected) {
+      lastPingSent.value = Date.now()
+      socket.value.emit('ping', { timestamp: lastPingSent.value })
+      console.log('🏓 Ping sent at', lastPingSent.value)
+    }
   }
 
   const startConnectionCheck = () => {
@@ -173,7 +191,6 @@ export const useConnectionStore = defineStore('connection', () => {
     }, RECONNECT_DELAY)
   }
 
-  // Main connection function
   const connectToServer = async (isReconnectAttempt = false) => {
     if (!isReconnectAttempt && (isConnecting.value || isConnected.value)) {
       console.log('Already connecting or connected')
@@ -187,15 +204,13 @@ export const useConnectionStore = defineStore('connection', () => {
 
       console.log(`🔗 Attempting to connect to: ${ipPort.value}`)
 
-      // Create new socket with improved configuration
       socket.value = io(ipPort.value, {
         timeout: CONNECT_TIMEOUT,
         forceNew: true,
-        reconnection: false, // Manuális reconnection kezelés
+        reconnection: false,
         transports: ['websocket', 'polling'],
         upgrade: true,
         rememberUpgrade: true,
-        // @ts-expect-error not in type definition
         pingTimeout: 60000,
         pingInterval: 25000,
         maxHttpBufferSize: 1e6,
@@ -205,22 +220,26 @@ export const useConnectionStore = defineStore('connection', () => {
 
       setupSocketEventListeners()
 
-      // Promise-based connection with timeout
       const connectPromise = new Promise((resolve, reject) => {
+        const cleanup = () => {
+          if (socket.value) {
+            socket.value.off('connect', onConnect)
+            socket.value.off('connect_error', onError)
+          }
+        }
+
         const onConnect = () => {
-          socket.value.off('connect_error', onError)
+          cleanup()
           resolve(true)
         }
 
         const onError = (error) => {
-          socket.value.off('connect', onConnect)
+          cleanup()
           reject(error)
         }
 
         socket.value.once('connect', onConnect)
         socket.value.once('connect_error', onError)
-
-        // Start connection
         socket.value.connect()
       })
 
@@ -247,7 +266,6 @@ export const useConnectionStore = defineStore('connection', () => {
     }
   }
 
-  // Manual reconnect
   const manualReconnect = async () => {
     console.log('🔄 Manual reconnect initiated')
     reconnectAttempts.value = 0
@@ -256,7 +274,6 @@ export const useConnectionStore = defineStore('connection', () => {
     return await connectToServer()
   }
 
-  // Force disconnect
   const forceDisconnect = () => {
     console.log('🛑 Force disconnect initiated')
     clearAllTimeouts()
@@ -265,11 +282,9 @@ export const useConnectionStore = defineStore('connection', () => {
 
     if (socket.value) {
       try {
-        // Emit force disconnect to server
         if (socket.value.connected) {
           socket.value.emit('force_disconnect')
         }
-        // Clean disconnect
         socket.value.disconnect()
       } catch (error) {
         console.error('Force disconnect error:', error)
@@ -280,24 +295,23 @@ export const useConnectionStore = defineStore('connection', () => {
     updateConnectionState('disconnected', '🛑 Connection forcibly disconnected')
   }
 
-  // Hard reset - nuclear option
   const hardReset = () => {
     console.log('💥 Hard reset initiated')
     forceDisconnect()
 
-    // Reset all state
     connectionState.value = 'disconnected'
     connectionMessage.value = ''
     isReconnecting.value = false
     reconnectAttempts.value = 0
+    lastPingSent.value = null
+    lastPongReceived.value = null
+    currentPing.value = null
 
-    // Small delay before allowing new connections
     setTimeout(() => {
       updateConnectionState('disconnected', '🔄 System reset to default state')
     }, 1000)
   }
 
-  // Cleanup function
   const cleanup = () => {
     console.log('🧹 Cleaning up connection store')
     clearAllTimeouts()
@@ -306,7 +320,6 @@ export const useConnectionStore = defineStore('connection', () => {
     reconnectAttempts.value = 0
   }
 
-  // Test connection
   const testConnection = async () => {
     if (!socket.value || !socket.value.connected) {
       return false
@@ -330,8 +343,7 @@ export const useConnectionStore = defineStore('connection', () => {
   }
 
   return {
-    // State
-    socket: computed(() => socket.value),
+    socket,
     ipPort,
     connectionState,
     connectionMessage,
@@ -339,13 +351,18 @@ export const useConnectionStore = defineStore('connection', () => {
     reconnectAttempts,
     maxReconnectAttempts,
 
-    // Computed
+    lastPingSent,
+    lastPongReceived,
+    currentPing,
+    pingMs,
+
+    ipPortModel,
+
     isConnected,
     isConnecting,
     isFailed,
     isDisconnected,
 
-    // Actions
     connectToServer,
     manualReconnect,
     forceDisconnect,
