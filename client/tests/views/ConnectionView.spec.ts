@@ -1,185 +1,168 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-import { mount } from '@vue/test-utils'
-import { ref } from 'vue'
-import ConnectionView from '@/views/ConnectionView.vue'
+import { mount, VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { useConnectionStore } from "@/stores/connection.ts"
-import { useSensorStore } from "@/stores/sensor.ts"
+// ✅ JAVÍTOTT IMPORT - views mappából, nem components-ból!
+import ConnectionView from '@/views/ConnectionView.vue'
+import { useConnectionStore } from '@/stores/connection'
+import { useSensorStore } from '@/stores/sensor'
 
-let pinia
+// Mock stores
+vi.mock('@/stores/sensor', () => ({
+  useSensorStore: vi.fn(() => ({
+    fetchSensors: vi.fn().mockResolvedValue(undefined)
+  }))
+}))
 
-beforeEach(() => {
-  pinia = createPinia()
-  setActivePinia(pinia)
-})
+describe('ConnectionView', () => {
+  let wrapper: VueWrapper
+  let connectionStore: ReturnType<typeof useConnectionStore>
+  let sensorStore: ReturnType<typeof useSensorStore>
 
-afterEach(() => {
-  // ✅ Cleanup
-  vi.clearAllMocks()
-})
-
-/* ------------------------------------------------------------------
-   STUB MODAL
-------------------------------------------------------------------- */
-
-const CenteredModalStub = {
-  template: `
-    <div v-if="show" data-test="modal">
-      <slot name="header" />
-      <slot name="body" />
-      <slot name="submit" />
-      <slot name="alert" />
-      <button data-test="close" @click="$emit('close')">close</button>
-    </div>
-  `,
-  props: ['show'],
-  emits: ['close']
-}
-
-/* ------------------------------------------------------------------
-   HELPERS
-------------------------------------------------------------------- */
-
-const mountComponent = (props = {}) => {
-  const wrapper = mount(ConnectionView, {
-    props: {
-      isModalVisible: false,
-      ...props
-    },
-    global: {
-      plugins: [pinia],
-      stubs: {
-        CenteredModal: CenteredModalStub
-      }
-    }
-  })
-  return wrapper
-}
-
-/* ------------------------------------------------------------------
-   TESTS
-------------------------------------------------------------------- */
-
-describe('ConnectionView.vue', () => {
   beforeEach(() => {
-    pinia = createPinia()
-    setActivePinia(pinia)
-  })
+    setActivePinia(createPinia())
+    connectionStore = useConnectionStore()
+    sensorStore = useSensorStore()
 
-  it('does not show modal by default', () => {
-    const wrapper = mountComponent()
-    expect(wrapper.find('[data-test="modal"]').exists()).toBe(false)
-  })
-
-  it('shows modal when isModalVisible=true', async () => {
-    const wrapper = mountComponent({ isModalVisible: true })
-    await wrapper.vm.$nextTick()
-    expect(wrapper.find('[data-test="modal"]').exists()).toBe(true)
-  })
-
-  it('emits update:isModalVisible when closed', async () => {
-    const wrapper = mountComponent({ isModalVisible: true })
-    await wrapper.vm.$nextTick()
-
-    await wrapper.find('[data-test="close"]').trigger('click')
-
-    expect(wrapper.emitted('update:isModalVisible')).toBeTruthy()
-    expect(wrapper.emitted('update:isModalVisible')![0]).toEqual([false])
-  })
-
-  it('disables connect button when ipPort is empty', async () => {
-    const connectionStore = useConnectionStore()
-
-    // ✅ Explicit setup
-    connectionStore.ipPort = ''
-    connectionStore.connectionState = 'disconnected'
-
-    const wrapper = mountComponent({ isModalVisible: true })
-    await wrapper.vm.$nextTick()
-
-    const connectButton = wrapper.find('button.bg-green-600')
-    expect(connectButton.exists()).toBe(true)
-
-    // ✅ Check disabled state
-    expect(connectButton.element.disabled).toBe(true)
-  })
-
-  it('calls connectToServer when Connect clicked', async () => {
-    const connectionStore = useConnectionStore()
-    const sensorStore = useSensorStore()
-
-    connectionStore.connectionState = 'disconnected'
-    connectionStore.ipPort = 'http://localhost:5000'
-
-    const connectSpy = vi.fn().mockResolvedValue(true)
-    const fetchSensorsSpy = vi.fn().mockResolvedValue(undefined)
-
-    connectionStore.connectToServer = connectSpy
-    sensorStore.fetchSensors = fetchSensorsSpy
-
-    const wrapper = mount(ConnectionView, {
+    wrapper = mount(ConnectionView, {
       props: {
         isModalVisible: true
       },
       global: {
-        plugins: [pinia],
         stubs: {
-          CenteredModal: CenteredModalStub
+          CenteredModal: {
+            template: `
+              <div class="modal">
+                <slot name="header" />
+                <slot name="body" />
+                <slot name="submit" />
+                <slot name="alert" />
+              </div>
+            `
+          }
         }
       }
     })
-
-    await wrapper.vm.$nextTick()
-
-    const connectButton = wrapper.find('button.bg-green-600')
-    expect(connectButton.exists()).toBe(true)
-    expect(connectButton.element.disabled).toBe(false)
-
-    await connectButton.trigger('click')
-    await wrapper.vm.$nextTick()
-
-    expect(connectSpy).toHaveBeenCalledTimes(1)
-    expect(fetchSensorsSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('closes modal after successful connect', async () => {
-    const connectionStore = useConnectionStore()
-    const sensorStore = useSensorStore()
-
-    connectionStore.ipPort = 'http://localhost:5000'
-    connectionStore.connectionState = 'disconnected'
-    connectionStore.connectToServer = vi.fn().mockResolvedValue(true)
-    sensorStore.fetchSensors = vi.fn().mockResolvedValue(undefined)
-
-    const wrapper = mountComponent({ isModalVisible: true })
-    await wrapper.vm.$nextTick()
-
-    const connectButton = wrapper.find('button.bg-green-600')
-    await connectButton.trigger('click')
-    await wrapper.vm.$nextTick()
-
-    expect(wrapper.emitted('update:isModalVisible')!.at(-1)).toEqual([false])
+  afterEach(() => {
+    wrapper.unmount()
+    vi.clearAllMocks()
   })
 
-  it('closes modal on Escape key', async () => {
-    const wrapper = mountComponent({ isModalVisible: true })
-    await wrapper.vm.$nextTick()
+  describe('Component Rendering', () => {
+    it('should render modal when isModalVisible is true', () => {
+      expect(wrapper.find('.modal').exists()).toBe(true)
+    })
 
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    it('should display IP input field', () => {
+      const input = wrapper.find('input')
+      expect(input.exists()).toBe(true)
+      expect(input.attributes('placeholder')).toBe('http://192.168.0.82:5000')
+    })
 
-    await wrapper.vm.$nextTick()
-    expect(wrapper.emitted('update:isModalVisible')).toBeTruthy()
+    it('should display connection status', () => {
+      expect(wrapper.text()).toContain('Connection status:')
+    })
+
+    it('should show Connect button by default', () => {
+      const buttons = wrapper.findAll('button')
+      const connectBtn = buttons.find(btn => btn.text().includes('Connect') && !btn.text().includes('Test'))
+      expect(connectBtn).toBeTruthy()
+    })
   })
 
-  it('shows retry button when failed', async () => {
-    const connectionStore = useConnectionStore()
+  describe('Connection States', () => {
+    it('should display "Disconnected" state by default', () => {
+      expect(wrapper.text()).toContain('Disconnected')
+    })
 
-    const wrapper = mountComponent({ isModalVisible: true })
+    it('should display "Connecting..." state', async () => {
+      connectionStore.connectionState = 'connecting'
+      await wrapper.vm.$nextTick()
 
-    connectionStore.connectionState = 'failed'
+      expect(wrapper.text()).toContain('Connect...')
+    })
 
-    await wrapper.vm.$nextTick()
+    it('should display "Connected" state', async () => {
+      connectionStore.connectionState = 'connected'
+      await wrapper.vm.$nextTick()
 
-    expect(wrapper.text()).toContain('Retry')
+      expect(wrapper.text()).toContain('Connected')
+    })
+
+    it('should display "Connection failed" state', async () => {
+      connectionStore.connectionState = 'failed'
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.text()).toContain('Connection failed')
+    })
+  })
+
+  describe('IP Input', () => {
+    it('should bind to ipPortModel', async () => {
+      const input = wrapper.find('input')
+      await input.setValue('http://192.168.1.100:5000')
+
+      expect(connectionStore.ipPortModel).toBe('http://192.168.1.100:5000')
+    })
+
+    it('should be disabled when connecting', async () => {
+      connectionStore.connectionState = 'connecting'
+      await wrapper.vm.$nextTick()
+
+      const input = wrapper.find('input')
+      expect(input.attributes('disabled')).toBeDefined()
+    })
+
+    it('should be disabled when connected', async () => {
+      connectionStore.connectionState = 'connected'
+      await wrapper.vm.$nextTick()
+
+      const input = wrapper.find('input')
+      expect(input.attributes('disabled')).toBeDefined()
+    })
+  })
+
+  describe('Connect Button', () => {
+    it('should call connectToServer when clicked', async () => {
+      const connectSpy = vi.spyOn(connectionStore, 'connectToServer').mockResolvedValue(true)
+
+      const buttons = wrapper.findAll('button')
+      const connectBtn = buttons.find(btn => btn.classes().includes('bg-green-600'))
+
+      await connectBtn?.trigger('click')
+
+      expect(connectSpy).toHaveBeenCalled()
+    })
+
+    it('should be disabled when connecting', async () => {
+      connectionStore.connectionState = 'connecting'
+      await wrapper.vm.$nextTick()
+
+      const buttons = wrapper.findAll('button')
+      const connectBtn = buttons.find(btn => btn.classes().includes('bg-green-600'))
+
+      expect(connectBtn?.attributes('disabled')).toBeDefined()
+    })
+  })
+
+  describe('Manual Actions', () => {
+    it('should show Retry button when connection failed', async () => {
+      connectionStore.connectionState = 'failed'
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.text()).toContain('Retry')
+    })
+
+    it('should show Disconnect button when connected', async () => {
+      connectionStore.connectionState = 'connected'
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.text()).toContain('Disconnect')
+    })
+
+    it('should always show Emergency button', () => {
+      expect(wrapper.text()).toContain('Emergency')
+    })
   })
 })

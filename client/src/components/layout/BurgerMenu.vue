@@ -199,7 +199,6 @@ const toggleMenu = (): void => {
         <div class="arrow right transition-transform duration-300 ease-in-out hover:translate-x-2"></div>
       </button>
 
-      <!-- Sidebar -->
       <div
         class="fixed top-0 left-0 min-h-screen w-72 p-5 z-40 transition-transform duration-300 border-r
                bg-white/10 backdrop-blur-md
@@ -219,7 +218,6 @@ const toggleMenu = (): void => {
         </div>
 
         <div class="flex-grow text-gray-200 text-sm overflow-y-auto">
-          <!-- ✅ Connection warning -->
           <div v-if="!isConnected" class="p-3 mb-4 bg-red-900/50 border border-red-600 rounded text-red-300 text-xs">
             ⚠️ Not connected to server. Sensors unavailable.
           </div>
@@ -230,7 +228,6 @@ const toggleMenu = (): void => {
             {{ sensorStore.errorMessage }}
           </p>
 
-          <!-- ✅ Sensor lista csak connected esetén -->
           <ul v-if="isConnected">
             <li
               v-for="sensor in sensorList"
@@ -261,7 +258,6 @@ const toggleMenu = (): void => {
                   {{ sensor.uav_label }}
                 </router-link>
 
-                <!-- Settings button -->
                 <button
                   @click.stop="openModifyPanel(sensor)"
                   class="text-cyan-400 hover:text-cyan-300 px-2 transition"
@@ -326,16 +322,13 @@ const toggleMenu = (): void => {
             </li>
           </ul>
 
-          <!-- ✅ Empty state ha nincs sensor -->
           <div v-else-if="isConnected && sensorList.length === 0 && !sensorStore.isLoading"
                class="text-center text-gray-400 py-8">
             <p>No sensors available</p>
           </div>
 
-          <!-- New sensor modal -->
           <new-sensor-modal />
 
-          <!-- Delete confirmation modal -->
           <teleport to="body">
             <div
               v-if="isRemoveDialogOpen"
@@ -353,7 +346,6 @@ const toggleMenu = (): void => {
                   This action cannot be undone.
                 </p>
 
-                <!-- ✅ Error display -->
                 <p v-if="sensorStore.errorMessage" class="text-sm text-red-400 mb-4">
                   ⚠️ {{ sensorStore.errorMessage }}
                 </p>

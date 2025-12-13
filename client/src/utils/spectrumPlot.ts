@@ -5,6 +5,14 @@ export class SpectrumPlot {
   width: number
   height: number
 
+  // ✅ Padding a tengelyeknek
+  private padding = {
+    top: 20,
+    right: 20,
+    bottom: 40,
+    left: 60
+  }
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
     const ctx = canvas.getContext('2d')
@@ -19,49 +27,95 @@ export class SpectrumPlot {
     this.height = this.canvas.height = this.canvas.clientHeight
   }
 
-  clear(color = '#0a0e1a') {
+  clear(color = '#ffffff') { // ✅ Fehér háttér
     this.ctx.fillStyle = color
     this.ctx.fillRect(0, 0, this.width, this.height)
   }
 
   drawSpectrumLine(frequencyData: number[]) {
-    const { ctx, width, height } = this
+    const { ctx, width, height, padding } = this
 
-    // Clear
-    this.clear()
+    // ✅ Clear - FEHÉR háttér
+    this.clear('#ffffff')
 
-    // Draw grid
-    ctx.strokeStyle = '#1a1f2e'
+    // ✅ Plot area méretei
+    const plotWidth = width - padding.left - padding.right
+    const plotHeight = height - padding.top - padding.bottom
+
+    // ✅ Fekete keret a plot area körül
+    ctx.strokeStyle = '#000000'
+    ctx.lineWidth = 2
+    ctx.strokeRect(padding.left, padding.top, plotWidth, plotHeight)
+
+    // ✅ Grid vonalak (VILÁGOSSZÜRKE)
+    ctx.strokeStyle = '#cccccc'
     ctx.lineWidth = 1
 
-    // Horizontal grid lines
-    for (let i = 0; i <= 8; i++) {
-      const y = (i / 8) * height
+    // Horizontal grid lines (8 darab, Y értékek: 0, -20, -40, -60, -80, -100, -120)
+    for (let i = 0; i <= 6; i++) {
+      const y = padding.top + (i / 6) * plotHeight
       ctx.beginPath()
-      ctx.moveTo(0, y)
-      ctx.lineTo(width, y)
+      ctx.moveTo(padding.left, y)
+      ctx.lineTo(padding.left + plotWidth, y)
       ctx.stroke()
     }
 
     // Vertical grid lines
     for (let i = 0; i <= 10; i++) {
-      const x = (i / 10) * width
+      const x = padding.left + (i / 10) * plotWidth
       ctx.beginPath()
-      ctx.moveTo(x, 0)
-      ctx.lineTo(x, height)
+      ctx.moveTo(x, padding.top)
+      ctx.lineTo(x, padding.top + plotHeight)
       ctx.stroke()
     }
 
-    // Draw spectrum line
+    // ✅ Y tengely értékek (0 to -120 dB)
+    ctx.fillStyle = '#000000'
+    ctx.font = '12px Arial'
+    ctx.textAlign = 'right'
+    ctx.textBaseline = 'middle'
+
+    for (let i = 0; i <= 6; i++) {
+      const value = -i * 20 // 0, -20, -40, -60, -80, -100, -120
+      const y = padding.top + (i / 6) * plotHeight
+      ctx.fillText(value.toFixed(1), padding.left - 10, y)
+    }
+
+    // ✅ X tengely címkék (frequency bins or time)
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'top'
+
+    const numLabels = 5
+    for (let i = 0; i <= numLabels; i++) {
+      const x = padding.left + (i / numLabels) * plotWidth
+      const freqIndex = Math.floor((i / numLabels) * frequencyData.length)
+      ctx.fillText(`${freqIndex}`, x, padding.top + plotHeight + 10)
+    }
+
+    // ✅ Y tengely label
+    ctx.save()
+    ctx.translate(15, height / 2)
+    ctx.rotate(-Math.PI / 2)
+    ctx.textAlign = 'center'
+    ctx.font = 'bold 14px Arial'
+    ctx.fillText('dB', 0, 0)
+    ctx.restore()
+
+    // ✅ X tengely label
+    ctx.font = 'bold 14px Arial'
+    ctx.textAlign = 'center'
+    ctx.fillText('Frequency (bins)', width / 2, height - 5)
+
+    // ✅ SPEKTRUM VONAL - KÉK
     ctx.beginPath()
-    ctx.strokeStyle = '#0ea5e9'
+    ctx.strokeStyle = '#0000ff' // Kék
     ctx.lineWidth = 2
-    ctx.shadowBlur = 10
-    ctx.shadowColor = '#0ea5e9'
 
     frequencyData.forEach((value, i) => {
-      const x = (i / frequencyData.length) * width
-      const y = height - (value / 255) * height
+      const x = padding.left + (i / frequencyData.length) * plotWidth
+      // ✅ Invertált Y: 0 dB = top, -120 dB = bottom
+      const normalizedValue = value / 255 // 0-1
+      const y = padding.top + plotHeight - (normalizedValue * plotHeight)
 
       if (i === 0) {
         ctx.moveTo(x, y)
@@ -71,17 +125,5 @@ export class SpectrumPlot {
     })
 
     ctx.stroke()
-    ctx.shadowBlur = 0
-
-    // Fill area under curve
-    ctx.lineTo(width, height)
-    ctx.lineTo(0, height)
-    ctx.closePath()
-
-    const gradient = ctx.createLinearGradient(0, 0, 0, height)
-    gradient.addColorStop(0, 'rgba(14, 165, 233, 0.3)')
-    gradient.addColorStop(1, 'rgba(14, 165, 233, 0.0)')
-    ctx.fillStyle = gradient
-    ctx.fill()
   }
 }

@@ -8,12 +8,10 @@
     </button>
 
     <CenteredModal :show="isModalOpen" @close="isModalOpen = false">
-      <!-- HEADER -->
       <template #header>
         <h3 class="text-lg font-semibold text-cyan-400">Add Sensor</h3>
       </template>
 
-      <!-- BODY -->
       <template #body>
         <div class="space-y-4">
           <div>
@@ -74,7 +72,6 @@
         </div>
       </template>
 
-      <!-- FOOTER -->
       <template #submit>
         <button
           class="bg-gray-600 hover:bg-gray-500 px-4 py-2 rounded-xl text-white font-medium"
@@ -96,6 +93,7 @@
 <script setup>
 import CenteredModal from '@/components/common/CenteredModal.vue'
 import { ref } from 'vue'
+import axios from 'axios'
 
 const isModalOpen = ref(false)
 const label = ref('')
@@ -113,20 +111,45 @@ const addSensor = () => {
   isModalOpen.value = true
 }
 
-const submit = () => {
-  console.log('Submitting sensor:', {
-    label: label.value,
-    address: address.value,
-    lat: lastPosLat.value,
-    lon: lastPosLon.value,
-    alt: lastPosAlt.value,
-    q0: lastPosQ0.value,
-    q1: lastPosQ1.value,
-    q2: lastPosQ2.value,
-    q3: lastPosQ3.value,
-    active: isActive.value
-  })
-  isModalOpen.value = false
-}
-</script>
+const submit = async () => {
+  if (!address.value) {
+    console.warn('uav_address is required')
+    return
+  }
 
+  const payload = {
+    uav_label: label.value || null,
+    uav_address: address.value,
+    active: isActive.value
+  }
+
+  try {
+    const res = await axios.post(
+      'http://localhost:5000/v1/uav',
+      payload,
+      {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
+    )
+
+    console.log('UAV created:', res.data)
+
+    resetForm()
+    isModalOpen.value = false
+  } catch (err) {
+    console.error(
+      'Failed to create UAV:',
+      err?.response?.data || err
+    )
+  }
+}
+
+const resetForm = () => {
+  label.value = ''
+  address.value = ''
+  isActive.value = false
+}
+
+</script>
