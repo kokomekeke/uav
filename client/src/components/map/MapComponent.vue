@@ -11,7 +11,6 @@ import 'leaflet.fullscreen/Control.FullScreen.css'
 import { Sensor } from '@/types/sensor'
 import { useGeoLocStore } from '@/stores/geoloc'
 
-// --- STORE ---
 const sensorStore = useSensorStore()
 const {
   sensors,
@@ -19,9 +18,6 @@ const {
   selectedSensors,
   selectedSensorIds,
   hasSelectedSensors
-  // geoJsonData,
-  // geoJsonSettings,
-  // isGeoJsonEnabled
 } = storeToRefs(sensorStore)
 
 const geolocStore = useGeoLocStore()
@@ -31,7 +27,6 @@ const {
   isGeoJsonEnabled
 } = storeToRefs(geolocStore)
 
-// --- MAP STATE ---
 const zoom = ref(2)
 const center = ref([47.4979, 19.0402])
 const mapRef = ref(null)
@@ -42,7 +37,6 @@ const mapContainer = ref(null)
 const url = ref('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
 const attribution = ref('&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors')
 
-// --- SETTINGS ---
 const newDetectionSize = ref(Math.abs(sensorStore.detectionSize))
 const batchIntervalLocal = ref(sensorStore.batchInterval)
 const maxVisiblePoints = ref(50)
@@ -50,7 +44,6 @@ const lineLength = ref(0.05)
 const planeDisplayPeriod = ref(4)
 const showAzimuthLines = ref(true)
 
-// --- GEOJSON SETTINGS (LOCAL) ---
 const localGeoJsonSettings = ref({
   limit: 20,
   stride: 1,
@@ -58,14 +51,12 @@ const localGeoJsonSettings = ref({
   showRaw: true,
   showFiltered: true,
   ttl: 80000,
-  maxVisibleGeoJsonPoints: 200 // ✅ ÚJ: Max pontok száma
+  maxVisibleGeoJsonPoints: 200
 })
 
-// --- ✅ ÚJ: STABLE GEOJSON BUFFER (NEM VÁLTOZIK MINDEN FRAME-BEN) ---
 const geoJsonBuffer = shallowRef<Map<string, any>>(new Map())
 let geoJsonUpdateThrottle: number | null = null
 
-// --- DEBUG ---
 const debugInfo = ref({
   mapInitialized: false,
   detectionsCount: 0,
@@ -77,12 +68,10 @@ const debugInfo = ref({
   geoJsonFiltered: 0
 })
 
-// --- PERFORMANCE CACHES ---
 const planeIconsCache = new Map<string, any>()
 const azimuthLinesCache = new Map<string, number[][]>()
 const CACHE_CLEANUP_THRESHOLD = 500
 
-// --- ICONS, COLORS ---
 const dotIcons = ['blue', 'red', 'orange', 'green', 'cyan', 'magenta', 'yellow', 'purple'].map(color =>
   L.divIcon({
     className: '',
@@ -93,17 +82,15 @@ const dotIcons = ['blue', 'red', 'orange', 'green', 'cyan', 'magenta', 'yellow',
 )
 const lineColors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'cyan', 'magenta']
 
-// --- COMPUTED ---
 const selectedSensorCount = computed(() => selectedSensors.value.length)
 
-// --- ✅ OPTIMALIZÁLT: STABLE GEOJSON BUFFER UPDATE ---
 function updateGeoJsonBuffer () {
   if (geoJsonUpdateThrottle) return
 
   geoJsonUpdateThrottle = window.setTimeout(() => {
     geoJsonUpdateThrottle = null
     _doUpdateGeoJsonBuffer()
-  }, 100) // 100ms throttle
+  }, 100)
 }
 
 function _doUpdateGeoJsonBuffer () {
@@ -114,29 +101,24 @@ function _doUpdateGeoJsonBuffer () {
   const currentBuffer = geoJsonBuffer.value
   const newBuffer = new Map(currentBuffer)
 
-  // ✅ 1. UPDATE/ADD új pontok
   geoJsonData.value.forEach(point => {
     const stableKey = `${point.id}-${point.type}`
     const age = now - point.timestamp
     const opacity = Math.max(0.1, 1 - (age / ttl))
 
-    // Skip ha lejárt TTL
     if (opacity < 0.1) return
 
-    // Koordináta validáció
     const [lat, lon] = point.coordinate
     if (isNaN(lat) || isNaN(lon)) return
 
     const existingItem = currentBuffer.get(stableKey)
 
     if (existingItem) {
-      // ✅ CSAK AZ OPACITY ÉS AGE VÁLTOZIK, NEM RENDERELŐDIK ÚJ MARKER!
       existingItem.opacity = opacity
       existingItem.age = age
       existingItem.timestamp = point.timestamp
       newBuffer.set(stableKey, existingItem)
     } else {
-      // ✅ ÚJ PONT HOZZÁADÁSA
       newBuffer.set(stableKey, {
         ...point,
         opacity,
@@ -146,7 +128,6 @@ function _doUpdateGeoJsonBuffer () {
     }
   })
 
-  // ✅ 2. REMOVE lejárt pontok
   for (const [key, item] of newBuffer.entries()) {
     // TODO: ezt a sort rendesen ellenőrizni, időzónák szerint
     const age = now - item.timestamp - 3600000
@@ -154,13 +135,10 @@ function _doUpdateGeoJsonBuffer () {
       newBuffer.delete(key)
     }
   }
-  // ✅ 3. LRU (Least Recently Used) - ha túl sok pont van
   if (newBuffer.size > maxPoints) {
-    // Rendezés timestamp szerint (legrégebbi először)
     const sorted = Array.from(newBuffer.entries())
       .sort((a, b) => a[1].timestamp - b[1].timestamp)
 
-    // Töröljük a legrégebbi pontokat
     const toDelete = sorted.slice(0, newBuffer.size - maxPoints)
     toDelete.forEach(([key]) => newBuffer.delete(key))
   }
@@ -172,12 +150,10 @@ function _doUpdateGeoJsonBuffer () {
   debugInfo.value.geoJsonFiltered = Array.from(newBuffer.values()).filter(p => p.type === 'filtered').length
 }
 
-// ✅ COMPUTED: Array-re konvertálás (stabil objektumok!)
 const geoJsonPointsWithOpacity = computed(() => {
   return Array.from(geoJsonBuffer.value.values())
 })
 
-// --- FUNCTIONS ---
 
 function getHeadingFromQuaternion ([q0, q1, q2, q3]: number[]): number {
   if (q0 === undefined || q1 === undefined || q2 === undefined || q3 === undefined) return 0
@@ -231,7 +207,6 @@ function getPlaneIconById (id: number): any {
 function computeAzimuthLine(coord: [number, number], azimuth: number, isRadians = false): number[][] {
   const [lat, lon] = coord
 
-  // A vonal hossza MÉTERBEN legyen
   const distanceMeters = lineLength.value * 1000
 
   const bearingDeg = isRadians ? azimuth * (180 / Math.PI) : azimuth
@@ -265,12 +240,10 @@ function vincentyForward (
   bearing: number,
   distance: number
 ) {
-  // WGS84 ellipsoid constants
-  const a = 6378137.0 // major axis
-  const f = 1 / 298.257223563 // flattening
-  const b = (1 - f) * a // minor axis
+  const a = 6378137.0
+  const f = 1 / 298.257223563
+  const b = (1 - f) * a
 
-  // Convert degrees to radians
   const phi1 = lat1 * Math.PI / 180
   const lambda1 = lon1 * Math.PI / 180
   const alpha1 = bearing * Math.PI / 180
@@ -296,7 +269,6 @@ function vincentyForward (
   let cosSigma: number
   let cos2SigmaM: number
 
-  // Iterate until convergence
   do {
     cos2SigmaM = Math.cos(2 * sigma1 + sigma)
     sinSigma = Math.sin(sigma)
@@ -316,7 +288,6 @@ function vincentyForward (
     sigma = distance / (b * A) + deltaSigma
   } while (Math.abs(sigma - sigmaPrev) > 1e-12)
 
-  // Compute phi2 (lat2)
   const x =
         sinU1 * sinSigma - cosU1 * cosSigma * cosAlpha1
 
@@ -325,7 +296,6 @@ function vincentyForward (
     (1 - f) * Math.sqrt(sinAlpha * sinAlpha + x * x)
   )
 
-  // Compute lambda
   const lambda = Math.atan2(
     sinSigma * sinAlpha1,
     cosU1 * cosSigma - sinU1 * sinSigma * cosAlpha1
@@ -347,10 +317,8 @@ function vincentyForward (
 
   const lambda2 = lambda1 + L
 
-  // Final bearing
   const alpha2 = Math.atan2(sinAlpha, -x)
 
-  // Convert back to degrees
   return {
     lat: phi2 * 180 / Math.PI,
     lon: lambda2 * 180 / Math.PI,
@@ -363,7 +331,6 @@ function getColorByRoiOrSensor (detection: any, sensorId: number): string {
   return lineColors[sensorId % lineColors.length]
 }
 
-// --- DETECTION BUFFER (OPTIMIZED) ---
 const detectionBuffer = shallowRef<Map<string, any>>(new Map())
 let renderThrottle: number | null = null
 
@@ -446,7 +413,6 @@ function _doRenderDetections () {
 
 const detectionBufferArray = computed(() => Array.from(detectionBuffer.value.values()))
 
-// --- GEOJSON FUNCTIONS ---
 function updateGeoJsonSettings () {
   console.log('[Map] Updating GeoJSON settings:', localGeoJsonSettings.value)
   geolocStore.updateGeoJsonSettings(localGeoJsonSettings.value)
@@ -463,7 +429,6 @@ function toggleGeoJsonFetch () {
   }
 }
 
-// --- SETTINGS HANDLING ---
 function updateBatchInterval () {
   const newInterval = Number(batchIntervalLocal.value)
   if (isNaN(newInterval) || newInterval < 0.01 || newInterval > 10) return
@@ -493,7 +458,6 @@ function debugStore () {
   sensorStore.debugReactivity()
 }
 
-// --- MAP SETUP ---
 function updateMapView () {
   if (mapRef.value?.leafletObject) {
     leafletMap.value = mapRef.value.leafletObject
@@ -510,7 +474,6 @@ function onMapReady (mapInstance: any) {
   console.log('[Map] Map ready, bounds:', mapBounds.value)
 }
 
-// --- REAL-TIME CONFIG ---
 const realtimeConfig = ref({
   ...sensorStore.realtimeConfig
 })
@@ -519,34 +482,27 @@ const updateRealtimeConfig = () => {
   sensorStore.updateRealtimeConfig(realtimeConfig.value)
 }
 
-// --- ✅ OPTIMALIZÁLT WATCHERS ---
 
-// ✅ GeoJSON data változás → buffer update
 watch(geoJsonData, () => {
   updateGeoJsonBuffer()
 }, { deep: false })
 
-// ✅ TTL változás → buffer újraszámolás
 watch(() => localGeoJsonSettings.value.ttl, () => {
   updateGeoJsonBuffer()
 })
 
-// ✅ Sensors watch
 watch(sensors, () => {
   if (hasSelectedSensors.value) {
     renderDetections()
   }
 }, { deep: true })
 
-// ✅ Selected sensors watch
 watch(selectedSensors, () => {
   renderDetections()
 }, { deep: false })
 
-// ✅ Batch interval watch
 watch(batchInterval, val => (batchIntervalLocal.value = val), { immediate: true })
 
-// --- LIFECYCLE ---
 onMounted(async () => {
   await nextTick()
   updateMapView()
@@ -567,12 +523,10 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex flex-col w-full h-[calc(100vh-5rem)] rounded-xl overflow-hidden">
-    <!-- Map Container -->
     <div ref="mapContainer" class="flex-[3] border border-slate-700 rounded-xl overflow-hidden relative">
       <l-map ref="mapRef" :zoom="zoom" :center="center" @ready="onMapReady" class="w-full h-full">
         <l-tile-layer :url="url" :attribution="attribution" />
 
-        <!-- Debug Info -->
         <div class="absolute top-2 left-2 bg-slate-800/90 text-gray-200 p-2 rounded shadow z-[1000] text-xs border border-slate-600">
           <div>Map: {{ debugInfo.mapInitialized ? '✅' : '❌' }}</div>
           <div>Sensors: {{ debugInfo.selectedSensorsCount }}</div>
@@ -583,7 +537,6 @@ onBeforeUnmount(() => {
           <div>Cache: {{ debugInfo.cacheSize }}</div>
         </div>
 
-        <!-- Detection markers (SSE Stream) -->
         <template v-for="detection in detectionBufferArray" :key="detection.key">
           <l-marker
             v-if="detection.showPlane && detection.planeIcon"
@@ -603,7 +556,6 @@ onBeforeUnmount(() => {
           />
         </template>
 
-        <!-- ✅ GeoJSON markers - STABLE KEY (nem változik minden frame-ben!) -->
         <template v-for="point in geoJsonPointsWithOpacity" :key="point.stableKey">
           <l-circle-marker
             v-if="point.coordinate?.length === 2"
@@ -631,9 +583,7 @@ onBeforeUnmount(() => {
       </l-map>
     </div>
 
-    <!-- Controls -->
     <div class="flex-[1] mt-4 px-4 overflow-auto">
-      <!-- EXISTING CONTROLS -->
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-700">
         <div>
           <label class="font-semibold text-gray-300 text-sm">Max points</label>
@@ -672,7 +622,6 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <!-- GEOJSON SETTINGS PANEL -->
       <div class="mt-4 bg-slate-800 p-4 rounded-xl border border-slate-700">
         <div class="flex justify-between items-center mb-3">
           <h3 class="text-lg font-bold text-gray-100">🌍 GeoJSON Settings</h3>
@@ -742,7 +691,6 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <!-- REAL-TIME SETTINGS PANEL -->
       <div class="mt-4 bg-slate-800 p-4 rounded-xl border border-slate-700">
         <h3 class="text-lg font-bold mb-3 text-gray-100">⚡ Real-time Settings (SSE Stream)</h3>
 
@@ -788,7 +736,6 @@ onBeforeUnmount(() => {
 <style scoped>
 @import "leaflet/dist/leaflet.css";
 
-/* ✅ SMOOTH OPACITY TRANSITION */
 .fade-marker {
   transition: opacity 0.8s ease-in-out !important;
 }

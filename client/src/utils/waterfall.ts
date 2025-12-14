@@ -1,4 +1,3 @@
-// utils/waterfallPlot.ts
 export class WaterfallPlot {
   canvas: HTMLCanvasElement
   private ctx: CanvasRenderingContext2D
@@ -6,7 +5,6 @@ export class WaterfallPlot {
   height: number
   private currentRow: number = 0
 
-  // ✅ Padding a tengelyeknek
   private padding = {
     top: 10,
     right: 20,
@@ -34,12 +32,10 @@ export class WaterfallPlot {
     this.currentRow = 0
   }
 
-  // ✅ SÁRGA-LILA-KÉK színátmenet (mint a képen)
   private intensityToColor(intensity: number): [number, number, number] {
     const t = intensity / 255
 
     if (t < 0.33) {
-      // Kék -> Lila
       const ratio = t / 0.33
       return [
         Math.floor(ratio * 128), // R: 0 -> 128
@@ -47,7 +43,6 @@ export class WaterfallPlot {
         255 // B: 255
       ]
     } else if (t < 0.66) {
-      // Lila -> Rózsaszín/Magenta
       const ratio = (t - 0.33) / 0.33
       return [
         Math.floor(128 + ratio * 127), // R: 128 -> 255
@@ -55,7 +50,6 @@ export class WaterfallPlot {
         Math.floor(255 * (1 - ratio * 0.5)) // B: 255 -> 127
       ]
     } else {
-      // Magenta -> Sárga
       const ratio = (t - 0.66) / 0.34
       return [
         255, // R: 255
@@ -71,7 +65,6 @@ export class WaterfallPlot {
     const plotWidth = width - padding.left - padding.right
     const plotHeight = height - padding.top - padding.bottom
 
-    // ✅ Scroll fel
     if (this.currentRow > 0) {
       const imageData = ctx.getImageData(
         padding.left,
@@ -82,7 +75,6 @@ export class WaterfallPlot {
       ctx.putImageData(imageData, padding.left, padding.top)
     }
 
-    // ✅ Új sor rajzolása az aljára
     const newRowY = padding.top + plotHeight - 1
     const pixelWidth = plotWidth / frequencyData.length
 
@@ -96,7 +88,6 @@ export class WaterfallPlot {
 
     this.currentRow++
 
-    // ✅ Draw axes MINDEN frame-ben (hogy a scroll ne törölje)
     this.drawAxes(frequencyData.length)
   }
 
@@ -106,7 +97,6 @@ export class WaterfallPlot {
     const plotWidth = width - padding.left - padding.right
     const plotHeight = height - padding.top - padding.bottom
 
-    // ✅ Y tengely értékek (Packets: 0 to -150)
     ctx.fillStyle = '#ffffff'
     ctx.font = '11px Arial'
     ctx.textAlign = 'right'
@@ -118,7 +108,6 @@ export class WaterfallPlot {
       ctx.fillText(value.toString(), padding.left - 5, y)
     }
 
-    // ✅ X tengely címkék
     ctx.textAlign = 'center'
     ctx.textBaseline = 'top'
     ctx.fillStyle = '#ffffff'
@@ -130,7 +119,6 @@ export class WaterfallPlot {
       ctx.fillText(`${freqIndex}`, x, padding.top + plotHeight + 5)
     }
 
-    // ✅ Y tengely label
     ctx.save()
     ctx.translate(10, height / 2)
     ctx.rotate(-Math.PI / 2)
@@ -140,7 +128,6 @@ export class WaterfallPlot {
     ctx.fillText('Packets', 0, 0)
     ctx.restore()
 
-    // ✅ X tengely label
     ctx.font = 'bold 12px Arial'
     ctx.textAlign = 'center'
     ctx.fillStyle = '#ffffff'

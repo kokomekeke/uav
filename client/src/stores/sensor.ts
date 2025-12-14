@@ -9,14 +9,11 @@ import { useLogStore } from '@/stores/log'
 import { useConnectionStore } from '@/stores/connection' // ✅ ÚJ
 
 export const useSensorStore = defineStore('sensor', () => {
-  // ============================================================================
-  // CONNECTION STORE INTEGRATION - ✅ ÚJ
-  // ============================================================================
+
 
   const connectionStore = useConnectionStore()
   const { ipPort, isConnected } = storeToRefs(connectionStore)
 
-  // ✅ Computed URL a connection store-ból
   const urlBase = computed(() => {
     const base = ipPort.value.endsWith('/') ? ipPort.value : `${ipPort.value}/`
     return `${base}v1/`
@@ -26,9 +23,7 @@ export const useSensorStore = defineStore('sensor', () => {
     return `${urlBase.value}stream/comint_detection`
   })
 
-  // ============================================================================
-  // STATE - ✅ SHALLOW REFS FOR PERFORMANCE
-  // ============================================================================
+
 
   const sensors = shallowRef<Record<number, Sensor>>({})
   const selectedSensor = ref<Sensor | null>(null)
@@ -52,9 +47,6 @@ export const useSensorStore = defineStore('sensor', () => {
 
   const logStore = useLogStore()
 
-  // ============================================================================
-  // DETECTION CLEANUP
-  // ============================================================================
 
   const { pause: pauseCleanup, resume: resumeCleanup } = useIntervalFn(() => {
     const now = performance.now()
@@ -80,9 +72,7 @@ export const useSensorStore = defineStore('sensor', () => {
     sensors.value = newSensors
   }, () => realtimeConfig.value.interval, { immediate: false })
 
-  // ============================================================================
-  // WORKER SETUP
-  // ============================================================================
+
 
   const {
     initWorker,
@@ -152,12 +142,8 @@ export const useSensorStore = defineStore('sensor', () => {
     resumeCleanup()
   }
 
-  // ============================================================================
-  // SSE STREAM
-  // ============================================================================
 
   const initializeStream = (): void => {
-    // ✅ Csak connected állapotban
     if (!isConnected.value) {
       console.warn('[SensorStore] Cannot initialize stream - not connected')
       return
@@ -201,9 +187,6 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }
 
-  // ============================================================================
-  // COMPUTED
-  // ============================================================================
 
   const selectedSensors = computed(() =>
     Object.values(sensors.value).filter(s => s.is_selected)
@@ -211,9 +194,6 @@ export const useSensorStore = defineStore('sensor', () => {
 
   const hasSelectedSensors = computed(() => selectedSensors.value.length > 0)
 
-  // ============================================================================
-  // WATCH
-  // ============================================================================
 
   watch(selectedSensors, (newSelected) => {
     const selectedIds = newSelected.map(s => s.uav_id)
@@ -228,7 +208,6 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   }, { immediate: true, deep: false })
 
-  // ✅ ÚJ: Connection state figyelés
   watch(isConnected, (connected) => {
     if (!connected) {
       // Ha megszakadt a kapcsolat, töröljük a sensorokat
@@ -239,9 +218,6 @@ export const useSensorStore = defineStore('sensor', () => {
     }
   })
 
-  // ============================================================================
-  // ACTIONS
-  // ============================================================================
 
   const selectSensor = (uavId: number): void => {
     const sensor = sensors.value[uavId]
@@ -305,7 +281,6 @@ export const useSensorStore = defineStore('sensor', () => {
   }
 
   const removeSensor = async (uavId: number): Promise<void> => {
-    // ✅ Kapcsolat ellenőrzés
     if (!isConnected.value) {
       errorMessage.value = 'Not connected to server'
       throw new Error('Not connected to server')
@@ -386,20 +361,13 @@ export const useSensorStore = defineStore('sensor', () => {
     isStreamConnected.value = false
   }
 
-  // ============================================================================
-  // LIFECYCLE
-  // ============================================================================
 
   onUnmounted(() => {
     cleanup()
   })
 
-  // ============================================================================
-  // RETURN
-  // ============================================================================
 
   return {
-    // State
     sensors,
     selectedSensor,
     isLoading,
@@ -411,13 +379,11 @@ export const useSensorStore = defineStore('sensor', () => {
     urlBase: computed(() => urlBase.value), // ✅ Computed
     realtimeConfig,
 
-    // Computed
     selectedSensors,
     hasSelectedSensors,
     selectedSensorIds,
-    isConnected, // ✅ ÚJ - connection state
+    isConnected,
 
-    // Actions
     selectSensor,
     fetchSensors,
     removeSensor,
@@ -425,22 +391,17 @@ export const useSensorStore = defineStore('sensor', () => {
     clearDetections: clearAllDetections,
     addDetectionToSensor,
 
-    // Worker
     initializeWorker,
     isWorkerReady,
     handleStreamData,
 
-    // Stream
     initializeStream,
     disconnectStream,
 
-    // Config
     updateRealtimeConfig,
 
-    // Cleanup
     cleanup,
 
-    // Debug
     debugReactivity
   }
 })

@@ -24,7 +24,6 @@ const props = withDefaults(defineProps<Props>(), {
 const geolocStore = useGeoLocStore()
 const { heatMapPoints } = storeToRefs(geolocStore)
 
-// ✅ Perzisztens pont tároló - MINDIG rendezve tartva
 const persistedPoints = ref<Array<{
   coordinate: [number, number]
   lastUpdate: number
@@ -72,7 +71,6 @@ const stats = ref({
 
 const showControlPanel = ref(false)
 
-// ✅ EGYSZERŰBB CACHE - csak a grid resolution-t figyeli
 const lastGridResolution = 4
 let lastPointsHash = ''
 
@@ -85,11 +83,9 @@ const heatmapPoints = computed(() => {
     return []
   }
 
-  // ✅ Hash a gyors változás detektáláshoz (ha kell cache-elni később)
   const currentHash = `${currentLength}-${currentGridRes}`
   lastPointsHash = currentHash
 
-  // A persistedPoints már rendezve van
   const sortedPoints = persistedPoints.value
 
   const locationMap = new Map<string, {
@@ -101,7 +97,6 @@ const heatmapPoints = computed(() => {
     lon: number
   }>()
 
-  // ✅ Grid aggregáció
   sortedPoints.forEach((p, index) => {
     const [lat, lon] = p.coordinate
     const gridKey = `${lat.toFixed(currentGridRes)},${lon.toFixed(currentGridRes)}`
@@ -120,7 +115,6 @@ const heatmapPoints = computed(() => {
     const loc = locationMap.get(gridKey)!
     loc.count++
 
-    // ✅ Intenzitás pozíció alapján
     const positionFactor = sortedPoints.length > 1
       ? (index / (sortedPoints.length - 1)) * 0.9 + 0.1
       : 1.0
@@ -155,7 +149,6 @@ const heatmapPoints = computed(() => {
   return newPoints
 })
 
-// ✅ ENYHÉBB THROTTLE - 150ms (gyorsabb update)
 const throttledUpdateHeatmap = useThrottleFn((forceRecreate = false) => {
   if (!leafletMap.value) return
 
@@ -175,7 +168,6 @@ const throttledUpdateHeatmap = useThrottleFn((forceRecreate = false) => {
     return
   }
 
-  // ✅ Proper cleanup before recreate
   if (heatLayer.value) {
     heatLayer.value.remove()
     heatLayer.value = null
@@ -202,7 +194,6 @@ function onMapReady () {
   }
 }
 
-// ✅ BINARY INSERT - Sorted beszúrás
 function insertSorted (arr: typeof persistedPoints.value, item: typeof persistedPoints.value[0]) {
   let low = 0
   let high = arr.length
@@ -219,7 +210,6 @@ function insertSorted (arr: typeof persistedPoints.value, item: typeof persisted
   arr.splice(low, 0, item)
 }
 
-// ✅ WATCH: Új adatok hozzáadása - KISEBB THROTTLE (100ms)
 const processNewPoints = useThrottleFn((newPoints: typeof heatMapPoints.value) => {
   if (!newPoints || newPoints.length === 0) return
 
@@ -233,7 +223,6 @@ const processNewPoints = useThrottleFn((newPoints: typeof heatMapPoints.value) =
 
   const maxPoints = dataSettings.value.maxPoints
 
-  // ✅ Batch insert - rendezve
   validNewPoints.forEach(p => {
     insertSorted(persistedPoints.value, {
       coordinate: p.coordinate as [number, number],
@@ -241,27 +230,24 @@ const processNewPoints = useThrottleFn((newPoints: typeof heatMapPoints.value) =
     })
   })
 
-  // ✅ Limitálás az elejéről (legrégebbiek)
   if (persistedPoints.value.length > maxPoints) {
     const toRemove = persistedPoints.value.length - maxPoints
     persistedPoints.value.splice(0, toRemove)
   }
 
   console.log(`[Heatmap] 📊 Persisted points: ${persistedPoints.value.length}`)
-}, 100) // ✅ 100ms - gyorsabb válasz
+}, 100)
 
 watch(heatMapPoints, (newPoints) => {
   processNewPoints(newPoints)
 }, { deep: false, immediate: true })
 
-// ✅ WATCH: Perzisztált pontok változása → heatmap frissítés
 watch(persistedPoints, () => {
   if (dataSettings.value.showRealtime) {
     updateHeatmap(false)
   }
 }, { deep: false })
 
-// ✅ Settings változás → recreate
 watch(() => heatmapSettings.value, () => {
   updateHeatmap(true)
 }, { deep: true })
@@ -279,7 +265,6 @@ watch(() => dataSettings.value.maxPoints, (newMaxPoints) => {
   updateHeatmap(false)
 })
 
-// ✅ BACKUP AUTO-UPDATE - ha a watch-ok nem működnének jól
 let updateTimer: number | null = null
 
 function startAutoUpdate () {
@@ -325,7 +310,6 @@ watch(persistedPoints, (points) => {
 }, { deep: false, immediate: true })
 
 function clearHeatmap () {
-  // ✅ Proper layer cleanup
   if (heatLayer.value) {
     heatLayer.value.remove()
     heatLayer.value = null
@@ -359,27 +343,22 @@ onMounted(() => {
   startAutoUpdate()
 })
 
-// ✅ TELJES CLEANUP
 onBeforeUnmount(() => {
   console.log('[Heatmap] 🧹 Starting cleanup...')
 
-  // 0. Stop timer
   stopAutoUpdate()
 
-  // 1. Heat layer cleanup
   if (heatLayer.value) {
     heatLayer.value.remove()
     heatLayer.value = null
   }
 
-  // 2. Map cleanup
   if (leafletMap.value) {
-    leafletMap.value.off() // Remove all event listeners
-    leafletMap.value.remove() // Complete cleanup
+    leafletMap.value.off()
+    leafletMap.value.remove()
     leafletMap.value = null
   }
 
-  // 3. Refs cleanup
   mapRef.value = null
   persistedPoints.value = []
 
@@ -400,7 +379,6 @@ onBeforeUnmount(() => {
         <l-tile-layer :url="url" :attribution="attribution" />
       </l-map>
 
-      <!-- Stats Panel -->
       <div class="absolute top-2 left-2 bg-slate-800/90 text-gray-200 p-3 rounded-lg shadow-lg border border-slate-600 z-10 text-xs space-y-1">
         <div class="flex items-center gap-2 font-semibold text-cyan-400">
           <span>🔥</span><span>Heatmap Statistics</span>
@@ -417,7 +395,6 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <!-- Settings Button -->
       <button
         v-if="props.showControls"
         @click="showControlPanel = !showControlPanel"
@@ -427,14 +404,12 @@ onBeforeUnmount(() => {
         ⚙️
       </button>
 
-      <!-- Settings Panel -->
       <div
         v-if="props.showControls && showControlPanel"
         class="absolute top-14 right-2 bg-slate-800/95 text-gray-200 p-3 rounded-lg shadow-lg border border-slate-600 z-10 w-72 max-h-[calc(100%-4rem)] overflow-auto"
       >
         <h4 class="font-semibold text-cyan-400 mb-3 text-sm">Heatmap Settings</h4>
         <div class="space-y-3">
-          <!-- Max Points -->
           <div>
             <label class="text-xs text-gray-300 block mb-1">
               Max Points to Show: <strong>{{ dataSettings.maxPoints }}</strong>
@@ -450,7 +425,6 @@ onBeforeUnmount(() => {
             <p class="text-xs text-gray-400 mt-1">Mindig a legújabb pontokat mutatja</p>
           </div>
 
-          <!-- Grid Resolution -->
           <div>
             <label class="text-xs text-gray-300 block mb-1">
               Grid Resolution: <strong>{{ dataSettings.gridResolution }}</strong>
@@ -469,7 +443,6 @@ onBeforeUnmount(() => {
             <p class="text-xs text-gray-400 mb-2">Visual Settings</p>
           </div>
 
-          <!-- Radius -->
           <div>
             <label class="text-xs text-gray-300 block mb-1">
               Radius: <strong>{{ heatmapSettings.radius }}</strong>
@@ -483,7 +456,6 @@ onBeforeUnmount(() => {
             />
           </div>
 
-          <!-- Blur -->
           <div>
             <label class="text-xs text-gray-300 block mb-1">
               Blur: <strong>{{ heatmapSettings.blur }}</strong>
@@ -497,7 +469,6 @@ onBeforeUnmount(() => {
             />
           </div>
 
-          <!-- Min Opacity -->
           <div>
             <label class="text-xs text-gray-300 block mb-1">
               Min Opacity: <strong>{{ heatmapSettings.minOpacity }}</strong>
@@ -512,7 +483,6 @@ onBeforeUnmount(() => {
             />
           </div>
 
-          <!-- Update Interval -->
           <div>
             <label class="text-xs text-gray-300 block mb-1">
               Update Interval: <strong>{{ dataSettings.updateInterval }}ms</strong>
@@ -527,7 +497,6 @@ onBeforeUnmount(() => {
             />
           </div>
 
-          <!-- Real-time Toggle -->
           <div class="flex items-center gap-2">
             <input
               type="checkbox"
@@ -540,7 +509,6 @@ onBeforeUnmount(() => {
             </label>
           </div>
 
-          <!-- Action Buttons -->
           <div class="pt-2 border-t border-slate-700 space-y-2">
             <button
               @click="manualUpdate"
@@ -564,7 +532,6 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <!-- Legend -->
       <div class="absolute bottom-2 right-2 bg-slate-800/90 text-gray-200 p-2 rounded shadow-lg border border-slate-600 z-10">
         <div class="flex flex-col gap-1">
           <div class="flex items-center gap-2">

@@ -1,193 +1,418 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { createPinia, setActivePinia } from 'pinia'
-import HeatmapComponent from '@/components/map/HeatmapComponent.vue'
+import { setActivePinia, createPinia } from 'pinia'
+import HeatMapView from '@/components/map/HeatMapComponent.vue'
+import { useGeoLocStore } from '@/stores/geoloc'
 
-// -----------------------------------------------------------------------------
-// 🔥 MOCKOK
-// -----------------------------------------------------------------------------
+describe('HeatMapView Component', () => {
+  let mockLeafletMap: any
+  let mockHeatLayer: any
+  let LMapStub: any
+  let LTileLayerStub: any
 
-// leaflet + heat mock
-vi.mock('leaflet', () => ({
-  default: {},
-  heatLayer: vi.fn(() => ({
-    addTo: vi.fn(),
-    setLatLngs: vi.fn(),
-    redraw: vi.fn(),
-    remove: vi.fn()
-  }))
-}))
-
-// vue-leaflet stubok
-vi.mock('@vue-leaflet/vue-leaflet', () => ({
-  LMap: {
-    template: '<div data-test="l-map"><slot /></div>',
-    props: ['zoom', 'center']
-  },
-  LTileLayer: {
-    template: '<div data-test="tile-layer" />'
-  }
-}))
-
-// vueuse throttle
-vi.mock('@vueuse/core', () => ({
-  useThrottleFn: (fn: any) => fn
-}))
-
-// geoloc store mock
-vi.mock('@/stores/geoloc', () => ({
-  useGeoLocStore: () => ({
-    heatMapPoints: [
-      {
-        coordinate: [47, 19],
-        lastUpdate: Date.now()
-      }
-    ]
-  })
-}))
-
-// -----------------------------------------------------------------------------
-// 🧪 TESTEK
-// -----------------------------------------------------------------------------
-
-describe('HeatmapComponent', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.useFakeTimers()
+
+    mockHeatLayer = {
+      addTo: vi.fn().mockReturnThis(),
+      setLatLngs: vi.fn(),
+      redraw: vi.fn(),
+      remove: vi.fn()
+    }
+
+    mockLeafletMap = {
+      getBounds: vi.fn(() => ({
+        contains: vi.fn(() => true)
+      })),
+      on: vi.fn(),
+      off: vi.fn(),
+      remove: vi.fn()
+    }
+
+    LMapStub = {
+      name: 'LMap',
+      template: '<div class="l-map-stub"><slot /></div>',
+      props: ['zoom', 'center'],
+      emits: ['ready'],
+      data() {
+        return {
+          leafletObject: mockLeafletMap
+        }
+      },
+      async mounted() {
+        await this.$nextTick()
+        this.$emit('ready')
+      }
+    }
+
+    LTileLayerStub = {
+      name: 'LTileLayer',
+      template: '<div class="l-tile-layer-stub"></div>',
+      props: ['url', 'attribution']
+    }
+
+    global.L = {
+      heatLayer: vi.fn(() => mockHeatLayer)
+    } as any
   })
 
   afterEach(() => {
-    vi.clearAllMocks()
     vi.useRealTimers()
+    vi.clearAllMocks()
+    vi.restoreAllMocks()
   })
 
-  const mountHeatmap = (props: any = {}) =>
-    mount(HeatmapComponent, {
-      props,
+  it('should render with default props', () => {
+    const wrapper = mount(HeatMapView, {
+      props: {
+        showControls: true,
+        compactMode: false
+      },
       global: {
-        plugins: [createPinia()]
+        stubs: {
+          'l-map': LMapStub,
+          'l-tile-layer': LTileLayerStub
+        }
       }
     })
 
-  it('renders component', () => {
-    const wrapper = mountHeatmap()
     expect(wrapper.exists()).toBe(true)
+    expect(wrapper.find('.flex').exists()).toBe(true)
   })
 
-  it('renders Leaflet map', () => {
-    const wrapper = mountHeatmap()
-    expect(wrapper.find('[data-test="l-map"]').exists()).toBe(true)
+  it('should render without controls in compact mode', () => {
+    const wrapper = mount(HeatMapView, {
+      props: {
+        showControls: false,
+        compactMode: true
+      },
+      global: {
+        stubs: {
+          'l-map': LMapStub,
+          'l-tile-layer': LTileLayerStub
+        }
+      }
+    })
+
+    expect(wrapper.find('button').exists()).toBe(false)
   })
 
-  it('shows statistics panel', () => {
-    const wrapper = mountHeatmap()
-    expect(wrapper.text()).toContain('Heatmap Statistics')
-    expect(wrapper.text()).toContain('Source Points')
-  })
+  it('should toggle settings panel', async () => {
+    const wrapper = mount(HeatMapView, {
+      props: {
+        showControls: true
+      },
+      global: {
+        stubs: {
+          'l-map': LMapStub,
+          'l-tile-layer': LTileLayerStub
+        }
+      }
+    })
 
-  it('toggles control panel when settings button clicked', async () => {
-    const wrapper = mountHeatmap({ showControls: true })
+    const settingsButton = wrapper.find('button')
+    expect(settingsButton.exists()).toBe(true)
 
-    const settingsBtn = wrapper.find('button')
-    expect(settingsBtn.exists()).toBe(true)
-
-    await settingsBtn.trigger('click')
+    await settingsButton.trigger('click')
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.text()).toContain('Heatmap Settings')
+    const settingsPanel = wrapper.find('.absolute.top-14')
+    expect(settingsPanel.exists()).toBe(true)
+
+    await settingsButton.trigger('click')
+    await wrapper.vm.$nextTick()
   })
 
-  it('processes incoming heatMapPoints into persistedPoints', async () => {
-    const wrapper = mountHeatmap()
-    const vm = wrapper.vm as any
+  it('should display correct statistics', async () => {
+    const geolocStore = useGeoLocStore()
 
-    // throttle miatt
-    vi.runAllTimers()
+    geolocStore.heatMapPoints = [
+      { coordinate: [47.4979, 19.0402], lastUpdate: Date.now() },
+      { coordinate: [47.4980, 19.0403], lastUpdate: Date.now() },
+      { coordinate: [47.4981, 19.0404], lastUpdate: Date.now() }
+    ]
+
+    const wrapper = mount(HeatMapView, {
+      props: { showControls: true },
+      global: {
+        stubs: {
+          'l-map': LMapStub,
+          'l-tile-layer': LTileLayerStub
+        }
+      }
+    })
+
     await wrapper.vm.$nextTick()
+    await vi.advanceTimersByTimeAsync(200)
 
-    expect(vm.persistedPoints.length).toBeGreaterThan(0)
+    const statsPanel = wrapper.find('.absolute.top-2.left-2')
+    expect(statsPanel.exists()).toBe(true)
+    expect(statsPanel.text()).toContain('Heatmap Statistics')
   })
 
-  it('limits persisted points by maxPoints', async () => {
-    const wrapper = mountHeatmap()
-    const vm = wrapper.vm as any
+  it('should update heatmap settings', async () => {
+    const wrapper = mount(HeatMapView, {
+      props: { showControls: true },
+      global: {
+        stubs: {
+          'l-map': LMapStub,
+          'l-tile-layer': LTileLayerStub
+        }
+      }
+    })
 
-    vm.dataSettings.maxPoints = 1
+    await wrapper.find('button').trigger('click')
     await wrapper.vm.$nextTick()
 
-    vm.persistedPoints.push(
-      { coordinate: [1, 1], lastUpdate: Date.now() },
-      { coordinate: [2, 2], lastUpdate: Date.now() }
+    const radiusSlider = wrapper.findAll('input[type="range"]').find(input =>
+      input.element.parentElement?.textContent?.includes('Radius')
     )
 
-    await wrapper.vm.$nextTick()
-    vi.runAllTimers()
+    await radiusSlider?.setValue(30)
 
-    expect(vm.persistedPoints.length).toBeLessThanOrEqual(1)
+    expect(wrapper.vm.heatmapSettings.radius).toBe(30)
   })
 
-  it('clears heatmap when Clear Heatmap clicked', async () => {
-    const wrapper = mountHeatmap({ showControls: true })
-    const vm = wrapper.vm as any
+  it('should handle max points limit', async () => {
+    const wrapper = mount(HeatMapView, {
+      props: { showControls: true },
+      global: {
+        stubs: {
+          'l-map': LMapStub,
+          'l-tile-layer': LTileLayerStub
+        }
+      }
+    })
 
-    vm.showControlPanel = true
+    wrapper.vm.dataSettings.maxPoints = 3
+
+    const points = Array.from({ length: 5 }, (_, i) => ({
+      coordinate: [47.4979 + i * 0.001, 19.0402] as [number, number],
+      lastUpdate: Date.now() - i * 1000
+    }))
+
+    points.forEach(p => {
+      wrapper.vm.persistedPoints.push(p)
+    })
+
     await wrapper.vm.$nextTick()
+    await vi.advanceTimersByTimeAsync(200)
 
-    const clearBtn = wrapper
-      .findAll('button')
-      .find(b => b.text().includes('Clear Heatmap'))
-
-    expect(clearBtn).toBeDefined()
-
-    await clearBtn!.trigger('click')
-    expect(vm.persistedPoints.length).toBe(0)
+    expect(wrapper.vm.persistedPoints.length).toBeLessThanOrEqual(3)
   })
 
-  it('forces heatmap refresh manually', async () => {
-    const wrapper = mountHeatmap({ showControls: true })
-    const vm = wrapper.vm as any
+  it('should clear heatmap', async () => {
+    const wrapper = mount(HeatMapView, {
+      props: { showControls: true },
+      global: {
+        stubs: {
+          'l-map': LMapStub,
+          'l-tile-layer': LTileLayerStub
+        }
+      }
+    })
 
-    vm.showControlPanel = true
+    wrapper.vm.persistedPoints = [
+      { coordinate: [47.4979, 19.0402], lastUpdate: Date.now() },
+      { coordinate: [47.4980, 19.0403], lastUpdate: Date.now() }
+    ]
+
+    await wrapper.find('button').trigger('click')
     await wrapper.vm.$nextTick()
 
-    const refreshBtn = wrapper
-      .findAll('button')
-      .find(b => b.text().includes('Force Refresh'))
+    const clearButton = wrapper.findAll('button').find(btn =>
+      btn.text().includes('Clear Heatmap')
+    )
 
-    expect(refreshBtn).toBeDefined()
+    expect(clearButton).toBeDefined()
+    await clearButton?.trigger('click')
 
-    await refreshBtn!.trigger('click')
-    expect(wrapper.exists()).toBe(true)
+    expect(wrapper.vm.persistedPoints.length).toBe(0)
   })
 
-  it('exports data without crashing', async () => {
-    const wrapper = mountHeatmap({ showControls: true })
-    const vm = wrapper.vm as any
+  it('should export data', async () => {
+    const wrapper = mount(HeatMapView, {
+      props: { showControls: true },
+      global: {
+        stubs: {
+          'l-map': LMapStub,
+          'l-tile-layer': LTileLayerStub
+        }
+      }
+    })
 
-    vm.showControlPanel = true
+    const exportDataSpy = vi.spyOn(wrapper.vm, 'exportData')
+
+    await wrapper.find('button').trigger('click')
     await wrapper.vm.$nextTick()
 
-    const exportBtn = wrapper
-      .findAll('button')
-      .find(b => b.text().includes('Export Data'))
+    const exportButton = wrapper.findAll('button').find(btn =>
+      btn.text().includes('Export Data')
+    )
 
-    expect(exportBtn).toBeDefined()
+    await exportButton?.trigger('click')
 
-    // mock URL methods
-    const createSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:url')
-    const revokeSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
-
-    await exportBtn!.trigger('click')
-
-    expect(createSpy).toHaveBeenCalled()
-    expect(revokeSpy).toHaveBeenCalled()
-
-    createSpy.mockRestore()
-    revokeSpy.mockRestore()
+    expect(exportDataSpy).toHaveBeenCalled()
   })
 
-  it('cleans up on unmount', () => {
-    const wrapper = mountHeatmap()
-    expect(() => wrapper.unmount()).not.toThrow()
+  it('should toggle realtime updates', async () => {
+    const wrapper = mount(HeatMapView, {
+      props: { showControls: true },
+      global: {
+        stubs: {
+          'l-map': LMapStub,
+          'l-tile-layer': LTileLayerStub
+        }
+      }
+    })
+
+    await wrapper.find('button').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const realtimeCheckbox = wrapper.find('input[type="checkbox"]#realtime-compact')
+
+    expect(wrapper.vm.dataSettings.showRealtime).toBe(true)
+
+    await realtimeCheckbox.setChecked(false)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.vm.dataSettings.showRealtime).toBe(false)
+  })
+
+  it('should initialize map on mount', async () => {
+    const wrapper = mount(HeatMapView, {
+      global: {
+        stubs: {
+          'l-map': LMapStub,
+          'l-tile-layer': LTileLayerStub
+        }
+      }
+    })
+
+    await wrapper.vm.$nextTick()
+    await vi.advanceTimersByTimeAsync(600)
+
+    expect(wrapper.vm.leafletMap).toBeDefined()
+  })
+
+  it('should set center from first point', async () => {
+    const wrapper = mount(HeatMapView, {
+      global: {
+        stubs: {
+          'l-map': LMapStub,
+          'l-tile-layer': LTileLayerStub
+        }
+      }
+    })
+
+    wrapper.vm.persistedPoints = [
+      { coordinate: [47.4979, 19.0402], lastUpdate: Date.now() }
+    ]
+
+    await wrapper.vm.$nextTick()
+    await vi.advanceTimersByTimeAsync(200)
+
+    expect(wrapper.vm.center).toBeTruthy()
+  })
+
+  it('should handle grid resolution change', async () => {
+    const wrapper = mount(HeatMapView, {
+      props: { showControls: true },
+      global: {
+        stubs: {
+          'l-map': LMapStub,
+          'l-tile-layer': LTileLayerStub
+        }
+      }
+    })
+
+    const initialResolution = wrapper.vm.dataSettings.gridResolution
+
+    wrapper.vm.dataSettings.gridResolution = 5
+
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.vm.dataSettings.gridResolution).toBe(5)
+    expect(wrapper.vm.dataSettings.gridResolution).not.toBe(initialResolution)
+  })
+
+  it('should cleanup on unmount', async () => {
+    const wrapper = mount(HeatMapView, {
+      global: {
+        stubs: {
+          'l-map': LMapStub,
+          'l-tile-layer': LTileLayerStub
+        }
+      }
+    })
+
+    await wrapper.vm.$nextTick()
+    await vi.advanceTimersByTimeAsync(600)
+
+    wrapper.vm.leafletMap = mockLeafletMap
+    wrapper.vm.heatLayer = mockHeatLayer
+
+    wrapper.unmount()
+
+    expect(wrapper.vm.leafletMap).toBeNull()
+    expect(wrapper.vm.heatLayer).toBeNull()
+  })
+
+  it('should compute heatmap points correctly', async () => {
+    const wrapper = mount(HeatMapView, {
+      global: {
+        stubs: {
+          'l-map': LMapStub,
+          'l-tile-layer': LTileLayerStub
+        }
+      }
+    })
+
+    wrapper.vm.persistedPoints = [
+      { coordinate: [47.4979, 19.0402], lastUpdate: Date.now() },
+      { coordinate: [47.4979, 19.0402], lastUpdate: Date.now() - 1000 },
+      { coordinate: [47.4980, 19.0403], lastUpdate: Date.now() }
+    ]
+
+    await wrapper.vm.$nextTick()
+
+    const heatmapPoints = wrapper.vm.heatmapPoints
+
+    expect(heatmapPoints.length).toBeLessThanOrEqual(wrapper.vm.persistedPoints.length)
+  })
+
+  it('should display legend', () => {
+    const wrapper = mount(HeatMapView, {
+      global: {
+        stubs: {
+          'l-map': LMapStub,
+          'l-tile-layer': LTileLayerStub
+        }
+      }
+    })
+
+    const legend = wrapper.find('.absolute.bottom-2.right-2')
+    expect(legend.exists()).toBe(true)
+    expect(legend.text()).toContain('Old → New')
+  })
+
+  it('should handle update interval change', async () => {
+    const wrapper = mount(HeatMapView, {
+      props: { showControls: true },
+      global: {
+        stubs: {
+          'l-map': LMapStub,
+          'l-tile-layer': LTileLayerStub
+        }
+      }
+    })
+
+    wrapper.vm.dataSettings.updateInterval = 2000
+
+    await wrapper.vm.$nextTick()
+    await vi.advanceTimersByTimeAsync(200)
+
+    expect(wrapper.vm.dataSettings.updateInterval).toBe(2000)
   })
 })

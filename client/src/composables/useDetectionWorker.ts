@@ -1,11 +1,9 @@
-// composables/useDetectionWorker.ts
 import type {
   WorkerStats,
   WorkerOutgoingMessage,
   WorkerIncomingMessage
 } from '@/types/worker'
 
-// Worker singleton instance
 let workerInstance: Worker | null = null
 let messageHandlers = new Map<string, Set<(data: any) => void>>()
 let isInitialized = false
@@ -21,13 +19,11 @@ export function useDetectionWorker () {
     }
 
     try {
-      // TypeScript worker import Vite-tal
       workerInstance = new Worker(
         new URL('@/workers/detectionWorker.ts', import.meta.url),
         { type: 'module' }
       )
 
-      // Központi message handler
       workerInstance.onmessage = (e: MessageEvent<WorkerOutgoingMessage>) => {
         const { type, ...data } = e.data
 
@@ -42,7 +38,6 @@ export function useDetectionWorker () {
             }
           })
         } else if (type !== 'workerStarted' && type !== 'uavIdsUpdated') {
-          // Ne logoljuk az init üzeneteket
           console.warn(`[WorkerManager] No handlers registered for message type: ${type}`)
         }
       }
@@ -79,7 +74,6 @@ export function useDetectionWorker () {
     }
     messageHandlers.get(type)!.add(handler)
 
-    // Cleanup function
     return () => {
       const handlers = messageHandlers.get(type)
       if (handlers) {
@@ -111,7 +105,6 @@ export function useDetectionWorker () {
    * Kiválasztott UAV ID-k frissítése
    */
   const updateSelectedUavIds = (uavIds: number[]): void => {
-    // console.log('[WorkerManager] 📤 Updating selected UAV IDs:', uavIds)
     postToWorker({
       type: 'uavIds',
       uavIds

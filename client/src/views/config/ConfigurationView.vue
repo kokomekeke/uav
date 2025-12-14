@@ -4,7 +4,6 @@ import ConfigComponent from '@/components/configuration/ConfigComponent.vue'
 import axios from 'axios'
 
 const config = ref({
-  // Source configuration
   center_freq: '446M',
   bandwidth: '1M',
   gain: '50',
@@ -12,7 +11,6 @@ const config = ref({
   burst_stride: '65536',
   antenna_id: '',
 
-  // Stream configuration
   stream_id: '1',
   stream_level: 'SPECTRUM', // OPTIONS: SPECTRUM, DETECTION, TELEMETRY
   stream_address: '',
@@ -20,22 +18,17 @@ const config = ref({
   heartbeat_timeout: '1',
   telemetry_timeout: '1',
 
-  // Post-processing configuration
   pp_config: {
     enabled: true,
-    // ROI settings
     roi_settings: []
   },
 
-  // Recording settings
   recording_path: '',
 
-  // Connection settings
   host_address: '',
   host_cmd_port: '5556',
   client_stream_port: '4242',
 
-  // Map server settings
   map_server_host: '0.0.0.0',
   map_server_port: '20000',
   map_server_lat: '',
@@ -48,7 +41,7 @@ const updateConfig = async () => {
   try {
     const payload = buildProtoConfig(config.value)
 
-    const uavId = 1 // vagy store-ból
+    const uavId = 1
     const res = await axios.post(
       'http://localhost:5000/v1/uav/1/command/CONFIG/',
       payload

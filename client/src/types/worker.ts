@@ -1,4 +1,3 @@
-// types/worker.ts
 
 export interface WorkerStats {
   totalReceived: number

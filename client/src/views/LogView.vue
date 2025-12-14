@@ -16,7 +16,6 @@ const { ipPort } = storeToRefs(connectionStore)
 const sensorStore = useSensorStore()
 const { selectedSensor } = storeToRefs(sensorStore)
 
-// ✅ Teljesen egyedi név
 const logScrollContainer = ref(null)
 
 const commands = ref({})
@@ -34,13 +33,11 @@ const selectCommand = async (v, k) => {
   const resp = await fetch(`${ipPort.value}/v1/command/descriptor/${k}`)
   const data = await resp.json()
 
-  // Ha nincs fields mező, ez a command nem vár paramétert
   if (!data.fields) {
     params.value = {}
     return
   }
 
-  // Paramétermezők generálása default értékekkel
   params.value = Object.fromEntries(
     data.fields.map(f => {
       let def = f.default
@@ -56,7 +53,6 @@ const sendCommand = async () => {
 
   const url = `${ipPort.value}/v1/uav/${uavId}/command/${instruction}/`
 
-  // ha nincs paraméter, küldjünk üres objectet
   const body = params.value || {}
 
   const requestOptions = {
@@ -100,7 +96,6 @@ onMounted(async () => {
       <div>Send command to sensor</div>
       <div class="flex flex-row gap-6 items-start mt-4">
 
-        <!-- COMMAND DROPDOWN -->
         <div class="w-64">
           <dropdown title="Commands" class="w-full bg-sgx-dark-blue dark:bg-sgx-darkblue shadow rounded">
             <div class="h-64 overflow-auto">
@@ -116,18 +111,15 @@ onMounted(async () => {
           </dropdown>
         </div>
 
-        <!-- PARAMETER GRID + SEND BUTTON -->
         <div
           v-if="selectedCommand && selectedCommand.params"
           class="bg-slate-500 dark:bg-sgx-darkblue border border-slate-900 dark:border-slate-600 rounded-md p-4 w-[600px] flex flex-col gap-4"
         >
 
-          <!-- TITLE -->
           <div class="text-lg font-semibold text-slate-700 dark:text-white mb-1">
             {{ selectedCommand.instruction }}
           </div>
 
-          <!-- GRID OF INPUTS (AUTO-FLOW) -->
           <div class="grid grid-cols-2 gap-4">
             <div
               v-for="(value, key) in params"
@@ -147,7 +139,6 @@ onMounted(async () => {
             </div>
           </div>
 
-          <!-- SEND BUTTON RIGHT-ALIGNED -->
           <div class="flex justify-end mt-2">
             <button
               @click="sendCommand"

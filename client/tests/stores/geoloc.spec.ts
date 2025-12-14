@@ -1,3 +1,4 @@
+// tests/stores/connection.spec.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useConnectionStore } from '@/stores/connection'

@@ -1,9 +1,8 @@
-// tests/views/MainView.spec.ts
-import { describe, it, expect } from 'vitest'
-import { mount } from '@vue/test-utils'
-import MainView from '@/views/MainView.vue'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { mount, VueWrapper } from '@vue/test-utils'
+import { setActivePinia, createPinia } from 'pinia'
+import MainView from '@/views/SensorDetailView.vue'
 
-// === STUB CHILD COMPONENTS ===
 const stubs = {
   ConfigurationView: {
     template: '<div data-test="config-view" />'
@@ -30,7 +29,22 @@ const mountView = () =>
     }
   })
 
+const findButtonByText = (wrapper: VueWrapper, text: string) => {
+  return wrapper.findAll('button').find((button) => 
+    button.text().includes(text)
+  )
+}
+
 describe('MainView.vue', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('renders configuration panel', () => {
     const wrapper = mountView()
     expect(wrapper.find('[data-test="config-view"]').exists()).toBe(true)
@@ -47,7 +61,12 @@ describe('MainView.vue', () => {
   it('switches to heatmap view when tab is clicked', async () => {
     const wrapper = mountView()
 
-    await wrapper.find('button:contains("Heatmap View")').trigger('click')
+    const heatmapButton = findButtonByText(wrapper, 'Heatmap View')
+    expect(heatmapButton).toBeDefined()
+
+    await heatmapButton?.trigger('click')
+    await wrapper.vm.$nextTick()
+    await vi.runAllTimersAsync()
 
     expect(wrapper.find('[data-test="heatmap-view"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="map-view"]').exists()).toBe(false)
@@ -56,15 +75,26 @@ describe('MainView.vue', () => {
   it('switches to spectrum view when tab is clicked', async () => {
     const wrapper = mountView()
 
-    await wrapper.find('button:contains("Spectrum View")').trigger('click')
+    const spectrumButton = findButtonByText(wrapper, 'Spectrum View')
+    expect(spectrumButton).toBeDefined()
+
+    await spectrumButton?.trigger('click')
+    await wrapper.vm.$nextTick()
+    await vi.runAllTimersAsync()
 
     expect(wrapper.find('[data-test="spectrum-view"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="map-view"]').exists()).toBe(false)
   })
 
   it('renders both map and heatmap in split view', async () => {
     const wrapper = mountView()
 
-    await wrapper.find('button:contains("Split View")').trigger('click')
+    const splitButton = findButtonByText(wrapper, 'Split View')
+    expect(splitButton).toBeDefined()
+
+    await splitButton?.trigger('click')
+    await wrapper.vm.$nextTick()
+    await vi.runAllTimersAsync()
 
     expect(wrapper.findAll('[data-test="map-view"]').length).toBe(1)
     expect(wrapper.findAll('[data-test="heatmap-view"]').length).toBe(1)
@@ -73,14 +103,16 @@ describe('MainView.vue', () => {
   it('applies active tab class correctly', async () => {
     const wrapper = mountView()
 
-    const mapTab = wrapper.find('button:contains("Map View")')
-    const heatmapTab = wrapper.find('button:contains("Heatmap View")')
+    const mapTab = findButtonByText(wrapper, 'Map View')
+    const heatmapTab = findButtonByText(wrapper, 'Heatmap View')
 
-    expect(mapTab.classes()).toContain('bg-cyan-600')
+    expect(mapTab?.classes()).toContain('bg-cyan-600')
 
-    await heatmapTab.trigger('click')
+    await heatmapTab?.trigger('click')
+    await wrapper.vm.$nextTick()
+    await vi.runAllTimersAsync()
 
-    expect(heatmapTab.classes()).toContain('bg-cyan-600')
-    expect(mapTab.classes()).not.toContain('bg-cyan-600')
+    expect(heatmapTab?.classes()).toContain('bg-cyan-600')
+    expect(mapTab?.classes()).not.toContain('bg-cyan-600')
   })
 })

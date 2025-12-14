@@ -23,7 +23,6 @@
         <button onclick="addItem()" class="bg-green-300 ml-2 mr-0.5 rounded">➕</button>
         <button onclick="deleteItem()" class="bg-red-300 mr-2 ml-0.5 rounded">➖</button>
     </div>
-    <!-- A tooltipet teleportáljuk a body-ba -->
     <teleport to="body">
       <div
         v-if="selectedROIConfig"
@@ -48,7 +47,6 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useConfigStore } from '@/stores/config'
 
 interface ROIConfig {
   roi_center: string
@@ -67,27 +65,22 @@ const tooltipPosition = ref({ x: 0, y: 0 })
 const selectROI = (roi: ROIConfig, event: MouseEvent) => {
   selectedROIConfig.value = roi
 
-  // Típusellenőrzés: biztosítjuk, hogy az event.target egy gomb elem
   const target = event.target as HTMLElement
   if (!target) return
 
-  // A gomb pozíciójának lekérése
   const rect = target.getBoundingClientRect()
 
-  // Tooltip pozíció beállítása
   tooltipPosition.value = {
     x: rect.left + window.scrollX + rect.width + 10, // Középre igazítás
     y: rect.top + window.scrollY + rect.height - 175 // A gomb alá helyezés
   }
 }
 
-// Tooltip dinamikus pozíció beállítása
 const tooltipStyle = computed(() => ({
   left: `${tooltipPosition.value.x}px`,
   top: `${tooltipPosition.value.y}px`
 }))
 
-// Ha görgetés történik, a tooltip tűnjön el
 const hideTooltipOnScroll = () => {
   selectedROIConfig.value = null
 }

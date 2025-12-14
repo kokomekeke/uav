@@ -5,13 +5,11 @@ import { createPinia, setActivePinia } from 'pinia'
 import { nextTick, ref } from 'vue'
 import App from '@/App.vue'
 
-// 🔧 Mock useDark - reaktív ref visszaadása
 const mockIsDark = ref(false)
 vi.mock('@vueuse/core', () => ({
   useDark: () => mockIsDark
 }))
 
-// 🔧 Mock child components
 const mockComponents = {
   SgxHeader: {
     template: `
@@ -47,13 +45,10 @@ describe('App.vue', () => {
   let consoleLogSpy: any
 
   beforeEach(() => {
-    // Reset mock isDark
     mockIsDark.value = false
-    
-    // Pinia setup
+
     setActivePinia(createPinia())
-    
-    // Console.log spy
+
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
   })
 
@@ -72,15 +67,11 @@ describe('App.vue', () => {
     consoleLogSpy.mockRestore()
   })
 
-  /* ============================================
-   * LAYOUT STRUCTURE TESTS
-   * ============================================ */
-  
   describe('Layout Structure', () => {
     it('renders main layout container with gradient background', () => {
       wrapper = mountApp()
       const root = wrapper.find('.font-mono')
-      
+
       expect(root.exists()).toBe(true)
       expect(root.classes()).toContain('bg-gradient-to-tr')
     })
@@ -88,7 +79,7 @@ describe('App.vue', () => {
     it('renders fixed header at the top', () => {
       wrapper = mountApp()
       const header = wrapper.findComponent('[data-test="header"]')
-      
+
       expect(header.exists()).toBe(true)
       expect(header.classes()).toContain('fixed')
       expect(header.classes()).toContain('top-0')
@@ -100,7 +91,7 @@ describe('App.vue', () => {
       const fadeOverlay = wrapper.findAll('.fixed').filter(
         el => el.classes().includes('pointer-events-none')
       )[0]
-      
+
       expect(fadeOverlay.exists()).toBe(true)
       expect(fadeOverlay.classes()).toContain('top-24')
       expect(fadeOverlay.classes()).toContain('z-40')
@@ -109,7 +100,7 @@ describe('App.vue', () => {
     it('renders main container with proper padding', () => {
       wrapper = mountApp()
       const main = wrapper.find('main')
-      
+
       expect(main.exists()).toBe(true)
       expect(main.classes()).toContain('pt-24') // padding for fixed header
       expect(main.classes()).toContain('min-h-screen')
@@ -125,14 +116,10 @@ describe('App.vue', () => {
     })
   })
 
-  /* ============================================
-   * MENU STATE TESTS
-   * ============================================ */
-  
   describe('Menu State Management', () => {
     it('initializes with menu closed', () => {
       wrapper = mountApp()
-      
+
       expect(wrapper.vm.isMenuOpen).toBe(false)
     })
 
@@ -148,7 +135,7 @@ describe('App.vue', () => {
       wrapper = mountApp()
       const menu = wrapper.findComponent('[data-test="menu"]')
 
-      await menu.trigger('click') // triggers emit('update:isMenuOpen', true)
+      await menu.trigger('click')
       await nextTick()
 
       expect(wrapper.vm.isMenuOpen).toBe(true)
@@ -206,14 +193,11 @@ describe('App.vue', () => {
     })
   })
 
-  /* ============================================
-   * DARK MODE TESTS
-   * ============================================ */
-  
+
   describe('Dark Mode', () => {
     it('initializes with dark mode disabled', () => {
       wrapper = mountApp()
-      
+
       expect(wrapper.vm.isDark).toBe(false)
       expect(wrapper.findComponent('[data-test="header"]').props('isDark')).toBe(false)
     })
@@ -262,10 +246,6 @@ describe('App.vue', () => {
     })
   })
 
-  /* ============================================
-   * LIFECYCLE TESTS
-   * ============================================ */
-  
   describe('Lifecycle Hooks', () => {
     it('logs on mount with version info', () => {
       wrapper = mountApp()
@@ -286,20 +266,17 @@ describe('App.vue', () => {
 
     it('cleans up without errors on unmount', () => {
       wrapper = mountApp()
-      
+
       expect(() => wrapper.unmount()).not.toThrow()
     })
   })
 
-  /* ============================================
-   * WATCHERS TESTS
-   * ============================================ */
-  
+
   describe('Watchers', () => {
     it('logs when isMenuOpen changes', async () => {
       wrapper = mountApp()
       consoleLogSpy.mockClear()
-      
+
       const menu = wrapper.findComponent('[data-test="menu"]')
       await menu.trigger('click')
       await nextTick()
@@ -310,7 +287,7 @@ describe('App.vue', () => {
     it('logs when isDark changes', async () => {
       wrapper = mountApp()
       consoleLogSpy.mockClear()
-      
+
       const header = wrapper.findComponent('[data-test="header"]')
       await header.trigger('click')
       await nextTick()
@@ -319,10 +296,7 @@ describe('App.vue', () => {
     })
   })
 
-  /* ============================================
-   * INTEGRATION TESTS
-   * ============================================ */
-  
+
   describe('Integration', () => {
     it('updates all components when menu state changes', async () => {
       wrapper = mountApp()
@@ -343,13 +317,11 @@ describe('App.vue', () => {
       wrapper = mountApp()
       const menu = wrapper.findComponent('[data-test="menu"]')
 
-      // Rapid toggles
       await menu.trigger('click')
       await menu.trigger('click')
       await menu.trigger('click')
       await nextTick()
 
-      // Should end up open (3 toggles from closed)
       expect(wrapper.vm.isMenuOpen).toBe(true)
     })
 
@@ -358,13 +330,11 @@ describe('App.vue', () => {
       const header = wrapper.findComponent('[data-test="header"]')
       const menu = wrapper.findComponent('[data-test="menu"]')
 
-      // Toggle dark mode
       await header.trigger('click')
       await nextTick()
       expect(mockIsDark.value).toBe(true)
       expect(wrapper.vm.isMenuOpen).toBe(false)
 
-      // Toggle menu
       await menu.trigger('click')
       await nextTick()
       expect(mockIsDark.value).toBe(true)

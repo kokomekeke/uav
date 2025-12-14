@@ -18,34 +18,32 @@ import {
   onMounted,
   onBeforeUnmount,
   ref
-} from "vue";
-import { WaterfallPlot } from "@/utils/waterfall";
+} from 'vue'
+import { WaterfallPlot } from '@/utils/waterfall'
 
 export default defineComponent({
-  name: "WaterfallPlot",
+  name: 'WaterfallPlot',
   props: {
     uavId: {
       type: Number,
       default: 17
     }
   },
-  setup(props) {
-    const canvasRef = ref<HTMLCanvasElement | null>(null);
-    const isConnected = ref(false);
+  setup (props) {
+    const canvasRef = ref<HTMLCanvasElement | null>(null)
+    const isConnected = ref(false)
 
-    let plot: WaterfallPlot | null = null;
-    let eventSource: EventSource | null = null;
-    let waterfallYOffset = 0;
+    let plot: WaterfallPlot | null = null
+    let eventSource: EventSource | null = null
+    let waterfallYOffset = 0
 
     const decodeFloat16Array = (base64Data: string): number[] => {
       try {
-        // ✅ 1. Base64 padding biztosítása (ha hiányzik)
         let paddedBase64 = base64Data
         while (paddedBase64.length % 4 !== 0) {
           paddedBase64 += '='
         }
 
-        // ✅ 2. Base64 dekódolás
         const binaryString = atob(paddedBase64)
         const bytes = new Uint8Array(binaryString.length)
         for (let i = 0; i < binaryString.length; i++) {
@@ -58,13 +56,11 @@ export default defineComponent({
           first8bytes: Array.from(bytes.slice(0, 8))
         })
 
-        // ✅ 3. KRITIKUS: Ellenőrizzük, hogy páros számú byte-unk van
         if (bytes.length % 2 !== 0) {
           console.error('❌ Invalid FLOAT16 data: odd number of bytes', {
             totalBytes: bytes.length,
             missingBytes: 1
           })
-          // Utolsó byte levágása (hiányos adat)
           const evenBytes = bytes.slice(0, bytes.length - 1)
           console.warn('⚠️ Truncated to even length:', evenBytes.length)
           return decodeFloat16FromBytes(evenBytes)
@@ -77,25 +73,23 @@ export default defineComponent({
       }
     }
 
-    // ✅ Külön funkció a FLOAT16 dekódolásra
     const decodeFloat16FromBytes = (bytes: Uint8Array): number[] => {
       const dataView = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
       const floats: number[] = []
 
       for (let i = 0; i < bytes.length; i += 2) {
         try {
-          const half = dataView.getUint16(i, true) // little-endian
+          const half = dataView.getUint16(i, true)
           const float = float16ToFloat32(half)
 
-          // ✅ NaN/Infinity szűrés (opcionális)
           if (!isNaN(float) && isFinite(float)) {
             floats.push(float)
           } else {
-            floats.push(0) // vagy skip
+            floats.push(0)
           }
         } catch (err) {
           console.error(`❌ Error at byte offset ${i}:`, err)
-          floats.push(0) // fallback érték
+          floats.push(0)
         }
       }
 
@@ -103,121 +97,113 @@ export default defineComponent({
     }
 
     const float16ToFloat32 = (half: number): number => {
-      const sign = (half & 0x8000) >> 15;
-      const exponent = (half & 0x7C00) >> 10;
-      const fraction = half & 0x03FF;
+      const sign = (half & 0x8000) >> 15
+      const exponent = (half & 0x7C00) >> 10
+      const fraction = half & 0x03FF
 
       if (exponent === 0) {
-        return (sign ? -1 : 1) * Math.pow(2, -14) * (fraction / 1024);
+        return (sign ? -1 : 1) * Math.pow(2, -14) * (fraction / 1024)
       } else if (exponent === 0x1F) {
-        return fraction ? NaN : (sign ? -Infinity : Infinity);
+        return fraction ? NaN : (sign ? -Infinity : Infinity)
       }
 
-      return (sign ? -1 : 1) * Math.pow(2, exponent - 15) * (1 + fraction / 1024);
-    };
+      return (sign ? -1 : 1) * Math.pow(2, exponent - 15) * (1 + fraction / 1024)
+    }
 
     const normalizeSpectrum = (data: number[]): number[] => {
-      // Konvertálás dB-ből lineáris skálára és normalizálás 0-255 tartományba
-      const min = Math.min(...data);
-      const max = Math.max(...data);
-      const range = max - min;
+      const min = Math.min(...data)
+      const max = Math.max(...data)
+      const range = max - min
 
-      if (range === 0) return data.map(() => 128);
+      if (range === 0) return data.map(() => 128)
 
       return data.map(value =>
         Math.floor(((value - min) / range) * 255)
-      );
-    };
+      )
+    }
 
     const connectToStream = () => {
-      if (eventSource) return;
+      if (eventSource) return
 
-      const url = `http://localhost:5000/v1/stream/comint_detection`;
-      eventSource = new EventSource(url, { withCredentials: true });
+      const url = 'http://localhost:5000/v1/stream/comint_detection'
+      eventSource = new EventSource(url, { withCredentials: true })
 
       eventSource.onopen = () => {
-        console.log('✅ SSE Connected');
-        isConnected.value = true;
-      };
+        console.log('✅ SSE Connected')
+        isConnected.value = true
+      }
 
       eventSource.onmessage = (event) => {
         try {
-          const batch = JSON.parse(event.data);
+          const batch = JSON.parse(event.data)
 
-          // Batch lehet array vagy single object
-          const measurements = Array.isArray(batch) ? batch : [batch];
+          const measurements = Array.isArray(batch) ? batch : [batch]
 
           measurements.forEach((item: any) => {
-            // Csak a megfelelő UAV-tól és Measurement típusú adatokat dolgozzuk fel
             if (item.id === props.uavId && item.Measurement) {
-              const measurement = item.Measurement;
+              const measurement = item.Measurement
 
               if (measurement.data && measurement.data.dataType === 'FLOAT16') {
-                // Dekódolás
-                const spectrumData = decodeFloat16Array(measurement.data.data);
+                const spectrumData = decodeFloat16Array(measurement.data.data)
 
-                // Normalizálás
-                const normalized = normalizeSpectrum(spectrumData);
+                const normalized = normalizeSpectrum(spectrumData)
 
                 if (plot) {
-                  // Spectrum line (felső fél)
-                  plot.drawSpectrumLine(normalized);
+                  plot.drawSpectrumLine(normalized)
 
-                  // Waterfall row (alsó fél)
-                  plot.drawWaterfallRow(normalized, waterfallYOffset);
+                  plot.drawWaterfallRow(normalized, waterfallYOffset)
 
-                  // Y offset növelése (scrolling effect)
-                  waterfallYOffset = (waterfallYOffset + 1) % (plot.height / 2);
+                  waterfallYOffset = (waterfallYOffset + 1) % (plot.height / 2)
                 }
               }
             }
-          });
+          })
         } catch (err) {
-          console.error('Error parsing SSE data:', err);
+          console.error('Error parsing SSE data:', err)
         }
-      };
+      }
 
       eventSource.onerror = (err) => {
-        console.error('❌ SSE Error:', err);
-        isConnected.value = false;
-        disconnect();
-      };
-    };
+        console.error('❌ SSE Error:', err)
+        isConnected.value = false
+        disconnect()
+      }
+    }
 
     const disconnect = () => {
       if (eventSource) {
-        eventSource.close();
-        eventSource = null;
-        isConnected.value = false;
+        eventSource.close()
+        eventSource = null
+        isConnected.value = false
       }
-    };
+    }
 
     const toggleConnection = () => {
       if (isConnected.value) {
-        disconnect();
+        disconnect()
       } else {
-        connectToStream();
+        connectToStream()
       }
-    };
+    }
 
     onMounted(() => {
       if (canvasRef.value) {
-        plot = new WaterfallPlot(canvasRef.value);
-        connectToStream();
+        plot = new WaterfallPlot(canvasRef.value)
+        connectToStream()
       }
-    });
+    })
 
     onBeforeUnmount(() => {
-      disconnect();
-    });
+      disconnect()
+    })
 
     return {
       canvasRef,
       isConnected,
       toggleConnection
-    };
+    }
   }
-});
+})
 </script>
 
 <style scoped>

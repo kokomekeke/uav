@@ -280,7 +280,6 @@ export const useGeoLocStore = defineStore('geoloc', () => {
     console.log(`[GeoLocStore] 📍 HeatMap: +${newHeatPoints.length} new | Total: ${heatMapPoints.value.length}/${heatMapSettings.value.maxSize}`)
   }
 
-  // ✅ MANUÁLIS CLEAR - User kontroll
   const clearHeatMap = (): void => {
     heatMapPoints.value = []
     console.log('[GeoLocStore] 🧹 HeatMap manually cleared')
@@ -294,7 +293,6 @@ export const useGeoLocStore = defineStore('geoloc', () => {
   }
 
   return {
-    // GeoJSON
     geoJsonData,
     geoJsonSettings,
     isGeoJsonEnabled,
@@ -303,13 +301,11 @@ export const useGeoLocStore = defineStore('geoloc', () => {
     updateGeoJsonSettings,
     fetchGeoJsonData,
 
-    // HeatMap
     heatMapPoints,
     heatMapSettings,
     addToHeatMap,
     clearHeatMap,
 
-    // Utils
     clearAll
   }
 })

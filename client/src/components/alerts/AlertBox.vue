@@ -1,5 +1,4 @@
 <script setup>
-// import { computed } from 'vue'
 
 defineProps({
   type: String // "success", "error", vagy "info" lehet

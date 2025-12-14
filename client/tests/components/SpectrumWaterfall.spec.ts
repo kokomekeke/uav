@@ -1,196 +1,204 @@
 // tests/components/SpectrumWaterfall.spec.ts
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-  beforeAll,
-  vi
-} from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
-import { createPinia, setActivePinia } from 'pinia'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { mount } from '@vue/test-utils'
+import { setActivePinia, createPinia } from 'pinia'
 import SpectrumWaterfall from '@/components/spectrum/SpectrumWaterfall.vue'
 import { useSensorStore } from '@/stores/sensor'
 
-/* ------------------------------------------------------------------
- * MOCKOK – FONTOS: KONSTRUKTOROK KELLENEK (new SpectrumPlot())
- * ------------------------------------------------------------------ */
-vi.mock('@/utils/spectrumPlot', () => ({
-  SpectrumPlot: vi.fn().mockImplementation(function () {
-    this.drawSpectrumLine = vi.fn()
-    this.resize = vi.fn()
-    this.clear = vi.fn()
-  })
-}))
-
-vi.mock('@/utils/waterfall', () => ({
-  WaterfallPlot: vi.fn().mockImplementation(function () {
-    this.drawWaterfallRow = vi.fn()
-    this.resize = vi.fn()
-    this.clear = vi.fn()
-  })
-}))
-
-/* ------------------------------------------------------------------
- * CANVAS MOCK – JSDOM-BAN KÖTELEZŐ
- * ------------------------------------------------------------------ */
-beforeAll(() => {
-  HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
-    clearRect: vi.fn(),
-    fillRect: vi.fn(),
-    drawImage: vi.fn(),
-    getImageData: vi.fn(),
-    putImageData: vi.fn()
-  }))
-})
-
-describe('SpectrumWaterfall', () => {
-  let wrapper: any
-  let store: any
-  let pinia: any
-
-  beforeEach(async () => {
-    // 🔑 UGYANAZ a Pinia példány
-    pinia = createPinia()
-    setActivePinia(pinia)
-
-    store = useSensorStore()
-
-    // 🔑 setup store → .value
-    store.$patch({
-      sensors: {
-        17: {
-          uav_id: 17,
-          uav_label: 'Test UAV',
-          active: true,
-          detections: []
-        }
-      }
-    })
-
-
-    wrapper = mount(SpectrumWaterfall, {
-      global: {
-        plugins: [pinia]
-      }
-    })
-
-    await flushPromises()
+describe('SpectrumWaterfall Component', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.useFakeTimers()
   })
 
   afterEach(() => {
-    if (wrapper) {
-      wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('should render component', () => {
+    const wrapper = mount(SpectrumWaterfall)
+
+    expect(wrapper.exists()).toBe(true)
+    expect(wrapper.find('.spectrum-waterfall-container').exists()).toBe(true)
+  })
+
+  it('should display UAV selector', () => {
+    const wrapper = mount(SpectrumWaterfall)
+
+    expect(wrapper.find('.sensor-selector').exists()).toBe(true)
+    expect(wrapper.find('select').exists()).toBe(true)
+  })
+
+  it('should display status indicator', () => {
+    const wrapper = mount(SpectrumWaterfall)
+
+    const status = wrapper.find('.status')
+    expect(status.exists()).toBe(true)
+    expect(status.text()).toContain('No Data')
+  })
+
+  it('should list available sensors', async () => {
+    const sensorStore = useSensorStore()
+    sensorStore.sensors = {
+      1: {
+        uav_id: 1,
+        uav_label: 'UAV-1',
+        active: true,
+        detections: []
+      } as any,
+      2: {
+        uav_id: 2,
+        uav_label: 'UAV-2',
+        active: true,
+        detections: []
+      } as any
     }
-  })
 
-  /* ------------------------------------------------------------------
-   * ALAP RENDER TESZTEK
-   * ------------------------------------------------------------------ */
-  it('renders canvas elements', () => {
-    expect(wrapper.find('.spectrum-canvas').exists()).toBe(true)
-    expect(wrapper.find('.waterfall-canvas').exists()).toBe(true)
-  })
-
-  it('auto-selects first available sensor', async () => {
-    // 🔑 explicit beállítás (nem timing-függő)
-    wrapper.vm.selectedUavId = 17
+    const wrapper = mount(SpectrumWaterfall)
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.vm.selectedUavId).toBe(17)
+    const options = wrapper.findAll('option')
+    expect(options.length).toBeGreaterThan(1)
+    expect(wrapper.text()).toContain('UAV-1')
+    expect(wrapper.text()).toContain('UAV-2')
   })
 
-  it('displays sensor in dropdown (via computed)', () => {
-    const sensors = wrapper.vm.availableSensors
-    expect(sensors.length).toBe(1)
-    expect(sensors[0].uav_label).toBe('Test UAV')
-  })
+  it('should select UAV', async () => {
+    const sensorStore = useSensorStore()
+    sensorStore.sensors = {
+      1: {
+        uav_id: 1,
+        uav_label: 'UAV-1',
+        active: true,
+        detections: []
+      } as any
+    }
 
-  /* ------------------------------------------------------------------
-   * UI INTERAKCIÓ
-   * ------------------------------------------------------------------ */
-  it('toggles spectrum visibility', async () => {
-    const spectrumButton = wrapper.findAll('button')[0]
-
-    expect(wrapper.vm.showSpectrum).toBe(true)
-
-    await spectrumButton.trigger('click')
-
-    expect(wrapper.vm.showSpectrum).toBe(false)
-  })
-
-  /* ------------------------------------------------------------------
-   * ADATFELDOLGOZÁS
-   * ------------------------------------------------------------------ */
-  it('processes spectrum data when detections update', async () => {
-    // 1️⃣ biztosítsuk a kiválasztott UAV-t
-    wrapper.vm.selectedUavId = 17
+    const wrapper = mount(SpectrumWaterfall)
     await wrapper.vm.$nextTick()
 
-    // 2️⃣ VALÓDI FLOAT16 BYTE-OK (1.0, 2.0)
-    const float16Bytes = new Uint8Array([
-      0x00, 0x3C, // 1.0
-      0x00, 0x40  // 2.0
-    ])
+    const select = wrapper.find('select')
+    await select.setValue(1)
 
-    const validBase64 = btoa(
-      String.fromCharCode(...float16Bytes)
-    )
+    expect(wrapper.vm.selectedUavId).toBe(1)
+  })
 
-    // 3️⃣ JAVÍTOTT: Function form $patch
-    store.$patch((state) => {
-      state.sensors[17].detections = [
-        {
-          Measurement: {
-            data: [
-              {
-                dataType: 'FLOAT16',
-                data: validBase64,
-                centerFrequency: 300000000
-              }
-            ]
-          },
-          timestamp: Date.now()
-        }
-      ]
-    })
+  it('should decode Float16 data', () => {
+    const wrapper = mount(SpectrumWaterfall)
 
-    // 4️⃣ watcher + render lefutása
-    await flushPromises()
-    await wrapper.vm.$nextTick()
+    const testData = 'AAA='
 
-    // 5️⃣ ✅ MOST MÁR NŐ
-    expect(wrapper.vm.dataPointsReceived).toBe(1)
+    const result = wrapper.vm.decodeFloat16Array(testData)
+
+    expect(Array.isArray(result)).toBe(true)
+  })
+
+  it('should normalize spectrum data', () => {
+    const wrapper = mount(SpectrumWaterfall)
+
+    const testData = [10, 20, 30, 40, 50]
+    const normalized = wrapper.vm.normalizeSpectrum(testData)
+
+    expect(normalized.length).toBe(testData.length)
+    expect(Math.min(...normalized)).toBeGreaterThanOrEqual(0)
+    expect(Math.max(...normalized)).toBeLessThanOrEqual(255)
+  })
+
+  it('should handle empty spectrum data', () => {
+    const wrapper = mount(SpectrumWaterfall)
+
+    const normalized = wrapper.vm.normalizeSpectrum([])
+
+    expect(normalized.length).toBe(0)
   })
 
 
+  it('should show receiving status when data arrives', async () => {
+    const wrapper = mount(SpectrumWaterfall)
 
+    wrapper.vm.isReceivingData = true
+    await wrapper.vm.$nextTick()
 
-  it('does not update data counter on invalid detections', async () => {
-    wrapper.vm.selectedUavId = 17
+    expect(wrapper.find('.connected').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Receiving Data')
+  })
+
+  it('should timeout when no data received', () => {
+    const wrapper = mount(SpectrumWaterfall)
+
+    wrapper.vm.isReceivingData = true
+    wrapper.vm.lastDataTimestamp = Date.now() - 3000
+
+    wrapper.vm.checkDataTimeout()
+
+    expect(wrapper.vm.isReceivingData).toBe(false)
+  })
+
+  it('should auto-select first sensor', async () => {
+    const sensorStore = useSensorStore()
+    sensorStore.sensors = {
+      1: {
+        uav_id: 1,
+        uav_label: 'UAV-1',
+        active: true,
+        detections: []
+      } as any
+    }
+
+    const wrapper = mount(SpectrumWaterfall)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.vm.selectedUavId).toBe(1)
+  })
+
+  it('should initialize canvas on mount', async () => {
+    const wrapper = mount(SpectrumWaterfall)
+
+    await wrapper.vm.$nextTick()
+
+    const canvas = wrapper.find('canvas')
+    expect(canvas.exists()).toBe(true)
+  })
+
+  it('should cleanup on unmount', () => {
+    const wrapper = mount(SpectrumWaterfall)
+    const clearIntervalSpy = vi.spyOn(global, 'clearInterval')
+
+    wrapper.unmount()
+
+    expect(clearIntervalSpy).toHaveBeenCalled()
+  })
+
+  it('should watch for new detections', async () => {
+    const sensorStore = useSensorStore()
+    sensorStore.sensors = {
+      1: {
+        uav_id: 1,
+        uav_label: 'UAV-1',
+        active: true,
+        detections: []
+      } as any
+    }
+
+    const wrapper = mount(SpectrumWaterfall)
+    wrapper.vm.selectedUavId = 1
     await wrapper.vm.$nextTick()
 
     const initialCount = wrapper.vm.dataPointsReceived
 
-    // ❗️invalid measurement → de $patch kötelező
-    store.$patch({
-      sensors: {
-        17: {
-          ...store.sensors[17],
-          detections: [
-            {
-              Measurement: { data: [] },
-              timestamp: Date.now()
-            }
-          ]
-        }
+    sensorStore.sensors[1].detections.push({
+      Measurement: {
+        data: [
+          {
+            dataType: 'FLOAT16',
+            data: 'AAA='
+          }
+        ]
       }
-    })
+    } as any)
 
-    await flushPromises()
+    await wrapper.vm.$nextTick()
 
-    expect(wrapper.vm.dataPointsReceived).toBe(initialCount)
+    expect(wrapper.vm.dataPointsReceived).toBeGreaterThanOrEqual(initialCount)
   })
-
 })

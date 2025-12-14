@@ -1,12 +1,10 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { mount, VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-// ✅ JAVÍTOTT IMPORT - views mappából, nem components-ból!
 import ConnectionView from '@/views/ConnectionView.vue'
 import { useConnectionStore } from '@/stores/connection'
 import { useSensorStore } from '@/stores/sensor'
 
-// Mock stores
 vi.mock('@/stores/sensor', () => ({
   useSensorStore: vi.fn(() => ({
     fetchSensors: vi.fn().mockResolvedValue(undefined)

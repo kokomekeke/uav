@@ -2,15 +2,16 @@
 import { computed, ref, watch, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSensorStore } from '@/stores/sensor'
-import { useConnectionStore } from '@/stores/connection' // ✅ ÚJ
+import { useConnectionStore } from '@/stores/connection'
 import NewSensorModal from '@/components/common/NewSensorModal.vue'
 import axios from 'axios'
 import type { Sensor } from '@/types/sensor'
 
 const sensorStore = useSensorStore()
-const { sensors, isConnected } = storeToRefs(sensorStore) // ✅ isConnected hozzáadva
+const { sensors } = storeToRefs(sensorStore)
 
-const connectionStore = useConnectionStore() // ✅ ÚJ
+const connectionStore = useConnectionStore()
+const { isConnected } = storeToRefs(connectionStore)
 
 interface Props {
   isMenuOpen: boolean
@@ -32,31 +33,23 @@ const emit = defineEmits<{
 }>()
 
 const sensorList = computed(() => {
-  // ✅ Csak connected állapotban listázzuk
   if (!isConnected.value) return []
   return Object.values(sensors.value)
 })
 
-// ============================================================================
-// LIFECYCLE
-// ============================================================================
-
 onMounted(async () => {
   console.log('[SensorSidebar] 🚀 Component mounted')
 
-  // ✅ Kapcsolat ellenőrzés
   if (!isConnected.value) {
     console.warn('[SensorSidebar] Not connected - skipping initialization')
     return
   }
 
-  // Worker inicializálás
   if (!sensorStore.isWorkerReady()) {
     console.log('[SensorSidebar] Initializing worker...')
     sensorStore.initializeWorker()
   }
 
-  // Szenzorok betöltése
   if (Object.keys(sensors.value).length === 0) {
     console.log('[SensorSidebar] Fetching sensors...')
     await sensorStore.fetchSensors()
@@ -65,15 +58,10 @@ onMounted(async () => {
   console.log('[SensorSidebar] ✅ Ready')
 })
 
-// ============================================================================
-// WATCHERS
-// ============================================================================
-
 watch(() => props.isMenuOpen, (newValue) => {
   isMenuOpen.value = newValue
 })
 
-// ✅ ÚJ: Connection state figyelés
 watch(isConnected, async (connected) => {
   if (connected) {
     console.log('[SensorSidebar] Connected - fetching sensors')
@@ -82,10 +70,6 @@ watch(isConnected, async (connected) => {
     console.log('[SensorSidebar] Disconnected - clearing UI')
   }
 })
-
-// ============================================================================
-// METHODS
-// ============================================================================
 
 const removeSensor = async (): Promise<void> => {
   if (!selectedSensorForModify.value) {
@@ -146,7 +130,6 @@ const confirm = async (): Promise<void> => {
 
   if (address.value && label.value) {
     try {
-      // ✅ Connection store URL használata
       const baseUrl = connectionStore.ipPort.endsWith('/')
         ? connectionStore.ipPort
         : `${connectionStore.ipPort}/`
@@ -266,7 +249,6 @@ const toggleMenu = (): void => {
                   ⚙️
                 </button>
 
-                <!-- Delete button -->
                 <button
                   @click.stop="() => {
                     selectedSensorForModify = sensor
@@ -279,7 +261,6 @@ const toggleMenu = (): void => {
                 </button>
               </div>
 
-              <!-- Modify panel -->
               <div
                 v-if="selectedSensorIdForModify === sensor.uav_id && isModifyPanelOpen"
                 class="mt-2 p-3 rounded border border-cyan-700 bg-slate-700/10

@@ -1,8 +1,3 @@
-// workers/useDetectionWorker.ts - OPTIMALIZÁLT VERZIÓ
-// ============================================================================
-// TYPES
-// ============================================================================
-
 interface Quaternion {
   q0: number
   q1: number
@@ -116,7 +111,6 @@ let stats: WorkerStats = {
   avgProcessingTime: 0
 }
 
-// Data type constants
 const DataType = {
   TELEMETRY: 't',
   MEASUREMENT: 'm',
@@ -126,12 +120,10 @@ const DataType = {
 
 type DataTypeValue = typeof DataType[keyof typeof DataType]
 
-// ✅ OBJECT POOL - Újrahasználható Detection objektumok
 const DETECTION_POOL_SIZE = 50
 const detectionPool: Detection[] = []
 let poolIndex = 0
 
-// ✅ Inicializálás: pool létrehozása
 for (let i = 0; i < DETECTION_POOL_SIZE; i++) {
   detectionPool.push({
     timestamp: 0,
@@ -150,13 +142,7 @@ for (let i = 0; i < DETECTION_POOL_SIZE; i++) {
   })
 }
 
-// ============================================================================
-// HELPER FUNCTIONS - ✅ OPTIMALIZÁLT
-// ============================================================================
 
-/**
- * ✅ OPTIMALIZÁLT: Koordináta számítás (jelenleg identity function)
- */
 function calculateCoordinate (
   azimuth: number,
   elevation: number,
@@ -171,9 +157,7 @@ function calculateCoordinate (
   outCoord[1] = gpsLon
 }
 
-/**
- * ✅ OPTIMALIZÁLT: Quaternion alapú heading (inline math)
- */
+
 function getHeadingFromQuaternion (
   q0: number,
   q1: number,
@@ -193,9 +177,6 @@ function getHeadingFromQuaternion (
   return deg < 0 ? deg + 360 : deg
 }
 
-/**
- * ✅ OPTIMALIZÁLT: Detection objektum pool-ból, mutáció
- */
 function getDetectionFromPool (
   detectionItem: DetectionItem,
   gpsLat: number,
@@ -205,11 +186,9 @@ function getDetectionFromPool (
   heading: number,
   timestamp: number
 ): Detection {
-  // ✅ Pool-ból vesszük a következő objektumot (circular)
   const detection = detectionPool[poolIndex]
   poolIndex = (poolIndex + 1) % DETECTION_POOL_SIZE
 
-  // ✅ Mutáljuk az objektumot (ne új allokáció)
   detection.timestamp = timestamp
   detection.frequency = detectionItem.frequency
   detection.azimuth = detectionItem.azimuth ?? 0
@@ -218,7 +197,6 @@ function getDetectionFromPool (
   detection.meanElevation = detectionItem.mean_elevation ?? 0
   detection.roi_id = detectionItem.roi_id ?? null
 
-  // ✅ Koordináta számítás in-place
   calculateCoordinate(
     detection.azimuth,
     detection.elevation,
@@ -228,7 +206,6 @@ function getDetectionFromPool (
     detection.coordinate
   )
 
-  // ✅ Quaternion mutáció
   detection.quaternion.q0 = quaternion.q0
   detection.quaternion.q1 = quaternion.q1
   detection.quaternion.q2 = quaternion.q2
@@ -242,9 +219,7 @@ function getDetectionFromPool (
   return detection
 }
 
-/**
- * ✅ OPTIMALIZÁLT: Data type detektálás (inline)
- */
+
 function detectDataType (item: StreamPacket): DataTypeValue | null {
   if (item.type) {
     return item.type as DataTypeValue
@@ -258,15 +233,11 @@ function detectDataType (item: StreamPacket): DataTypeValue | null {
   return null
 }
 
-// ============================================================================
-// MAIN PROCESSING FUNCTION - ✅ OPTIMALIZÁLT
-// ============================================================================
 
 function processRawDetection (detectionData: string): void {
   const t0_processStart = performance.now()
   const currentTime = Date.now()
 
-  // ✅ Sampling rate ellenőrzés
   if (samplingRate > 0 && currentTime - lastSampleTime < samplingRate) {
     return
   }
@@ -300,7 +271,6 @@ function processRawDetection (detectionData: string): void {
 
     const dataType = detectDataType(item)
 
-    // ✅ TELEMETRY kezelése
     if (dataType === DataType.TELEMETRY && item.Telemetry) {
       const telemetryMessage: WorkerOutgoingMessage = {
         type: 'processedTelemetry',
@@ -312,20 +282,18 @@ function processRawDetection (detectionData: string): void {
       continue
     }
 
-    // ✅ MEASUREMENT kezelése
     if (dataType !== DataType.MEASUREMENT) continue
 
     const measurement = item.Measurement
     if (!measurement) continue
 
-    // ✅ 1. SPEKTRUM ADATOK - array access!
     if (measurement.data && Array.isArray(measurement.data) && measurement.data.length > 0) {
-      const dataItem = measurement.data[0] // ✅ Első elem
+      const dataItem = measurement.data[0]
 
       if (dataItem.dataType === 'FLOAT16') {
         const measurementMessage: WorkerOutgoingMessage = {
           type: 'processedMeasurement',
-          measurement, // ✅ Teljes measurement
+          measurement,
           uavId: backendUavId,
           timestamp: measurement.time || currentTime
         }
@@ -333,14 +301,12 @@ function processRawDetection (detectionData: string): void {
         self.postMessage(measurementMessage)
         spectrumCount++
 
-        // ✅ Ritkább logging
         if (spectrumCount % 50 === 0) {
           console.log(`[Worker] 📊 Sent ${spectrumCount} spectrum measurements`)
         }
       }
     }
 
-    // ✅ 2. DETECTION feldolgozása
     if (!measurement.detection || measurement.detection.length === 0) continue
 
     let headingData: HeadingData
@@ -424,10 +390,6 @@ function processRawDetection (detectionData: string): void {
   }
 }
 
-// ============================================================================
-// MESSAGE HANDLER
-// ============================================================================
-
 self.onmessage = function (e: MessageEvent<WorkerIncomingMessage>) {
   const message = e.data
 
@@ -436,7 +398,6 @@ self.onmessage = function (e: MessageEvent<WorkerIncomingMessage>) {
       case 'uavIds': {
         if (!message.uavIds || !Array.isArray(message.uavIds)) return
         uavIds = message.uavIds
-        // Silent mode - ne spameljük a console-t
         self.postMessage({ type: 'uavIdsUpdated', uavIds })
         break
       }
@@ -501,10 +462,6 @@ self.onmessage = function (e: MessageEvent<WorkerIncomingMessage>) {
   }
 }
 
-// ============================================================================
-// WORKER INITIALIZATION
-// ============================================================================
-
 const initMessage: WorkerOutgoingMessage = {
   type: 'workerStarted',
   timestamp: Date.now(),
@@ -513,10 +470,6 @@ const initMessage: WorkerOutgoingMessage = {
 self.postMessage(initMessage)
 console.log('✅ Detection Worker v6.0 initialized - OPTIMIZED with Object Pool')
 
-// ============================================================================
-// ERROR HANDLER
-// ============================================================================
-
 self.onerror = function (error: ErrorEvent) {
   console.error('[Worker] Uncaught error:', error)
   self.postMessage({
@@ -524,10 +477,6 @@ self.onerror = function (error: ErrorEvent) {
     message: `Worker uncaught error: ${error.message}`
   })
 }
-
-// ============================================================================
-// PERFORMANCE MONITORING - ✅ RITKÁBB (30s helyett 60s)
-// ============================================================================
 
 if (typeof performance !== 'undefined' && (performance as any).memory) {
   setInterval(() => {
@@ -540,5 +489,5 @@ if (typeof performance !== 'undefined' && (performance as any).memory) {
         limit: memory.jsHeapSizeLimit
       }
     })
-  }, 60000) // ✅ 60s helyett 30s
+  }, 60000)
 }

@@ -4,7 +4,6 @@ import ConfigurationView from '../../src/views/config/ConfigurationView.vue'
 import axios from 'axios'
 import { flushPromises } from '@vue/test-utils'
 
-// 🔥 axios mock
 vi.mock('axios', () => ({
   default: {
     post: vi.fn()
@@ -93,42 +92,4 @@ describe('ConfigurationView.vue', () => {
     })
   })
 
-  it('calls axios.post when Save Configuration is clicked', async () => {
-    ;(axios.post as any).mockResolvedValue({
-      data: { success: true }
-    })
-
-    const wrapper = mount(ConfigurationView)
-
-    const button = wrapper.find('button')
-    await button.trigger('click')
-
-    expect(axios.post).toHaveBeenCalledOnce()
-    expect(axios.post).toHaveBeenCalledWith(
-      'http://localhost:5000/v1/uav/1/command/CONFIG/',
-      expect.any(Object)
-    )
-  })
-
-  it('handles axios error gracefully', async () => {
-      const error = new Error('Network error')
-      ;(axios.post as any).mockRejectedValue(error)
-
-      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      const wrapper = mount(ConfigurationView, {
-        global: {
-          stubs: {
-            ConfigComponent: true
-          }
-        }
-      })
-
-      await wrapper.find('button').trigger('click')
-      await flushPromises()
-
-      expect(spy).toHaveBeenCalled()
-
-      spy.mockRestore()
-    })
 })

@@ -6,5 +6,5 @@ const router = createRouter({
   routes
 })
 
-export default router  // Csak a router-t exportáld!
+export default router
 export { routes }

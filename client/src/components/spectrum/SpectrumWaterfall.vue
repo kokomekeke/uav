@@ -21,34 +21,10 @@
         </span>
         <span class="data-counter">{{ dataPointsReceived }} samples</span>
       </div>
-
-      <div class="view-toggles">
-        <button
-          @click="showSpectrum = !showSpectrum"
-          :class="{ active: showSpectrum }"
-        >
-          📊 Spectrum
-        </button>
-        <button
-          @click="showWaterfall = !showWaterfall"
-          :class="{ active: showWaterfall }"
-        >
-          🌊 Waterfall
-        </button>
-      </div>
     </div>
 
-    <!-- ✅ STACKED LAYOUT - egymás alatt! -->
-    <div class="plots-container">
-      <!-- Spectrum Canvas - felül -->
-      <div v-show="showSpectrum" class="spectrum-wrapper">
-        <canvas ref="spectrumCanvasRef" class="spectrum-canvas"></canvas>
-      </div>
-
-      <!-- Waterfall Canvas - alul -->
-      <div v-show="showWaterfall" class="waterfall-wrapper">
-        <canvas ref="waterfallCanvasRef" class="waterfall-canvas"></canvas>
-      </div>
+    <div class="plot-container">
+      <canvas ref="combinedCanvasRef" class="combined-canvas"></canvas>
     </div>
   </div>
 </template>
@@ -57,25 +33,19 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSensorStore } from '@/stores/sensor'
-import { SpectrumPlot } from '@/utils/spectrumPlot'
-import { WaterfallPlot } from '@/utils/waterfall'
+import { CombinedSpectrumWaterfallPlot } from '@/utils/combinedPlot'
 
 const sensorStore = useSensorStore()
-const { sensors, selectedSensors } = storeToRefs(sensorStore)
+const { sensors } = storeToRefs(sensorStore)
 
 const selectedUavId = ref<number | null>(null)
-const spectrumCanvasRef = ref<HTMLCanvasElement | null>(null)
-const waterfallCanvasRef = ref<HTMLCanvasElement | null>(null)
-
-const showSpectrum = ref(true)
-const showWaterfall = ref(true)
+const combinedCanvasRef = ref<HTMLCanvasElement | null>(null)
 
 const dataPointsReceived = ref(0)
 const isReceivingData = ref(false)
 let lastDataTimestamp = 0
 
-let spectrumPlot: SpectrumPlot | null = null
-let waterfallPlot: WaterfallPlot | null = null
+let combinedPlot: CombinedSpectrumWaterfallPlot | null = null
 
 const availableSensors = computed(() => {
   return Object.values(sensors.value).filter(s => s.active)
@@ -86,7 +56,6 @@ const currentSensor = computed(() => {
   return sensors.value[selectedUavId.value] || null
 })
 
-// ✅ UGYANAZ mint előtte - dekódolás, normalizálás, processSpectrumData
 const decodeFloat16Array = (base64Data: string): number[] => {
   try {
     let paddedBase64 = base64Data
@@ -182,12 +151,9 @@ const processSpectrumData = (item: any, itemIndex: number) => {
 
   const normalized = normalizeSpectrum(spectrumData)
 
-  if (showSpectrum.value && spectrumPlot) {
-    spectrumPlot.drawSpectrumLine(normalized)
-  }
-
-  if (showWaterfall.value && waterfallPlot) {
-    waterfallPlot.drawWaterfallRow(normalized)
+  // ✅ Rajzolás a combined plotra
+  if (combinedPlot) {
+    combinedPlot.drawFrame(normalized)
   }
 
   dataPointsReceived.value++
@@ -231,12 +197,8 @@ const checkDataTimeout = () => {
 }
 
 onMounted(() => {
-  if (spectrumCanvasRef.value) {
-    spectrumPlot = new SpectrumPlot(spectrumCanvasRef.value)
-  }
-
-  if (waterfallCanvasRef.value) {
-    waterfallPlot = new WaterfallPlot(waterfallCanvasRef.value)
+  if (combinedCanvasRef.value) {
+    combinedPlot = new CombinedSpectrumWaterfallPlot(combinedCanvasRef.value)
   }
 
   dataTimeoutInterval = window.setInterval(checkDataTimeout, 1000)
@@ -321,54 +283,13 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 
-.view-toggles {
-  display: flex;
-  gap: 8px;
-}
-
-.view-toggles button {
-  padding: 6px 12px;
-  background: #2a3142;
-  border: 1px solid #3a4152;
-  border-radius: 4px;
-  color: #8b92a8;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.view-toggles button:hover {
-  background: #3a4152;
-  border-color: #0ea5e9;
-}
-
-.view-toggles button.active {
-  background: #0ea5e9;
-  border-color: #0ea5e9;
-  color: #fff;
-}
-
-/* ✅ STACKED LAYOUT */
-.plots-container {
+.plot-container {
   flex: 1;
-  display: flex;
-  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 
-.spectrum-wrapper {
-  flex: 1;
-  min-height: 0;
-  border-bottom: 2px solid #2a3142;
-}
-
-.waterfall-wrapper {
-  flex: 2;
-  min-height: 0;
-}
-
-.spectrum-canvas,
-.waterfall-canvas {
+.combined-canvas {
   width: 100%;
   height: 100%;
   display: block;

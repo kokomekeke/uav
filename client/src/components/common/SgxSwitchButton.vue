@@ -28,7 +28,6 @@ const handleCheckboxChange = () => {
       :checked="isChecked"
     />
 
-    <!-- háttér -->
     <div
       class="
         w-14 h-8 rounded-full
@@ -39,7 +38,6 @@ const handleCheckboxChange = () => {
       "
     ></div>
 
-    <!-- pötty -->
     <div
       class="
         absolute left-1 top-1 w-6 h-6
