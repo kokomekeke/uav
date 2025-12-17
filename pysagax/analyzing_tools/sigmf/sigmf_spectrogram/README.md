@@ -1,1 +1,0 @@
-Creating spectrograms from sigmf files with sigmfspectrum (as numpy archives) and tools for analyzing these files.
